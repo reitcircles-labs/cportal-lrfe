@@ -1,0 +1,44 @@
+/* App-level layout helpers on top of the Industry design system (industry.css). */
+html, body { min-height: 100%; }
+button { font: inherit; color: inherit; }
+a { color: var(--color-accent-700); }
+a:hover { color: var(--color-accent-900); }
+
+.page { max-width: 1480px; margin: 0 auto; padding: 24px 28px 48px; box-sizing: border-box; }
+.muted { color: var(--color-neutral-700); }
+.small { font-size: 12px; }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, Menlo, monospace; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.spacer { margin-left: auto; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 12px; font-size: 12px; }
+.kv > :nth-child(odd) { color: var(--color-neutral-700); }
+.kv > :nth-child(even) { min-width: 0; overflow-wrap: anywhere; }
+.h-cond { font-family: var(--font-heading); font-weight: 600; }
+
+.bare { background: transparent; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.list-btn { width: 100%; background: transparent; border: 0; cursor: pointer; text-align: left; }
+.list-btn:hover { background: var(--color-accent-100); }
+.is-active { background: var(--color-accent-100) !important; }
+
+.paper { background: var(--color-neutral-100); box-shadow: var(--shadow-sm); }
+.lines { display: flex; flex-direction: column; gap: 5px; }
+.lines > span { height: 2px; background: var(--color-neutral-300); display: block; }
+
+.thumb { width: 80px; height: 106px; background: var(--color-neutral-100); padding: 10px 9px; box-sizing: border-box; display: flex; flex-direction: column; gap: 5px; }
+.thumb .t { height: 4px; width: 60%; background: var(--color-neutral-500); align-self: center; }
+.thumb .l { height: 2px; background: var(--color-neutral-300); }
+.thumb .seal { height: 10px; width: 34%; border: 1px solid var(--color-accent-400); border-radius: 50%; margin-top: auto; align-self: flex-end; }
+
+.status-sq { width: 10px; height: 10px; border: 1px solid var(--color-accent-700); flex: none; display: inline-block; }
+.status-sq.filed { background: var(--color-accent-700); }
+.status-sq.progress { background: linear-gradient(135deg, var(--color-accent-700) 50%, transparent 50%); }
+
+.check-mark { width: 18px; height: 18px; display: grid; place-items: center; font-size: 11px; border: 1px solid var(--color-accent-700); color: var(--color-accent-800); }
+.check-mark.ok { background: var(--color-accent-700); color: var(--color-bg); }
+
+.bar { height: 2px; background: var(--color-neutral-200); }
+.bar > span { display: block; height: 100%; background: var(--color-accent-700); }
+
+.auto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 24px; align-items: start; }
