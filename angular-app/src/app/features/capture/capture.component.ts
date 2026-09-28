@@ -4,11 +4,14 @@ import { DOCS, TOTAL } from '../../data/mock-data';
 import { RegistryStore } from '../../state/registry.store';
 import { ViewerService } from '../../state/viewer.service';
 import { IconComponent } from '../../shared/icon.component';
+import { CanDirective } from '../../shared/can.directive';
+import { RbacService } from '../../state/rbac.service';
+
 
 @Component({
   selector: 'app-capture',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, CanDirective],
   template: `
     <div class="page layout">
       <aside class="stack" style="gap:18px">
@@ -44,7 +47,7 @@ import { IconComponent } from '../../shared/icon.component';
           <div class="row small" style="justify-content:space-between"><span>{{ store.pages() }} of {{ total }} pages · {{ docsIn() }} instruments</span><span class="muted">{{ pct() }}%</span></div>
           <div style="height:4px;background:var(--color-neutral-200)"><div style="height:100%;background:var(--color-accent);transition:width .3s" [style.width.%]="pct()"></div></div>
           <div class="row" style="margin-top:6px;flex-wrap:nowrap">
-            <button class="btn btn-secondary" style="flex:1" [disabled]="store.scanning()" (click)="store.startScan()">{{ scanLabel() }}</button>
+            <button class="btn btn-secondary" style="flex:1" [disabled]="store.scanning()" appCan="capture.scan" (click)="store.startScan()">{{ scanLabel() }}</button>
             <button class="btn btn-primary" style="flex:1" [disabled]="!store.scanDone()" (click)="router.navigate(['/verify'])">Send to review →</button>
           </div>
         </div>

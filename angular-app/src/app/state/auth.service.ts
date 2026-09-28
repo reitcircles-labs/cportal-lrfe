@@ -8,7 +8,8 @@ export const ROLES: Role[] = [
   { id: 'scan', label: 'Scan operator', name: 'K. Iipinge', initials: 'KI', home: '/capture', office: 'Registry floor 2' },
   { id: 'rev', label: 'Metadata reviewer', name: 'A. Mwandingi', initials: 'AM', home: '/verify', office: 'Review desk' },
   { id: 'rec', label: 'Records officer', name: 'J. !Gawaseb', initials: 'JG', home: '/link', office: 'Records desk' },
-  { id: 'aud', label: 'Auditor · read-only', name: 'M. Nakale', initials: 'MN', home: '/audit', office: 'Office of the Auditor-General' }
+  { id: 'aud', label: 'Auditor · read-only', name: 'M. Nakale', initials: 'MN', home: '/audit', office: 'Office of the Auditor-General' },
+  { id: 'adm', label: 'System administrator', name: 'P. Hamutenya', initials: 'PH', home: '/admin/users', office: 'ICT · Deeds Registry' }
 ];
 
 const KEY = 'lr-demo-role';

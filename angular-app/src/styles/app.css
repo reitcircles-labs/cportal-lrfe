@@ -46,3 +46,17 @@ button { font: inherit; color: inherit; }
 .panel-body { padding: 16px 18px; }
 
 @media (max-width: 720px) { .page { padding: 18px 16px 40px; } }
+
+/* RBAC-gated controls */
+.denied { opacity: .45 !important; cursor: not-allowed !important; filter: grayscale(.3); }
+.denied:hover { background: inherit; }
+/* Switch + checkbox */
+.switch { appearance: none; width: 40px; height: 22px; border-radius: 99px; background: var(--color-neutral-400); position: relative; cursor: pointer; transition: background .15s; flex: none; margin: 0; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm); transition: transform .15s; }
+.switch:checked { background: var(--color-accent); }
+.switch:checked::after { transform: translateX(18px); }
+.cbx { appearance: none; width: 18px; height: 18px; border: 1.5px solid var(--color-neutral-400); border-radius: 4px; background: var(--color-surface); cursor: pointer; display: inline-grid; place-items: center; margin: 0; vertical-align: middle; transition: background .1s, border-color .1s; }
+.cbx:hover { border-color: var(--color-accent); }
+.cbx:checked { background: var(--color-accent); border-color: var(--color-accent); }
+.cbx:checked::after { content: ""; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px); }
+.cbx:disabled { opacity: .55; cursor: not-allowed; }

@@ -5,6 +5,7 @@ import { ViewerComponent } from './shared/viewer.component';
 import { OverlaysComponent } from './shared/overlays.component';
 import { IconComponent } from './shared/icon.component';
 import { AuthService, ROLES } from './state/auth.service';
+import { RbacService } from './state/rbac.service';
 import { ThemeService } from './state/theme.service';
 import { RegistryStore } from './state/registry.store';
 import { QUEUE } from './data/mock-data';
@@ -37,8 +38,16 @@ import { QUEUE } from './data/mock-data';
                 @if (n.badge) { <span class="badge" [class.mine]="n.mine">{{ n.badge }}</span> }
               </a>
             }
-            <span class="sec">Programme</span>
-            <a routerLink="/flow" routerLinkActive="on" class="item" (click)="drawer.set(false)"><app-icon name="flow" [size]="18" /><span class="lbl">Process &amp; schema</span></a>
+            @if (adminNav().length) {
+              <span class="sec">Administration</span>
+              @for (n of adminNav(); track n.path) {
+                <a [routerLink]="n.path" routerLinkActive="on" class="item" (click)="drawer.set(false)"><app-icon [name]="n.icon" [size]="18" /><span class="lbl">{{ n.label }}</span>@if (n.badge) { <span class="badge warn" title="Users with a duty conflict">{{ n.badge }}</span> }</a>
+              }
+            }
+            @if (rbac.can('dashboard.view')) {
+              <span class="sec">Programme</span>
+              <a routerLink="/flow" routerLinkActive="on" class="item" (click)="drawer.set(false)"><app-icon name="flow" [size]="18" /><span class="lbl">Process &amp; schema</span></a>
+            }
           </nav>
 
           <div class="foot">
@@ -95,6 +104,7 @@ import { QUEUE } from './data/mock-data';
     .lbl { flex: 1; }
     .badge { font-size: 11px; font-weight: 700; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 99px; display: grid; place-items: center; background: rgba(255,255,255,.12); color: #fff; }
     .badge.mine { background: var(--nam-gold); color: #1c1400; }
+    .badge.warn { background: var(--nam-red); color: #fff; }
     .foot { padding: 14px 14px 16px; border-top: 1px solid rgba(255,255,255,.08); display: flex; flex-direction: column; gap: 12px; }
     .role { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(198,212,231,.6); }
     .role select { appearance: none; font: inherit; font-size: 13.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #fff; background: rgba(255,255,255,.08) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23c6d4e7' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 9px 30px 9px 10px; cursor: pointer; }
@@ -132,6 +142,7 @@ import { QUEUE } from './data/mock-data';
 })
 export class AppComponent {
   auth = inject(AuthService);
+  rbac = inject(RbacService);
   theme = inject(ThemeService);
   store = inject(RegistryStore);
   private router = inject(Router);
@@ -148,12 +159,21 @@ export class AppComponent {
     const open = QUEUE.filter(d => !this.store.isFiled(d)).length;
     const sugg = this.store.openSuggestions().length;
     return [
-      { path: '/', label: 'Dashboard', icon: 'home', badge: 0, mine: false },
-      { path: '/capture', label: 'Capture', icon: 'scan', badge: this.store.scanDone() ? 0 : 1, mine: role === 'scan' },
-      { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: open, mine: role === 'rev' },
-      { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: sugg, mine: role === 'rec' },
-      { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud' }
-    ];
+      { path: '/', label: 'Dashboard', icon: 'home', badge: 0, mine: false, perm: 'dashboard.view' },
+      { path: '/capture', label: 'Capture', icon: 'scan', badge: this.store.scanDone() ? 0 : 1, mine: role === 'scan', perm: 'capture.view' },
+      { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: open, mine: role === 'rev', perm: 'verify.view' },
+      { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: sugg, mine: role === 'rec', perm: 'record.view' },
+      { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud', perm: 'audit.view' }
+    ].filter(n => this.rbac.can(n.perm));
+  });
+  adminNav = computed(() => {
+    const conflicts = this.rbac.users().filter(u => u.status !== 'Suspended' && this.rbac.userConflicts(u).length).length;
+    return [
+      { path: '/admin/users', label: 'Users', icon: 'users', perm: 'admin.users', badge: conflicts },
+      { path: '/admin/roles', label: 'Roles & permissions', icon: 'lock', perm: 'admin.roles', badge: 0 },
+      { path: '/admin/policies', label: 'Security policies', icon: 'shield', perm: 'admin.policies', badge: 0 },
+      { path: '/admin/log', label: 'Access log', icon: 'clock', perm: 'admin.users', badge: 0 }
+    ].filter(n => this.rbac.can(n.perm));
   });
 
   constructor() {

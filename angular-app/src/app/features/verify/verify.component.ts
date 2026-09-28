@@ -6,13 +6,16 @@ import { RegistryStore } from '../../state/registry.store';
 import { ViewerService } from '../../state/viewer.service';
 import { DocPageComponent } from '../../shared/doc-page.component';
 import { IconComponent } from '../../shared/icon.component';
+import { CanDirective } from '../../shared/can.directive';
+import { RbacService } from '../../state/rbac.service';
+
 
 type QFilter = 'open' | 'filed' | 'all';
 
 @Component({
   selector: 'app-verify',
   standalone: true,
-  imports: [DocPageComponent, IconComponent],
+  imports: [DocPageComponent, IconComponent, CanDirective],
   template: `
     <div class="shell" [class.collapsed]="!railOpen()">
       <!-- Review queue -->
@@ -106,17 +109,17 @@ type QFilter = 'open' | 'filed' | 'all';
                       @if (f.low) { <span class="flag">· check</span> }
                       @if (f.fmt) { <span style="font-size:11px;color:var(--color-accent-800)">{{ f.fmt }}</span> }</div>
                     <div class="small muted num" style="text-align:right;font-size:11px">{{ f.conf }}</div>
-                    <input class="input" [value]="f.value" (focus)="active.set(f.k)" (change)="edit(f.k, $any($event.target).value)">
-                    <button class="btn btn-icon" [class.btn-primary]="f.done" [class.btn-secondary]="!f.done" style="width:40px;height:32px" title="Accept" (click)="toggleAccept(f, $event)"><app-icon name="check" /></button>
+                    <input class="input" [readonly]="!rbac.can('verify.edit')" [value]="f.value" (focus)="active.set(f.k)" (change)="edit(f.k, $any($event.target).value)">
+                    <button class="btn btn-icon" [class.btn-primary]="f.done" [class.btn-secondary]="!f.done" style="width:40px;height:32px" title="Accept" appCan="verify.edit" (click)="toggleAccept(f, $event)"><app-icon name="check" /></button>
                     <div class="confbar"><span [style.width]="f.conf" [style.background]="f.low ? 'var(--color-accent-800)' : 'var(--color-accent-400)'"></span></div>
                   </div>
                 }
               </div>
               <div class="row" style="margin-top:4px">
-                <button class="btn btn-secondary" (click)="acceptHigh()">Accept high-confidence</button>
+                <button class="btn btn-secondary" appCan="verify.edit" (click)="acceptHigh()">Accept high-confidence</button>
                 <span class="spacer"></span>
                 @if (filed()) { <span class="tag tag-accent" style="padding:8px 12px">Filed · {{ doc().edrms }}</span> }
-                @else { <button class="btn btn-primary" [disabled]="reviewed() < doc().fields.length" (click)="approve()">Approve &amp; file to EDRMS</button> }
+                @else { <button class="btn btn-primary" [disabled]="reviewed() < doc().fields.length" appCan="verify.file" (click)="approve()">Approve &amp; file to EDRMS</button> }
               </div>
             </div>
           </div>
@@ -132,11 +135,11 @@ type QFilter = 'open' | 'filed' | 'all';
               <div class="focus-edit">
                 <div class="field" style="min-width:0">
                   <label class="row" style="gap:10px;align-items:baseline"><span class="h-cond" style="font-size:22px;color:var(--color-text)">{{ activeField().label }}</span><span>{{ activeField().conf }} confidence</span>@if (activeField().fmt) { <span style="color:var(--color-accent-800)">{{ activeField().fmt }}</span> }</label>
-                  <input class="input" style="font-size:20px;min-height:48px" [value]="activeField().value" (change)="edit(activeField().k, $any($event.target).value)" (keydown.enter)="edit(activeField().k, $any($event.target).value); acceptAndNext()">
+                  <input class="input" style="font-size:20px;min-height:48px" [readonly]="!rbac.can('verify.edit')" [value]="activeField().value" (change)="edit(activeField().k, $any($event.target).value)" (keydown.enter)="edit(activeField().k, $any($event.target).value); acceptAndNext()">
                 </div>
                 <div class="row" style="flex-wrap:nowrap">
                   <button class="btn btn-secondary" style="height:48px" (click)="stepField(-1)">← Prev</button>
-                  <button class="btn btn-primary" style="height:48px;padding:0 18px" (click)="acceptAndNext()">Accept ↵</button>
+                  <button class="btn btn-primary" style="height:48px;padding:0 18px" appCan="verify.edit" (click)="acceptAndNext()">Accept ↵</button>
                 </div>
                 <div class="small muted" style="grid-column:1/-1">{{ activeField().low ? 'Below the ' + pct(store.threshold()) + ' threshold — compare carefully with the image before accepting.' : 'High confidence — accept if it reads the same on the image.' }}</div>
               </div>
@@ -152,7 +155,7 @@ type QFilter = 'open' | 'filed' | 'all';
                 }
               </div>
               @if (filed()) { <span class="tag tag-accent" style="padding:8px 12px">Filed · {{ doc().edrms }}</span> }
-              @else { <button class="btn btn-primary" [disabled]="reviewed() < doc().fields.length" (click)="approve()">Approve &amp; file to EDRMS</button> }
+              @else { <button class="btn btn-primary" [disabled]="reviewed() < doc().fields.length" appCan="verify.file" (click)="approve()">Approve &amp; file to EDRMS</button> }
             </aside>
           </div>
         }
@@ -218,6 +221,7 @@ type QFilter = 'open' | 'filed' | 'all';
 })
 export class VerifyComponent {
   store = inject(RegistryStore);
+  rbac = inject(RbacService);
   viewer = inject(ViewerService);
   router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -294,6 +298,7 @@ export class VerifyComponent {
   toggle(id: string) { this.collapsed.update(c => ({ ...c, [id]: !c[id] })); }
   move(dir: number) { const t = this.flat()[this.pos() + dir]; if (t) this.select(t.id); }
   edit(k: string, value: string) {
+    if (!this.rbac.can('verify.edit')) return;
     const f = this.doc().fields.find(x => x.k === k)!;
     if (value !== this.store.value(this.doc(), f)) this.store.setField(this.doc().id, k, { value, status: 'edited' });
   }
@@ -307,6 +312,7 @@ export class VerifyComponent {
   }
   stepField(dir: number) { const t = this.fields()[this.activeIdx() + dir]; if (t) this.active.set(t.k); }
   acceptAndNext() {
+    if (!this.rbac.can('verify.edit')) { this.stepField(1); return; }
     const f = this.activeField();
     if (!f.done) this.store.setField(this.doc().id, f.k, { status: 'accepted' });
     this.stepField(1);

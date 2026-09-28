@@ -6,13 +6,14 @@ import { RegistryStore } from '../state/registry.store';
 import { ViewerService } from '../state/viewer.service';
 import { DocPageComponent } from './doc-page.component';
 import { IconComponent } from './icon.component';
+import { CanDirective } from './can.directive';
 
 const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
 
 @Component({
   selector: 'app-viewer',
   standalone: true,
-  imports: [DocPageComponent, IconComponent],
+  imports: [DocPageComponent, IconComponent, CanDirective],
   template: `
     @if (doc(); as d) {
       <div class="dialog-backdrop" (click)="vs.close()">
@@ -76,15 +77,15 @@ const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
               }
               <div class="actions">
                 @if (ctx() === 'batch') {
-                  <button class="btn btn-secondary" (click)="store.toggleRescan(d, page())">Flag page for rescan</button>
+                  <button class="btn btn-secondary" appCan="capture.rescan" (click)="store.toggleRescan(d, page())">Flag page for rescan</button>
                   <button class="btn btn-primary" [disabled]="got() < d.pages" (click)="openReview(d)">Open in review →</button>
                 }
                 @if (ctx() === 'record' && rec()) {
-                  <button class="btn btn-secondary" (click)="removeFromRecord(d.id)">Remove from {{ rec()!.erf }}</button>
+                  <button class="btn btn-secondary" appCan="record.unlink" (click)="removeFromRecord(d.id)">Remove from {{ rec()!.erf }}</button>
                 }
                 @if (ctx() === 'pool' && rec()) {
                   @if (matchText(d)) { <div class="small" style="border-top:1px dashed var(--color-divider);padding-top:10px">{{ matchText(d) }}</div> }
-                  <button class="btn btn-primary" [disabled]="!store.isFiled(d)" (click)="addToRecord(d.id)">Add to {{ rec()!.erf }}</button>
+                  <button class="btn btn-primary" [disabled]="!store.isFiled(d)" appCan="record.link" (click)="addToRecord(d.id)">Add to {{ rec()!.erf }}</button>
                 }
               </div>
             </aside>

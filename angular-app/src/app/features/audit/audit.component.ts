@@ -5,6 +5,9 @@ import { RegistryStore } from '../../state/registry.store';
 import { ViewerService } from '../../state/viewer.service';
 import { DocPageComponent } from '../../shared/doc-page.component';
 import { IconComponent } from '../../shared/icon.component';
+import { CanDirective } from '../../shared/can.directive';
+import { RbacService } from '../../state/rbac.service';
+
 import { ConfirmService } from '../../state/confirm.service';
 
 const ORDER = ['g1', 'g2', 'b', 'a', 'c'];
@@ -13,14 +16,14 @@ const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outli
 @Component({
   selector: 'app-audit',
   standalone: true,
-  imports: [DocPageComponent, IconComponent],
+  imports: [DocPageComponent, IconComponent, CanDirective],
   template: `
     <div class="page stack" style="gap:22px">
       <header class="row" style="justify-content:space-between;align-items:end">
         <div><div class="card-kicker">Read-only</div><h1 style="margin:4px 0 0;font-size:38px">Audit · Erf 1873, Klein Windhoek</h1></div>
         <div class="row small" style="gap:18px;color:var(--color-neutral-800);font-size:13px">
           <span>{{ store.trail().length }} entries</span><span>Hash chain intact</span><span>{{ auditedCount() }} of 5 documents audited</span>
-          <button class="btn btn-secondary">Export evidence pack</button>
+          <button class="btn btn-secondary" appCan="audit.export">Export evidence pack</button>
         </div>
       </header>
 
@@ -75,8 +78,8 @@ const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outli
             <div class="row" style="padding-top:12px;border-top:1px solid var(--color-divider)">
               @if (store.audited()[d.id]; as a) { <span class="tag tag-accent" style="padding:8px 12px">{{ a === 'finding' ? 'Finding raised' : 'Audited' }} · Office of the Auditor-General</span> }
               @else {
-                <button class="btn btn-secondary" (click)="raise(d)">Raise finding</button>
-                <button class="btn btn-primary" (click)="signOff(d)">Mark document audited</button>
+                <button class="btn btn-secondary" appCan="audit.signoff" (click)="raise(d)">Raise finding</button>
+                <button class="btn btn-primary" appCan="audit.signoff" (click)="signOff(d)">Mark document audited</button>
               }
               <button class="btn btn-ghost spacer" (click)="viewer.open('audit', d.id, 0)"><app-icon name="eye" [size]="15" />Open viewer</button>
             </div>

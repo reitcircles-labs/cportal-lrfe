@@ -7,6 +7,9 @@ import { ViewerService } from '../../state/viewer.service';
 import { ConfirmService } from '../../state/confirm.service';
 import { AuthService } from '../../state/auth.service';
 import { IconComponent } from '../../shared/icon.component';
+import { CanDirective } from '../../shared/can.directive';
+import { RbacService } from '../../state/rbac.service';
+
 
 type Tab = 'documents' | 'chain' | 'comments';
 type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
@@ -14,7 +17,7 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
 @Component({
   selector: 'app-link',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, CanDirective],
   template: `
     <div class="ws" [class.list-hidden]="!listOpen()">
       <!-- Land record list -->
@@ -22,7 +25,7 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
         <div class="list-head">
           <div class="row" style="justify-content:space-between">
             <h4 style="margin:0">Land records</h4>
-            <button class="btn btn-primary" style="min-height:34px;padding:0 12px" (click)="openCreate()"><span style="font-size:18px;line-height:0">+</span>New record</button>
+            <button class="btn btn-primary" style="min-height:34px;padding:0 12px" appCan="record.create" (click)="openCreate()"><span style="font-size:18px;line-height:0">+</span>New record</button>
           </div>
           <div class="search"><app-icon name="search" [size]="15" /><input class="input" placeholder="Erf, township or owner" [value]="q()" (input)="q.set($any($event.target).value)" aria-label="Search land records"></div>
           <div class="chips">
@@ -65,8 +68,8 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
               </div>
             </div>
             <div class="row">
-              <button class="btn btn-secondary" (click)="tab.set('documents'); addOpen.set(true)"><app-icon name="search" [size]="16" />Add documents</button>
-              <button class="btn btn-primary" [disabled]="!store.canFinalize(r) || r.st === 'finalized'" (click)="finalize(r)"><app-icon name="checkCircle" [size]="17" />{{ r.st === 'finalized' ? 'Finalized' : 'Finalize record' }}</button>
+              <button class="btn btn-secondary" appCan="record.link" (click)="tab.set('documents'); addOpen.set(true)"><app-icon name="search" [size]="16" />Add documents</button>
+              <button class="btn btn-primary" [disabled]="!store.canFinalize(r) || r.st === 'finalized'" appCan="record.finalize" (click)="finalize(r)"><app-icon name="checkCircle" [size]="17" />{{ r.st === 'finalized' ? 'Finalized' : 'Finalize record' }}</button>
             </div>
           </header>
 
@@ -98,7 +101,7 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
                               <td><span class="tag" [class.tag-accent]="store.isFiled(d)" [class.tag-neutral]="!store.isFiled(d)">{{ store.isFiled(d) ? 'Filed' : 'In review' }}</span></td>
                               <td style="text-align:right;white-space:nowrap">
                                 <button class="btn btn-ghost btn-icon" title="View document" (click)="viewer.open('record', d.id, 0, r.id)"><app-icon name="eye" [size]="17" /></button>
-                                <button class="btn btn-ghost btn-icon danger" title="Remove from record" (click)="remove(r.id, d)"><app-icon name="x" [size]="17" /></button>
+                                <button class="btn btn-ghost btn-icon danger" title="Remove from record" appCan="record.unlink" (click)="remove(r.id, d)"><app-icon name="x" [size]="17" /></button>
                               </td>
                             </tr>
                           }
@@ -136,8 +139,8 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
                             <div class="row" style="gap:6px;flex-wrap:nowrap">
                               <button class="btn btn-ghost btn-icon" title="Preview" (click)="viewer.open('pool', p.doc.id, 0, r.id)"><app-icon name="eye" [size]="17" /></button>
                               @if (p.filed) {
-                                @if (p.suggested) { <button class="btn btn-ghost" style="min-height:34px" (click)="store.reject(p.doc.id)">Not this parcel</button> }
-                                <button class="btn btn-secondary" (click)="store.addDocToRecord(r.id, p.doc.id)">+ Add</button>
+                                @if (p.suggested) { <button class="btn btn-ghost" style="min-height:34px" appCan="record.link" (click)="store.reject(p.doc.id)">Not this parcel</button> }
+                                <button class="btn btn-secondary" appCan="record.link" (click)="store.addDocToRecord(r.id, p.doc.id)">+ Add</button>
                               } @else {
                                 <span class="tag tag-neutral" title="Finish metadata verification first">In review</span>
                               }
@@ -184,8 +187,8 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
                   <div class="composer">
                     <span class="av">{{ auth.role()?.initials }}</span>
                     <div class="stack" style="gap:8px;flex:1;min-width:0">
-                      <textarea class="input" rows="3" placeholder="Add a comment for reviewers, the registrar or auditors…" [value]="draft()" (input)="draft.set($any($event.target).value)" (keydown.control.enter)="post(r.id)" (keydown.meta.enter)="post(r.id)"></textarea>
-                      <div class="row" style="justify-content:space-between"><span class="small muted">Visible to everyone with access to this record · Ctrl + Enter to post</span><button class="btn btn-primary" [disabled]="!draft().trim()" (click)="post(r.id)">Post comment</button></div>
+                      <textarea class="input" rows="3" [readonly]="!rbac.can('record.comment')" placeholder="Add a comment for reviewers, the registrar or auditors…" [value]="draft()" (input)="draft.set($any($event.target).value)" (keydown.control.enter)="post(r.id)" (keydown.meta.enter)="post(r.id)"></textarea>
+                      <div class="row" style="justify-content:space-between"><span class="small muted">Visible to everyone with access to this record · Ctrl + Enter to post</span><button class="btn btn-primary" [disabled]="!draft().trim()" appCan="record.comment" (click)="post(r.id)">Post comment</button></div>
                     </div>
                   </div>
                 </div>
@@ -318,6 +321,7 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
 })
 export class LinkComponent {
   store = inject(RegistryStore);
+  rbac = inject(RbacService);
   viewer = inject(ViewerService);
   auth = inject(AuthService);
   private confirm = inject(ConfirmService);
@@ -399,6 +403,7 @@ export class LinkComponent {
       this.store.finalizeRecord(r);
   }
   post(rid: string) {
+    if (!this.rbac.can('record.comment')) return;
     const t = this.draft().trim(); if (!t) return;
     const role = this.auth.role();
     this.store.addComment(rid, t, role?.name || 'J. !Gawaseb', role?.label || 'Records officer');

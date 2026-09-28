@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { BATCHES, DOCS, QUEUE, TOTAL } from '../../data/mock-data';
 import { ViewerService } from '../../state/viewer.service';
+import { RbacService } from '../../state/rbac.service';
 import { RegistryStore } from '../../state/registry.store';
 import { AuthService } from '../../state/auth.service';
 import { IconComponent } from '../../shared/icon.component';
@@ -67,7 +68,7 @@ const WEEK = [
             <thead><tr><th>Land parcel</th><th>Registered owner(s)</th><th>Extent · tenure</th><th style="text-align:right">Documents</th><th>Status</th><th>Last activity</th><th></th></tr></thead>
             <tbody>
               @for (r of pageRows(); track r.id) {
-                <tr (click)="open(r)" class="click">
+                <tr (click)="canOpen() && open(r)" [class.click]="canOpen()">
                   <td><div class="parcel"><span class="pi"><app-icon name="layers" [size]="16" /></span><span class="stack" style="gap:0"><b>{{ r.erf }}, {{ r.township }}</b><span class="small muted">Reg. div {{ r.regDiv }} · {{ r.region }} · {{ r.batch }}</span></span></div></td>
                   <td><div class="stack" style="gap:0">@for (o of r.ownerList; track o) { <span>{{ o }}</span> } @empty { <span class="muted">—</span> }</div></td>
                   <td><div class="stack" style="gap:0"><span class="num">{{ r.extent }}</span><span class="small muted">{{ r.tenure }}</span></div></td>
@@ -76,7 +77,7 @@ const WEEK = [
                   <td class="small muted num" style="white-space:nowrap">{{ r.lastActivity }}</td>
                   <td style="text-align:right;white-space:nowrap" (click)="$event.stopPropagation()">
                     @if (r.docs) { <button class="btn btn-ghost btn-icon" title="View documents" (click)="viewDocs(r.id)"><app-icon name="eye" [size]="17" /></button> }
-                    <button class="btn btn-secondary" (click)="open(r)">{{ r.action }}</button>
+                    @if (canOpen()) { <button class="btn btn-secondary" (click)="open(r)">{{ r.action }}</button> }
                   </td>
                 </tr>
               } @empty {
@@ -241,6 +242,7 @@ const WEEK = [
 })
 export class DashboardComponent {
   store = inject(RegistryStore);
+  rbac = inject(RbacService);
   viewer = inject(ViewerService);
   private router = inject(Router);
   q = signal('');
@@ -271,6 +273,7 @@ export class DashboardComponent {
   rangeLabel = computed(() => { const n = this.filtered().length; if (!n) return '0'; const a = this.page() * this.perPage + 1; return a + '–' + Math.min(n, a + this.perPage - 1); });
   viewDocs(id: string) { const ids = this.store.recordDocIds(id); if (ids.length) this.viewer.open('record', ids[0], 0, id); }
   open(r: { id: string }) { this.router.navigate(['/link'], { queryParams: { record: r.id } }); }
+  canOpen() { return this.rbac.can('record.view'); }
 
 
   auth = inject(AuthService);

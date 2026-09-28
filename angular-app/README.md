@@ -32,6 +32,22 @@ Government-enterprise theme (`src/styles/theme.css`): white cards on a light gre
 
 The sidebar role switcher changes the acting user and jumps to that role's queue. Toasts confirm every state change; destructive or irreversible actions ask first. Below 960px the sidebar becomes a drawer.
 
+## Role-based access control
+
+`state/rbac.service.ts` holds the permission catalogue (19 permissions in 6 groups), the role → permission matrix, users (multiple roles each), segregation-of-duties rules, security policies and an access log.
+
+- **Routes** are protected by `permGuard` (route `data.perm`). A missing permission lands on `#/denied` and is logged.
+- **Sidebar** shows only the areas the current role may open.
+- **Actions** use the `appCan` directive (`<button appCan="record.finalize">`). Without the permission the control greys out, explains why on hover, and a click is blocked and logged.
+- **Admin screens** (System administrator role):
+  - `#/admin/users`: users with search and filters, invite, a side panel to assign roles with a live preview of effective permissions and duty-conflict warnings, suspend or reactivate, reset MFA.
+  - `#/admin/roles`: role cards, an editable permission matrix with conflict highlighting, save or discard with confirmation, custom roles (clone or empty).
+  - `#/admin/policies`: MFA, eID, network restriction, session timeout, four-eyes finalization, segregation-of-duties rules with the number of users affected.
+  - `#/admin/log`: every role, user, policy, sign-in and access-denied event.
+- Matrix edits apply immediately. For example, remove "Finalize records" from Records officer, switch role, and the button is locked.
+
+In production, enforce the same permissions server-side. The client only mirrors them.
+
 ## Structure
 
 ```
