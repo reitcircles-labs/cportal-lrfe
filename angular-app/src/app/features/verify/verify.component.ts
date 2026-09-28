@@ -233,7 +233,7 @@ export class VerifyComponent {
   filters: { id: QFilter; label: string }[] = [{ id: 'open', label: 'Open' }, { id: 'filed', label: 'Filed' }, { id: 'all', label: 'All' }];
 
   constructor() {
-    this.route.queryParamMap.subscribe(q => { const d = q.get('doc'); if (d) { this.docId.set(d); this.active.set(null); } });
+    this.route.queryParamMap.subscribe(q => { const d = q.get('doc'); if (d) { this.docId.set(d); this.active.set(null); const doc = QUEUE.find(x => x.id === d); if (doc && this.store.isFiled(doc)) this.filter.set('all'); } });
     effect(() => { this.docId(); }, { allowSignalWrites: true });
   }
 

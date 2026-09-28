@@ -143,6 +143,28 @@ BATCHES.slice(1).forEach((b, bi) => {
   }
 });
 export const QUEUE: LandDoc[] = [...DOCS, ...SYN];
+
+/** Land records register: one ERP record per erf, each backed by digitized EDRMS documents. */
+export interface LandRecordRow {
+  id: string; erf: string; township: string; region: string; regDiv: string; extent: string; tenure: string;
+  owners: string[]; docs: number; docIds: string[]; lastActivity: string; batch: string; live?: boolean;
+}
+const FIRST = ['Johanna', 'Tjipuka', 'Selma', 'Hendrik', 'Ndapandula', 'Willem', 'Lucia', 'Tangeni', 'Anna', 'Petrus', 'Frieda', 'Kaarina', 'Simon', 'Martha', 'David', 'Hilma'];
+const LAST = ['Amupanda', 'Kavari', 'Nangolo', 'van der Merwe', 'Shikongo', 'Hoaeb', 'Tjiueza', 'Iita', 'Beukes', 'Nuujoma', 'Katjiuongua', '!Naruseb', 'Haimbodi', 'Garoeb', 'Mbumba', 'Uirab'];
+const DAYS = ['28 Sep 2026', '27 Sep 2026', '26 Sep 2026', '25 Sep 2026', '24 Sep 2026', '23 Sep 2026', '21 Sep 2026', '18 Sep 2026'];
+export const LAND_RECORDS: LandRecordRow[] = [
+  { id: 'erf1873', erf: 'Erf 1873', township: 'Klein Windhoek', region: 'Khomas', regDiv: 'K', extent: '1 214 m²', tenure: 'Freehold',
+    owners: [], docs: 5, docIds: ['a', 'b', 'c'], lastActivity: '28 Sep 2026', batch: 'WDH-B017', live: true },
+  ...SYN.map((d, i) => {
+    const prop = d.fields.find(f => f.k === 'property')!.v;
+    const [erf, township] = prop.split(', ');
+    const n = 1 + (i % 3);
+    const owners = Array.from({ length: n === 3 ? 2 : 1 }, (_, k) => FIRST[(i * 3 + k * 5) % FIRST.length] + ' ' + LAST[(i * 7 + (k ? 0 : 3)) % LAST.length]);
+    return { id: 'r' + d.id, erf, township, region: 'Khomas', regDiv: 'K', extent: (400 + (i * 173) % 2600).toLocaleString('en-US').replace(',', ' ') + ' m²',
+      tenure: i % 11 === 4 ? 'Leasehold' : 'Freehold', owners, docs: d.isDiagram ? 1 + (i % 2) : 2 + (i % 3), docIds: [d.id],
+      lastActivity: DAYS[i % DAYS.length], batch: d.batch! };
+  })
+];
 export const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 export const ROLE = { scan: 'Scan operator', rev: 'Metadata reviewer', rec: 'Records officer', sys: 'System' };
 export const hash = (s: string): string => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return ((h >>> 0).toString(16) + '00000000').slice(0, 8) + '…' + ((Math.imul(h, 31) >>> 0).toString(16) + '0000').slice(0, 4); };
