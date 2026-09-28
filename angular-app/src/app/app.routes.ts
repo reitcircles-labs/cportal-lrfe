@@ -1,4 +1,7 @@
 import { Routes } from '@angular/router';
+import { authGuard } from './state/auth.service';
+import { LoginComponent } from './features/login/login.component';
+import { DashboardComponent } from './features/dashboard/dashboard.component';
 import { FlowComponent } from './features/flow/flow.component';
 import { CaptureComponent } from './features/capture/capture.component';
 import { VerifyComponent } from './features/verify/verify.component';
@@ -6,10 +9,12 @@ import { LinkComponent } from './features/link/link.component';
 import { AuditComponent } from './features/audit/audit.component';
 
 export const routes: Routes = [
-  { path: '', component: FlowComponent, data: { role: 'Overview', user: '' } },
-  { path: 'capture', component: CaptureComponent, data: { role: 'Scan operator', user: 'K. Iipinge' } },
-  { path: 'verify', component: VerifyComponent, data: { role: 'Metadata reviewer', user: 'A. Mwandingi' } },
-  { path: 'link', component: LinkComponent, data: { role: 'Records officer', user: 'J. !Gawaseb' } },
-  { path: 'audit', component: AuditComponent, data: { role: 'Auditor · read-only', user: 'M. Nakale' } },
+  { path: 'login', component: LoginComponent },
+  { path: '', component: DashboardComponent, canActivate: [authGuard], data: { title: 'Dashboard', crumb: 'Deeds Registry · Windhoek' } },
+  { path: 'flow', component: FlowComponent, canActivate: [authGuard], data: { title: 'Process & metadata schema', crumb: 'Programme · Phase 1' } },
+  { path: 'capture', component: CaptureComponent, canActivate: [authGuard], data: { title: 'Capture · batch WDH-B017', crumb: 'Workspace · Scan station' } },
+  { path: 'verify', component: VerifyComponent, canActivate: [authGuard], data: { title: 'Verify metadata', crumb: 'Workspace · Review desk' } },
+  { path: 'link', component: LinkComponent, canActivate: [authGuard], data: { title: 'Link to ERP land record', crumb: 'Workspace · Records desk' } },
+  { path: 'audit', component: AuditComponent, canActivate: [authGuard], data: { title: 'Audit', crumb: 'Workspace · Read-only' } },
   { path: '**', redirectTo: '' }
 ];

@@ -96,22 +96,22 @@ const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
   `,
   styles: [`
     .dialog-backdrop { z-index: 50; padding: 24px; }
-    .frame { width: min(1180px, 100%); height: min(860px, calc(100vh - 48px)); background: var(--color-bg); box-shadow: var(--shadow-lg); display: grid; grid-template-rows: auto minmax(0, 1fr); }
+    .frame { width: min(1240px, 100%); height: min(880px, calc(100vh - 48px)); overflow: hidden; background: var(--color-surface); box-shadow: var(--shadow-lg); display: grid; grid-template-rows: auto minmax(0, 1fr); }
     .v-bar { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--color-divider); flex-wrap: wrap; }
     .ttl { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
     .v-bar { min-height: 56px; box-sizing: border-box; background: var(--color-bg); }
     .body { display: grid; grid-template-columns: 150px minmax(0, 1fr) 250px; min-height: 0; }
-    .strip { border-right: 1px solid var(--color-divider); overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 12px; }
+    .strip { background: var(--color-surface-2); border-right: 1px solid var(--color-divider); overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 12px; }
     .strip-ttl { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--color-neutral-700); border-bottom: 1px solid var(--color-divider); padding-bottom: 6px; }
     .grp { display: flex; flex-direction: column; gap: 6px; align-items: center; }
     .grp-ref { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--color-neutral-700); align-self: flex-start; }
     .grp-ref.on { color: var(--color-accent-800); }
     .pg { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-    .mini { width: 72px; height: 96px; background: var(--color-neutral-100); border: 1px solid var(--color-divider); box-sizing: border-box; padding: 9px 8px; display: flex; flex-direction: column; gap: 4px; }
-    .mini > span { height: 2px; background: var(--color-neutral-300); display: block; }
-    .mini > span.t { height: 3px; width: 60%; background: var(--color-neutral-500); align-self: center; margin-bottom: 4px; }
-    .mini.sel { border-color: var(--color-accent-700); outline: 1.5px solid var(--color-accent); outline-offset: 2px; }
-    .stage { overflow: auto; background: var(--color-neutral-200); padding: 28px; display: flex; align-items: flex-start; min-height: 0; }
+    .mini { width: 72px; height: 96px; background: var(--paper); border: 1px solid var(--paper-line); border-radius: 3px; box-sizing: border-box; padding: 9px 8px; display: flex; flex-direction: column; gap: 4px; }
+    .mini > span { height: 2px; background: var(--paper-line); display: block; }
+    .mini > span.t { height: 3px; width: 60%; background: var(--paper-mute); align-self: center; margin-bottom: 4px; }
+    .mini.sel { border-color: var(--color-accent); outline: 2px solid var(--color-accent); outline-offset: 2px; }
+    .stage { overflow: auto; background: var(--color-neutral-300); padding: 28px; display: flex; align-items: flex-start; min-height: 0; }
     .sheet-wrap { flex: none; margin: 0 auto; transform-origin: center top; transition: transform .2s; }
     .side { border-left: 1px solid var(--color-divider); overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 16px; }
     .actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }

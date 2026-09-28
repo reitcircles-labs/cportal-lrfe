@@ -1,4 +1,5 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { ToastService } from './toast.service';
 import { AuditEntry, FieldEdit, FieldStatus, LandDoc, LinkState, DocField } from '../data/models';
 import { DOCS, TOTAL, ROLE, hash, VIEWDOCS } from '../data/mock-data';
 
@@ -23,6 +24,7 @@ export class RegistryStore {
   readonly scanDone = computed(() => this.pages() >= TOTAL);
   private timer: any;
   private clock = 0;
+  private toast = inject(ToastService);
 
   // ---------- capture ----------
   gotPages(doc: LandDoc): number {
@@ -44,12 +46,15 @@ export class RegistryStore {
         this.pages.set(TOTAL);
         this.scanning.set(false);
         this.addLog('K. Iipinge', ROLE.scan, 'Captured', 'WDH-B017', TOTAL + ' pages → 3 instruments (' + (this.src() === 'hot' ? 'hot folder' : 'SC-02') + ')');
+        this.toast.show('success', 'Batch WDH-B017 captured', TOTAL + ' pages split into 3 instruments and sent to extraction.');
       } else this.pages.set(p);
     }, speed);
   }
   toggleRescan(doc: LandDoc, page: number) {
     const k = doc.id + page;
-    this.flaggedPages.update(f => ({ ...f, [k]: !f[k] }));
+    const on = !this.flaggedPages()[k];
+    this.flaggedPages.update(f => ({ ...f, [k]: on }));
+    this.toast.show(on ? 'warn' : 'info', on ? 'Page flagged for rescan' : 'Rescan flag removed', doc.ref + ' · page ' + (page + 1));
   }
 
   // ---------- verification ----------
@@ -70,6 +75,7 @@ export class RegistryStore {
     const edits = doc.fields.filter(f => this.fs()[doc.id]?.[f.k]?.status === 'edited').length;
     this.filed.update(f => ({ ...f, [doc.id]: true }));
     this.addLog('A. Mwandingi', ROLE.rev, 'Filed', doc.edrms, doc.ref + ' · ' + doc.fields.length + ' fields, ' + edits + ' corrected');
+    this.toast.show('success', doc.ref + ' filed to EDRMS', doc.edrms + ' · ' + edits + ' field(s) corrected');
   }
 
   // ---------- linking ----------
@@ -90,6 +96,7 @@ export class RegistryStore {
     (k === 'linked' ? this.linked : this.rejected).update(m => ({ ...m, [id]: true }));
     this.committed.set(false);
     this.addLog('J. !Gawaseb', ROLE.rec, k === 'linked' ? 'Linked' : 'Rejected', d.ref, k === 'linked' ? '→ Erf 1873, Klein Windhoek' : 'Returned to unmatched queue');
+    this.toast.show(k === 'linked' ? 'success' : 'warn', k === 'linked' ? d.ref + ' linked to Erf 1873' : d.ref + ' rejected', k === 'linked' ? 'Ownership and checks updated.' : 'Returned to the unmatched queue.');
   }
   readonly openSuggestions = computed(() => DOCS.filter(d => this.linkState(d.id) === 'suggested'));
   readonly pendingReview = computed(() => DOCS.filter(d => this.linkState(d.id) === 'pending'));
@@ -126,6 +133,7 @@ export class RegistryStore {
   readonly canCommit = computed(() => !this.committed() && this.openSuggestions().length === 0 && this.linkedCount() > 0 && !this.chainBreak() && !this.idInvalid());
   commit() {
     this.committed.set(true);
+    this.toast.show('success', 'Erf 1873 record v3 committed', 'Record is ready for tokenization.');
     this.addLog('J. !Gawaseb', ROLE.rec, 'Committed', 'Erf 1873 record v3', this.owners().map(o => o.name.split(' ')[0] + ' ' + o.frac).join(', '));
   }
 
@@ -136,6 +144,7 @@ export class RegistryStore {
   }
   audit(doc: LandDoc, kind: 'ok' | 'finding', edits: number) {
     this.audited.update(a => ({ ...a, [doc.id]: kind }));
+    this.toast.show(kind === 'ok' ? 'success' : 'warn', kind === 'ok' ? doc.ref + ' marked audited' : 'Finding raised on ' + doc.ref, 'Recorded in the audit trail.');
     this.addLog('M. Nakale', 'Auditor', kind === 'ok' ? 'Audited' : 'Finding', doc.ref,
       kind === 'ok' ? 'Image, metadata and hash reconciled' : edits ? edits + ' reviewer corrections require second check' : 'Metadata discrepancy noted');
   }

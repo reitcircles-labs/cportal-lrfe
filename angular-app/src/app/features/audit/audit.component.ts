@@ -5,6 +5,7 @@ import { RegistryStore } from '../../state/registry.store';
 import { ViewerService } from '../../state/viewer.service';
 import { DocPageComponent } from '../../shared/doc-page.component';
 import { IconComponent } from '../../shared/icon.component';
+import { ConfirmService } from '../../state/confirm.service';
 
 const ORDER = ['g1', 'g2', 'b', 'a', 'c'];
 const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outline', Filed: 'tag-accent', Linked: 'tag-accent', Committed: 'tag-accent', Rejected: 'tag-outline' };
@@ -74,8 +75,8 @@ const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outli
             <div class="row" style="padding-top:12px;border-top:1px solid var(--color-divider)">
               @if (store.audited()[d.id]; as a) { <span class="tag tag-accent" style="padding:8px 12px">{{ a === 'finding' ? 'Finding raised' : 'Audited' }} · Office of the Auditor-General</span> }
               @else {
-                <button class="btn btn-secondary" (click)="store.audit(d, 'finding', editCount())">Raise finding</button>
-                <button class="btn btn-primary" (click)="store.audit(d, 'ok', editCount())">Mark document audited</button>
+                <button class="btn btn-secondary" (click)="raise(d)">Raise finding</button>
+                <button class="btn btn-primary" (click)="signOff(d)">Mark document audited</button>
               }
               <button class="btn btn-ghost spacer" (click)="viewer.open('audit', d.id, 0)"><app-icon name="eye" [size]="15" />Open viewer</button>
             </div>
@@ -105,12 +106,12 @@ const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outli
     </div>
   `,
   styles: [`
-    .docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); border-top: 1px solid var(--color-divider); border-left: 1px solid var(--color-divider); }
-    .dcell { text-align: left; border: 0; border-right: 1px solid var(--color-divider); border-bottom: 1px solid var(--color-divider); border-top: 2px solid transparent; background: transparent; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+    .docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    .dcell { text-align: left; border: 1px solid var(--color-divider); border-top: 3px solid var(--color-divider); border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-sm); padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
     .dcell:hover:not(:disabled) { background: var(--color-accent-100); }
     .dcell.on { background: var(--color-accent-100); border-top-color: var(--color-accent); }
     .dcell:disabled { opacity: .45; cursor: not-allowed; }
-    .evidence { background: var(--color-neutral-200); border: 1px solid var(--color-divider); padding: 18px; cursor: zoom-in; display: block; width: 100%; }
+    .evidence { background: var(--color-neutral-200); border-radius: var(--radius-lg); border: 1px solid var(--color-divider); padding: 18px; cursor: zoom-in; display: block; width: 100%; }
     tr.edited { background: var(--color-accent-100); }
     .strike { text-decoration: line-through; color: var(--color-neutral-600); }
     .dtrail { border-left: 1px solid var(--color-divider); padding-left: 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -119,7 +120,14 @@ const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outli
 export class AuditComponent {
   store = inject(RegistryStore);
   viewer = inject(ViewerService);
+  private confirm = inject(ConfirmService);
   selId = signal('a');
+  async raise(d: LandDoc) {
+    if (await this.confirm.ask({ title: 'Raise a finding on ' + d.ref + '?', body: 'The records officer and registrar are notified. The document stays linked but is flagged until the finding is resolved.', confirmLabel: 'Raise finding', tone: 'danger' })) this.store.audit(d, 'finding', this.editCount());
+  }
+  async signOff(d: LandDoc) {
+    if (await this.confirm.ask({ title: 'Mark ' + d.ref + ' as audited?', body: 'You confirm the page image, verified metadata and file hash reconcile. Your sign-off is added to the audit trail.', confirmLabel: 'Mark audited' })) this.store.audit(d, 'ok', this.editCount());
+  }
   tag = TAG;
 
   private avail(d: LandDoc) { return d.isBase || !!this.store.filed()[d.id] || this.store.gotPages(d) === d.pages; }

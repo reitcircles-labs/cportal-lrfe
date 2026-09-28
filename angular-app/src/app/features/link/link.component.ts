@@ -5,6 +5,7 @@ import { LinkState } from '../../data/models';
 import { RegistryStore } from '../../state/registry.store';
 import { ViewerService } from '../../state/viewer.service';
 import { IconComponent } from '../../shared/icon.component';
+import { ConfirmService } from '../../state/confirm.service';
 
 const LABEL: Record<LinkState, [string, string]> = {
   base: ['Linked', 'tag-neutral'], linked: ['Linked', 'tag-accent'], suggested: ['Suggested', 'tag-outline'], pending: ['In review', 'tag-neutral'], rejected: ['Rejected', 'tag-neutral']
@@ -30,7 +31,7 @@ const LABEL: Record<LinkState, [string, string]> = {
             <label class="seg-opt"><input type="radio" name="lm" [checked]="mode() === 'queue'" (change)="mode.set('queue')">Match queue</label>
           </div>
           @if (store.committed()) { <span class="tag tag-accent" style="padding:8px 12px">Committed · ready for tokenization</span> }
-          <button class="btn btn-primary blueprint" style="padding:10px 18px;font-size:15px" [disabled]="!store.canCommit()" (click)="store.commit()"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>Commit record v3</button>
+          <button class="btn btn-primary blueprint" style="padding:10px 18px;font-size:15px" [disabled]="!store.canCommit()" (click)="commit()"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>Commit record v3</button>
         </div>
       </header>
 
@@ -56,7 +57,7 @@ const LABEL: Record<LinkState, [string, string]> = {
                   @if (e.st === 'suggested') {
                     <div class="row sugg-bar">
                       <div class="small" style="color:var(--color-neutral-800)"><strong style="color:var(--color-accent-800)">{{ e.match }} match</strong> · {{ e.reasons }}</div>
-                      <div class="row" style="gap:8px"><button class="btn btn-secondary" (click)="store.reject(e.id)">Not this erf</button><button class="btn btn-primary" (click)="store.link(e.id)">Link to record</button></div>
+                      <div class="row" style="gap:8px"><button class="btn btn-secondary" (click)="reject(e.id, e.ref)">Not this erf</button><button class="btn btn-primary" (click)="store.link(e.id)">Link to record</button></div>
                     </div>
                   }
                   @if (e.st === 'pending') { <div class="small muted" style="margin-top:8px">Still in metadata review — <a href="" (click)="$event.preventDefault(); router.navigate(['/verify'], { queryParams: { doc: e.id } })">verify now</a></div> }
@@ -105,7 +106,7 @@ const LABEL: Record<LinkState, [string, string]> = {
                       @if (first) {
                         <div class="row" style="gap:8px">
                           <button class="btn btn-ghost" (click)="viewer.open('record', 'g2', 0)"><app-icon name="eye" [size]="15" />Record docs</button>
-                          <button class="btn btn-secondary" (click)="store.reject(q.id)">Not a match</button>
+                          <button class="btn btn-secondary" (click)="reject(q.id, q.ref)">Not a match</button>
                           <button class="btn btn-primary" (click)="store.link(q.id)">Confirm link</button>
                         </div>
                       }
@@ -154,7 +155,7 @@ const LABEL: Record<LinkState, [string, string]> = {
     </div>
   `,
   styles: [`
-    .rec-head { display: flex; justify-content: space-between; align-items: end; gap: 20px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--color-divider); }
+    .rec-head { padding: 20px 22px; background: var(--color-surface); border: 1px solid var(--color-divider) !important; border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: flex; justify-content: space-between; align-items: end; gap: 20px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--color-divider); }
     .ev { display: grid; grid-template-columns: 84px 20px minmax(0, 1fr); gap: 0 10px; }
     .when { padding-top: 12px; text-align: right; }
     .spine { display: flex; flex-direction: column; align-items: center; }
@@ -163,14 +164,15 @@ const LABEL: Record<LinkState, [string, string]> = {
     .spine b.fill { background: var(--color-accent-700); }
     .evcard { padding: 11px 14px; margin: 6px 0 10px; }
     .evcard.dashed { border-style: dashed; }
-    .evcard.sugg { background: var(--color-accent-100); }
+    .evcard.sugg { background: var(--color-accent-100); border-color: var(--color-accent-300); }
+    .spine b { border-radius: 50%; transform: none !important; }
     .sugg-bar { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--color-divider); justify-content: space-between; }
     .mq { display: flex; flex-wrap: wrap; gap: 20px; min-width: 0; align-items: flex-start; }
-    .qitem { text-align: left; border: 1px solid var(--color-divider); border-left: 2px solid transparent; background: transparent; padding: 9px 11px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+    .qitem { text-align: left; border: 1px solid var(--color-divider); border-left: 3px solid transparent; border-radius: 10px; background: var(--color-surface); padding: 9px 11px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
     .qitem:hover { background: var(--color-accent-100); }
     .qitem.on { background: var(--color-accent-100); border-left-color: var(--color-accent); }
-    .preview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); border: 1px solid var(--color-divider); }
-    .pv { background: var(--color-neutral-200); padding: 14px; cursor: zoom-in; display: flex; flex-direction: column; gap: 8px; }
+    .preview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); border: 1px solid var(--color-divider); border-radius: var(--radius-lg); overflow: hidden; background: var(--color-surface); }
+    .pv { background: var(--color-neutral-200); color: var(--paper-ink); padding: 14px; cursor: zoom-in; display: flex; flex-direction: column; gap: 8px; }
     .pv-sheet { display: block; padding: 16px 18px; height: 200px; overflow: hidden; position: relative; }
     .pv-hdr { display: block; text-align: center; font-size: 8px; letter-spacing: .18em; color: var(--color-neutral-700); }
     .pv-ttl { display: block; text-align: center; font-family: var(--font-heading); font-weight: 600; font-size: 15px; text-transform: uppercase; margin: 4px 0 8px; }
@@ -179,9 +181,10 @@ const LABEL: Record<LinkState, [string, string]> = {
     .cand { padding: 14px 16px; }
     .cand.top { background: var(--color-accent-100); }
     .cand-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 14px; align-items: center; }
-    .score { font-size: 30px; line-height: 1; color: var(--color-accent-800); }
+    .score { font-size: 26px; font-weight: 800; line-height: 1; color: var(--color-accent-600); width: 58px; height: 58px; border-radius: 12px; display: grid; place-items: center; background: var(--color-accent-100); }
+    .cand.top .score { background: var(--color-surface); }
     .empty { padding: 28px; text-align: center; font-size: 14px; color: var(--color-neutral-700); border-style: dashed; }
-    .check { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--color-divider); }
+    .check { align-items: center; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--color-divider); }
     @media (max-width: 700px) { .cand-row { grid-template-columns: 1fr; } }
   `]
 })
@@ -189,6 +192,7 @@ export class LinkComponent {
   store = inject(RegistryStore);
   viewer = inject(ViewerService);
   router = inject(Router);
+  private confirm = inject(ConfirmService);
   mode = signal<'timeline' | 'queue'>('timeline');
   qsel = signal<string | null>(null);
   base = BASE;
@@ -214,6 +218,13 @@ export class LinkComponent {
     return q.paras.slice(0, 3).map(p => p.map(s => { const f = q.fields.find(x => x.k === s); return f ? this.store.value(q, f) : s; }).join(''));
   });
   previewKeys = computed(() => (this.qdoc()?.fields || []).filter(f => ['property', 'regDiv', 'priorTitle', 'transferor', 'tee1', 'tee2', 'share', 'extent', 'sgNo'].includes(f.k)));
+  async commit() {
+    const owners = this.store.owners().map(o => o.name + ' ' + o.frac).join(', ');
+    if (await this.confirm.ask({ title: 'Commit Erf 1873 as version 3?', body: 'Registered owners will be ' + owners + '. The committed version becomes the basis for tokenization and cannot be edited, only superseded.', confirmLabel: 'Commit record' })) this.store.commit();
+  }
+  async reject(id: string, ref: string) {
+    if (await this.confirm.ask({ title: 'Reject ' + ref + ' for Erf 1873?', body: 'The document returns to the unmatched queue for another records officer to place.', confirmLabel: 'Reject match', tone: 'danger' })) this.store.reject(id);
+  }
   pickQueue(id: string) {
     const st = this.store.linkState(id);
     if (st === 'suggested') this.qsel.set(id);
