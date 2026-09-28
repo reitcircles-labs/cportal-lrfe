@@ -26,7 +26,7 @@ Government-enterprise theme (`src/styles/theme.css`): white cards on a light gre
 | `#/` | Registrar / all | Dashboard: KPIs, batch pipeline, tokenization readiness, 7-day throughput, queue by batch, recent activity |
 | `#/capture` | Scan operator | Live scanner or hot folder; pages stream in; click any page to open the viewer |
 | `#/verify` | Metadata reviewer | Review queue (search, filter, sort, batches) + side-by-side or field-focus verification |
-| `#/link` | Records officer | Chain timeline or match queue; owners, validation, commit (with confirmation) |
+| `#/link` | Records officer | **Land record (create/finalize)**: browse and search all land records, create a new record, see every linked document (view / remove), search the EDRMS and add documents (parcel matches ranked first), chain of title, comment thread, owners and record checks, finalize (with confirmation) |
 | `#/audit` | Auditor | Evidence per document, provenance, integrity, findings/sign-off (with confirmation), full trail |
 | `#/flow` | Programme | Swim-lane process map and metadata schema (Namibia ↔ ERP ↔ NL Kadaster) |
 

@@ -1,6 +1,6 @@
 import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { DOCS, VIEWDOCS, NEW, hash } from '../data/mock-data';
+import { DOCS, VIEWDOCS, NEW, hash, docYear } from '../data/mock-data';
 import { LandDoc } from '../data/models';
 import { RegistryStore } from '../state/registry.store';
 import { ViewerService } from '../state/viewer.service';
@@ -79,13 +79,12 @@ const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
                   <button class="btn btn-secondary" (click)="store.toggleRescan(d, page())">Flag page for rescan</button>
                   <button class="btn btn-primary" [disabled]="got() < d.pages" (click)="openReview(d)">Open in review →</button>
                 }
-                @if (ctx() === 'record' && linkState() === 'suggested') {
-                  <div class="small" style="border-top:1px dashed var(--color-divider);padding-top:10px">{{ matchText(d) }}</div>
-                  <button class="btn btn-secondary" (click)="store.reject(d.id)">Not this erf</button>
-                  <button class="btn btn-primary" (click)="store.link(d.id)">Link to Erf 1873</button>
+                @if (ctx() === 'record' && rec()) {
+                  <button class="btn btn-secondary" (click)="removeFromRecord(d.id)">Remove from {{ rec()!.erf }}</button>
                 }
-                @if (ctx() === 'record' && (linkState() === 'linked' || linkState() === 'rejected')) {
-                  <button class="btn btn-secondary" (click)="store.undo(d.id)">Undo {{ linkState() === 'linked' ? 'link' : 'rejection' }}</button>
+                @if (ctx() === 'pool' && rec()) {
+                  @if (matchText(d)) { <div class="small" style="border-top:1px dashed var(--color-divider);padding-top:10px">{{ matchText(d) }}</div> }
+                  <button class="btn btn-primary" [disabled]="!store.isFiled(d)" (click)="addToRecord(d.id)">Add to {{ rec()!.erf }}</button>
                 }
               </div>
             </aside>
@@ -132,12 +131,13 @@ export class ViewerComponent {
     const store = this.store;
     let docs: LandDoc[];
     if (s.ctx === 'batch') docs = DOCS.filter(d => store.gotPages(d) > 0);
+    else if (s.ctx === 'pool') docs = [store.doc(s.docId)!].filter(Boolean);
+    else if (s.ctx === 'record') docs = store.recordDocIds(s.recordId || 'erf1873').map(id => store.doc(id)!).filter(Boolean).sort((a, b) => docYear(a).localeCompare(docYear(b)));
     else docs = RECORD_ORDER.map(id => VIEWDOCS.find(v => v.id === id)!)
-      .filter(d => d.isBase || store.filed()[d.id] || (s.ctx === 'audit' && store.gotPages(d) === d.pages));
+      .filter(d => d.isBase || store.filed()[d.id] || store.gotPages(d) === d.pages);
     return docs.map(doc => {
       const got = s.ctx === 'batch' ? store.gotPages(doc) : doc.pages;
-      const ls = store.linkState(doc.id);
-      return { doc, got, pageList: Array.from({ length: got }, (_, i) => i), suffix: s.ctx === 'record' && !doc.isBase ? ' · ' + ls : '' };
+      return { doc, got, pageList: Array.from({ length: got }, (_, i) => i), suffix: s.ctx === 'record' ? ' · ' + docYear(doc) : '' };
     });
   });
   doc = computed(() => {
@@ -150,15 +150,19 @@ export class ViewerComponent {
   flat = computed(() => this.avail().flatMap(x => x.pageList.map(p => [x.doc.id, p] as [string, number])));
   flatIndex = computed(() => this.flat().findIndex(([id, p]) => id === this.doc()?.id && p === this.page()));
   linkState = computed(() => this.doc() ? this.store.linkState(this.doc()!.id) : 'pending');
-  stripTitle = computed(() => this.ctx() === 'audit' ? 'Erf 1873 · audit evidence' : this.ctx() === 'record' ? 'Erf 1873 · record documents' : 'Batch WDH-B017');
+  rec = computed(() => this.store.record(this.vs.state()?.recordId || 'erf1873'));
+  stripTitle = computed(() => this.ctx() === 'audit' ? 'Erf 1873 · audit evidence' : this.ctx() === 'record' ? (this.rec()?.erf || '') + ' · linked documents' : this.ctx() === 'pool' ? 'EDRMS search result' : 'Batch WDH-B017');
   fileName = computed(() => {
     const d = this.doc()!;
-    return d.isBase ? 'PILOT-2025_' + d.ref.replace(/\W+/g, '') + '.pdf' : 'WDH-B017_' + String(DOCS.indexOf(d) + 1).padStart(4, '0') + (d.isDiagram ? '.tif' : '.pdf');
+    const ext = d.isDiagram ? '.tif' : '.pdf';
+    return d.isBase ? 'PILOT-2025_' + d.ref.replace(/\W+/g, '') + '.pdf' : DOCS.includes(d) ? 'WDH-B017_' + String(DOCS.indexOf(d) + 1).padStart(4, '0') + ext : (d.batch || 'EDRMS') + '_' + d.id.toUpperCase() + ext;
   });
   statusLabel = computed(() => {
     const d = this.doc()!;
     if (this.ctx() === 'batch') return this.store.filed()[d.id] ? 'Filed' : this.got() < d.pages ? 'Receiving' : 'Ingested · awaiting review';
-    return ({ base: 'Linked · record v2', linked: 'Linked to Erf 1873', rejected: 'Rejected', suggested: 'Suggested for Erf 1873', pending: 'In review' } as any)[this.linkState()];
+    if (this.ctx() === 'record') return 'Linked to ' + (this.rec()?.erf || 'record');
+    if (this.ctx() === 'pool') return this.store.isFiled(d) ? 'Filed · not linked' : 'In metadata review';
+    return this.store.isFiled(d) ? 'Filed' : 'In review';
   });
   statusTag = computed(() => {
     const s = this.statusLabel();
@@ -170,7 +174,7 @@ export class ViewerComponent {
       { k: 'Source', v: d.isBase ? 'Pilot back-scan 2025 · Vault 1' : this.store.src() === 'hot' ? '\\\\wdh-deeds\\scan\\hot\\B017\\' + this.fileName() : 'SC-02 · patch-code split' },
       { k: 'Format', v: d.isDiagram ? 'TIFF · 600 dpi' : 'PDF/A-2b · 300 dpi' },
       { k: 'Pages', v: this.got() + ' of ' + d.pages },
-      { k: 'Batch', v: d.isBase ? 'PILOT-2025' : 'WDH-B017' },
+      { k: 'Batch', v: d.isBase ? 'PILOT-2025' : d.batch || 'WDH-B017' },
       { k: 'EDRMS ID', v: this.store.isFiled(d) ? d.edrms : 'Assigned on filing' },
       { k: 'SHA-256', v: hash(d.ref + 'file') }
     ];
@@ -182,6 +186,8 @@ export class ViewerComponent {
     const t = this.flat()[this.flatIndex() + dir];
     if (t) { this.vs.go(t[0], t[1]); this.rot.set(0); }
   }
+  removeFromRecord(id: string) { const r = this.rec(); if (r) { this.store.removeDocFromRecord(r.id, id); if (!this.avail().length) this.vs.close(); } }
+  addToRecord(id: string) { const r = this.rec(); if (r) { this.store.addDocToRecord(r.id, id); this.vs.open('record', id, 0, r.id); } }
   matchText(d: LandDoc) { const n = NEW[d.id]; return n ? n.match + ' match · ' + n.reasons : ''; }
   openReview(d: LandDoc) { this.vs.close(); this.router.navigate(['/verify'], { queryParams: { doc: d.id } }); }
 

@@ -154,8 +154,8 @@ const LAST = ['Amupanda', 'Kavari', 'Nangolo', 'van der Merwe', 'Shikongo', 'Hoa
 const DAYS = ['28 Sep 2026', '27 Sep 2026', '26 Sep 2026', '25 Sep 2026', '24 Sep 2026', '23 Sep 2026', '21 Sep 2026', '18 Sep 2026'];
 export const LAND_RECORDS: LandRecordRow[] = [
   { id: 'erf1873', erf: 'Erf 1873', township: 'Klein Windhoek', region: 'Khomas', regDiv: 'K', extent: '1 214 m²', tenure: 'Freehold',
-    owners: [], docs: 5, docIds: ['a', 'b', 'c'], lastActivity: '28 Sep 2026', batch: 'WDH-B017', live: true },
-  ...SYN.map((d, i) => {
+    owners: [], docs: 5, docIds: ['g1', 'g2'], lastActivity: '28 Sep 2026', batch: 'WDH-B017', live: true },
+  ...SYN.filter((d, i) => i % 7 !== 5).map((d, i) => {
     const prop = d.fields.find(f => f.k === 'property')!.v;
     const [erf, township] = prop.split(', ');
     const n = 1 + (i % 3);
@@ -205,3 +205,14 @@ export function flowModel() {
     .map(([n, label, screen, route]) => ({ n, label, screen, route }));
   return { stages, lanes, schema };
 }
+
+/** Every document held in the EDRMS for this demo (batch instruments, pilot back-scan, other batches). */
+export const ALL_DOCS: LandDoc[] = [...VIEWDOCS, ...SYN];
+export const docYear = (d: LandDoc): string => d.iso ? d.iso.slice(0, 4) : (d.ref.match(/\/(\d{4})/) || [])[1] || '—';
+export const docSummary = (d: LandDoc): string => {
+  if (NEW[d.id]) return NEW[d.id].summary;
+  const f = (k: string) => d.fields.find(x => x.k === k)?.v;
+  if (d.isDiagram) return 'Survey diagram · ' + (f('extent') || '') + ' · beacons ' + (f('beacons') || '');
+  if (f('tee1')) return (f('transferor') || 'State') + ' → ' + f('tee1') + (f('tee2') ? ' & ' + f('tee2') : '') + (f('share') ? ' · ' + f('share') : '');
+  return d.type;
+};

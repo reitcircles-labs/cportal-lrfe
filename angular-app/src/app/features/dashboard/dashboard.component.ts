@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { BATCHES, DOCS, QUEUE, TOTAL, LAND_RECORDS, LandRecordRow } from '../../data/mock-data';
+import { BATCHES, DOCS, QUEUE, TOTAL } from '../../data/mock-data';
 import { ViewerService } from '../../state/viewer.service';
 import { RegistryStore } from '../../state/registry.store';
 import { AuthService } from '../../state/auth.service';
@@ -75,7 +75,7 @@ const WEEK = [
                   <td><div class="stack" style="gap:3px"><span class="tag" [class]="'tag ' + r.tag"><span class="d" [class]="'d ' + r.st"></span>{{ r.label }}</span><span class="small muted">{{ r.detail }}</span></div></td>
                   <td class="small muted num" style="white-space:nowrap">{{ r.lastActivity }}</td>
                   <td style="text-align:right;white-space:nowrap" (click)="$event.stopPropagation()">
-                    @if (r.live) { <button class="btn btn-ghost btn-icon" title="View documents" (click)="viewer.open('record', 'g1', 0)"><app-icon name="eye" [size]="17" /></button> }
+                    @if (r.docs) { <button class="btn btn-ghost btn-icon" title="View documents" (click)="viewDocs(r.id)"><app-icon name="eye" [size]="17" /></button> }
                     <button class="btn btn-secondary" (click)="open(r)">{{ r.action }}</button>
                   </td>
                 </tr>
@@ -248,30 +248,7 @@ export class DashboardComponent {
   page = signal(0);
   readonly perPage = 10;
 
-  records = computed(() => {
-    this.store.fs(); this.store.filed(); this.store.committed(); this.store.pages();
-    return LAND_RECORDS.map(r => {
-      let st: 'scanned' | 'verified' | 'finalized', detail: string, owners = r.owners;
-      if (r.live) {
-        owners = this.store.owners().map(o => o.name + ' · ' + o.frac);
-        const filed = DOCS.filter(d => this.store.filed()[d.id]).length;
-        st = this.store.committed() ? 'finalized' : filed === DOCS.length ? 'verified' : 'scanned';
-        detail = st === 'finalized' ? 'Record v3 committed · tokenization-ready'
-          : st === 'verified' ? this.store.openSuggestions().length + ' link suggestion(s) awaiting records review'
-          : this.store.pages() < TOTAL ? 'Capture in progress · ' + this.store.pages() + '/' + TOTAL + ' pages' : filed + ' of ' + DOCS.length + ' documents verified';
-      } else {
-        const d = QUEUE.find(x => x.id === r.docIds[0])!;
-        const finalized = d.batch === 'WDH-B014';
-        st = finalized ? 'finalized' : this.store.isFiled(d) ? 'verified' : 'scanned';
-        detail = st === 'finalized' ? 'Committed · tokenization-ready' : st === 'verified' ? 'Metadata verified · ready for review'
-          : this.store.reviewedCount(d) + ' of ' + d.fields.length + ' fields reviewed';
-      }
-      const label = st === 'finalized' ? 'Finalized' : st === 'verified' ? 'Verified · ready for review' : 'Scanned';
-      const tag = st === 'finalized' ? 'tag-accent' : st === 'verified' ? 'tag-info' : 'tag-neutral';
-      const action = r.live ? (st === 'scanned' ? 'Continue' : 'Open record') : st === 'scanned' ? 'Review' : 'Open';
-      return { ...r, ownerList: owners, st, label, tag, detail, action };
-    });
-  });
+  records = computed(() => this.store.recordRows());
   counts = computed(() => {
     const r = this.records();
     return { all: r.length, scanned: r.filter(x => x.st === 'scanned').length, verified: r.filter(x => x.st === 'verified').length, finalized: r.filter(x => x.st === 'finalized').length };
@@ -292,10 +269,9 @@ export class DashboardComponent {
   pages = computed(() => Math.max(1, Math.ceil(this.filtered().length / this.perPage)));
   pageRows = computed(() => this.filtered().slice(this.page() * this.perPage, (this.page() + 1) * this.perPage));
   rangeLabel = computed(() => { const n = this.filtered().length; if (!n) return '0'; const a = this.page() * this.perPage + 1; return a + '–' + Math.min(n, a + this.perPage - 1); });
-  open(r: LandRecordRow & { st: string }) {
-    if (r.live) this.router.navigate([r.st === 'scanned' ? (this.store.scanDone() ? '/verify' : '/capture') : '/link']);
-    else this.router.navigate(['/verify'], { queryParams: { doc: r.docIds[0] } });
-  }
+  viewDocs(id: string) { const ids = this.store.recordDocIds(id); if (ids.length) this.viewer.open('record', ids[0], 0, id); }
+  open(r: { id: string }) { this.router.navigate(['/link'], { queryParams: { record: r.id } }); }
+
 
   auth = inject(AuthService);
   Math = Math;
@@ -312,7 +288,7 @@ export class DashboardComponent {
       { label: 'Pages captured · WDH-B017', value: this.store.pages() + ' / ' + TOTAL, delta: this.store.scanDone() ? 'Batch complete' : 'Scanner SC-02 ready', up: this.store.scanDone(), icon: 'scan', tone: 'info', link: '/capture' },
       { label: 'Documents awaiting review', value: String(open.length), delta: 'across ' + BATCHES.length + ' batches', up: false, icon: 'inbox', tone: 'info', link: '/verify' },
       { label: 'Low-confidence fields', value: String(low), delta: 'below ' + Math.round(th * 100) + '% threshold', up: false, icon: 'alert', tone: 'warn', link: '/verify' },
-      { label: 'Records ready to tokenize', value: this.store.committed() ? '1' : '0', delta: this.store.committed() ? 'Erf 1873 committed v3' : this.store.openSuggestions().length + ' link suggestions open', up: this.store.committed(), icon: 'token', tone: 'ok', link: '/link' }
+      { label: 'Records finalized', value: String(this.store.recordRows().filter(r => r.st === 'finalized').length), delta: 'of ' + this.store.recordRows().length + ' land records · tokenization-ready', up: true, icon: 'token', tone: 'ok', link: '/link' }
     ];
   });
   pipeline = computed(() => {

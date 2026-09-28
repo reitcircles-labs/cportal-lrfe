@@ -14,7 +14,7 @@ export const routes: Routes = [
   { path: 'flow', component: FlowComponent, canActivate: [authGuard], data: { title: 'Process & metadata schema', crumb: 'Programme · Phase 1' } },
   { path: 'capture', component: CaptureComponent, canActivate: [authGuard], data: { title: 'Capture · batch WDH-B017', crumb: 'Workspace · Scan station' } },
   { path: 'verify', component: VerifyComponent, canActivate: [authGuard], data: { title: 'Verify metadata', crumb: 'Workspace · Review desk' } },
-  { path: 'link', component: LinkComponent, canActivate: [authGuard], data: { title: 'Link to ERP land record', crumb: 'Workspace · Records desk' } },
+  { path: 'link', component: LinkComponent, canActivate: [authGuard], data: { title: 'Land record (create/finalize)', crumb: 'Workspace · Records desk' } },
   { path: 'audit', component: AuditComponent, canActivate: [authGuard], data: { title: 'Audit', crumb: 'Workspace · Read-only' } },
   { path: '**', redirectTo: '' }
 ];

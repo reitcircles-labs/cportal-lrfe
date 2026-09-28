@@ -151,7 +151,7 @@ export class AppComponent {
       { path: '/', label: 'Dashboard', icon: 'home', badge: 0, mine: false },
       { path: '/capture', label: 'Capture', icon: 'scan', badge: this.store.scanDone() ? 0 : 1, mine: role === 'scan' },
       { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: open, mine: role === 'rev' },
-      { path: '/link', label: 'Link to ERP', icon: 'link', badge: sugg, mine: role === 'rec' },
+      { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: sugg, mine: role === 'rec' },
       { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud' }
     ];
   });

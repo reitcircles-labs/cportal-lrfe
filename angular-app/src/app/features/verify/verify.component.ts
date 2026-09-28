@@ -159,8 +159,8 @@ type QFilter = 'open' | 'filed' | 'all';
 
         @if (batchFiled()) {
           <div class="blueprint row" style="padding:12px 14px;justify-content:space-between"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-            <span style="font-size:13px">Batch WDH-B017 filed — all 3 instruments for Erf 1873 are in the EDRMS. Next: link them into the erf record.</span>
-            <button class="btn btn-primary" (click)="router.navigate(['/link'])">Open linking →</button>
+            <span style="font-size:13px">Batch WDH-B017 filed — all 3 instruments for Erf 1873 are in the EDRMS. Next: review and finalize the land record.</span>
+            <button class="btn btn-primary" (click)="router.navigate(['/link'], { queryParams: { record: 'erf1873' } })">Open land record →</button>
           </div>
         }
       </section>

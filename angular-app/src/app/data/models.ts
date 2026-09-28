@@ -1,6 +1,6 @@
 export type FieldStatus = 'pending' | 'accepted' | 'edited';
 export type LinkState = 'base' | 'linked' | 'suggested' | 'pending' | 'rejected';
-export type ViewerCtx = 'batch' | 'record' | 'audit';
+export type ViewerCtx = 'batch' | 'record' | 'audit' | 'pool';
 
 export interface DocField { k: string; label: string; v: string; c?: number; }
 
