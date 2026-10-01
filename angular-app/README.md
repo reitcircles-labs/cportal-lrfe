@@ -1,6 +1,6 @@
 # cportal-lrfe — Land records intake (frontend demo)
 
-Angular 18 demo of Phase 1 of the national land-tokenization programme: scanned deeds go into an **EDRMS** as documents of record, reviewers verify the extracted metadata, and records officers link the documents into **ERP** land records (one record per erf or farm portion). An auditor can inspect every document, its metadata and its history.
+Angular 22 demo of Phase 1 of the national land-tokenization programme: scanned deeds go into an **EDRMS** as documents of record, reviewers verify the extracted metadata, and records officers link the documents into **ERP** land records (one record per erf or farm portion). An auditor can inspect every document, its metadata and its history.
 
 The data is local mock data for Namibia (Deeds Registries Act 14 of 2015 conventions, with the Dutch Kadaster used as a reference). All names, ID numbers and deed references are fictitious.
 
@@ -12,7 +12,7 @@ npm start          # http://localhost:4200
 npm run build      # production build in dist/cportal-lrfe
 ```
 
-Requires Node 18.19+ or 20+.
+Requires Node 22.22+ or 24.15+ (Angular 22).
 
 ## Running against the backend (localhost)
 
