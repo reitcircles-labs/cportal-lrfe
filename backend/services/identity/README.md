@@ -41,9 +41,38 @@ get that password (existing users are never changed). For example `p.hamutenya@d
 (reviewer). The full list is in `src/seed.js`. They are fictitious and share one password, so
 never enable them where real staff can sign in.
 
-**MFA** is required by default: at the first sign-in you scan a QR code with an authenticator
-app (Google Authenticator, Authy, 1Password), and every sign-in after that asks for its 6-digit
-code.
+## Setting up MFA (the 6-digit code)
+
+MFA is required by default (**Admin → Security policies**). Nobody generates codes for users:
+each user links an authenticator app to their account once, at their first sign-in, and the app
+produces the codes from then on.
+
+1. Sign in with email and password (invited users: after accepting the invitation).
+2. The screen shows **"Set up your authenticator"** with a **setup key** (letters in groups of four).
+3. In an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, Authy,
+   1Password): **Add account → Enter a setup key**, type the key, choose **time-based** if asked.
+   On the phone itself, **"Open in an authenticator app on this device"** does this in one tap.
+   (There is no QR code yet.)
+4. Type the 6-digit code the app shows (it changes every 30 seconds). You are signed in.
+5. Every later sign-in asks for the app's current code.
+
+**Lost phone:** an administrator opens **Users → the user → Reset MFA**; the user sets up the app
+again at their next sign-in. For the only administrator, see below.
+
+**Local development only:** MFA can be switched off under Admin → Security policies.
+
+## The admin cannot sign in
+
+The password in `.env` does not work (it was changed after the admin was created), or the
+authenticator from the admin's first sign-in is lost. From `backend/`:
+
+```bash
+npm run reset-password -- admin@deeds.gov.na --from-env --reset-mfa
+```
+
+This sets the admin's password to `BOOTSTRAP_ADMIN_PASSWORD` and clears the old authenticator.
+Then sign in with that password and set up MFA as above. If the authenticator still works and
+only the password is wrong, leave out `--reset-mfa`.
 
 ## Resetting a password (and MFA) from the command line
 
@@ -54,6 +83,7 @@ authenticator is lost. Run from `backend/`:
 npm run reset-password -- admin@deeds.gov.na                # asks for the new password twice (hidden)
 npm run reset-password -- admin@deeds.gov.na --from-env     # uses BOOTSTRAP_ADMIN_PASSWORD from .env
 npm run reset-password -- admin@deeds.gov.na --reset-mfa    # also re-enrol the authenticator
+npm run reset-password -- admin@deeds.gov.na --from-env --reset-mfa   # both: the usual admin fix
 ```
 
 (From any directory: `npm run reset-password -w @lrfe/identity -- <email> [options]`. Without a
@@ -64,8 +94,8 @@ running. It:
 
 - sets the new password (at least 12 characters, as in the app);
 - ends the user's open sessions;
-- with `--reset-mfa`, clears the enrolled authenticator, so the user scans a new QR code at the
-  next sign-in;
+- with `--reset-mfa`, clears the enrolled authenticator, so the user is shown a new setup key at
+  the next sign-in;
 - records "Password reset" (and "MFA reset") in the access log, by "System (command line)".
 
 It does not change the user's status or roles. It warns when the user still cannot sign in
