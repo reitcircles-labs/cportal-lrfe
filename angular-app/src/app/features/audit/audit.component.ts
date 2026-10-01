@@ -14,10 +14,9 @@ const ORDER = ['g1', 'g2', 'b', 'a', 'c'];
 const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outline', Filed: 'tag-accent', Linked: 'tag-accent', Committed: 'tag-accent', Rejected: 'tag-outline' };
 
 @Component({
-  selector: 'app-audit',
-  standalone: true,
-  imports: [DocPageComponent, IconComponent, CanDirective],
-  template: `
+    selector: 'app-audit',
+    imports: [DocPageComponent, IconComponent, CanDirective],
+    template: `
     <div class="page stack" style="gap:22px">
       <header class="row" style="justify-content:space-between;align-items:end">
         <div><div class="card-kicker">Read-only</div><h1 style="margin:4px 0 0;font-size:38px">Audit · Erf 1873, Klein Windhoek</h1></div>
@@ -108,7 +107,7 @@ const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outli
       </section>
     </div>
   `,
-  styles: [`
+    styles: [`
     .docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
     .dcell { text-align: left; border: 1px solid var(--color-divider); border-top: 3px solid var(--color-divider); border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-sm); padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
     .dcell:hover:not(:disabled) { background: var(--color-accent-100); }

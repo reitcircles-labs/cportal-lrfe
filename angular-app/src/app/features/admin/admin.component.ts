@@ -12,10 +12,9 @@ const KIND: Record<AccessKind, [string, string]> = {
 const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk', 'Records desk', 'Keetmanshoop sub-registry', 'Office of the Auditor-General', 'ICT · Deeds Registry'];
 
 @Component({
-  selector: 'app-admin',
-  standalone: true,
-  imports: [IconComponent, RouterLink, RouterLinkActive],
-  template: `
+    selector: 'app-admin',
+    imports: [IconComponent, RouterLink, RouterLinkActive],
+    template: `
     <div class="page stack" style="gap:20px">
       <nav class="tabs" aria-label="Administration">
         @for (t of visibleTabs(); track t.id) { <a [routerLink]="t.path" routerLinkActive="on">{{ t.label }}</a> }
@@ -251,7 +250,7 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
       </div>
     }
   `,
-  styles: [`
+    styles: [`
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-divider); flex-wrap: wrap; }
     .tabs a { padding: 10px 14px; font-weight: 600; font-size: 14px; color: var(--color-neutral-700); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
     .tabs a:hover { color: var(--color-text); }

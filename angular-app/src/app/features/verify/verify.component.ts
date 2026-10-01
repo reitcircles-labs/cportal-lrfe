@@ -22,10 +22,9 @@ const LINK_MAX_AGE_MS = 240_000;
  * so two reviewers do not work on the same one; the claim is released on leaving it.
  */
 @Component({
-  selector: 'app-verify',
-  standalone: true,
-  imports: [IconComponent, CanDirective],
-  template: `
+    selector: 'app-verify',
+    imports: [IconComponent, CanDirective],
+    template: `
     <div class="shell" [class.collapsed]="!railOpen()">
       @if (railOpen()) {
         <aside class="rail">
@@ -211,7 +210,7 @@ const LINK_MAX_AGE_MS = 240_000;
       </div>
     }
   `,
-  styles: [`
+    styles: [`
     .shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; max-width: 1560px; margin: 0 auto; }
     .shell.collapsed { grid-template-columns: 44px minmax(0, 1fr); }
     .rail { border-right: 1px solid var(--color-divider); background: var(--color-surface); display: flex; flex-direction: column; position: sticky; top: var(--topbar-h); height: calc(100vh - var(--topbar-h)); }

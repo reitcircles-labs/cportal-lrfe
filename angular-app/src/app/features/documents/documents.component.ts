@@ -23,10 +23,9 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
  * "Request correction", which starts the four-eyes document-amendment process (bpm).
  */
 @Component({
-  selector: 'app-documents',
-  standalone: true,
-  imports: [IconComponent, CanDirective],
-  template: `
+    selector: 'app-documents',
+    imports: [IconComponent, CanDirective],
+    template: `
     <div class="shell">
       <aside class="rail">
         <div class="rail-head">
@@ -145,7 +144,7 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
       </div>
     }
   `,
-  styles: [`
+    styles: [`
     .shell { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: start; max-width: 1560px; margin: 0 auto; }
     .rail { border-right: 1px solid var(--color-divider); background: var(--color-surface); display: flex; flex-direction: column; position: sticky; top: var(--topbar-h); height: calc(100vh - var(--topbar-h)); }
     .rail-head { padding: 14px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--color-divider); }

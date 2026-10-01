@@ -7,10 +7,9 @@ const MIN_LENGTH = 12;
 
 /** #/invite?token=… — the link from an invitation: choose a password, then sign in (and enrol MFA). */
 @Component({
-  selector: 'app-invite',
-  standalone: true,
-  imports: [IconComponent, RouterLink],
-  template: `
+    selector: 'app-invite',
+    imports: [IconComponent, RouterLink],
+    template: `
     <div class="wrap">
       <form class="card" (submit)="$event.preventDefault(); submit()">
         <div class="flag" aria-hidden="true"></div>
@@ -32,7 +31,7 @@ const MIN_LENGTH = 12;
       </form>
     </div>
   `,
-  styles: [`
+    styles: [`
     .wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--color-bg); }
     .card { width: min(440px, 100%); padding: 0 32px 28px; gap: 16px; box-shadow: var(--shadow-md); overflow: hidden; }
     .flag { height: 6px; margin: 0 -32px 8px; background: linear-gradient(100deg, var(--nam-blue) 0 38%, #fff 38% 41%, var(--nam-red) 41% 59%, #fff 59% 62%, var(--nam-green) 62% 100%); }

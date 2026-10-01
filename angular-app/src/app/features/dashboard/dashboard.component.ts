@@ -13,10 +13,9 @@ const WEEK = [
 ];
 
 @Component({
-  selector: 'app-dashboard',
-  standalone: true,
-  imports: [RouterLink, IconComponent],
-  template: `
+    selector: 'app-dashboard',
+    imports: [RouterLink, IconComponent],
+    template: `
     <div class="page stack" style="gap:24px">
       <section class="welcome">
         <div>
@@ -178,7 +177,7 @@ const WEEK = [
       </section>
     </div>
   `,
-  styles: [`
+    styles: [`
     .welcome { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
     .kpi { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; gap: 2px 14px; padding: 18px; text-decoration: none; color: inherit; transition: box-shadow .15s, transform .15s, border-color .15s; }

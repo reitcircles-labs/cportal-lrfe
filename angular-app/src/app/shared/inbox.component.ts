@@ -8,10 +8,9 @@ import { IconComponent } from './icon.component';
 
 /** Top-bar bell: the workflow inbox (bpm tasks), and the dialog to approve or reject a task. */
 @Component({
-  selector: 'app-inbox',
-  standalone: true,
-  imports: [IconComponent],
-  template: `
+    selector: 'app-inbox',
+    imports: [IconComponent],
+    template: `
     <div class="wrap">
       <button class="btn btn-ghost btn-icon bell" (click)="open.set(!open()); tasks.refresh()" title="Tasks" aria-label="Tasks" [attr.aria-expanded]="open()">
         <app-icon name="bell" [size]="19" />
@@ -62,7 +61,7 @@ import { IconComponent } from './icon.component';
       </div>
     }
   `,
-  styles: [`
+    styles: [`
     .wrap { position: relative; }
     .bell { position: relative; }
     .count { position: absolute; top: 3px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px; background: var(--color-accent); color: #fff; font-size: 10.5px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--color-surface); }

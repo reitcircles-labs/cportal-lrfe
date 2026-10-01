@@ -12,10 +12,9 @@ import { RegistryStore } from './state/registry.store';
 import { IntakeApi } from './api/intake.api';
 
 @Component({
-  selector: 'app-root',
-  standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ViewerComponent, OverlaysComponent, IconComponent, InboxComponent],
-  template: `
+    selector: 'app-root',
+    imports: [RouterOutlet, RouterLink, RouterLinkActive, ViewerComponent, OverlaysComponent, IconComponent, InboxComponent],
+    template: `
     @if (isLogin()) {
       <router-outlet />
     } @else {
@@ -83,7 +82,7 @@ import { IntakeApi } from './api/intake.api';
     <app-viewer />
     <app-overlays />
   `,
-  styles: [`
+    styles: [`
     .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
     .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: linear-gradient(180deg, var(--sidebar-bg), var(--sidebar-bg-2)); color: var(--sidebar-fg); z-index: 40; }
     .flag { height: 6px; background: linear-gradient(100deg, var(--nam-blue) 0 38%, #fff 38% 41%, var(--nam-red) 41% 59%, #fff 59% 62%, var(--nam-green) 62% 100%); }

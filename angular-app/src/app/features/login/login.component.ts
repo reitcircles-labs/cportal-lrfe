@@ -5,10 +5,9 @@ import { ThemeService } from '../../state/theme.service';
 import { IconComponent } from '../../shared/icon.component';
 
 @Component({
-  selector: 'app-login',
-  standalone: true,
-  imports: [IconComponent],
-  template: `
+    selector: 'app-login',
+    imports: [IconComponent],
+    template: `
     <div class="wrap">
       <section class="hero">
         <div class="flag" aria-hidden="true"></div>
@@ -88,7 +87,7 @@ import { IconComponent } from '../../shared/icon.component';
       </section>
     </div>
   `,
-  styles: [`
+    styles: [`
     .wrap { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
     .hero { position: relative; background: radial-gradient(120% 90% at 0% 0%, #123a6b 0%, var(--sidebar-bg) 55%, #081a33 100%); color: #dbe5f2; display: flex; flex-direction: column; overflow: hidden; }
     .hero::after { content: ""; position: absolute; right: -120px; bottom: -120px; width: 420px; height: 420px; border-radius: 50%; border: 1px solid rgba(255,206,0,.18); box-shadow: 0 0 0 40px rgba(255,206,0,.04), 0 0 0 80px rgba(255,206,0,.03); pointer-events: none; }

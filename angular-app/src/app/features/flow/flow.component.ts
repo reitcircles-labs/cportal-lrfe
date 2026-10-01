@@ -3,10 +3,9 @@ import { RouterLink } from '@angular/router';
 import { flowModel } from '../../data/mock-data';
 
 @Component({
-  selector: 'app-flow',
-  standalone: true,
-  imports: [RouterLink],
-  template: `
+    selector: 'app-flow',
+    imports: [RouterLink],
+    template: `
     <div class="page">
       <section class="intro">
         <div>
@@ -75,7 +74,7 @@ import { flowModel } from '../../data/mock-data';
       </section>
     </div>
   `,
-  styles: [`
+    styles: [`
     .intro { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 32px 40px; align-items: end; margin: 8px 0 30px; }
     .hero { font-size: 48px; margin: 6px 0 10px; text-wrap: balance; }
     .lede { max-width: 62ch; color: var(--color-neutral-800); text-wrap: pretty; margin: 0; }

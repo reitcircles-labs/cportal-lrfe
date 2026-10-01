@@ -17,10 +17,9 @@ interface Upload { key: number; name: string; state: 'waiting' | 'uploading' | '
  * for AI extraction; its progress shows here until it is ready for review on #/verify.
  */
 @Component({
-  selector: 'app-capture',
-  standalone: true,
-  imports: [IconComponent, CanDirective],
-  template: `
+    selector: 'app-capture',
+    imports: [IconComponent, CanDirective],
+    template: `
     <div class="page layout">
       <aside class="stack" style="gap:18px">
         <div class="stack" style="gap:8px">
@@ -117,7 +116,7 @@ interface Upload { key: number; name: string; state: 'waiting' | 'uploading' | '
       </section>
     </div>
   `,
-  styles: [`
+    styles: [`
     .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 32px; align-items: start; }
     .empty { padding: 44px; text-align: center; color: var(--color-neutral-700); font-size: 14px; border-style: dashed; }
     .drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 26px 16px; text-align: center; border: 1.5px dashed var(--color-neutral-400); border-radius: var(--radius-lg); background: var(--color-surface); cursor: pointer; }
