@@ -32,6 +32,10 @@ npm install
 cp .env_example services/identity/.env     # edit; see the comments in the file
 cp .env_example services/gateway/.env
 
+# All five services in one terminal (watch mode, each reads its own .env; Ctrl+C stops all)
+npm run dev
+npm run dev -- identity gateway            # only some of them
+
 # Quickest: no database, seeded with the 14 demo users; documents stored in ./tmp
 IDENTITY_STORE=memory SEED_DEMO_PASSWORD='demo-password-2026' npm run dev:identity
 EDRMS_STORE=memory EDRMS_STORAGE=local npm run dev:edrms

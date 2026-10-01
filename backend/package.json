@@ -13,6 +13,7 @@
   },
   "scripts": {
     "test": "npm test --workspaces --if-present",
+    "dev": "node scripts/dev.js",
     "dev:identity": "npm run dev -w @lrfe/identity",
     "dev:gateway": "npm run dev -w @lrfe/gateway",
     "dev:edrms": "npm run dev -w @lrfe/edrms",
