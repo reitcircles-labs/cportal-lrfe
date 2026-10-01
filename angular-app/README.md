@@ -14,6 +14,38 @@ npm run build      # production build in dist/cportal-lrfe
 
 Requires Node 18.19+ or 20+.
 
+## Running against the backend (localhost)
+
+The app talks to the backend services in `../backend` through their gateway. In development,
+`ng serve` proxies every `/api/...` request to the gateway at `http://localhost:3500`
+(`proxy.conf.json`), so the browser sees one origin and the httpOnly refresh cookie works
+without CORS.
+
+```bash
+# 1. backend: identity, edrms, bpm and the gateway (each reads its own services/<name>/.env)
+cd ../backend
+npm run dev:identity   # :3501
+npm run dev:edrms      # :3502
+npm run dev:bpm        # :3503
+npm run dev:gateway    # :3500
+# 2. frontend
+cd ../angular-app && npm start   # http://localhost:4200
+```
+
+| Area | Backed by | Notes |
+|---|---|---|
+| Sign-in, MFA, session, sign-out | identity | password + authenticator code; first sign-in enrols MFA when policy requires it; reload keeps the session |
+| `#/invite?token=…` | identity | activation link from an invitation: choose a password |
+| Administration (users, permissions, policies, access log) | identity | fixed roles; no email service yet, so an invitation shows its activation link to the administrator |
+| Bell (task inbox) | bpm | approve / reject with the before/after values |
+| `#/documents` (EDRMS) | edrms + bpm | filed documents, versions, open file, integrity check, *Request correction* (four-eyes) |
+| Dashboard, capture, verify, land records, audit | demo data | until the intake, land-records and audit services exist |
+
+Code: `api/api.service.ts` (client), `api/auth.interceptor.ts` (token, refresh-and-retry on
+401), `state/auth.service.ts` (session), `state/rbac.service.ts` (identity API),
+`state/tasks.service.ts` + `shared/inbox.component.ts` (bpm), `features/documents`,
+`features/invite`.
+
 ## Look & feel
 
 Government-enterprise theme (`src/styles/theme.css`): white cards on a light grey ground, deep navy sidebar, one blue accent, Public Sans throughout. Namibian flag colours appear as the brand stripe and in status semantics (green = done, gold = needs attention, red = danger). Light and dark mode (toggle in the top bar; follows the OS on first visit). The coat-of-arms tile is a placeholder, so swap in the official artwork before any public demo.

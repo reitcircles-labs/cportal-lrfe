@@ -3,17 +3,18 @@ import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, Ro
 import { filter } from 'rxjs/operators';
 import { ViewerComponent } from './shared/viewer.component';
 import { OverlaysComponent } from './shared/overlays.component';
+import { InboxComponent } from './shared/inbox.component';
 import { IconComponent } from './shared/icon.component';
-import { AuthService, ROLES } from './state/auth.service';
+import { AuthService } from './state/auth.service';
 import { RbacService } from './state/rbac.service';
 import { ThemeService } from './state/theme.service';
 import { RegistryStore } from './state/registry.store';
-import { QUEUE } from './data/mock-data';
+import { IntakeApi } from './api/intake.api';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ViewerComponent, OverlaysComponent, IconComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ViewerComponent, OverlaysComponent, IconComponent, InboxComponent],
   template: `
     @if (isLogin()) {
       <router-outlet />
@@ -51,12 +52,7 @@ import { QUEUE } from './data/mock-data';
           </nav>
 
           <div class="foot">
-            <label class="role">
-              <span>Acting as</span>
-              <select [value]="auth.roleId()" (change)="auth.switchRole($any($event.target).value); drawer.set(false)">
-                @for (r of roles; track r.id) { <option [value]="r.id">{{ r.label }}</option> }
-              </select>
-            </label>
+            <div class="role"><span>Signed in as</span><b class="rl">{{ auth.role()?.label }}</b></div>
             <div class="me">
               <span class="av">{{ auth.role()?.initials }}</span>
               <span class="stack" style="gap:0;min-width:0"><b>{{ auth.role()?.name }}</b><span class="ell">{{ auth.role()?.office }}</span></span>
@@ -76,11 +72,11 @@ import { QUEUE } from './data/mock-data';
             <span class="spacer"></span>
             <div class="search"><app-icon name="search" [size]="16" /><input class="input" placeholder="Search erf, deed no., owner ID…" aria-label="Search records"></div>
             <button class="btn btn-ghost btn-icon" (click)="theme.toggle()" [title]="theme.theme() === 'dark' ? 'Light mode' : 'Dark mode'" aria-label="Toggle dark mode"><app-icon [name]="theme.theme() === 'dark' ? 'sun' : 'moon'" [size]="19" /></button>
-            <button class="btn btn-ghost btn-icon bell" title="Notifications" aria-label="Notifications"><app-icon name="bell" [size]="19" />@if (store.openSuggestions().length) { <i></i> }</button>
+            <app-inbox />
             <span class="av sm" [title]="auth.role()?.name">{{ auth.role()?.initials }}</span>
           </header>
           <main class="content"><router-outlet /></main>
-          <footer class="small muted foot-note">Demo data · names, identity numbers and deed references are fictitious.</footer>
+          <footer class="small muted foot-note">Sign-in, administration, tasks, capture, verify and Documents use the live services. Dashboard, land records and audit still show demo data (fictitious names and deed references) until the land-records and audit services are connected.</footer>
         </div>
       </div>
     }
@@ -107,6 +103,7 @@ import { QUEUE } from './data/mock-data';
     .badge.warn { background: var(--nam-red); color: #fff; }
     .foot { padding: 14px 14px 16px; border-top: 1px solid rgba(255,255,255,.08); display: flex; flex-direction: column; gap: 12px; }
     .role { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(198,212,231,.6); }
+    .role .rl { font-size: 13.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #fff; }
     .role select { appearance: none; font: inherit; font-size: 13.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #fff; background: rgba(255,255,255,.08) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23c6d4e7' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 9px 30px 9px 10px; cursor: pointer; }
     .role select option { color: #0e1a2b; }
     .me { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 10px; align-items: center; font-size: 12px; }
@@ -147,24 +144,25 @@ export class AppComponent {
   store = inject(RegistryStore);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
-  roles = ROLES;
+  private intake = inject(IntakeApi);
+  /** Documents waiting for review (intake), refreshed on every navigation. */
+  inReview = signal(0);
   drawer = signal(false);
-  isLogin = signal(location.hash.startsWith('#/login'));
+  isLogin = signal(/^#\/(login|invite)/.test(location.hash));
   title = signal('Dashboard');
   crumb = signal('Deeds Registry');
 
   nav = computed(() => {
     const role = this.auth.roleId();
-    this.store.fs(); this.store.filed();
-    const open = QUEUE.filter(d => !this.store.isFiled(d)).length;
     const sugg = this.store.openSuggestions().length;
     return [
       { path: '/', label: 'Dashboard', icon: 'home', badge: 0, mine: false, perm: 'dashboard.view' },
-      { path: '/capture', label: 'Capture', icon: 'scan', badge: this.store.scanDone() ? 0 : 1, mine: role === 'scan', perm: 'capture.view' },
-      { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: open, mine: role === 'rev', perm: 'verify.view' },
+      { path: '/capture', label: 'Capture', icon: 'scan', badge: 0, mine: role === 'scan', perm: 'capture.view' },
+      { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: this.inReview(), mine: role === 'rev', perm: 'verify.view' },
+      { path: '/documents', label: 'Documents (EDRMS)', icon: 'file', badge: 0, mine: false, perm: ['capture.view', 'verify.view', 'record.view', 'audit.view'] },
       { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: sugg, mine: role === 'rec', perm: 'record.view' },
       { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud', perm: 'audit.view' }
-    ].filter(n => this.rbac.can(n.perm));
+    ].filter(n => this.rbac.canAny(Array.isArray(n.perm) ? n.perm : [n.perm]));
   });
   adminNav = computed(() => {
     const conflicts = this.rbac.users().filter(u => u.status !== 'Suspended' && this.rbac.userConflicts(u).length).length;
@@ -178,13 +176,19 @@ export class AppComponent {
 
   constructor() {
     this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe((e: any) => {
-      this.isLogin.set(e.urlAfterRedirects.startsWith('/login'));
+      this.isLogin.set(/^\/(login|invite)/.test(e.urlAfterRedirects));
       let r = this.route.firstChild;
       while (r?.firstChild) r = r.firstChild;
       const d = r?.snapshot.data || {};
       this.title.set(d['title'] || 'Dashboard');
       this.crumb.set(d['crumb'] || 'Deeds Registry · Windhoek');
       window.scrollTo(0, 0);
+      this.countReview();
     });
+  }
+
+  private countReview() {
+    if (!this.auth.signedIn() || !this.rbac.can('verify.view')) { this.inReview.set(0); return; }
+    this.intake.documents({ status: ['ready'], limit: 1 }).then(r => this.inReview.set(r.total)).catch(() => {});
   }
 }

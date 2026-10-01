@@ -1,0 +1,53 @@
+{
+  "key": "document-amendment",
+  "name": "Change to a filed document",
+  "description": "A correction to a sealed EDRMS record. Requested by a reviewer, approved by a different person who can file documents, then applied by the system as a new major version.",
+  "start": { "perm": "verify.edit" },
+  "managePerm": "verify.file",
+  "businessKey": { "var": "documentId" },
+  "variables": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["documentId", "expectedVersion", "reason"],
+    "properties": {
+      "documentId": { "type": "string", "format": "uuid" },
+      "expectedVersion": { "type": "integer", "minimum": 1 },
+      "reason": { "type": "string", "minLength": 5, "maxLength": 2000 },
+      "changes": {
+        "type": "array",
+        "maxItems": 50,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["k", "v"],
+          "properties": { "k": { "type": "string", "minLength": 1 }, "v": { "type": "string", "maxLength": 2000 } }
+        }
+      },
+      "recordMetadata": { "type": "object" }
+    }
+  },
+  "precheck": { "connector": "edrms.prepareAmendment" },
+  "startAt": "start",
+  "nodes": {
+    "start": { "type": "start", "next": "approve" },
+    "approve": {
+      "type": "humanTask",
+      "title": { "cat": ["Approve change to ", { "var": "document.edrmsNo" }, " (", { "var": "document.instrumentRef" }, ")"] },
+      "assignee": { "perm": "verify.file" },
+      "exclude": [{ "var": "startedBy.id" }],
+      "outcomes": ["approved", "rejected"],
+      "requireCommentFor": ["rejected"],
+      "outputVar": "approval",
+      "dueInHours": 48,
+      "next": "decision"
+    },
+    "decision": {
+      "type": "exclusiveGateway",
+      "cases": [{ "when": { "==": [{ "var": "approval.outcome" }, "approved"] }, "next": "apply" }],
+      "default": "rejected"
+    },
+    "apply": { "type": "serviceTask", "connector": "edrms.applyAmendment", "next": "amended" },
+    "amended": { "type": "end", "outcome": "amended" },
+    "rejected": { "type": "end", "outcome": "rejected" }
+  }
+}

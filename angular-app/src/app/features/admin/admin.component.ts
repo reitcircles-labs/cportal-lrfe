@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
 import { AppUser, PERMS, PERM_GROUPS, Policies, RbacService, SodRule, UserStatus, AccessKind } from '../../state/rbac.service';
 import { ConfirmService } from '../../state/confirm.service';
+import { ToastService } from '../../state/toast.service';
 import { IconComponent } from '../../shared/icon.component';
 
 type Tab = 'users' | 'roles' | 'policies' | 'log';
@@ -74,13 +75,11 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
                 @if (r.conflict) { <span style="color:var(--danger)" title="This role breaks a segregation-of-duties rule"><app-icon name="alert" [size]="14" /></span> }</span>
             </button>
           }
-          <button class="panel rcard add" (click)="openNewRole()"><span style="font-size:26px;line-height:1">+</span><b>New role</b><span class="small muted">Start empty or clone an existing role</span></button>
         </section>
 
         <section class="panel">
           <div class="panel-head">
             <div class="stack" style="gap:2px"><h3>Permission matrix</h3><span class="small muted">Tick to grant. Changes apply to every user holding the role once saved. Highlighted cells break a segregation-of-duties rule.</span></div>
-            @if (selRole(); as sr) { @if (isCustom(sr)) { <button class="btn btn-ghost danger" (click)="deleteRole(sr)">Delete role</button> } }
           </div>
           <div style="overflow-x:auto">
             <table class="matrix">
@@ -228,30 +227,27 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
       <div class="dialog-backdrop" (click)="inviteOpen.set(false)">
         <form class="dialog" style="width:min(520px,100%)" (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); invite()">
           <div class="dialog-title">Invite a user</div>
-          <div class="dialog-body">They receive an email to set a password and enrol MFA. Invitations expire after 7 days.</div>
+          <div class="dialog-body">You get an activation link to send them. They set a password and enrol MFA. Invitations expire after 3 days.</div>
           <div class="fg">
             <div class="field"><label>Full name</label><input class="input" [value]="inv().name" (input)="setInv('name', $any($event.target).value)" required></div>
             <div class="field"><label>Work email</label><input class="input" type="email" placeholder="name@deeds.gov.na" [value]="inv().email" (input)="setInv('email', $any($event.target).value)" required></div>
             <div class="field" style="grid-column:1/-1"><label>Office</label><select class="input" [value]="inv().office" (change)="setInv('office', $any($event.target).value)">@for (o of offices; track o) { <option>{{ o }}</option> }</select></div>
             <div class="field" style="grid-column:1/-1"><label>Role</label><select class="input" [value]="inv().role" (change)="setInv('role', $any($event.target).value)">@for (r of rbac.roles(); track r.id) { <option [value]="r.id">{{ r.label }}</option> }</select></div>
           </div>
-          <div class="dialog-actions"><button type="button" class="btn btn-secondary" (click)="inviteOpen.set(false)">Cancel</button><button type="submit" class="btn btn-primary" [disabled]="!inv().name.trim() || !inv().email.includes('@')">Send invitation</button></div>
+          <div class="dialog-actions"><button type="button" class="btn btn-secondary" (click)="inviteOpen.set(false)">Cancel</button><button type="submit" class="btn btn-primary" [disabled]="inviting() || !inv().name.trim() || !inv().email.includes('@')">{{ inviting() ? 'Creating…' : 'Create invitation' }}</button></div>
         </form>
       </div>
     }
 
-    <!-- New role -->
-    @if (newRoleOpen()) {
-      <div class="dialog-backdrop" (click)="newRoleOpen.set(false)">
-        <form class="dialog" style="width:min(500px,100%)" (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); createRole()">
-          <div class="dialog-title">New role</div>
-          <div class="fg">
-            <div class="field" style="grid-column:1/-1"><label>Role name</label><input class="input" placeholder="e.g. Senior reviewer" [value]="nr().label" (input)="setNr('label', $any($event.target).value)" required></div>
-            <div class="field" style="grid-column:1/-1"><label>Description</label><input class="input" [value]="nr().desc" (input)="setNr('desc', $any($event.target).value)"></div>
-            <div class="field" style="grid-column:1/-1"><label>Start from</label><select class="input" [value]="nr().clone" (change)="setNr('clone', $any($event.target).value)"><option value="">Empty (dashboard only)</option>@for (r of rbac.roles(); track r.id) { <option [value]="r.id">Copy of {{ r.label }}</option> }</select></div>
-          </div>
-          <div class="dialog-actions"><button type="button" class="btn btn-secondary" (click)="newRoleOpen.set(false)">Cancel</button><button type="submit" class="btn btn-primary" [disabled]="!nr().label.trim()">Create role</button></div>
-        </form>
+    <!-- Activation link (no email service yet: the administrator passes it on) -->
+    @if (rbac.lastInviteLink(); as l) {
+      <div class="dialog-backdrop" (click)="rbac.lastInviteLink.set(null)">
+        <div class="dialog" style="width:min(560px,100%)" (click)="$event.stopPropagation()">
+          <div class="dialog-title">Activation link for {{ l.name }}</div>
+          <div class="dialog-body">Email is not connected yet. Send this link to <b>{{ l.email }}</b>. It works once and expires in 3 days; they choose a password and set up an authenticator app.</div>
+          <input class="input mono" style="font-size:12.5px;margin:12px 0" readonly [value]="l.url" (focus)="$any($event.target).select()">
+          <div class="dialog-actions"><button class="btn btn-secondary" (click)="copy(l.url)">Copy link</button><button class="btn btn-primary" (click)="rbac.lastInviteLink.set(null)">Done</button></div>
+        </div>
       </div>
     }
   `,
@@ -322,6 +318,7 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
 export class AdminComponent {
   rbac = inject(RbacService);
   private confirm = inject(ConfirmService);
+  private toast = inject(ToastService);
   tab = signal<Tab>('users');
   perms = PERMS;
   offices = OFFICES;
@@ -333,7 +330,15 @@ export class AdminComponent {
     { id: 'log', label: 'Access log', path: '/admin/log', perm: 'admin.users' }
   ];
   visibleTabs = computed(() => this.tabs.filter(t => this.rbac.can(t.perm)));
-  constructor() { inject(ActivatedRoute).data.subscribe(d => this.tab.set(d['tab'] || 'users')); }
+  constructor() {
+    inject(ActivatedRoute).data.subscribe(d => {
+      this.tab.set(d['tab'] || 'users');
+      this.rbac.loadAdmin();
+    });
+  }
+  async copy(text: string) {
+    try { await navigator.clipboard.writeText(text); this.toast.show('success', 'Link copied'); } catch { this.toast.show('warn', 'Copy failed', 'Select the link and copy it manually.'); }
+  }
 
   initials(n: string) { return n.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).map(s => s[0]).slice(0, 2).join('').toUpperCase(); }
   statusTag(s: UserStatus) { return s === 'Active' ? 'tag-accent' : s === 'Suspended' ? 'tag-danger' : 'tag-outline'; }
@@ -352,7 +357,7 @@ export class AdminComponent {
     const conf = us.filter(u => u.status !== 'Suspended' && this.rbac.userConflicts(u).length).length;
     return [
       { label: 'Active users', v: String(active.length), sub: us.length + ' accounts in total', warn: false },
-      { label: 'Pending invitations', v: String(us.filter(u => u.status === 'Invited').length), sub: 'Expire after 7 days', warn: false },
+      { label: 'Pending invitations', v: String(us.filter(u => u.status === 'Invited').length), sub: 'Expire after 3 days', warn: false },
       { label: 'Suspended', v: String(us.filter(u => u.status === 'Suspended').length), sub: 'Sign-in blocked', warn: false },
       { label: 'MFA enrolled', v: Math.round((active.length - noMfa) / Math.max(1, active.length) * 100) + '%', sub: noMfa + ' active user' + (noMfa === 1 ? '' : 's') + ' without MFA', warn: this.rbac.policies().mfa && noMfa > 0 },
       { label: 'Duty conflicts', v: String(conf), sub: 'Users breaking a segregation rule', warn: conf > 0 }
@@ -385,7 +390,14 @@ export class AdminComponent {
   inv = signal({ name: '', email: '', office: 'Review desk', role: 'rev' });
   openInvite() { this.inv.set({ name: '', email: '', office: 'Review desk', role: 'rev' }); this.inviteOpen.set(true); }
   setInv(k: string, v: string) { this.inv.update(i => ({ ...i, [k]: v })); }
-  invite() { const i = this.inv(); if (!i.name.trim() || !i.email.includes('@')) return; this.rbac.invite({ name: i.name.trim(), email: i.email.trim(), office: i.office, roles: [i.role] }); this.inviteOpen.set(false); }
+  inviting = signal(false);
+  async invite() {
+    const i = this.inv(); if (!i.name.trim() || !i.email.includes('@')) return;
+    this.inviting.set(true);
+    const ok = await this.rbac.invite({ name: i.name.trim(), email: i.email.trim(), office: i.office, roles: [i.role] });
+    this.inviting.set(false);
+    if (ok) this.inviteOpen.set(false);
+  }
 
   // ---------- roles ----------
   selRole = signal<string | null>(null);
@@ -408,29 +420,12 @@ export class AdminComponent {
     return n;
   });
   roleCards = computed(() => this.rbac.roles().map(r => ({ ...r, users: this.rbac.users().filter(u => u.roles.includes(r.id)).length, n: (this.working()[r.id] || []).length, conflict: this.colConflict(r.id) })));
-  isCustom(id: string) { return !this.rbac.roles().find(r => r.id === id)?.system; }
   async saveMatrix() {
     const d = this.draft()!;
     const affected = this.rbac.users().filter(u => u.roles.some(r => this.rbac.roles().find(x => x.id === r)?.perms.join() !== (d[r] || []).join())).length;
-    if (await this.confirm.ask({ title: 'Apply ' + this.changes() + ' permission change' + (this.changes() === 1 ? '' : 's') + '?', body: 'This takes effect immediately for ' + affected + ' user' + (affected === 1 ? '' : 's') + '. Each change is written to the access log.', confirmLabel: 'Save changes' })) {
-      this.rbac.saveMatrix(d); this.draft.set(null);
+    if (await this.confirm.ask({ title: 'Apply ' + this.changes() + ' permission change' + (this.changes() === 1 ? '' : 's') + '?', body: 'This affects ' + affected + ' user' + (affected === 1 ? '' : 's') + ', at their next token refresh (within 15 minutes). Each change is written to the access log.', confirmLabel: 'Save changes' })) {
+      await this.rbac.saveMatrix(d); this.draft.set(null);
     }
-  }
-  newRoleOpen = signal(false);
-  nr = signal({ label: '', desc: '', clone: 'rev' });
-  openNewRole() { this.nr.set({ label: '', desc: '', clone: 'rev' }); this.newRoleOpen.set(true); }
-  setNr(k: string, v: string) { this.nr.update(n => ({ ...n, [k]: v })); }
-  createRole() {
-    const n = this.nr(); if (!n.label.trim()) return;
-    const id = this.rbac.createRole(n.label.trim(), n.desc.trim() || 'Custom role', n.clone || null);
-    const d = this.draft();
-    if (d) this.draft.set({ ...d, [id]: [...(this.rbac.roles().find(r => r.id === id)?.perms || [])] });
-    this.selRole.set(id); this.newRoleOpen.set(false);
-  }
-  async deleteRole(id: string) {
-    const r = this.rbac.roles().find(x => x.id === id)!, n = this.rbac.users().filter(u => u.roles.includes(id)).length;
-    if (n) { this.confirm.ask({ title: 'Role still assigned', body: r.label + ' is held by ' + n + ' user(s). Remove it from them first.', confirmLabel: 'OK' }); return; }
-    if (await this.confirm.ask({ title: 'Delete role “' + r.label + '”?', body: 'This cannot be undone.', confirmLabel: 'Delete role', tone: 'danger' })) { this.rbac.deleteRole(id); this.selRole.set(null); }
   }
 
   // ---------- policies ----------
