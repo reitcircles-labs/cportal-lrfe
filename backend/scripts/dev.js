@@ -2,21 +2,32 @@
 /**
  * Run every backend service in watch mode from one terminal:
  *
- *   npm run dev                      all five services
- *   npm run dev -- identity intake   only these
+ *   npm run dev                      all five services, and the API docs on http://localhost:3510
+ *   npm run dev -- identity intake   only these (add `docs` to include the API docs)
  *
  * Each service starts in its own directory, so it reads its own .env exactly as
  * `npm run dev:<name>` does. Output lines are prefixed with the service name. Ctrl+C stops all
  * of them; if one exits for good, the others are stopped too. (With --watch a crash does not
  * exit: node waits for a file change and restarts, so a typo does not take the others down.)
+ * The API docs (scripts/docs-server.js) are optional: if they cannot start, the services keep running.
  */
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SERVICES = ['identity', 'edrms', 'bpm', 'intake', 'gateway'];   // gateway last: it proxies to the rest
-const COLORS = [36, 33, 35, 32, 34];
+// gateway after the services it proxies to; docs last
+const PROCESSES = {
+    identity: { cwd: join(ROOT, 'services', 'identity'), args: ['--watch', 'src/index.js'] },
+    edrms: { cwd: join(ROOT, 'services', 'edrms'), args: ['--watch', 'src/index.js'] },
+    bpm: { cwd: join(ROOT, 'services', 'bpm'), args: ['--watch', 'src/index.js'] },
+    intake: { cwd: join(ROOT, 'services', 'intake'), args: ['--watch', 'src/index.js'] },
+    gateway: { cwd: join(ROOT, 'services', 'gateway'), args: ['--watch', 'src/index.js'] },
+    // reads docs/openapi.yaml on every request: `npm run docs` updates it without a restart
+    docs: { cwd: ROOT, args: ['scripts/docs-server.js'], optional: true }
+};
+const SERVICES = Object.keys(PROCESSES);
+const COLORS = [36, 33, 35, 32, 34, 90];
 
 const wanted = process.argv.slice(2);
 const unknown = wanted.filter(s => !SERVICES.includes(s));
@@ -41,7 +52,7 @@ delete env.PORT;
 const children = new Map();
 let stopping = false;
 
-function pipe(stream, out, prefix) {
+function pipe(stream, out, prefix, name) {
     let rest = '';
     stream.on('data', chunk => {
         const lines = (rest + chunk).split('\n');
@@ -49,7 +60,7 @@ function pipe(stream, out, prefix) {
         for (const line of lines) {
             out.write(prefix + line + '\n');
             const busy = line.match(/EADDRINUSE: address already in use (\S+)/);
-            if (busy) out.write(`${prefix}↳ ${busy[1]} is taken, probably by a service started separately (npm run dev:<name>). Stop it, or leave this service out: npm run dev -- <other services>\n`);
+            if (busy) out.write(`${prefix}↳ ${busy[1]} is taken, probably by a copy started separately (${name === 'docs' ? 'npm run docs:serve' : `npm run dev:${name}`}). Stop it, or leave ${name} out: npm run dev -- <the others>\n`);
         }
     });
     stream.on('end', () => { if (rest) out.write(prefix + rest + '\n'); });
@@ -64,13 +75,16 @@ function stopAll(signal = 'SIGTERM') {
 }
 
 for (const name of names) {
-    const child = spawn(process.execPath, ['--watch', 'src/index.js'], { cwd: join(ROOT, 'services', name), env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const { cwd, args, optional } = PROCESSES[name];
+    const child = spawn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     children.set(name, child);
-    pipe(child.stdout, process.stdout, label(name));
-    pipe(child.stderr, process.stderr, label(name));
+    pipe(child.stdout, process.stdout, label(name), name);
+    pipe(child.stderr, process.stderr, label(name), name);
     child.on('exit', (code, signal) => {
         children.delete(name);
-        if (!stopping) {
+        if (!stopping && optional) {
+            console.error(`${label(name)}exited (${signal || `code ${code}`}); the services keep running`);
+        } else if (!stopping) {
             console.error(`${label(name)}exited (${signal || `code ${code}`}); stopping the other services`);
             process.exitCode = code || 1;
             stopAll();

@@ -1,4 +1,4 @@
-import { UnauthorizedError } from '@lrfe/common';
+import { UnauthorizedError, describeGuard } from '@lrfe/common';
 
 const userOf = (req) => ({ id: req.user.sub, name: req.user.name, perms: req.user.perms || [], roles: req.user.roles || [] });
 const uuidParams = { params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } } };
@@ -17,6 +17,7 @@ export async function bpmRoutes(app, { engine }) {
         }
         if (!['access', 'service'].includes(req.user.typ)) throw new UnauthorizedError('Invalid or expired token');
     }
+    describeGuard(userOrService, { kind: 'user-or-service' });
 
     // ------------------------------------------------------------------ processes
 

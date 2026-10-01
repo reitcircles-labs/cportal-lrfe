@@ -9,6 +9,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "seed": "node scripts/seed.js",
+    "reset-password": "node scripts/reset-password.js",
     "test": "mocha 'tests/**/*.test.js' --timeout 20000"
   },
   "dependencies": {

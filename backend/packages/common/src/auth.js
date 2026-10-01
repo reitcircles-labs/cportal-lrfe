@@ -39,20 +39,20 @@ export const authPlugin = fp(async function authPlugin(app, { secret, onDenied }
         throw new ForbiddenError('Not permitted', { perm });
     }
 
-    app.decorate('authenticate', authenticate);
-    app.decorate('requirePerm', (...perms) => async function requirePerm(request) {
+    app.decorate('authenticate', describeGuard(authenticate, { kind: 'user' }));
+    app.decorate('requirePerm', (...perms) => describeGuard(async function requirePerm(request) {
         await authenticate(request);
         const have = request.user.perms || [];
         const missing = perms.find(p => !have.includes(p));
         if (missing) await deny(request, missing);
-    });
-    app.decorate('requireAnyPerm', (...perms) => async function requireAnyPerm(request) {
+    }, { kind: 'user', allOf: perms }));
+    app.decorate('requireAnyPerm', (...perms) => describeGuard(async function requireAnyPerm(request) {
         await authenticate(request);
         const have = request.user.perms || [];
         if (!perms.some(p => have.includes(p))) await deny(request, perms.join(' | '));
-    });
+    }, { kind: 'user', anyOf: perms }));
     // Service-to-service calls (e.g. intake filing into edrms). User tokens never pass this.
-    app.decorate('requireService', (...names) => async function requireService(request) {
+    app.decorate('requireService', (...names) => describeGuard(async function requireService(request) {
         try {
             await request.jwtVerify();
         } catch {
@@ -60,8 +60,19 @@ export const authPlugin = fp(async function authPlugin(app, { secret, onDenied }
         }
         if (request.user?.typ !== SERVICE_TOKEN_TYPE) throw new UnauthorizedError('Service token required');
         if (!names.includes(request.user.sub)) throw new ForbiddenError('Not permitted', { service: request.user.sub });
-    });
+    }, { kind: 'service', services: names }));
 });
+
+/**
+ * Record who a guard lets through, for the generated API docs (scripts/openapi.js):
+ *   { kind: 'user' | 'service', allOf?: [perm], anyOf?: [perm], services?: [name] }
+ * A route guarded by a function without this is reported by the generator until its docs
+ * describe the access rule.
+ */
+export function describeGuard(fn, access) {
+    fn.access = access;
+    return fn;
+}
 
 export const SERVICE_TOKEN_TYPE = 'service';
 

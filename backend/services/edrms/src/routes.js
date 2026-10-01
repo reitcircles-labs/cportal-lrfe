@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '@lrfe/common';
+import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError, describeGuard } from '@lrfe/common';
 import { DOC_TYPES, DOC_TYPE_IDS, FILING_SERVICES, READ_PERMS } from './catalogue.js';
 import { describeRecordMetadataFields } from './record-metadata.js';
 import { safeEqual } from './util.js';
@@ -57,6 +57,7 @@ export async function edrmsRoutes(app, { service, contentUrl }) {
         }
         return app.requireAnyPerm(...READ_PERMS)(req, reply);
     }
+    describeGuard(canRead, { kind: 'user-or-service', anyOf: READ_PERMS, services: READ_SERVICES });
 
     // ------------------------------------------------------------------ catalogue
 

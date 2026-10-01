@@ -2,10 +2,14 @@ import Fastify from 'fastify';
 import { errorHandler } from './errors.js';
 import { env } from './config.js';
 
-/** Fastify instance with the shared error handler and a public GET /health. */
-export function createBaseApp({ name, ...fastifyOptions }) {
+/**
+ * Fastify instance with the shared error handler and a public GET /health.
+ * `onRoute(routeOptions)` sees every route as it is registered (the API docs generator uses it).
+ */
+export function createBaseApp({ name, onRoute, ...fastifyOptions }) {
     if (!name) throw new Error('createBaseApp: `name` is required');
     const app = Fastify({ logger: false, ...fastifyOptions });
+    if (onRoute) app.addHook('onRoute', onRoute);
     app.setErrorHandler(errorHandler);
     app.get('/health', async () => ({ status: 'ok', service: name }));
     return app;
