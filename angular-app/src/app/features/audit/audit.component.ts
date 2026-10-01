@@ -156,7 +156,7 @@ export class AuditComponent {
     return d.fields.map((f, i) => {
       const edited = !d.isBase && this.store.isEdited(d, f), st = this.store.status(d, f, i);
       return { label: f.label, ex: f.v, val: this.store.value(d, f), conf: f.c ? Math.round(f.c * 100) + '%' : '—', edited,
-        rev: d.isBase ? 'Pilot verified' : edited ? 'Corrected · A. Mwandingi' : st === 'pending' ? 'Not reviewed' : 'Accepted · A. Mwandingi' };
+        rev: d.isBase ? 'Pilot verified' : edited ? 'Corrected by the reviewer' : st === 'pending' ? 'Not reviewed' : 'Accepted by the reviewer' };
     });
   });
   editCount = computed(() => this.provenance().filter(r => r.edited).length);

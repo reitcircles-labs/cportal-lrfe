@@ -406,7 +406,7 @@ export class LinkComponent {
     if (!this.rbac.can('record.comment')) return;
     const t = this.draft().trim(); if (!t) return;
     const role = this.auth.role();
-    this.store.addComment(rid, t, role?.name || 'J. !Gawaseb', role?.label || 'Records officer');
+    this.store.addComment(rid, t, role?.name || 'You', role?.label || 'Records officer');
     this.draft.set('');
   }
   openCreate() { this.nf.set({ erf: '', township: '', regDiv: 'K', extent: '', tenure: 'Freehold' }); this.createOpen.set(true); }
