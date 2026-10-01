@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DOCS, NEW, MONTHS, docSummary, docYear } from '../../data/mock-data';
 import { LandDoc } from '../../data/models';
@@ -242,6 +242,7 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
       </div>
     }
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .ws { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: start; min-height: calc(100vh - var(--topbar-h)); }
     .ws.list-hidden { grid-template-columns: minmax(0, 1fr); }

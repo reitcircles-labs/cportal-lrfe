@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { Component, input, ChangeDetectionStrategy } from '@angular/core';
 
 /** Lucide icons at stroke 1.5 (design-system rule). */
 const PATHS: Record<string, string[]> = {
@@ -47,6 +47,7 @@ const PATHS: Record<string, string[]> = {
   template: `<svg [attr.width]="size()" [attr.height]="size()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block">
     @for (d of paths(); track $index) { <path [attr.d]="d"></path> }
   </svg>`,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [':host{display:inline-flex}']
 })
 export class IconComponent {

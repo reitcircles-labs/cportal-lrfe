@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output } from '@angular/core';
+import { Component, computed, inject, input, output, ChangeDetectionStrategy } from '@angular/core';
 import { LandDoc } from '../data/models';
 import { RegistryStore } from '../state/registry.store';
 
@@ -45,6 +45,7 @@ export type HighlightMode = 'review' | 'audit' | 'none';
       <div class="foot"><span>{{ doc().ref }}</span><span>Page {{ page() + 1 }} of {{ doc().pages }}</span></div>
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .sheet { background: var(--paper) !important; box-shadow: var(--shadow-md) !important; border: 1px solid var(--paper-line) !important; border-radius: 4px !important; box-sizing: border-box; color: var(--paper-ink); }
     .sheet.fixed { aspect-ratio: 1 / 1.414; overflow: hidden; }

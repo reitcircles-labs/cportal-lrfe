@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { DOCS, VIEWDOCS, hash } from '../../data/mock-data';
 import { LandDoc } from '../../data/models';
 import { RegistryStore } from '../../state/registry.store';
@@ -107,6 +107,7 @@ const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outli
       </section>
     </div>
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
     .dcell { text-align: left; border: 1px solid var(--color-divider); border-top: 3px solid var(--color-divider); border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-sm); padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }

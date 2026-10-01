@@ -1,4 +1,4 @@
-import { Component, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
 import { TaskDetail, TaskItem, TasksService } from '../state/tasks.service';
 import { ToastService } from '../state/toast.service';
@@ -61,6 +61,7 @@ import { IconComponent } from './icon.component';
       </div>
     }
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .wrap { position: relative; }
     .bell { position: relative; }

@@ -1,4 +1,4 @@
-import { Component, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
 import { DOCS, VIEWDOCS, NEW, hash, docYear } from '../data/mock-data';
 import { LandDoc } from '../data/models';
@@ -93,6 +93,7 @@ const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
       </div>
     }
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .dialog-backdrop { z-index: 50; padding: 24px; }
     .frame { width: min(1240px, 100%); height: min(880px, calc(100vh - 48px)); overflow: hidden; background: var(--color-surface); box-shadow: var(--shadow-lg); display: grid; grid-template-rows: auto minmax(0, 1fr); }

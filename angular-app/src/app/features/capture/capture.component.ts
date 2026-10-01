@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiError } from '../../api/api.service';
 import { IN_PROGRESS, IntakeApi, IntakeBatch, IntakeSummary, STATUS_LABEL, needsChecks } from '../../api/intake.api';
@@ -116,6 +116,7 @@ interface Upload { key: number; name: string; state: 'waiting' | 'uploading' | '
       </section>
     </div>
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 32px; align-items: start; }
     .empty { padding: 44px; text-align: center; color: var(--color-neutral-700); font-size: 14px; border-style: dashed; }

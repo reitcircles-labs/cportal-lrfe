@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiError, ApiService } from '../../api/api.service';
 import { AuthService } from '../../state/auth.service';
@@ -144,6 +144,7 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
       </div>
     }
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .shell { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: start; max-width: 1560px; margin: 0 auto; }
     .rail { border-right: 1px solid var(--color-divider); background: var(--color-surface); display: flex; flex-direction: column; position: sticky; top: var(--topbar-h); height: calc(100vh - var(--topbar-h)); }

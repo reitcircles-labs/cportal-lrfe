@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { ViewerComponent } from './shared/viewer.component';
@@ -72,7 +72,7 @@ import { IntakeApi } from './api/intake.api';
             <div class="search"><app-icon name="search" [size]="16" /><input class="input" placeholder="Search erf, deed no., owner ID…" aria-label="Search records"></div>
             <button class="btn btn-ghost btn-icon" (click)="theme.toggle()" [title]="theme.theme() === 'dark' ? 'Light mode' : 'Dark mode'" aria-label="Toggle dark mode"><app-icon [name]="theme.theme() === 'dark' ? 'sun' : 'moon'" [size]="19" /></button>
             <app-inbox />
-            <span class="av sm" [title]="auth.role()?.name">{{ auth.role()?.initials }}</span>
+            <span class="av sm" [title]="$safeNavigationMigration(auth.role()?.name)">{{ auth.role()?.initials }}</span>
           </header>
           <main class="content"><router-outlet /></main>
           <footer class="small muted foot-note">Sign-in, administration, tasks, capture, verify and Documents use the live services. Dashboard, land records and audit still show demo data (fictitious names and deed references) until the land-records and audit services are connected.</footer>
@@ -82,6 +82,7 @@ import { IntakeApi } from './api/intake.api';
     <app-viewer />
     <app-overlays />
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
     .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: linear-gradient(180deg, var(--sidebar-bg), var(--sidebar-bg-2)); color: var(--sidebar-fg); z-index: 40; }

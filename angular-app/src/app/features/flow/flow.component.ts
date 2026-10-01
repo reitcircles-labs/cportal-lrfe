@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { flowModel } from '../../data/mock-data';
 
@@ -74,6 +74,7 @@ import { flowModel } from '../../data/mock-data';
       </section>
     </div>
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .intro { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 32px 40px; align-items: end; margin: 8px 0 30px; }
     .hero { font-size: 48px; margin: 6px 0 10px; text-wrap: balance; }

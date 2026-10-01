@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../api/api.service';
 import { IconComponent } from '../../shared/icon.component';
@@ -31,6 +31,7 @@ const MIN_LENGTH = 12;
       </form>
     </div>
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--color-bg); }
     .card { width: min(440px, 100%); padding: 0 32px 28px; gap: 16px; box-shadow: var(--shadow-md); overflow: hidden; }

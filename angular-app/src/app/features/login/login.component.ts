@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../state/auth.service';
 import { ThemeService } from '../../state/theme.service';
@@ -87,6 +87,7 @@ import { IconComponent } from '../../shared/icon.component';
       </section>
     </div>
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .wrap { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
     .hero { position: relative; background: radial-gradient(120% 90% at 0% 0%, #123a6b 0%, var(--sidebar-bg) 55%, #081a33 100%); color: #dbe5f2; display: flex; flex-direction: column; overflow: hidden; }

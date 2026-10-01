@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ApiError } from '../../api/api.service';
@@ -210,6 +210,7 @@ const LINK_MAX_AGE_MS = 240_000;
       </div>
     }
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; max-width: 1560px; margin: 0 auto; }
     .shell.collapsed { grid-template-columns: 44px minmax(0, 1fr); }

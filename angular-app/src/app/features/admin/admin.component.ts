@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
 import { AppUser, PERMS, PERM_GROUPS, Policies, RbacService, SodRule, UserStatus, AccessKind } from '../../state/rbac.service';
 import { ConfirmService } from '../../state/confirm.service';
@@ -250,6 +250,7 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
       </div>
     }
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-divider); flex-wrap: wrap; }
     .tabs a { padding: 10px 14px; font-weight: 600; font-size: 14px; color: var(--color-neutral-700); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }

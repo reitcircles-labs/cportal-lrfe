@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { RbacService } from '../../state/rbac.service';
 import { AuthService } from '../../state/auth.service';
@@ -7,6 +7,7 @@ import { IconComponent } from '../../shared/icon.component';
 @Component({
     selector: 'app-denied',
     imports: [RouterLink, IconComponent],
+    changeDetection: ChangeDetectionStrategy.Eager,
     template: `
     <div class="page" style="display:grid;place-items:center;min-height:62vh">
       <div class="panel" style="max-width:500px;padding:36px 32px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px">
