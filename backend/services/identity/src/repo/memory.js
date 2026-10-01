@@ -13,6 +13,8 @@ export function createMemoryRepo() {
     const sod = new Map();
     const sessions = new Map();
     const events = [];
+    const offices = new Map();
+    const settings = new Map();
     let policies = null;
     let eventSeq = 0;
 
@@ -24,7 +26,7 @@ export function createMemoryRepo() {
         async getUserByInviteHash(hash) { return clone([...users.values()].find(u => u.inviteHash === hash)) ?? null; },
         async createUser(data) {
             const user = {
-                id: randomUUID(), office: '', status: 'Invited', roles: [], passwordHash: null, mfaEnrolled: false,
+                id: randomUUID(), office: '', officeId: null, status: 'Invited', roles: [], passwordHash: null, mfaEnrolled: false,
                 mfaSecret: null, pendingMfaSecret: null, inviteHash: null, inviteExpiresAt: null, lastActiveAt: null,
                 createdAt: new Date(), ...clone(data)
             };
@@ -36,6 +38,28 @@ export function createMemoryRepo() {
             if (!user) return null;
             Object.assign(user, clone(patch));
             return clone(user);
+        },
+
+        // settings (key → JSON value)
+        async getSetting(key) { return clone(settings.get(key)) ?? null; },
+        async setSetting(key, value) { settings.set(key, clone(value)); },
+
+        // offices (never deleted; the code never changes)
+        async listOffices() { return [...offices.values()].sort((a, b) => a.code.localeCompare(b.code)).map(clone); },
+        async getOffice(id) { return clone(offices.get(id)) ?? null; },
+        async getOfficeByCode(code) { return clone([...offices.values()].find(o => o.code === code)) ?? null; },
+        async createOffice(data) {
+            const now = new Date();
+            const office = { id: randomUUID(), type: 'registry', address: '', contact: '', status: 'Active', createdAt: now, updatedAt: now, ...clone(data) };
+            offices.set(office.id, office);
+            return clone(office);
+        },
+        async updateOffice(id, patch) {
+            const office = offices.get(id);
+            if (!office) return null;
+            const { code, ...rest } = clone(patch);
+            Object.assign(office, rest, { updatedAt: new Date() });
+            return clone(office);
         },
 
         // roles (fixed set; only perms change after seeding)

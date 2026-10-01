@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '@lrfe/common';
 import {
-    PERMS, PERM_GROUPS, ROLE_IDS, ACCESS_KINDS, DEFAULT_POLICIES, effectivePerms, sodConflicts, isKnownPerm, normalizePerms, permLabel
+    PERMS, PERM_GROUPS, ROLE_IDS, ACCESS_KINDS, DEFAULT_POLICIES, effectivePerms, sodConflicts, isKnownPerm, normalizePerms, permLabel,
+    OFFICE_TYPES, OFFICE_CODE_PATTERN, NATIONAL_ROLES
 } from './catalogue.js';
 import { hashPassword, verifyPassword, randomToken, sha256, safeEqual } from './crypto.js';
 import { createMailer, invitationEmail } from './mailer.js';
@@ -9,6 +10,8 @@ import { generateSecret, otpauthUrl, verifyTotp } from './totp.js';
 
 const SYSTEM = { id: null, name: 'System' };
 const normEmail = (email) => String(email || '').trim().toLowerCase();
+const OFFICE_TYPE_LABEL = { registry: 'Registry office', external: 'External body' };
+const isNational = (roleIds) => roleIds.some(r => NATIONAL_ROLES.includes(r));
 const emailNote = (e) => (e.sent ? 'invitation emailed' : `invitation not emailed: ${e.reason}`);
 
 /**
@@ -36,19 +39,22 @@ export class IdentityService {
     // ---------------------------------------------------------------- helpers
 
     async context() {
-        const [roles, sod, policies] = await Promise.all([this.repo.listRoles(), this.repo.listSod(), this.repo.getPolicies()]);
+        const [roles, sod, policies, offices] = await Promise.all([this.repo.listRoles(), this.repo.listSod(), this.repo.getPolicies(), this.repo.listOffices()]);
         roles.sort((a, b) => ROLE_IDS.indexOf(a.id) - ROLE_IDS.indexOf(b.id));
-        return { roles, sod, policies: policies ?? DEFAULT_POLICIES };
+        return { roles, sod, policies: policies ?? DEFAULT_POLICIES, offices };
     }
 
     roleLabels(roleIds, roles) {
         return roleIds.map(id => roles.find(r => r.id === id)?.label || id).join(', ');
     }
 
-    publicUser(user, { roles, sod }) {
+    publicUser(user, { roles, sod, offices = [] }) {
         const perms = effectivePerms(user.roles, roles);
+        const office = user.officeId ? offices.find(o => o.id === user.officeId) : null;
         return {
-            id: user.id, name: user.name, email: user.email, office: user.office, roles: [...user.roles],
+            id: user.id, name: user.name, email: user.email, roles: [...user.roles],
+            // the office's current name; '' when the user has none (national administrators, or not assigned yet)
+            office: office?.name ?? '', officeId: office?.id ?? null, officeCode: office?.code ?? null,
             status: user.status, mfa: !!user.mfaEnrolled, lastActive: user.lastActiveAt ?? null,
             conflicts: sodConflicts(perms, sod).map(r => r.id)
         };
@@ -211,6 +217,102 @@ export class IdentityService {
         return { groups: PERM_GROUPS, perms: PERMS, roles: ctx.roles };
     }
 
+    // ---------------------------------------------------------------- offices
+
+    /** Offices with the number of their users who are not suspended. */
+    async listOffices() {
+        const [offices, users] = await Promise.all([this.repo.listOffices(), this.repo.listUsers()]);
+        return offices.map(o => this.publicOffice(o, users));
+    }
+
+    publicOffice(o, users = []) {
+        return {
+            id: o.id, code: o.code, name: o.name, type: o.type, address: o.address, contact: o.contact, status: o.status,
+            createdAt: o.createdAt ?? null, users: users.filter(u => u.officeId === o.id && u.status !== 'Suspended').length
+        };
+    }
+
+    async requireOffice(id) {
+        const office = await this.repo.getOffice(id);
+        if (!office) throw new NotFoundError('Office not found');
+        return office;
+    }
+
+    /**
+     * The office a user is invited into or moved to. Everyone needs an active office, except holders
+     * of a national role (administrators), who may have none. → office | null
+     */
+    async officeForUser(officeId, roleIds) {
+        if (!officeId) {
+            if (isNational(roleIds)) return null;
+            throw new BadRequestError('Choose an office: only system administrators can be without one');
+        }
+        const office = await this.repo.getOffice(officeId);
+        if (!office) throw new BadRequestError('That office does not exist');
+        if (office.status !== 'Active') throw new ConflictError(`${office.name} is suspended: users cannot be added to it`);
+        return office;
+    }
+
+    officeFields({ name, type, address, contact }, partial) {
+        const out = {};
+        if (name !== undefined || !partial) {
+            if (!String(name || '').trim()) throw new BadRequestError('Name is required');
+            out.name = String(name).trim();
+        }
+        if (type !== undefined || !partial) {
+            const t = type ?? 'registry';
+            if (!OFFICE_TYPES.includes(t)) throw new BadRequestError(`Type must be one of: ${OFFICE_TYPES.join(', ')}`);
+            out.type = t;
+        }
+        if (address !== undefined || !partial) out.address = String(address ?? '').trim();
+        if (contact !== undefined || !partial) out.contact = String(contact ?? '').trim();
+        return out;
+    }
+
+    async createOffice({ code, ...rest }, actor) {
+        const cleanCode = String(code || '').trim().toUpperCase();
+        if (!new RegExp(OFFICE_CODE_PATTERN).test(cleanCode)) throw new BadRequestError('The code must be 2 to 5 letters, e.g. WDH');
+        const fields = this.officeFields(rest, false);
+        if (await this.repo.getOfficeByCode(cleanCode)) throw new ConflictError(`An office with code ${cleanCode} already exists`);
+        const office = await this.repo.createOffice({ code: cleanCode, ...fields, status: 'Active' });
+        await this.log('office', 'Office added', `${office.code} · ${office.name}`, OFFICE_TYPE_LABEL[office.type], actor);
+        return this.publicOffice(office);
+    }
+
+    /** Name, type, address and contact can change; the code cannot. */
+    async updateOffice(id, patch, actor) {
+        const office = await this.requireOffice(id);
+        const fields = this.officeFields(patch, true);
+        const changed = Object.keys(fields).filter(k => fields[k] !== office[k]);
+        if (!changed.length) return this.publicOffice(office, await this.repo.listUsers());
+        const updated = await this.repo.updateOffice(id, fields);
+        const detail = changed.map(k => (k === 'name' ? `name: ${office.name} → ${updated.name}` : k === 'type' ? `type: ${OFFICE_TYPE_LABEL[updated.type]}` : `${k} updated`)).join(' · ');
+        await this.log('office', 'Office updated', `${office.code} · ${updated.name}`, detail, actor);
+        return this.publicOffice(updated, await this.repo.listUsers());
+    }
+
+    /** Suspending stops new invitations into the office; its users and their work are unchanged. */
+    async setOfficeStatus(id, status, reason, actor) {
+        if (!['Active', 'Suspended'].includes(status)) throw new BadRequestError('Status must be Active or Suspended');
+        const office = await this.requireOffice(id);
+        if (office.status === status) return this.publicOffice(office, await this.repo.listUsers());
+        const updated = await this.repo.updateOffice(id, { status });
+        await this.log('office', status === 'Suspended' ? 'Office suspended' : 'Office reactivated', `${office.code} · ${office.name}`,
+            reason || (status === 'Suspended' ? 'No new invitations into this office' : 'Invitations allowed again'), actor);
+        return this.publicOffice(updated, await this.repo.listUsers());
+    }
+
+    /** Move a user to another office (or to none, for administrators). */
+    async setUserOffice(id, officeId, actor) {
+        const user = await this.requireUser(id);
+        const office = await this.officeForUser(officeId || null, user.roles);
+        if ((user.officeId ?? null) === (office?.id ?? null)) return this.publicUser(user, await this.context());
+        const before = user.officeId ? await this.repo.getOffice(user.officeId) : null;
+        const updated = await this.repo.updateUser(id, { officeId: office?.id ?? null });
+        await this.log('user', 'Office changed', user.name, `${before?.code ?? 'none'} → ${office?.code ?? 'National'}`, actor);
+        return this.publicUser(updated, await this.context());
+    }
+
     // ---------------------------------------------------------------- users
 
     async listUsers() {
@@ -222,21 +324,22 @@ export class IdentityService {
         return `${this.config.inviteUrlBase}?token=${encodeURIComponent(token)}`;
     }
 
-    async invite({ name, email, office = '', roles }, actor) {
+    async invite({ name, email, officeId = null, roles }, actor) {
         const cleanEmail = normEmail(email);
         const roleIds = this.validateRoleIds(roles);
         if (!String(name || '').trim()) throw new BadRequestError('Name is required');
         if (await this.repo.getUserByEmail(cleanEmail)) throw new ConflictError('A user with this email already exists');
+        const office = await this.officeForUser(officeId, roleIds);
         const token = randomToken();
         const expiresAt = new Date(this.clock().getTime() + this.config.inviteTtlHours * 3_600_000);
         const user = await this.repo.createUser({
-            name: name.trim(), email: cleanEmail, office: office.trim(), roles: roleIds, status: 'Invited',
+            name: name.trim(), email: cleanEmail, officeId: office?.id ?? null, roles: roleIds, status: 'Invited',
             inviteHash: sha256(token), inviteExpiresAt: expiresAt
         });
         const ctx = await this.context();
         const roleText = this.roleLabels(roleIds, ctx.roles);
         const mail = await this.emailInvitation(user, token, expiresAt, roleText, actor, false);
-        await this.log('user', 'Invited', user.name, `Roles: ${roleText} · ${emailNote(mail)}`, actor);
+        await this.log('user', 'Invited', user.name, `${office ? office.code : 'National'} · Roles: ${roleText} · ${emailNote(mail)}`, actor);
         // The link is a credential until used: it goes to the user by email, and to the admin only
         // when IDENTITY_EXPOSE_INVITE_LINKS=true (dev). Never into events or logs.
         await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, emailSent: mail.sent }, { actor });
@@ -246,6 +349,8 @@ export class IdentityService {
     async resendInvite(id, actor) {
         const user = await this.requireUser(id);
         if (user.status !== 'Invited') throw new ConflictError('Only invited users can be sent a new invitation');
+        const office = user.officeId ? await this.repo.getOffice(user.officeId) : null;
+        if (office?.status === 'Suspended') throw new ConflictError(`${office.name} is suspended: reactivate it, or move the user to another office first`);
         const token = randomToken();
         const expiresAt = new Date(this.clock().getTime() + this.config.inviteTtlHours * 3_600_000);
         await this.repo.updateUser(id, { inviteHash: sha256(token), inviteExpiresAt: expiresAt });

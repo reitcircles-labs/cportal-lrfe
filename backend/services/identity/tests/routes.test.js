@@ -57,14 +57,14 @@ describe('identity HTTP API', () => {
     });
 
     it('admin flows: list, invite, change roles, suspend, policies, matrix', async () => {
-        const { app, login, auth } = await makeApp();
+        const { app, login, auth, office } = await makeApp();
         const { token } = await login('p.hamutenya@deeds.gov.na');
         const h = auth(token);
 
         const list = await app.inject({ url: '/users', headers: h });
         expect(list.json().users).to.have.length(14);
 
-        const invite = await app.inject({ method: 'POST', url: '/users', headers: h, payload: { name: 'Nelao Amutenya', email: 'n.amutenya@deeds.gov.na', roles: ['rev'] } });
+        const invite = await app.inject({ method: 'POST', url: '/users', headers: h, payload: { name: 'Nelao Amutenya', email: 'n.amutenya@deeds.gov.na', officeId: office.id, roles: ['rev'] } });
         expect(invite.statusCode).to.equal(201);
         const id = invite.json().user.id;
 
@@ -92,9 +92,9 @@ describe('identity HTTP API', () => {
     });
 
     it('accepts an invitation publicly', async () => {
-        const { app, login, auth } = await makeApp();
+        const { app, login, auth, office } = await makeApp();
         const { token } = await login('p.hamutenya@deeds.gov.na');
-        const invite = await app.inject({ method: 'POST', url: '/users', headers: auth(token), payload: { name: 'N A', email: 'na@deeds.gov.na', roles: ['scan'] } });
+        const invite = await app.inject({ method: 'POST', url: '/users', headers: auth(token), payload: { name: 'N A', email: 'na@deeds.gov.na', officeId: office.id, roles: ['scan'] } });
         const inviteToken = invite.json().inviteUrl.split('token=')[1];
         const res = await app.inject({ method: 'POST', url: '/invitations/accept', payload: { token: decodeURIComponent(inviteToken), password: 'a long enough passphrase' } });
         expect(res.statusCode).to.equal(200);

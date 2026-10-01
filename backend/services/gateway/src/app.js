@@ -14,6 +14,7 @@ export const ROUTES = [
     { prefix: '/api/roles', service: 'identity', rewritePrefix: '/roles' },
     { prefix: '/api/policies', service: 'identity', rewritePrefix: '/policies' },
     { prefix: '/api/access-log', service: 'identity', rewritePrefix: '/access-log' },
+    { prefix: '/api/offices', service: 'identity', rewritePrefix: '/offices' },
     { prefix: '/api/documents', service: 'edrms', rewritePrefix: '/documents' },
     { prefix: '/api/document-content', service: 'edrms', rewritePrefix: '/content' },
     { prefix: '/api/document-catalogue', service: 'edrms', rewritePrefix: '/catalogue' },

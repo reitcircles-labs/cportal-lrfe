@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { ACCESS_KINDS, OFFICE_TYPES } from '../catalogue.js';
 
 export const SCHEMA = 'identity';
 
@@ -10,7 +11,10 @@ export function defineModels(sequelize) {
         id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
         name: { type: DataTypes.STRING, allowNull: false },
         email: { type: DataTypes.STRING, allowNull: false, unique: true },
+        // legacy free-text label from before offices existed; kept, no longer shown or set
         office: { type: DataTypes.STRING, allowNull: false, defaultValue: '' },
+        // the office the user belongs to; null only for national roles (administrators)
+        officeId: { type: DataTypes.UUID },
         status: { type: DataTypes.ENUM('Active', 'Suspended', 'Invited'), allowNull: false, defaultValue: 'Invited' },
         passwordHash: { type: DataTypes.STRING },
         mfaEnrolled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
@@ -63,11 +67,22 @@ export function defineModels(sequelize) {
         time: { type: DataTypes.DATE, allowNull: false },
         actorId: { type: DataTypes.UUID },
         actor: { type: DataTypes.STRING, allowNull: false },
-        kind: { type: DataTypes.ENUM('role', 'user', 'policy', 'denied', 'session'), allowNull: false },
+        kind: { type: DataTypes.ENUM(...ACCESS_KINDS), allowNull: false },
         action: { type: DataTypes.STRING, allowNull: false },
         target: { type: DataTypes.STRING, allowNull: false, defaultValue: '' },
         detail: { type: DataTypes.TEXT, allowNull: false, defaultValue: '' }
     }, opts({ timestamps: false, indexes: [{ fields: ['kind'] }, { fields: ['time'] }] }));
 
-    return { User, Role, UserRole, SodRule, Setting, Session, AccessEvent };
+    /** An office location (registry office or external body). Never deleted: suspended instead. */
+    const Office = sequelize.define('office', {
+        id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+        code: { type: DataTypes.STRING(5), allowNull: false, unique: true },
+        name: { type: DataTypes.STRING, allowNull: false },
+        type: { type: DataTypes.ENUM(...OFFICE_TYPES), allowNull: false, defaultValue: 'registry' },
+        address: { type: DataTypes.TEXT, allowNull: false, defaultValue: '' },
+        contact: { type: DataTypes.STRING, allowNull: false, defaultValue: '' },
+        status: { type: DataTypes.ENUM('Active', 'Suspended'), allowNull: false, defaultValue: 'Active' }
+    }, opts());
+
+    return { User, Role, UserRole, SodRule, Setting, Session, AccessEvent, Office };
 }

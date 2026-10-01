@@ -107,10 +107,10 @@ describe('IdentityService', () => {
         });
 
         it('invites a user who can then accept and sign in', async () => {
-            const { service, user } = await makeService();
+            const { service, user, office } = await makeService();
             const admin = await user(ADMIN);
             const { user: invited, inviteUrl } = await service.invite(
-                { name: 'Nelao Amutenya', email: 'N.Amutenya@deeds.gov.na', office: 'Review desk', roles: ['rev'] },
+                { name: 'Nelao Amutenya', email: 'N.Amutenya@deeds.gov.na', officeId: office.id, roles: ['rev'] },
                 { id: admin.id, name: admin.name });
             expect(invited).to.include({ status: 'Invited', email: 'n.amutenya@deeds.gov.na' });
             const token = new URL(inviteUrl.replace('#/', '')).searchParams.get('token');
@@ -123,11 +123,11 @@ describe('IdentityService', () => {
         });
 
         it('rejects duplicate emails, unknown roles and expired invitations', async () => {
-            const { service, user, clock } = await makeService();
+            const { service, user, clock, office } = await makeService();
             const actor = { id: (await user(ADMIN)).id, name: 'Admin' };
-            await rejects(service.invite({ name: 'X', email: SCAN, roles: ['scan'] }, actor), 409);
-            await rejects(service.invite({ name: 'X', email: 'x@x.na', roles: ['wizard'] }, actor), 400);
-            const { inviteUrl } = await service.invite({ name: 'X', email: 'x@x.na', roles: ['scan'] }, actor);
+            await rejects(service.invite({ name: 'X', email: SCAN, officeId: office.id, roles: ['scan'] }, actor), 409);
+            await rejects(service.invite({ name: 'X', email: 'x@x.na', officeId: office.id, roles: ['wizard'] }, actor), 400);
+            const { inviteUrl } = await service.invite({ name: 'X', email: 'x@x.na', officeId: office.id, roles: ['scan'] }, actor);
             clock.advance(73 * 3_600_000);
             const token = new URL(inviteUrl.replace('#/', '')).searchParams.get('token');
             await rejects(service.acceptInvite({ token, password: 'a long enough passphrase' }), 400, 'expired');

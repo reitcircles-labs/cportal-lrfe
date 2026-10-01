@@ -28,6 +28,7 @@ export const routes: Routes = [
   { path: 'link', component: LinkComponent, canActivate: g, data: { perm: 'record.view', title: 'Land record (create/finalize)', crumb: 'Workspace · Records desk' } },
   { path: 'audit', component: AuditComponent, canActivate: g, data: { perm: 'audit.view', title: 'Audit', crumb: 'Workspace · Read-only' } },
   { path: 'admin/users', component: AdminComponent, canActivate: g, data: { perm: 'admin.users', tab: 'users', title: 'Users', crumb: 'Administration' } },
+  { path: 'admin/offices', component: AdminComponent, canActivate: g, data: { perm: 'admin.offices', tab: 'offices', title: 'Offices', crumb: 'Administration' } },
   { path: 'admin/roles', component: AdminComponent, canActivate: g, data: { perm: 'admin.roles', tab: 'roles', title: 'Roles & permissions', crumb: 'Administration' } },
   { path: 'admin/policies', component: AdminComponent, canActivate: g, data: { perm: 'admin.policies', tab: 'policies', title: 'Security policies', crumb: 'Administration' } },
   { path: 'admin/log', component: AdminComponent, canActivate: g, data: { perm: 'admin.users', tab: 'log', title: 'Access log', crumb: 'Administration' } },

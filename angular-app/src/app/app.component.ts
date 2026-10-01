@@ -168,6 +168,7 @@ export class AppComponent {
     const conflicts = this.rbac.users().filter(u => u.status !== 'Suspended' && this.rbac.userConflicts(u).length).length;
     return [
       { path: '/admin/users', label: 'Users', icon: 'users', perm: 'admin.users', badge: conflicts },
+      { path: '/admin/offices', label: 'Offices', icon: 'building', perm: 'admin.offices', badge: 0 },
       { path: '/admin/roles', label: 'Roles & permissions', icon: 'lock', perm: 'admin.roles', badge: 0 },
       { path: '/admin/policies', label: 'Security policies', icon: 'shield', perm: 'admin.policies', badge: 0 },
       { path: '/admin/log', label: 'Access log', icon: 'clock', perm: 'admin.users', badge: 0 }

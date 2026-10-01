@@ -25,8 +25,16 @@ export const PERMS = [
     { id: 'audit.export', group: 'Audit', label: 'Export evidence packs', desc: 'Download images, metadata and trail' },
     { id: 'admin.users', group: 'Administration', label: 'Manage users', desc: 'Invite, assign roles, suspend' },
     { id: 'admin.roles', group: 'Administration', label: 'Manage roles & permissions', desc: 'Edit the permission matrix' },
-    { id: 'admin.policies', group: 'Administration', label: 'Manage security policies', desc: 'MFA, sessions, segregation of duties' }
+    { id: 'admin.policies', group: 'Administration', label: 'Manage security policies', desc: 'MFA, sessions, segregation of duties' },
+    { id: 'admin.offices', group: 'Administration', label: 'Manage offices', desc: 'Add, rename and suspend office locations', since: 2 }
 ];
+
+/**
+ * Catalogue version. A permission with `since: n` was added in version n: when an existing
+ * database is on an older version, the seed grants it to the roles that hold it by default
+ * (below), once, and never touches it again (an administrator may have removed it since).
+ */
+export const CATALOGUE_VERSION = 2;
 
 export const PERM_IDS = PERMS.map(p => p.id);
 export const isKnownPerm = (id) => PERM_IDS.includes(id);
@@ -48,7 +56,7 @@ export const ROLES = [
     role('aud', 'Auditor · read-only', 'Office of the Auditor-General. Inspects evidence and signs off; cannot change records.', '/audit',
         ['dashboard.view', 'capture.view', 'verify.view', 'record.view', 'audit.view', 'audit.signoff', 'audit.export']),
     role('adm', 'System administrator', 'Manages users, roles and security policies. No rights over land-record data.', '/admin/users',
-        ['dashboard.view', 'audit.view', 'admin.users', 'admin.roles', 'admin.policies'])
+        ['dashboard.view', 'audit.view', 'admin.users', 'admin.roles', 'admin.policies', 'admin.offices'])
 ];
 
 export const ROLE_IDS = ROLES.map(r => r.id);
@@ -60,7 +68,13 @@ export const SOD_RULES = [
     { id: 'sod4', a: 'capture.scan', b: 'verify.file', label: 'Scan operators cannot file what they capture', on: false }
 ];
 
-export const ACCESS_KINDS = ['role', 'user', 'policy', 'denied', 'session'];
+export const ACCESS_KINDS = ['role', 'user', 'policy', 'denied', 'session', 'office'];
+
+/** Offices: locations users belong to. A code is fixed once created (it will appear in numbers). */
+export const OFFICE_TYPES = ['registry', 'external'];
+export const OFFICE_CODE_PATTERN = '^[A-Z]{2,5}$';
+/** Roles whose holders may have no office ("national"); everyone else is invited into one. */
+export const NATIONAL_ROLES = ['adm'];
 
 export const DEFAULT_POLICIES ={ mfa: true, eid: true, ipAllow: false, timeout: 30, fourEyes: true };
 

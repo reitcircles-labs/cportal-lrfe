@@ -15,10 +15,11 @@ describe('identity Postgres models', () => {
     });
 
     it('every field the service writes exists in the model', async () => {
-        const { service, repo, user } = await makeService({ mfa: true });
+        const { service, repo, user, office } = await makeService({ mfa: true });
         const first = await service.login({ email: 'k.iipinge@deeds.gov.na', password: PASSWORD });
         const admin = await user('p.hamutenya@deeds.gov.na');
-        await service.invite({ name: 'N', email: 'n@x.na', roles: ['scan'] }, { id: admin.id, name: admin.name });
+        await service.invite({ name: 'N', email: 'n@x.na', officeId: office.id, roles: ['scan'] }, { id: admin.id, name: admin.name });
+        await service.createOffice({ code: 'KMP', name: 'Keetmanshoop sub-registry' }, { id: admin.id, name: admin.name });
 
         // users: `roles` lives in user_role, everything else must be a column
         for (const u of await repo.listUsers()) {

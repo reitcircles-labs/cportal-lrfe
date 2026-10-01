@@ -27,7 +27,9 @@ export async function makeService({ mfa = false } = {}) {
     const clock = makeClock();
     const service = new IdentityService({ repo, events, clock, config: { exposeInviteLinks: true } });
     const user = async (email) => repo.getUserByEmail(email);
-    return { repo, service, clock, published, user };
+    // users (other than administrators) are invited into an office
+    const office = await repo.createOffice({ code: 'WDH', name: 'Deeds Registry · Windhoek', type: 'registry' });
+    return { repo, service, clock, published, user, office };
 }
 
 export async function makeApp(opts) {

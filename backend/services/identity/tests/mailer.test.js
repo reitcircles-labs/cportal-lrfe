@@ -24,7 +24,8 @@ async function makeService(mailer, config = {}) {
     const published = [];
     events.subscribe('*', e => published.push(e));
     const service = new IdentityService({ repo, events, mailer, clock: makeClock(), config });
-    return { repo, service, published };
+    const office = await repo.createOffice({ code: 'WDH', name: 'Deeds Registry · Windhoek', type: 'registry' });
+    return { repo, service, published, office };
 }
 
 const linkIn = (text) => text.match(/https?:\/\/\S+token=[\w-]+/)[0];
@@ -32,8 +33,8 @@ const linkIn = (text) => text.match(/https?:\/\/\S+token=[\w-]+/)[0];
 describe('invitation email', () => {
     it('emails the invitation link; the link activates the account', async () => {
         const mailer = fakeMailer();
-        const { service } = await makeService(mailer);
-        const res = await service.invite({ name: 'Nangula Shikongo', email: 'N.Shikongo@deeds.gov.na', office: 'Review desk', roles: ['rev'] }, ADMIN);
+        const { service, office } = await makeService(mailer);
+        const res = await service.invite({ name: 'Nangula Shikongo', email: 'N.Shikongo@deeds.gov.na', officeId: office.id, roles: ['rev'] }, ADMIN);
         expect(res.email).to.deep.equal({ sent: true, to: 'n.shikongo@deeds.gov.na' });
         expect(res).to.not.have.property('inviteUrl');           // not exposed unless configured
         expect(mailer.sent).to.have.length(1);
@@ -50,8 +51,8 @@ describe('invitation email', () => {
 
     it('never puts the link in events or the access log', async () => {
         const mailer = fakeMailer();
-        const { service, published, repo } = await makeService(mailer);
-        await service.invite({ name: 'X', email: 'x@deeds.gov.na', roles: ['scan'] }, ADMIN);
+        const { service, published, repo, office } = await makeService(mailer);
+        await service.invite({ name: 'X', email: 'x@deeds.gov.na', officeId: office.id, roles: ['scan'] }, ADMIN);
         const link = linkIn(mailer.sent[0].text);
         const token = link.split('token=')[1];
         expect(JSON.stringify(published)).to.not.include(token);
@@ -62,8 +63,8 @@ describe('invitation email', () => {
     });
 
     it('still creates the user when the email fails, and says why', async () => {
-        const { service, repo } = await makeService(fakeMailer({ fail: 'The mail server could not be reached' }), { exposeInviteLinks: true });
-        const res = await service.invite({ name: 'Y', email: 'y@deeds.gov.na', roles: ['scan'] }, ADMIN);
+        const { service, repo, office } = await makeService(fakeMailer({ fail: 'The mail server could not be reached' }), { exposeInviteLinks: true });
+        const res = await service.invite({ name: 'Y', email: 'y@deeds.gov.na', officeId: office.id, roles: ['scan'] }, ADMIN);
         expect(res.user.status).to.equal('Invited');
         expect(res.email).to.deep.equal({ sent: false, to: 'y@deeds.gov.na', reason: 'The mail server could not be reached' });
         expect(res.inviteUrl).to.match(/token=/);                 // dev fallback: the admin passes it on
@@ -72,15 +73,15 @@ describe('invitation email', () => {
     });
 
     it('without a mailer: not sent, reason given (today\'s behaviour)', async () => {
-        const { service } = await makeService(createMailer());
-        const res = await service.invite({ name: 'Z', email: 'z@deeds.gov.na', roles: ['scan'] }, ADMIN);
+        const { service, office } = await makeService(createMailer());
+        const res = await service.invite({ name: 'Z', email: 'z@deeds.gov.na', officeId: office.id, roles: ['scan'] }, ADMIN);
         expect(res.email).to.include({ sent: false, reason: 'Email is not configured on the server' });
     });
 
     it('resend emails a new link; the old one stops working', async () => {
         const mailer = fakeMailer();
-        const { service } = await makeService(mailer);
-        const { user } = await service.invite({ name: 'R', email: 'r@deeds.gov.na', roles: ['rec'] }, ADMIN);
+        const { service, office } = await makeService(mailer);
+        const { user } = await service.invite({ name: 'R', email: 'r@deeds.gov.na', officeId: office.id, roles: ['rec'] }, ADMIN);
         const res = await service.resendInvite(user.id, ADMIN);
         expect(res.email.sent).to.equal(true);
         expect(mailer.sent).to.have.length(2);
@@ -103,8 +104,8 @@ describe('invitation email', () => {
         const dir = join(tmpdir(), `identity-mail-${process.pid}-${Date.now()}`);
         try {
             const mailer = createMailer({ transport: 'file', from: 'Deeds Registry <noreply@example.test>', dir });
-            const { service } = await makeService(mailer);
-            const res = await service.invite({ name: 'F', email: 'f@deeds.gov.na', roles: ['scan'] }, ADMIN);
+            const { service, office } = await makeService(mailer);
+            const res = await service.invite({ name: 'F', email: 'f@deeds.gov.na', officeId: office.id, roles: ['scan'] }, ADMIN);
             expect(res.email.sent).to.equal(true);
             const [file] = await readdir(dir);
             const eml = await readFile(join(dir, file), 'utf8');

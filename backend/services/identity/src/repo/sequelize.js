@@ -1,7 +1,9 @@
-import { defineModels } from './models.js';
+import { DataTypes } from 'sequelize';
+import { defineModels, SCHEMA } from './models.js';
 
 const POLICIES_KEY = 'security.policies';
-const USER_FIELDS = ['name', 'email', 'office', 'status', 'passwordHash', 'mfaEnrolled', 'mfaSecret', 'pendingMfaSecret', 'inviteHash', 'inviteExpiresAt', 'lastActiveAt'];
+const OFFICE_FIELDS = ['code', 'name', 'type', 'address', 'contact', 'status'];
+const USER_FIELDS = ['name', 'email', 'office', 'officeId', 'status', 'passwordHash', 'mfaEnrolled', 'mfaSecret', 'pendingMfaSecret', 'inviteHash', 'inviteExpiresAt', 'lastActiveAt'];
 
 /** Postgres implementation of the identity repository. Same interface as ./memory.js. */
 export function createSequelizeRepo(sequelize) {
@@ -24,7 +26,32 @@ export function createSequelizeRepo(sequelize) {
 
     return {
         models: m,
-        async sync() { await sequelize.sync(); },
+        /**
+         * Create missing tables, then bring tables created by an older version up to date.
+         * sequelize.sync() never adds columns to an existing table, so each later column is added
+         * here, idempotently (safe on every start).
+         */
+        async sync() {
+            await sequelize.sync();
+            const q = sequelize.getQueryInterface();
+            const user = { tableName: 'user', schema: SCHEMA };
+            if (!(await q.describeTable(user)).officeId) await q.addColumn(user, 'officeId', { type: DataTypes.UUID });
+            await sequelize.query(`ALTER TYPE "${SCHEMA}"."enum_access_event_kind" ADD VALUE IF NOT EXISTS 'office'`);
+        },
+
+        async getSetting(key) { return (await m.Setting.findByPk(key))?.value ?? null; },
+        async setSetting(key, value) { await m.Setting.upsert({ key, value }); },
+
+        async listOffices() { return (await m.Office.findAll({ order: [['code', 'ASC']] })).map(r => r.get({ plain: true })); },
+        async getOffice(id) { return (await m.Office.findByPk(id))?.get({ plain: true }) ?? null; },
+        async getOfficeByCode(code) { return (await m.Office.findOne({ where: { code } }))?.get({ plain: true }) ?? null; },
+        async createOffice(data) { return (await m.Office.create(pick(data, OFFICE_FIELDS))).get({ plain: true }); },
+        async updateOffice(id, patch) {
+            const row = await m.Office.findByPk(id);
+            if (!row) return null;
+            await row.update(pick(patch, OFFICE_FIELDS.filter(f => f !== 'code')));
+            return row.get({ plain: true });
+        },
 
         async listUsers() {
             const [rows, links] = await Promise.all([m.User.findAll({ order: [['name', 'ASC']] }), m.UserRole.findAll()]);

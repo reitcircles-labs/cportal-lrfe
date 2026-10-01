@@ -1,4 +1,6 @@
-import { ROLES, SOD_RULES, DEFAULT_POLICIES } from './catalogue.js';
+import { ROLES, SOD_RULES, DEFAULT_POLICIES, PERMS, CATALOGUE_VERSION, normalizePerms } from './catalogue.js';
+
+const CATALOGUE_KEY = 'catalogue.version';
 import { hashPassword } from './crypto.js';
 
 /** The users shown in the frontend demo (angular-app/src/app/state/rbac.service.ts). Fictitious. */
@@ -35,6 +37,24 @@ export async function seedIdentity(repo, { admin, demoPassword, log = () => {} }
             log(`role ${role.id} created`);
         }
     }
+    // Permissions added to the catalogue since this database was seeded: grant each, once, to the
+    // roles that hold it by default. A database without a recorded version predates versioning (1);
+    // one whose roles were all created just now is already current.
+    const created = roles.length === 0;
+    const version = (await repo.getSetting(CATALOGUE_KEY)) ?? (created ? CATALOGUE_VERSION : 1);
+    const newer = PERMS.filter(p => (p.since ?? 1) > version);
+    if (newer.length) {
+        for (const role of await repo.listRoles()) {
+            const def = ROLES.find(r => r.id === role.id);
+            const add = newer.filter(p => def?.perms.includes(p.id) && !role.perms.includes(p.id)).map(p => p.id);
+            if (add.length) {
+                await repo.updateRolePerms(role.id, normalizePerms([...role.perms, ...add]));
+                log(`role ${role.id}: granted new permission(s) ${add.join(', ')}`);
+            }
+        }
+    }
+    if (version !== CATALOGUE_VERSION) await repo.setSetting(CATALOGUE_KEY, CATALOGUE_VERSION);
+
     const sod = await repo.listSod();
     const missingSod = SOD_RULES.filter(r => !sod.some(x => x.id === r.id));
     if (missingSod.length) await repo.saveSod(missingSod);

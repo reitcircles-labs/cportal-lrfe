@@ -1,15 +1,14 @@
 import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
-import { AppUser, PERMS, PERM_GROUPS, Policies, RbacService, SodRule, UserStatus, AccessKind } from '../../state/rbac.service';
+import { AppUser, PERMS, PERM_GROUPS, Policies, RbacService, SodRule, UserStatus, AccessKind, Office, OfficeType, OFFICE_TYPE_LABEL, NATIONAL_ROLES } from '../../state/rbac.service';
 import { ConfirmService } from '../../state/confirm.service';
 import { ToastService } from '../../state/toast.service';
 import { IconComponent } from '../../shared/icon.component';
 
-type Tab = 'users' | 'roles' | 'policies' | 'log';
+type Tab = 'users' | 'offices' | 'roles' | 'policies' | 'log';
 const KIND: Record<AccessKind, [string, string]> = {
-  role: ['Role', 'tag-info'], user: ['User', 'tag-neutral'], policy: ['Policy', 'tag-outline'], denied: ['Denied', 'tag-danger'], session: ['Session', 'tag-neutral']
+  role: ['Role', 'tag-info'], user: ['User', 'tag-neutral'], policy: ['Policy', 'tag-outline'], denied: ['Denied', 'tag-danger'], session: ['Session', 'tag-neutral'], office: ['Office', 'tag-info']
 };
-const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk', 'Records desk', 'Keetmanshoop sub-registry', 'Office of the Auditor-General', 'ICT · Deeds Registry'];
 
 @Component({
     selector: 'app-admin',
@@ -34,11 +33,19 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
               <option value="all">All roles</option>
               @for (r of rbac.roles(); track r.id) { <option [value]="r.id">{{ r.label }}</option> }
             </select>
+            <select class="input" style="width:auto;min-width:180px" [value]="uOffice()" (change)="uOffice.set($any($event.target).value)" aria-label="Filter by office">
+              <option value="all">All offices</option>
+              @for (o of rbac.offices(); track o.id) { <option [value]="o.id">{{ o.code }} · {{ o.name }}</option> }
+              <option value="none">No office / national</option>
+            </select>
             <div class="seg">
               @for (s of statusOpts; track s) { <label class="seg-opt"><input type="radio" name="us" [checked]="uStatus() === s" (change)="uStatus.set(s)">{{ s === 'all' ? 'All' : s }}</label> }
             </div>
             <span class="spacer"></span>
-            <button class="btn btn-primary" (click)="openInvite()"><span style="font-size:18px;line-height:0">+</span>Invite user</button>
+            @if (!rbac.activeOffices().length) {
+              <span class="small muted">Add an office first @if (rbac.can('admin.offices')) { · <a routerLink="/admin/offices">Offices</a> }</span>
+            }
+            <button class="btn btn-primary" [disabled]="!rbac.activeOffices().length" [title]="rbac.activeOffices().length ? '' : 'Users are invited into an office: add an office first'" (click)="openInvite()"><span style="font-size:18px;line-height:0">+</span>Invite user</button>
           </div>
           <div style="overflow-x:auto">
             <table class="table">
@@ -49,7 +56,7 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
                     <td><div class="who"><span class="av">{{ initials(u.name) }}</span><span class="stack" style="gap:0;min-width:0"><b>{{ u.name }}</b><span class="small muted">{{ u.email }}</span></span></div></td>
                     <td><div class="row" style="gap:4px">@for (r of u.roles; track r) { <span class="tag tag-info">{{ rbac.roleLabel(r) }}</span> }
                       @if (u.conflicts) { <span class="tag tag-danger" title="Breaks a segregation-of-duties rule"><app-icon name="alert" [size]="12" />Conflict</span> }</div></td>
-                    <td class="small">{{ u.office }}</td>
+                    <td class="small">@if (u.office) { <span class="num muted">{{ u.officeCode }}</span> {{ u.office }} } @else { <span class="muted">{{ isNational(u.roles) ? 'National' : 'No office' }}</span> }</td>
                     <td><span class="tag" [class]="'tag ' + statusTag(u.status)">{{ u.status }}</span></td>
                     <td>@if (u.mfa) { <span class="ok"><app-icon name="check" [size]="16" /></span> } @else { <span class="small" style="color:var(--warn-fg)">Not enrolled</span> }</td>
                     <td class="small muted num" style="white-space:nowrap">{{ u.lastActive }}</td>
@@ -60,6 +67,44 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
             </table>
           </div>
           <div class="foot small muted">{{ users().length }} of {{ rbac.users().length }} users</div>
+        </section>
+      }
+
+      <!-- ================= OFFICES ================= -->
+      @if (tab() === 'offices') {
+        <section class="panel">
+          <div class="toolbar">
+            <div class="search"><app-icon name="search" [size]="15" /><input class="input" placeholder="Code, name or address" [value]="oq()" (input)="oq.set($any($event.target).value)" aria-label="Search offices"></div>
+            <span class="spacer"></span>
+            <button class="btn btn-primary" (click)="openAddOffice()"><span style="font-size:18px;line-height:0">+</span>Add office</button>
+          </div>
+          @if (!rbac.offices().length) {
+            <div class="empty-o">
+              <app-icon name="building" [size]="28" />
+              <b>No offices yet</b>
+              <span class="small muted">Add your first office location. Users are invited into an office.</span>
+              <button class="btn btn-primary" (click)="openAddOffice()">Add office</button>
+            </div>
+          } @else {
+            <div style="overflow-x:auto">
+              <table class="table">
+                <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Users</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  @for (o of officeRows(); track o.id) {
+                    <tr class="click" (click)="openEditOffice(o)">
+                      <td class="num"><b>{{ o.code }}</b></td>
+                      <td><span class="stack" style="gap:0"><span>{{ o.name }}</span>@if (o.address) { <span class="small muted">{{ o.address }}</span> }</span></td>
+                      <td class="small">{{ typeLabel(o.type) }}</td>
+                      <td class="num">{{ o.users }}</td>
+                      <td><span class="tag" [class.tag-accent]="o.status === 'Active'" [class.tag-danger]="o.status === 'Suspended'">{{ o.status }}</span></td>
+                      <td style="text-align:right"><button class="btn btn-secondary" style="min-height:32px" (click)="$event.stopPropagation(); openEditOffice(o)">Manage</button></td>
+                    </tr>
+                  } @empty { <tr><td colspan="6" class="muted" style="text-align:center;padding:32px">No offices match.</td></tr> }
+                </tbody>
+              </table>
+            </div>
+          }
+          <div class="foot small muted">{{ officeRows().length }} of {{ rbac.offices().length }} offices · suspended offices take no new invitations; offices are never deleted</div>
         </section>
       }
 
@@ -180,7 +225,19 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
           <button class="btn btn-ghost btn-icon" style="margin-left:auto" (click)="editId.set(null)" aria-label="Close"><app-icon name="x" [size]="18" /></button>
         </header>
         <div class="db">
-          <div class="kv"><span>Status</span><span><span class="tag" [class]="'tag ' + statusTag(u.status)">{{ u.status }}</span></span><span>Office</span><span>{{ u.office }}</span><span>MFA</span><span>{{ u.mfa ? 'Enrolled' : 'Not enrolled' }}</span><span>Last active</span><span>{{ u.lastActive }}</span></div>
+          <div class="kv"><span>Status</span><span><span class="tag" [class]="'tag ' + statusTag(u.status)">{{ u.status }}</span></span><span>Office</span><span>{{ u.office || (isNational(u.roles) ? 'National (no office)' : 'No office') }}</span><span>MFA</span><span>{{ u.mfa ? 'Enrolled' : 'Not enrolled' }}</span><span>Last active</span><span>{{ u.lastActive }}</span></div>
+
+          <div class="stack" style="gap:8px">
+            <h4 style="margin:0">Office</h4>
+            <div class="row" style="gap:8px;flex-wrap:nowrap">
+              <select class="input" [value]="draftOffice()" (change)="draftOffice.set($any($event.target).value)" aria-label="Office">
+                @if (!u.officeId && !isNational(u.roles)) { <option value="">No office: choose one</option> }
+                @if (isNational(u.roles)) { <option value="">National (no office)</option> }
+                @for (o of officeChoices(u); track o.id) { <option [value]="o.id">{{ o.code }} · {{ o.name }}{{ o.status === 'Suspended' ? ' (suspended)' : '' }}</option> }
+              </select>
+              <button class="btn btn-secondary" [disabled]="draftOffice() === (u.officeId || '') || (!draftOffice() && !isNational(u.roles))" (click)="saveOffice(u)">Change office</button>
+            </div>
+          </div>
 
           <div class="stack" style="gap:8px">
             <h4 style="margin:0">Roles</h4>
@@ -230,10 +287,37 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
           <div class="fg">
             <div class="field"><label>Full name</label><input class="input" [value]="inv().name" (input)="setInv('name', $any($event.target).value)" required></div>
             <div class="field"><label>Work email</label><input class="input" type="email" placeholder="name@deeds.gov.na" [value]="inv().email" (input)="setInv('email', $any($event.target).value)" required></div>
-            <div class="field" style="grid-column:1/-1"><label>Office</label><select class="input" [value]="inv().office" (change)="setInv('office', $any($event.target).value)">@for (o of offices; track o) { <option>{{ o }}</option> }</select></div>
+            <div class="field" style="grid-column:1/-1"><label>Office</label><select class="input" [value]="inv().officeId" (change)="setInv('officeId', $any($event.target).value)">
+              @for (o of rbac.activeOffices(); track o.id) { <option [value]="o.id">{{ o.code }} · {{ o.name }}</option> }
+              @if (isNational([inv().role])) { <option value="">National (no office)</option> }
+            </select></div>
             <div class="field" style="grid-column:1/-1"><label>Role</label><select class="input" [value]="inv().role" (change)="setInv('role', $any($event.target).value)">@for (r of rbac.roles(); track r.id) { <option [value]="r.id">{{ r.label }}</option> }</select></div>
           </div>
           <div class="dialog-actions"><button type="button" class="btn btn-secondary" (click)="inviteOpen.set(false)">Cancel</button><button type="submit" class="btn btn-primary" [disabled]="inviting() || !inv().name.trim() || !inv().email.includes('@')">{{ inviting() ? 'Creating…' : 'Create invitation' }}</button></div>
+        </form>
+      </div>
+    }
+
+    <!-- Add / manage office -->
+    @if (officeForm(); as f) {
+      <div class="dialog-backdrop" (click)="officeForm.set(null)">
+        <form class="dialog" style="width:min(520px,100%)" (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); saveOfficeForm()">
+          <div class="dialog-title">{{ f.id ? 'Office ' + f.code : 'Add an office' }}</div>
+          <div class="dialog-body">{{ f.id ? 'The code cannot be changed.' : 'The code is short and permanent (2 to 5 letters, e.g. WDH); it will appear in batch and document numbers.' }}</div>
+          <div class="fg">
+            <div class="field"><label>Code</label><input class="input mono" [value]="f.code" [readonly]="!!f.id" maxlength="5" placeholder="WDH" (input)="setOffice('code', $any($event.target).value); $any($event.target).value = officeForm()!.code" required></div>
+            <div class="field"><label>Type</label><select class="input" [value]="f.type" (change)="setOffice('type', $any($event.target).value)">@for (t of officeTypes; track t) { <option [value]="t">{{ typeLabel(t) }}</option> }</select></div>
+            <div class="field" style="grid-column:1/-1"><label>Name</label><input class="input" [value]="f.name" placeholder="Deeds Registry · Windhoek" (input)="setOffice('name', $any($event.target).value)" required></div>
+            <div class="field" style="grid-column:1/-1"><label>Address (optional)</label><input class="input" [value]="f.address" (input)="setOffice('address', $any($event.target).value)"></div>
+            <div class="field" style="grid-column:1/-1"><label>Contact (optional)</label><input class="input" [value]="f.contact" placeholder="Phone or email" (input)="setOffice('contact', $any($event.target).value)"></div>
+          </div>
+          <div class="dialog-actions">
+            @if (editingOffice(); as o) {
+              <button type="button" class="btn btn-secondary" [class.danger]="o.status === 'Active'" style="margin-right:auto" (click)="toggleOffice(o)">{{ o.status === 'Active' ? 'Suspend office' : 'Reactivate office' }}</button>
+            }
+            <button type="button" class="btn btn-secondary" (click)="officeForm.set(null)">Cancel</button>
+            <button type="submit" class="btn btn-primary" [disabled]="savingOffice() || !officeValid()">{{ savingOffice() ? 'Saving…' : f.id ? 'Save' : 'Add office' }}</button>
+          </div>
         </form>
       </div>
     }
@@ -252,6 +336,7 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
   `,
     changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
+    .empty-o { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 16px; text-align: center; color: var(--color-neutral-700); }
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-divider); flex-wrap: wrap; }
     .tabs a { padding: 10px 14px; font-weight: 600; font-size: 14px; color: var(--color-neutral-700); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
     .tabs a:hover { color: var(--color-text); }
@@ -321,10 +406,10 @@ export class AdminComponent {
   private toast = inject(ToastService);
   tab = signal<Tab>('users');
   perms = PERMS;
-  offices = OFFICES;
   groups = PERM_GROUPS.map(name => ({ name, perms: PERMS.filter(p => p.group === name) }));
   tabs = [
     { id: 'users', label: 'Users', path: '/admin/users', perm: 'admin.users' },
+    { id: 'offices', label: 'Offices', path: '/admin/offices', perm: 'admin.offices' },
     { id: 'roles', label: 'Roles & permissions', path: '/admin/roles', perm: 'admin.roles' },
     { id: 'policies', label: 'Security policies', path: '/admin/policies', perm: 'admin.policies' },
     { id: 'log', label: 'Access log', path: '/admin/log', perm: 'admin.users' }
@@ -345,11 +430,13 @@ export class AdminComponent {
 
   // ---------- users ----------
   statusOpts: ('all' | UserStatus)[] = ['all', 'Active', 'Invited', 'Suspended'];
-  uq = signal(''); uRole = signal('all'); uStatus = signal<'all' | UserStatus>('all');
+  uq = signal(''); uRole = signal('all'); uStatus = signal<'all' | UserStatus>('all'); uOffice = signal('all');
+  isNational(roles: string[]) { return roles.some(r => NATIONAL_ROLES.includes(r)); }
   users = computed(() => {
-    const q = this.uq().toLowerCase().trim(), r = this.uRole(), s = this.uStatus();
+    const q = this.uq().toLowerCase().trim(), r = this.uRole(), s = this.uStatus(), o = this.uOffice();
     return this.rbac.users()
-      .filter(u => (r === 'all' || u.roles.includes(r)) && (s === 'all' || u.status === s) && (!q || (u.name + ' ' + u.email + ' ' + u.office).toLowerCase().includes(q)))
+      .filter(u => o === 'all' || (o === 'none' ? !u.officeId : u.officeId === o))
+      .filter(u => (r === 'all' || u.roles.includes(r)) && (s === 'all' || u.status === s) && (!q || (u.name + ' ' + u.email + ' ' + u.office + ' ' + (u.officeCode || '')).toLowerCase().includes(q)))
       .map(u => ({ ...u, conflicts: this.rbac.userConflicts(u).length }));
   });
   stats = computed(() => {
@@ -370,7 +457,11 @@ export class AdminComponent {
   draftConflicts = computed(() => this.rbac.conflicts(this.draftPerms()));
   draftGroups = computed(() => this.groups.map(g => { const ps = g.perms.map(p => ({ ...p, on: this.draftPerms().includes(p.id) })); return { name: g.name, perms: ps, n: ps.filter(p => p.on).length }; }));
   userDirty = computed(() => { const u = this.editUser(); return !!u && [...u.roles].sort().join() !== [...this.draftRoles()].sort().join(); });
-  openUser(id: string) { const u = this.rbac.users().find(x => x.id === id)!; this.draftRoles.set([...u.roles]); this.editId.set(id); }
+  openUser(id: string) { const u = this.rbac.users().find(x => x.id === id)!; this.draftRoles.set([...u.roles]); this.draftOffice.set(u.officeId || ''); this.editId.set(id); }
+  draftOffice = signal('');
+  /** Active offices, plus the user's current one even if it is suspended (so it shows as selected). */
+  officeChoices(u: AppUser) { return this.rbac.offices().filter(o => o.status === 'Active' || o.id === u.officeId); }
+  async saveOffice(u: AppUser) { await this.rbac.setUserOffice(u.id, this.draftOffice() || null); }
   toggleDraftRole(id: string) { this.draftRoles.update(r => r.includes(id) ? r.filter(x => x !== id) : [...r, id]); }
   async saveUser() {
     const u = this.editUser()!;
@@ -387,16 +478,59 @@ export class AdminComponent {
     if (await this.confirm.ask({ title: 'Reset MFA for ' + u.name + '?', body: 'Their current authenticator stops working. They must enrol a new one at next sign-in.', confirmLabel: 'Reset MFA', tone: 'danger' })) this.rbac.resetMfa(u.id);
   }
   inviteOpen = signal(false);
-  inv = signal({ name: '', email: '', office: 'Review desk', role: 'rev' });
-  openInvite() { this.inv.set({ name: '', email: '', office: 'Review desk', role: 'rev' }); this.inviteOpen.set(true); }
-  setInv(k: string, v: string) { this.inv.update(i => ({ ...i, [k]: v })); }
+  inv = signal({ name: '', email: '', officeId: '', role: 'rev' });
+  openInvite() { this.inv.set({ name: '', email: '', officeId: this.rbac.activeOffices()[0]?.id ?? '', role: 'rev' }); this.inviteOpen.set(true); }
+  setInv(k: string, v: string) {
+    this.inv.update(i => {
+      const next = { ...i, [k]: v };
+      // only administrators may be invited without an office
+      if (k === 'role' && !next.officeId && !this.isNational([v])) next.officeId = this.rbac.activeOffices()[0]?.id ?? '';
+      return next;
+    });
+  }
   inviting = signal(false);
   async invite() {
     const i = this.inv(); if (!i.name.trim() || !i.email.includes('@')) return;
     this.inviting.set(true);
-    const ok = await this.rbac.invite({ name: i.name.trim(), email: i.email.trim(), office: i.office, roles: [i.role] });
+    const ok = await this.rbac.invite({ name: i.name.trim(), email: i.email.trim(), officeId: i.officeId || null, roles: [i.role] });
     this.inviting.set(false);
     if (ok) this.inviteOpen.set(false);
+  }
+
+  // ---------- offices ----------
+  officeTypes: OfficeType[] = ['registry', 'external'];
+  typeLabel(t: OfficeType) { return OFFICE_TYPE_LABEL[t]; }
+  oq = signal('');
+  officeRows = computed(() => {
+    const q = this.oq().toLowerCase().trim();
+    return this.rbac.offices().filter(o => !q || (o.code + ' ' + o.name + ' ' + o.address).toLowerCase().includes(q));
+  });
+  /** The add / edit dialog: `id` null when adding. */
+  officeForm = signal<{ id: string | null; code: string; name: string; type: OfficeType; address: string; contact: string } | null>(null);
+  savingOffice = signal(false);
+  openAddOffice() { this.officeForm.set({ id: null, code: '', name: '', type: 'registry', address: '', contact: '' }); }
+  openEditOffice(o: Office) { this.officeForm.set({ id: o.id, code: o.code, name: o.name, type: o.type, address: o.address, contact: o.contact }); }
+  setOffice(k: string, v: string) { this.officeForm.update(f => f && ({ ...f, [k]: k === 'code' ? v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5) : v })); }
+  officeValid = computed(() => { const f = this.officeForm(); return !!f && /^[A-Z]{2,5}$/.test(f.code) && !!f.name.trim(); });
+  editingOffice = computed(() => { const f = this.officeForm(); return f?.id ? this.rbac.offices().find(o => o.id === f.id) ?? null : null; });
+  async saveOfficeForm() {
+    const f = this.officeForm(); if (!f || !this.officeValid()) return;
+    this.savingOffice.set(true);
+    const d = { name: f.name.trim(), type: f.type, address: f.address.trim(), contact: f.contact.trim() };
+    const ok = f.id ? await this.rbac.updateOffice(f.id, d) : await this.rbac.addOffice({ code: f.code, ...d });
+    this.savingOffice.set(false);
+    if (ok) this.officeForm.set(null);
+  }
+  async toggleOffice(o: Office) {
+    const suspend = o.status === 'Active';
+    if (await this.confirm.ask({
+      title: (suspend ? 'Suspend ' : 'Reactivate ') + o.code + ' · ' + o.name + '?',
+      body: suspend ? 'No new users can be invited into this office, and pending invitations cannot be resent. Its ' + o.users + ' user(s) and their work are not affected.' : 'Users can be invited into this office again.',
+      confirmLabel: suspend ? 'Suspend office' : 'Reactivate', tone: suspend ? 'danger' : 'primary'
+    })) {
+      await this.rbac.setOfficeStatus(o, suspend);
+      this.officeForm.set(null);
+    }
   }
 
   // ---------- roles ----------
@@ -444,7 +578,7 @@ export class AdminComponent {
   }
 
   // ---------- log ----------
-  kinds: { id: 'all' | AccessKind; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'role', label: 'Roles' }, { id: 'user', label: 'Users' }, { id: 'policy', label: 'Policies' }, { id: 'denied', label: 'Denied' }, { id: 'session', label: 'Sign-ins' }];
+  kinds: { id: 'all' | AccessKind; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'role', label: 'Roles' }, { id: 'user', label: 'Users' }, { id: 'office', label: 'Offices' }, { id: 'policy', label: 'Policies' }, { id: 'denied', label: 'Denied' }, { id: 'session', label: 'Sign-ins' }];
   lq = signal(''); lk = signal<'all' | AccessKind>('all');
   logRows = computed(() => { const q = this.lq().toLowerCase().trim(), k = this.lk(); return this.rbac.log().filter(e => (k === 'all' || e.kind === k) && (!q || (e.actor + ' ' + e.target + ' ' + e.detail + ' ' + e.action).toLowerCase().includes(q))); });
   kindTag(k: AccessKind) { return KIND[k][1]; }

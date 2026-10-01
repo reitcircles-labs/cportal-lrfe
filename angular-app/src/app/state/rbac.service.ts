@@ -7,10 +7,16 @@ import { ApiError, ApiService } from '../api/api.service';
 export interface Perm { id: string; group: string; label: string; desc: string; }
 export interface RoleDef { id: string; label: string; desc: string; system: boolean; perms: string[]; home?: string; }
 export type UserStatus = 'Active' | 'Suspended' | 'Invited';
-export interface AppUser { id: string; name: string; email: string; office: string; roles: string[]; status: UserStatus; mfa: boolean; lastActive: string; }
+/** `office` is the office's name, '' when the user has none (national administrators, or not assigned yet). */
+export interface AppUser { id: string; name: string; email: string; office: string; officeId: string | null; officeCode: string | null; roles: string[]; status: UserStatus; mfa: boolean; lastActive: string; }
+export type OfficeType = 'registry' | 'external';
+export interface Office { id: string; code: string; name: string; type: OfficeType; address: string; contact: string; status: 'Active' | 'Suspended'; users: number; }
+export const OFFICE_TYPE_LABEL: Record<OfficeType, string> = { registry: 'Registry office', external: 'External body' };
+/** Roles whose holders may have no office (mirrors NATIONAL_ROLES in the identity catalogue). */
+export const NATIONAL_ROLES = ['adm'];
 export interface SodRule { id: string; a: string; b: string; label: string; on: boolean; }
 export interface Policies { mfa: boolean; eid: boolean; ipAllow: boolean; timeout: number; fourEyes: boolean; }
-export type AccessKind = 'role' | 'user' | 'policy' | 'denied' | 'session';
+export type AccessKind = 'role' | 'user' | 'policy' | 'denied' | 'session' | 'office';
 export interface AccessEvent { time: string; actor: string; kind: AccessKind; action: string; target: string; detail: string; }
 
 /**
@@ -37,7 +43,8 @@ export const PERMS: Perm[] = [
   { id: 'audit.export', group: 'Audit', label: 'Export evidence packs', desc: 'Download images, metadata and trail' },
   { id: 'admin.users', group: 'Administration', label: 'Manage users', desc: 'Invite, assign roles, suspend' },
   { id: 'admin.roles', group: 'Administration', label: 'Manage roles & permissions', desc: 'Edit the permission matrix' },
-  { id: 'admin.policies', group: 'Administration', label: 'Manage security policies', desc: 'MFA, sessions, segregation of duties' }
+  { id: 'admin.policies', group: 'Administration', label: 'Manage security policies', desc: 'MFA, sessions, segregation of duties' },
+  { id: 'admin.offices', group: 'Administration', label: 'Manage offices', desc: 'Add, rename and suspend office locations' }
 ];
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -67,6 +74,8 @@ export class RbacService {
   readonly sod = signal<SodRule[]>([]);
   readonly policies = signal<Policies>({ mfa: true, eid: true, ipAllow: false, timeout: 30, fourEyes: true });
   readonly log = signal<AccessEvent[]>([]);
+  readonly offices = signal<Office[]>([]);
+  readonly activeOffices = computed(() => this.offices().filter(o => o.status === 'Active'));
   /** Invitation link returned by the server in dev (no email service yet); shown to the admin. */
   /** Shown when the invitation email did not go out but the server exposes the link (dev). */
   readonly lastInviteLink = signal<{ name: string; email: string; url: string; reason: string } | null>(null);
@@ -123,6 +132,7 @@ export class RbacService {
   async loadAdmin() {
     const jobs: Promise<unknown>[] = [this.loadRoles()];
     if (this.can('admin.users')) jobs.push(this.loadUsers(), this.loadLog());
+    if (this.can('admin.users') || this.can('admin.offices')) jobs.push(this.loadOffices());
     if (this.can('admin.users') || this.can('admin.policies')) jobs.push(this.loadPolicies());
     await Promise.all(jobs);
   }
@@ -132,6 +142,12 @@ export class RbacService {
       const { users } = await this.api.get<{ users: any[] }>('/users');
       this.users.set(users.map(u => ({ ...u, lastActive: u.lastActive ? fmtTime(u.lastActive) : '—' })));
     } catch (e) { this.fail('Could not load users', e); }
+  }
+
+  async loadOffices() {
+    try {
+      this.offices.set((await this.api.get<{ offices: Office[] }>('/offices')).offices);
+    } catch (e) { this.fail('Could not load offices', e); }
   }
 
   async loadPolicies() {
@@ -188,11 +204,11 @@ export class RbacService {
     } catch (e) { this.fail('Invitation not resent', e); }
   }
 
-  async invite(d: { name: string; email: string; office: string; roles: string[] }): Promise<boolean> {
+  async invite(d: { name: string; email: string; officeId: string | null; roles: string[] }): Promise<boolean> {
     try {
       const res = await this.api.post<InviteResult & { user: AppUser }>('/users', d);
       this.reportInvite(d.name, d.email, res, false);
-      await Promise.all([this.loadUsers(), this.loadLog()]);
+      await Promise.all([this.loadUsers(), this.loadLog(), this.loadOffices()]);
       return true;
     } catch (e) { this.fail('Invitation not sent', e); return false; }
   }
@@ -206,6 +222,44 @@ export class RbacService {
     const reason = res.email?.reason || 'Email is not configured on the server';
     if (res.inviteUrl) this.lastInviteLink.set({ name, email, url: res.inviteUrl, reason });
     else this.toast.show('warn', `${resend ? 'New invitation created' : name + ' was invited'}, but the email was not sent`, `${reason}. Fix the email settings, then use Resend invite.`, 10000);
+  }
+
+  // ------------------------------------------------------------------ offices
+
+  async addOffice(d: { code: string; name: string; type: OfficeType; address: string; contact: string }): Promise<boolean> {
+    try {
+      const o = await this.api.post<Office>('/offices', d);
+      this.toast.show('success', `Office ${o.code} added`, o.name);
+      await Promise.all([this.loadOffices(), this.loadLog()]);
+      return true;
+    } catch (e) { this.fail('Office not added', e); return false; }
+  }
+
+  async updateOffice(id: string, d: { name: string; type: OfficeType; address: string; contact: string }): Promise<boolean> {
+    try {
+      const o = await this.api.put<Office>(`/offices/${id}`, d);
+      this.toast.show('success', `Office ${o.code} saved`, o.name);
+      await Promise.all([this.loadOffices(), this.loadUsers(), this.loadLog()]);
+      return true;
+    } catch (e) { this.fail('Office not saved', e); return false; }
+  }
+
+  async setOfficeStatus(o: Office, suspend: boolean) {
+    try {
+      await this.api.post(`/offices/${o.id}/${suspend ? 'suspend' : 'reactivate'}`);
+      this.toast.show(suspend ? 'warn' : 'success', `${o.code} ${suspend ? 'suspended' : 'reactivated'}`, suspend ? 'No new invitations into this office. Its users carry on.' : 'Users can be invited into it again.');
+      await Promise.all([this.loadOffices(), this.loadLog()]);
+    } catch (e) { this.fail(suspend ? 'Office not suspended' : 'Office not reactivated', e); }
+  }
+
+  async setUserOffice(uid: string, officeId: string | null): Promise<boolean> {
+    const u = this.users().find(x => x.id === uid);
+    try {
+      const res = await this.api.put<AppUser>(`/users/${uid}/office`, { officeId });
+      this.toast.show('success', `Office changed for ${u?.name ?? 'the user'}`, res.office || 'National (no office)');
+      await Promise.all([this.loadUsers(), this.loadOffices(), this.loadLog()]);
+      return true;
+    } catch (e) { this.fail('Office not changed', e); return false; }
   }
 
   // ------------------------------------------------------------------ roles (fixed set; permissions editable)
