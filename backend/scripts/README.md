@@ -15,12 +15,24 @@ internet). This script forwards the ports you name over one SSH connection, so
 
 ### One-time setup on the laptop
 
-1. Copy `remoteConnect.sh` to your laptop (it is not run on the server).
-2. Put the server's SSH key at `~/.ssh/id_rsa_oc` (or point `SSH_KEY` at it, see below) and make
-   it private: `chmod 600 ~/.ssh/id_rsa_oc`.
-3. Make the script runnable: `chmod +x remoteConnect.sh`.
-
-macOS and Linux run it as it is; on Windows use Git Bash or WSL.
+1. Copy `remoteConnect.sh` to your laptop (it is not run on the server) and make it runnable:
+   `chmod +x remoteConnect.sh`. macOS and Linux run it as it is; on Windows use Git Bash or WSL.
+2. Put your SSH key on the laptop and make it private: `chmod 600 ~/.ssh/<key>`. The script
+   refuses a key that other users can read.
+3. Create the config file and fill it in:
+   ```bash
+   ./remoteConnect.sh --setup     # creates ~/.config/remote-connect/config (private to you)
+   ```
+   ```ini
+   REMOTE=<user>@<server address>
+   SSH_PORT=<ssh port>
+   SSH_KEY=~/.ssh/<key>
+   HOST_KEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPZ3VxFKj6iMNHAXNx1kYVkY6FswqZ6rrPfHEWIv5aBB
+   ```
+   Ask the server's administrator for `REMOTE`, `SSH_PORT` and your key; they are deliberately
+   not in the repository. `HOST_KEY` above is the server's public host key. Its fingerprint is
+   `SHA256:WCoYtQqsLIliPwfNolgul92sDCcuSgsJyC8zO6FMAH8` (ED25519); the administrator can confirm it
+   with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server.
 
 ### Each time
 
@@ -50,24 +62,35 @@ macOS and Linux run it as it is; on Windows use Git Bash or WSL.
 ```bash
 ./remoteConnect.sh 4200 3510              # several ports at once
 ./remoteConnect.sh 8080:4200              # LAPTOP_PORT:SERVER_PORT, when 4200 is already used on the laptop
-SSH_KEY=~/keys/server.pem ./remoteConnect.sh 4200        # another key
+SSH_KEY=~/keys/other ./remoteConnect.sh 4200             # override a config value for one run
 DRY_RUN=1 ./remoteConnect.sh 4200 3510    # print the ssh command, do not connect
 ```
 
-| Variable | Default |
-|---|---|
-| `SSH_KEY` | `~/.ssh/id_rsa_oc` |
-| `SSH_PORT` | `2222` |
-| `REMOTE` | `openclawuser@95.216.13.114` |
+`REMOTE`, `SSH_PORT`, `SSH_KEY` and `HOST_KEY` set in the environment override the config file.
+The config is only read as `KEY=VALUE` lines, never run as a script.
+
+### What the script does to keep the connection safe
+
+- **Forwards are bound to `127.0.0.1` on the laptop**, so nobody else on the same Wi-Fi or office
+  network can use them, whatever the laptop's own ssh settings say (`GatewayPorts`).
+- **They reach only the server's `127.0.0.1`**, i.e. the local services, not other machines.
+- **The server's host key is pinned.** A first connection is not trusted blindly, and a changed
+  key stops the connection (`Host key verification failed`) instead of being accepted.
+- **Only the configured key is offered** (`IdentitiesOnly`); your ssh agent and X11 are not
+  forwarded to the server.
+- It refuses a key readable by other users, laptop ports below 1024 (which would need root),
+  running as root, and server addresses containing unexpected characters.
 
 ### When it does not work
 
 | Symptom | Cause and fix |
 |---|---|
 | `bind [127.0.0.1]:4200: Address already in use` and the script stops | That port is in use on the laptop (often a local `ng serve`). Stop it, or use another laptop port: `./remoteConnect.sh 8080:4200` |
-| `SSH key not found` | Put the key at `~/.ssh/id_rsa_oc` or set `SSH_KEY` |
+| `No server configured` | Run `./remoteConnect.sh --setup` and fill in the config file |
+| `SSH key not found` / `can be read by other users` | Check `SSH_KEY` in the config; `chmod 600` the key |
+| `No HOST_KEY configured` | Add the `HOST_KEY` line from the setup above |
+| **`Host key verification failed`** / `host key … has changed` | **Stop. Do not remove or replace the key**, even if ssh suggests it: either the server was reinstalled or someone is intercepting the connection. Ask the administrator for the current host key fingerprint and compare. |
 | `Permission denied (publickey)` | Wrong key, or it is not authorised on the server |
-| `UNPROTECTED PRIVATE KEY FILE` | `chmod 600` the key |
 | The page does not load, or "connection refused" in the ssh window | Nothing is running on that port on the server: start it (step 1) |
 | The app loads but sign-in fails | The backend is not running on the server: `cd backend && npm run dev` |
 | The connection drops after a while | The script notices within about a minute and exits; run it again |
