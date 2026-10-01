@@ -36,6 +36,7 @@ cp .env_example services/gateway/.env
 # (watch mode, each reads its own .env; Ctrl+C stops all)
 npm run dev
 npm run dev -- identity gateway            # only some of them (add `docs` for the API docs)
+# Testing from a laptop: forward the ports over SSH, see scripts/README.md (remoteConnect.sh)
 
 # Quickest: no database, seeded with the 14 demo users; documents stored in ./tmp
 IDENTITY_STORE=memory SEED_DEMO_PASSWORD='demo-password-2026' npm run dev:identity
