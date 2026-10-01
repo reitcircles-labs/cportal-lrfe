@@ -324,8 +324,9 @@ paths:
         - Users
       summary: Invite a user
       description: >-
-        Creates the user as Invited. Returns `{ user, inviteUrl? }`; the link is only returned when IDENTITY_EXPOSE_INVITE_LINKS=true (no
-        email is sent yet).
+        Creates the user as Invited and emails them the activation link (valid 3 days). Returns `{ user, email: { sent, to, reason? },
+        inviteUrl? }`: the user is created even when the email fails, and `reason` says why. `inviteUrl` is only returned when
+        IDENTITY_EXPOSE_INVITE_LINKS=true (dev).
 
 
         **Access:** Signed-in user with permission `admin.users`.
@@ -639,7 +640,7 @@ paths:
         - Users
       summary: Send a new invitation
       description: |-
-        Only for users still Invited. Returns `{ inviteUrl? }` as for POST /users.
+        Only for users still Invited. Emails a new link (earlier links stop working). Returns `{ email, inviteUrl? }` as for POST /users.
 
         **Access:** Signed-in user with permission `admin.users`.
       operationId: postUsersIdInvitation

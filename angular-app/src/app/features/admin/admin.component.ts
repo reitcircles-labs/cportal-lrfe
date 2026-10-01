@@ -226,7 +226,7 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
       <div class="dialog-backdrop" (click)="inviteOpen.set(false)">
         <form class="dialog" style="width:min(520px,100%)" (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); invite()">
           <div class="dialog-title">Invite a user</div>
-          <div class="dialog-body">You get an activation link to send them. They set a password and enrol MFA. Invitations expire after 3 days.</div>
+          <div class="dialog-body">They get an email with an activation link, set a password and set up an authenticator app. The link expires after 3 days.</div>
           <div class="fg">
             <div class="field"><label>Full name</label><input class="input" [value]="inv().name" (input)="setInv('name', $any($event.target).value)" required></div>
             <div class="field"><label>Work email</label><input class="input" type="email" placeholder="name@deeds.gov.na" [value]="inv().email" (input)="setInv('email', $any($event.target).value)" required></div>
@@ -238,12 +238,12 @@ const OFFICES = ['Deeds Registry · Windhoek', 'Registry floor 2', 'Review desk'
       </div>
     }
 
-    <!-- Activation link (no email service yet: the administrator passes it on) -->
+    <!-- Activation link: the invitation email did not go out, and the server exposes links (dev) -->
     @if (rbac.lastInviteLink(); as l) {
       <div class="dialog-backdrop" (click)="rbac.lastInviteLink.set(null)">
         <div class="dialog" style="width:min(560px,100%)" (click)="$event.stopPropagation()">
           <div class="dialog-title">Activation link for {{ l.name }}</div>
-          <div class="dialog-body">Email is not connected yet. Send this link to <b>{{ l.email }}</b>. It works once and expires in 3 days; they choose a password and set up an authenticator app.</div>
+          <div class="dialog-body">The invitation email was not sent: {{ l.reason }}. Send this link to <b>{{ l.email }}</b> yourself. It works once and expires in 3 days; they choose a password and set up an authenticator app.</div>
           <input class="input mono" style="font-size:12.5px;margin:12px 0" readonly [value]="l.url" (focus)="$any($event.target).select()">
           <div class="dialog-actions"><button class="btn btn-secondary" (click)="copy(l.url)">Copy link</button><button class="btn btn-primary" (click)="rbac.lastInviteLink.set(null)">Done</button></div>
         </div>

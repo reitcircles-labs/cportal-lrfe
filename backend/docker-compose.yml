@@ -72,6 +72,17 @@ services:
       SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
       IDENTITY_EXPOSE_INVITE_LINKS: ${IDENTITY_EXPOSE_INVITE_LINKS:-true}
       IDENTITY_INVITE_URL_BASE: ${IDENTITY_INVITE_URL_BASE:-http://localhost:4200/#/invite}
+      # invitation email: smtp | file | none (see services/identity/README.md)
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-none}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-true}
+      SMTP_HELO_NAME: ${SMTP_HELO_NAME:-}
+      SMTP_FAMILY: ${SMTP_FAMILY:-}
     ports:
       - "127.0.0.1:3501:3501"
     healthcheck: *healthcheck

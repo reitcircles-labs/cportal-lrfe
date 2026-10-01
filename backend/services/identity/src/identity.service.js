@@ -4,10 +4,12 @@ import {
     PERMS, PERM_GROUPS, ROLE_IDS, ACCESS_KINDS, DEFAULT_POLICIES, effectivePerms, sodConflicts, isKnownPerm, normalizePerms, permLabel
 } from './catalogue.js';
 import { hashPassword, verifyPassword, randomToken, sha256, safeEqual } from './crypto.js';
+import { createMailer, invitationEmail } from './mailer.js';
 import { generateSecret, otpauthUrl, verifyTotp } from './totp.js';
 
 const SYSTEM = { id: null, name: 'System' };
 const normEmail = (email) => String(email || '').trim().toLowerCase();
+const emailNote = (e) => (e.sent ? 'invitation emailed' : `invitation not emailed: ${e.reason}`);
 
 /**
  * Identity & access: sign-in (password + TOTP), sessions, users, the fixed roles' permission
@@ -15,9 +17,10 @@ const normEmail = (email) => String(email || '').trim().toLowerCase();
  * signs tokens from the `claims` this returns and owns cookies.
  */
 export class IdentityService {
-    constructor({ repo, events, clock = () => new Date(), config = {} }) {
+    constructor({ repo, events, mailer = createMailer(), clock = () => new Date(), config = {} }) {
         this.repo = repo;
         this.events = events;
+        this.mailer = mailer;
         this.clock = clock;
         this.config = {
             issuer: 'Deeds Registry Namibia',
@@ -225,26 +228,47 @@ export class IdentityService {
         if (!String(name || '').trim()) throw new BadRequestError('Name is required');
         if (await this.repo.getUserByEmail(cleanEmail)) throw new ConflictError('A user with this email already exists');
         const token = randomToken();
+        const expiresAt = new Date(this.clock().getTime() + this.config.inviteTtlHours * 3_600_000);
         const user = await this.repo.createUser({
             name: name.trim(), email: cleanEmail, office: office.trim(), roles: roleIds, status: 'Invited',
-            inviteHash: sha256(token), inviteExpiresAt: new Date(this.clock().getTime() + this.config.inviteTtlHours * 3_600_000)
+            inviteHash: sha256(token), inviteExpiresAt: expiresAt
         });
         const ctx = await this.context();
-        await this.log('user', 'Invited', user.name, `Roles: ${this.roleLabels(roleIds, ctx.roles)}`, actor);
-        // A notification service will consume this to send the email; until then the link is only
-        // returned to the admin when IDENTITY_EXPOSE_INVITE_LINKS=true (dev).
-        await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, inviteUrl: this.inviteLink(token) }, { actor });
-        return { user: this.publicUser(user, ctx), ...(this.config.exposeInviteLinks ? { inviteUrl: this.inviteLink(token) } : {}) };
+        const roleText = this.roleLabels(roleIds, ctx.roles);
+        const mail = await this.emailInvitation(user, token, expiresAt, roleText, actor, false);
+        await this.log('user', 'Invited', user.name, `Roles: ${roleText} · ${emailNote(mail)}`, actor);
+        // The link is a credential until used: it goes to the user by email, and to the admin only
+        // when IDENTITY_EXPOSE_INVITE_LINKS=true (dev). Never into events or logs.
+        await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, emailSent: mail.sent }, { actor });
+        return { user: this.publicUser(user, ctx), email: mail, ...(this.config.exposeInviteLinks ? { inviteUrl: this.inviteLink(token) } : {}) };
     }
 
     async resendInvite(id, actor) {
         const user = await this.requireUser(id);
         if (user.status !== 'Invited') throw new ConflictError('Only invited users can be sent a new invitation');
         const token = randomToken();
-        await this.repo.updateUser(id, { inviteHash: sha256(token), inviteExpiresAt: new Date(this.clock().getTime() + this.config.inviteTtlHours * 3_600_000) });
-        await this.log('user', 'Invitation resent', user.name, user.email, actor);
-        await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, inviteUrl: this.inviteLink(token) }, { actor });
-        return this.config.exposeInviteLinks ? { inviteUrl: this.inviteLink(token) } : {};
+        const expiresAt = new Date(this.clock().getTime() + this.config.inviteTtlHours * 3_600_000);
+        await this.repo.updateUser(id, { inviteHash: sha256(token), inviteExpiresAt: expiresAt });
+        const ctx = await this.context();
+        const mail = await this.emailInvitation(user, token, expiresAt, this.roleLabels(user.roles, ctx.roles), actor, true);
+        await this.log('user', 'Invitation resent', user.name, `${user.email} · ${emailNote(mail)}`, actor);
+        await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, emailSent: mail.sent }, { actor });
+        return { email: mail, ...(this.config.exposeInviteLinks ? { inviteUrl: this.inviteLink(token) } : {}) };
+    }
+
+    /**
+     * Email the invitation link. Never throws: the user exists either way, and the admin is told
+     * whether the email went out → { sent, to, reason? }.
+     */
+    async emailInvitation(user, token, expiresAt, roles, actor, resend) {
+        if (!this.mailer.enabled) return { sent: false, to: user.email, reason: 'Email is not configured on the server' };
+        try {
+            const content = invitationEmail({ name: user.name, link: this.inviteLink(token), expiresAt, invitedBy: actor?.name || 'An administrator', roles, issuer: this.config.issuer, resend });
+            await this.mailer.send({ to: user.email, ...content });
+            return { sent: true, to: user.email };
+        } catch (err) {
+            return { sent: false, to: user.email, reason: err.message };
+        }
     }
 
     async acceptInvite({ token, password }) {

@@ -53,6 +53,9 @@ export function fmtTime(iso: string | null | undefined): string {
  * `can()` reflects the signed-in user's permissions from the server; the server enforces them
  * again on every call, so this only decides what the UI offers.
  */
+/** POST /users and POST /users/:id/invitation: whether the invitation was emailed. */
+interface InviteResult { email?: { sent: boolean; to: string; reason?: string }; inviteUrl?: string; }
+
 @Injectable({ providedIn: 'root' })
 export class RbacService {
   private auth = inject(AuthService);
@@ -65,7 +68,8 @@ export class RbacService {
   readonly policies = signal<Policies>({ mfa: true, eid: true, ipAllow: false, timeout: 30, fourEyes: true });
   readonly log = signal<AccessEvent[]>([]);
   /** Invitation link returned by the server in dev (no email service yet); shown to the admin. */
-  readonly lastInviteLink = signal<{ name: string; email: string; url: string } | null>(null);
+  /** Shown when the invitation email did not go out but the server exposes the link (dev). */
+  readonly lastInviteLink = signal<{ name: string; email: string; url: string; reason: string } | null>(null);
 
   readonly currentPerms = computed(() => this.auth.perms());
 
@@ -178,21 +182,30 @@ export class RbacService {
   async resendInvite(uid: string) {
     const u = this.users().find(x => x.id === uid)!;
     try {
-      const res = await this.api.post<{ inviteUrl?: string }>(`/users/${uid}/invitation`);
-      if (res.inviteUrl) this.lastInviteLink.set({ name: u.name, email: u.email, url: res.inviteUrl });
-      this.toast.show('info', 'Invitation resent', u.email);
+      const res = await this.api.post<InviteResult>(`/users/${uid}/invitation`);
+      this.reportInvite(u.name, u.email, res, true);
       await this.loadLog();
     } catch (e) { this.fail('Invitation not resent', e); }
   }
 
   async invite(d: { name: string; email: string; office: string; roles: string[] }): Promise<boolean> {
     try {
-      const res = await this.api.post<{ user: AppUser; inviteUrl?: string }>('/users', d);
-      if (res.inviteUrl) this.lastInviteLink.set({ name: d.name, email: d.email, url: res.inviteUrl });
-      this.toast.show('success', 'Invitation created for ' + d.name, d.email);
+      const res = await this.api.post<InviteResult & { user: AppUser }>('/users', d);
+      this.reportInvite(d.name, d.email, res, false);
       await Promise.all([this.loadUsers(), this.loadLog()]);
       return true;
     } catch (e) { this.fail('Invitation not sent', e); return false; }
+  }
+
+  /** Tell the admin whether the invitation email went out; if not, why, and the link when exposed. */
+  private reportInvite(name: string, email: string, res: InviteResult, resend: boolean) {
+    if (res.email?.sent) {
+      this.toast.show('success', `Invitation ${resend ? 're' : ''}sent to ${name}`, `Emailed to ${email}. The link expires in 3 days.`, 6000);
+      return;
+    }
+    const reason = res.email?.reason || 'Email is not configured on the server';
+    if (res.inviteUrl) this.lastInviteLink.set({ name, email, url: res.inviteUrl, reason });
+    else this.toast.show('warn', `${resend ? 'New invitation created' : name + ' was invited'}, but the email was not sent`, `${reason}. Fix the email settings, then use Resend invite.`, 10000);
   }
 
   // ------------------------------------------------------------------ roles (fixed set; permissions editable)

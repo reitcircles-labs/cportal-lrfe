@@ -48,7 +48,8 @@ export default {
         'GET /users': { tag: 'Users', summary: 'All users', description: 'With their roles, status, MFA state and segregation-of-duties conflicts.' },
         'POST /users': {
             tag: 'Users', status: 201, summary: 'Invite a user',
-            description: 'Creates the user as Invited. Returns `{ user, inviteUrl? }`; the link is only returned when IDENTITY_EXPOSE_INVITE_LINKS=true (no email is sent yet).'
+            description: 'Creates the user as Invited and emails them the activation link (valid 3 days). Returns `{ user, email: { sent, to, reason? }, inviteUrl? }`: ' +
+                'the user is created even when the email fails, and `reason` says why. `inviteUrl` is only returned when IDENTITY_EXPOSE_INVITE_LINKS=true (dev).'
         },
         'PUT /users/{id}/roles': { tag: 'Users', summary: "Set a user's roles", description: 'You cannot change your own roles; no change may leave zero active administrators.' },
         'POST /users/{id}/suspend': {
@@ -57,7 +58,7 @@ export default {
         },
         'POST /users/{id}/reactivate': { tag: 'Users', summary: 'Reactivate a suspended user', description: 'Optional `{ reason }`. A user suspended before accepting their invitation goes back to Invited.' },
         'POST /users/{id}/mfa-reset': { tag: 'Users', summary: "Reset a user's MFA", description: 'They enrol a new authenticator at their next sign-in.' },
-        'POST /users/{id}/invitation': { tag: 'Users', summary: 'Send a new invitation', description: 'Only for users still Invited. Returns `{ inviteUrl? }` as for POST /users.' },
+        'POST /users/{id}/invitation': { tag: 'Users', summary: 'Send a new invitation', description: 'Only for users still Invited. Emails a new link (earlier links stop working). Returns `{ email, inviteUrl? }` as for POST /users.' },
         'GET /access-log': { tag: 'Users', summary: 'Admin access log', description: 'Sign-ins, denials, user, role and policy changes, newest first. `{ items, total }`.' },
 
         'GET /policies': { tag: 'Policies', summary: 'Security policies and segregation-of-duties rules' },

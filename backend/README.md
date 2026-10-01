@@ -280,7 +280,7 @@ read = `capture.view` or `verify.view`.
 - EDRMS: page thumbnails / web-sized renditions for the viewer; full-text search (the search
   service will consume `edrms.document.filed` / `.amended`); legal-hold and disposition
   workflow beyond storing the metadata.
-- Invitation email: the `identity.user.invited` event carries the link; nothing sends it yet.
+- Email beyond invitations (e.g. password-reset emails): only invitations are emailed (identity, `MAIL_TRANSPORT`).
   In dev, `IDENTITY_EXPOSE_INVITE_LINKS=true` returns it to the admin.
 - National eID sign-in and the IP allow-list: stored as policy switches, not enforced.
 - Login rate limiting, TOTP replay protection, MFA secrets encrypted at rest, an absolute
