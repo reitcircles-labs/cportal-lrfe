@@ -48,11 +48,14 @@ each user links an authenticator app to their account once, at their first sign-
 produces the codes from then on.
 
 1. Sign in with email and password (invited users: after accepting the invitation).
-2. The screen shows **"Set up your authenticator"** with a **setup key** (letters in groups of four).
+2. The screen shows **"Set up your authenticator"** with a **QR code**.
 3. In an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, Authy,
-   1Password): **Add account → Enter a setup key**, type the key, choose **time-based** if asked.
-   On the phone itself, **"Open in an authenticator app on this device"** does this in one tap.
-   (There is no QR code yet.)
+   1Password): **Add account → Scan a QR code**, and point the camera at the screen.
+   - Signing in on the phone itself? Tap **"On this phone? Open it in the authenticator app instead"**.
+   - Camera not possible? Open **"Can't scan? Type the setup key instead"**: choose **Enter a setup
+     key** in the app, type (or **Copy**) the key, and choose **time-based** if asked.
+
+   The QR code is drawn in the browser; the secret is not sent anywhere else.
 4. Type the 6-digit code the app shows (it changes every 30 seconds). You are signed in.
 5. Every later sign-in asks for the app's current code.
 
@@ -94,7 +97,7 @@ running. It:
 
 - sets the new password (at least 12 characters, as in the app);
 - ends the user's open sessions;
-- with `--reset-mfa`, clears the enrolled authenticator, so the user is shown a new setup key at
+- with `--reset-mfa`, clears the enrolled authenticator, so the user is shown a new QR code at
   the next sign-in;
 - records "Password reset" (and "MFA reset") in the access log, by "System (command line)".
 
