@@ -26,8 +26,12 @@ export function saveSecrets(secrets: Record<string, string>) {
 
 export const codeFor = (secret: string) => totp(secret);
 
+/** Users created during a test (support/admin.ts) enrol in that test's worker; their secrets live here. */
+const created = new Map<string, string>();
+export const rememberSecret = (email: string, secret: string) => created.set(email, secret);
+
 export function secretOf(email: string): string {
-    const secret = readSecrets()[email];
+    const secret = created.get(email) ?? readSecrets()[email];
     if (!secret) throw new Error(`No authenticator secret for ${email}: the setup project (auth.setup.ts) enrols the demo users first`);
     return secret;
 }
@@ -44,9 +48,9 @@ export async function apiSignIn(request: APIRequestContext, email: string, passw
     return (await step2.json()).accessToken;
 }
 
-/** Sign `page`'s browser in as `email` and open `path` (default: that user's home). */
-export async function signInAs(page: Page, email: string, path = '/') {
-    await apiSignIn(page.request, email);
+/** Sign `page`'s browser in as `email` and open `path`. */
+export async function signInAs(page: Page, email: string, path = '/', password = DEMO_PASSWORD) {
+    await apiSignIn(page.request, email, password);
     await page.goto(`/#${path}`);
     await expect(page.locator('aside.sidebar')).toBeVisible();
 }

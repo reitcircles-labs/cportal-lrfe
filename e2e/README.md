@@ -85,6 +85,7 @@ so it does **not** read your `backend/services/<name>/.env`. Playwright also sta
 | `tests/screens-by-role.spec.ts` | Each role × each screen: the menu shows exactly the allowed screens; an allowed screen opens with its title, with no server errors and no 403 from its own API calls; a forbidden one shows "Access denied" |
 | `tests/api-by-role.spec.ts` | Each role × each protected endpoint, at the API: refused with 403 without the permission, let through with it; 401 without a token; service-only endpoints refuse user tokens |
 | `tests/deed-workflow.spec.ts` | One deed from scan to sealed record, passed between people: the scan operator uploads it, a reviewer corrects a field, accepts the rest and files it, the records officer sees it (without audit or correction rights), the auditor checks its integrity, a reviewer requests a correction, a second reviewer approves it from the task inbox (the requester does not get the task), and the auditor checks version 2.0 |
+| `tests/administration.spec.ts` | As the system administrator: add, edit, suspend and reactivate an office; invite a user who activates the account from the email (read from `.stack/mail/`) and signs in for the first time; role changes decide what the user can open; a duty conflict is flagged before and after saving; a suspended user is signed out and refused until reactivated; policies and the permission matrix are saved, take effect and are put back. Each checked in the access log. Three tests document open bugs (API-610, API-611, API-612) with `test.fail()` |
 
 Land records (`#/link`) and Audit (`#/audit`) still show demo data, so the workflow stops at the
 EDRMS: linking the document into a land record and the auditor's sign-off follow when those
@@ -124,6 +125,11 @@ writes only with roles that must be refused, so it leaves the stack's data as it
 - Don't wait with `waitForLoadState('networkidle')`: a scan shown in the PDF viewer is a request that
   never finishes in the headless browser. Use `trackApi(page)` from `support/api-idle.ts`, which
   waits for the app's API calls only.
+- A test that needs a fresh user (so it does not change a demo user other tests rely on) creates one
+  with `createUser(adminApi, roles)` from `support/admin.ts`: invited, activated from the email and
+  enrolled in MFA through the API.
+- An open bug can be pinned with a test marked `test.fail(true, 'API-…: …')`: it stays green while
+  the bug is there and turns red ("expected to fail, but passed") once fixed, the cue to remove the mark.
 - Find elements the way a user does: `getByRole`, `getByLabel`, `getByText`. Add a `data-testid` to
   the Angular template only where that is ambiguous.
 - Each test signs in again, often as the same user in the same 30-second window. That works because

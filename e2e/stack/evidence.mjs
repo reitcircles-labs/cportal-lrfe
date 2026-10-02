@@ -6,7 +6,7 @@
  * and lists what was taken. The files are in evidence/<ticket>/, ready to attach to the ticket.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { E2E_DIR } from './config.mjs';
 
@@ -22,9 +22,20 @@ const run = spawnSync('npx', ['playwright', 'test', '--grep', tickets.map(t => `
 });
 
 for (const t of tickets) {
-    const manifest = join(E2E_DIR, 'evidence', t, 'manifest.json');
-    if (!existsSync(manifest)) { console.log(`\n${t}: no screenshots (no test tagged @${t} calls evidence())`); continue; }
-    const shots = JSON.parse(readFileSync(manifest, 'utf8'));
+    const dir = join(E2E_DIR, 'evidence', t);
+    const parts = join(dir, '.parts');
+    if (!existsSync(parts)) { console.log(`\n${t}: no screenshots (no test tagged @${t} calls evidence())`); continue; }
+    // Each test wrote its own list; number all shots in source order: file, test line, step.
+    const shots = readdirSync(parts).filter(f => f.endsWith('.json'))
+        .flatMap(f => JSON.parse(readFileSync(join(parts, f), 'utf8')))
+        .sort((a, b) => a.file.localeCompare(b.file))
+        .map((s, i) => {
+            const file = `${String(i + 1).padStart(2, '0')}-${s.file.split('~').pop()}`;
+            renameSync(join(parts, s.file), join(dir, file));
+            return { ...s, file };
+        });
+    rmSync(parts, { recursive: true, force: true });
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify(shots, null, 2));
     console.log(`\n${t}: ${shots.length} screenshot(s) in evidence/${t}/ (commit ${shots[0].commit})`);
     for (const s of shots) console.log(`  ${s.file}  ${s.title}`);
 }
