@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { ToastService } from './toast.service';
+import { AuthService } from './auth.service';
 import { AuditEntry, FieldEdit, FieldStatus, LandDoc, LinkState, DocField } from '../data/models';
 import { DOCS, TOTAL, ROLE, hash, VIEWDOCS, ALL_DOCS, LAND_RECORDS, LandRecordRow, QUEUE } from '../data/mock-data';
 
@@ -27,6 +28,7 @@ export class RegistryStore {
   private timer: any;
   private clock = 0;
   private toast = inject(ToastService);
+  private auth = inject(AuthService);
 
   // ---------- land records (ERP) ----------
   readonly records = signal<LandRecordRow[]>(LAND_RECORDS);
@@ -35,10 +37,10 @@ export class RegistryStore {
   readonly finalizedRec = signal<Record<string, boolean>>(Object.fromEntries(LAND_RECORDS.filter(r => r.batch === 'WDH-B014').map(r => [r.id, true])));
   readonly comments = signal<Record<string, RecordComment[]>>({
     erf1873: [
-      { who: 'E. Shivute', role: 'Registrar', time: '25 Sep 2026 14:10', text: 'T 2210/2008 and the 2019 estate transfer have been pulled from Vault 3 for back-scanning. Please confirm the executor\'s authority before finalizing.' },
-      { who: 'J. !Gawaseb', role: 'Records officer', time: '26 Sep 2026 09:32', text: "Master's reference E 1830/2018 checked against the estate file. OK to proceed once the SG diagram is linked." }
+      { who: '(sample)', role: 'Registrar', time: '25 Sep 2026 14:10', text: 'T 2210/2008 and the 2019 estate transfer have been pulled from Vault 3 for back-scanning. Please confirm the executor\'s authority before finalizing.' },
+      { who: '(sample)', role: 'Records officer', time: '26 Sep 2026 09:32', text: "Master's reference E 1830/2018 checked against the estate file. OK to proceed once the SG diagram is linked." }
     ],
-    [LAND_RECORDS[1]?.id]: [{ who: 'A. Mwandingi', role: 'Metadata reviewer', time: '24 Sep 2026 11:05', text: 'Transferee ID on page 2 was hand-corrected on the original. I kept the corrected value.' }]
+    [LAND_RECORDS[1]?.id]: [{ who: '(sample)', role: 'Metadata reviewer', time: '24 Sep 2026 11:05', text: 'Transferee ID on page 2 was hand-corrected on the original. I kept the corrected value.' }]
   });
   private newSeq = 0;
 
@@ -65,7 +67,7 @@ export class RegistryStore {
     else if (rid === 'erf1873' && d.isBase) this.removedBase.update(m => ({ ...m, [docId]: false }));
     else this.recordDocs.update(m => ({ ...m, [rid]: [...(m[rid] || []), docId] }));
     this.touch(rid);
-    this.addLog(this.actor(), ROLE.rec, 'Linked', d.ref, '→ ' + r.erf + ', ' + r.township);
+    this.addLog(this.actor(), this.actorRole(ROLE.rec), 'Linked', d.ref, '→ ' + r.erf + ', ' + r.township);
     this.toast.show('success', d.ref + ' added to ' + r.erf, 'Ownership and record checks updated.');
   }
   removeDocFromRecord(rid: string, docId: string) {
@@ -74,7 +76,7 @@ export class RegistryStore {
     else if (rid === 'erf1873' && d.isBase) this.removedBase.update(m => ({ ...m, [docId]: true }));
     else this.recordDocs.update(m => ({ ...m, [rid]: (m[rid] || []).filter(x => x !== docId) }));
     this.touch(rid);
-    this.addLog(this.actor(), ROLE.rec, 'Unlinked', d.ref, 'Removed from ' + r.erf + ', ' + r.township);
+    this.addLog(this.actor(), this.actorRole(ROLE.rec), 'Unlinked', d.ref, 'Removed from ' + r.erf + ', ' + r.township);
     this.toast.show('warn', d.ref + ' removed from ' + r.erf, 'The document is back in the unlinked pool.');
   }
   private touch(rid: string) {
@@ -82,12 +84,15 @@ export class RegistryStore {
     this.finalizedRec.update(m => ({ ...m, [rid]: false }));
     this.records.update(rs => rs.map(r => r.id === rid ? { ...r, lastActivity: '28 Sep 2026' } : r));
   }
-  private actor() { return 'J. !Gawaseb'; }
+  /** Actions in the demo screens are attributed to whoever is signed in. */
+  private actor() { return this.auth.role()?.name || 'You'; }
+  /** The signed-in user's roles, or the role the action belongs to when nobody is signed in. */
+  private actorRole(fallback: string) { return this.auth.role()?.label || fallback; }
   createRecord(data: { erf: string; township: string; regDiv: string; extent: string; tenure: string }) {
     const id = 'new' + (++this.newSeq);
     this.records.update(rs => [{ id, ...data, region: 'Khomas', owners: [], docs: 0, docIds: [], lastActivity: '28 Sep 2026', batch: '—' }, ...rs]);
     this.recordDocs.update(m => ({ ...m, [id]: [] }));
-    this.addLog(this.actor(), ROLE.rec, 'Created', data.erf + ', ' + data.township, 'New ERP land record (draft)');
+    this.addLog(this.actor(), this.actorRole(ROLE.rec), 'Created', data.erf + ', ' + data.township, 'New ERP land record (draft)');
     this.toast.show('success', 'Land record created', data.erf + ', ' + data.township + ' · add documents to build the chain of title.');
     return id;
   }
@@ -126,7 +131,7 @@ export class RegistryStore {
   finalizeRecord(r: LandRecordRow) {
     if (r.id === 'erf1873') { this.commit(); return; }
     this.finalizedRec.update(m => ({ ...m, [r.id]: true }));
-    this.addLog(this.actor(), ROLE.rec, 'Committed', r.erf + ', ' + r.township, 'Record finalized · tokenization-ready');
+    this.addLog(this.actor(), this.actorRole(ROLE.rec), 'Committed', r.erf + ', ' + r.township, 'Record finalized · tokenization-ready');
     this.toast.show('success', r.erf + ', ' + r.township + ' finalized', 'Record is ready for tokenization.');
   }
   readonly recordRows = computed(() => {
@@ -166,7 +171,7 @@ export class RegistryStore {
         clearInterval(this.timer);
         this.pages.set(TOTAL);
         this.scanning.set(false);
-        this.addLog('K. Iipinge', ROLE.scan, 'Captured', 'WDH-B017', TOTAL + ' pages → 3 instruments (' + (this.src() === 'hot' ? 'hot folder' : 'SC-02') + ')');
+        this.addLog(this.actor(), this.actorRole(ROLE.scan), 'Captured', 'WDH-B017', TOTAL + ' pages → 3 instruments (' + (this.src() === 'hot' ? 'hot folder' : 'SC-02') + ')');
         this.toast.show('success', 'Batch WDH-B017 captured', TOTAL + ' pages split into 3 instruments and sent to extraction.');
       } else this.pages.set(p);
     }, speed);
@@ -195,7 +200,7 @@ export class RegistryStore {
   fileDoc(doc: LandDoc) {
     const edits = doc.fields.filter(f => this.fs()[doc.id]?.[f.k]?.status === 'edited').length;
     this.filed.update(f => ({ ...f, [doc.id]: true }));
-    this.addLog('A. Mwandingi', ROLE.rev, 'Filed', doc.edrms, doc.ref + ' · ' + doc.fields.length + ' fields, ' + edits + ' corrected');
+    this.addLog(this.actor(), this.actorRole(ROLE.rev), 'Filed', doc.edrms, doc.ref + ' · ' + doc.fields.length + ' fields, ' + edits + ' corrected');
     this.toast.show('success', doc.ref + ' filed to EDRMS', doc.edrms + ' · ' + edits + ' field(s) corrected');
   }
 
@@ -216,7 +221,7 @@ export class RegistryStore {
     const d = DOCS.find(x => x.id === id)!;
     (k === 'linked' ? this.linked : this.rejected).update(m => ({ ...m, [id]: true }));
     this.committed.set(false);
-    this.addLog('J. !Gawaseb', ROLE.rec, k === 'linked' ? 'Linked' : 'Rejected', d.ref, k === 'linked' ? '→ Erf 1873, Klein Windhoek' : 'Returned to unmatched queue');
+    this.addLog(this.actor(), this.actorRole(ROLE.rec), k === 'linked' ? 'Linked' : 'Rejected', d.ref, k === 'linked' ? '→ Erf 1873, Klein Windhoek' : 'Returned to unmatched queue');
     this.toast.show(k === 'linked' ? 'success' : 'warn', k === 'linked' ? d.ref + ' linked to Erf 1873' : d.ref + ' rejected', k === 'linked' ? 'Ownership and checks updated.' : 'Returned to the unmatched queue.');
   }
   readonly openSuggestions = computed(() => DOCS.filter(d => this.linkState(d.id) === 'suggested'));
@@ -256,7 +261,7 @@ export class RegistryStore {
   commit() {
     this.committed.set(true);
     this.toast.show('success', 'Erf 1873 record v3 committed', 'Record is ready for tokenization.');
-    this.addLog('J. !Gawaseb', ROLE.rec, 'Committed', 'Erf 1873 record v3', this.owners().map(o => o.name.split(' ')[0] + ' ' + o.frac).join(', '));
+    this.addLog(this.actor(), this.actorRole(ROLE.rec), 'Committed', 'Erf 1873 record v3', this.owners().map(o => o.name.split(' ')[0] + ' ' + o.frac).join(', '));
   }
 
   // ---------- audit ----------
@@ -267,14 +272,14 @@ export class RegistryStore {
   audit(doc: LandDoc, kind: 'ok' | 'finding', edits: number) {
     this.audited.update(a => ({ ...a, [doc.id]: kind }));
     this.toast.show(kind === 'ok' ? 'success' : 'warn', kind === 'ok' ? doc.ref + ' marked audited' : 'Finding raised on ' + doc.ref, 'Recorded in the audit trail.');
-    this.addLog('M. Nakale', 'Auditor', kind === 'ok' ? 'Audited' : 'Finding', doc.ref,
+    this.addLog(this.actor(), this.actorRole('Auditor'), kind === 'ok' ? 'Audited' : 'Finding', doc.ref,
       kind === 'ok' ? 'Image, metadata and hash reconciled' : edits ? edits + ' reviewer corrections require second check' : 'Metadata discrepancy noted');
   }
   readonly trail = computed(() => {
     const seed: AuditEntry[] = [
       { n: -3, who: 'System', role: ROLE.sys, action: 'Created', obj: 'Erf 1873 record', detail: 'Migrated from legacy register · v1' },
       { n: -2, who: 'System', role: ROLE.sys, action: 'Linked', obj: 'G 88/1978, T 1502/1996', detail: 'Pilot back-scan 2025 · v2' },
-      { n: -1, who: 'K. Iipinge', role: ROLE.scan, action: 'Opened batch', obj: 'WDH-B017', detail: 'Vault 3 · T-series 2008, 2019' }
+      { n: -1, who: '(sample)', role: ROLE.scan, action: 'Opened batch', obj: 'WDH-B017', detail: 'Vault 3 · T-series 2008, 2019' }
     ];
     let prev = 'genesis';
     return [...seed, ...this.log()].map(a => {

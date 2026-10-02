@@ -1,0 +1,70 @@
+import dns from 'node:dns';
+import { createEventBus, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck } from '@lrfe/common';
+import { createLocalStore, createMemoryStore, createS3Store } from '@lrfe/storage';
+import { IntakeService } from './intake.service.js';
+import { createEdrmsClient } from './edrms-client.js';
+import { createChecker } from './extraction/checks.js';
+import { createGeminiProvider, createMockProvider } from './extraction/providers.js';
+import { ExtractionWorker } from './worker.js';
+import { createMemoryRepo } from './repo/memory.js';
+import { createSequelizeRepo } from './repo/sequelize.js';
+import { SCHEMA } from './repo/models.js';
+
+/** Build everything the intake service and the worker need, from the environment. */
+export function setupFromEnv({ logger = console } = {}) {
+    // An API key restricted to this host's IPv4 address is refused when Node happens to connect
+    // over IPv6. NETWORK_PREFER_IPV4=true makes outgoing calls (Gemini, EDRMS) try IPv4 first.
+    if (envBool('NETWORK_PREFER_IPV4', false)) dns.setDefaultResultOrder('ipv4first');
+    const checks = [];
+    let repo, sequelize;
+    if (envOneOf('INTAKE_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
+        repo = createMemoryRepo();
+    } else {
+        sequelize = createSequelize();
+        repo = createSequelizeRepo(sequelize);
+        checks.push(() => healthCheck(sequelize));
+        if (envBool('DB_SYNC', false)) checks.push(async () => { await ensureSchema(sequelize, SCHEMA); await repo.sync(); });
+    }
+
+    const storage = envOneOf('INTAKE_STORAGE', ['s3', 'local', 'memory'], 'local');
+    const store = storage === 'memory' ? createMemoryStore()
+        : storage === 'local' ? createLocalStore({ root: env('INTAKE_LOCAL_DIR', './tmp/intake-store') })
+        : createS3Store({ bucket: env('AWS_BUCKET_NAME'), region: env('AWS_BUCKET_REGION'), accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY });
+
+    const jwtSecret = env('JWT_SECRET');
+    const edrms = createEdrmsClient({ baseUrl: env('EDRMS_URL', 'http://localhost:3502'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'intake' }) });
+    const checker = createChecker({ edrms });
+
+    // Default: mock — nothing is sent to Google (and nothing is spent) unless explicitly configured.
+    const providerKind = envOneOf('EXTRACTION_PROVIDER', ['gemini', 'mock'], 'mock');
+    let primary, escalation = null;
+    if (providerKind === 'gemini') {
+        const common = {
+            apiKey: process.env.GEMINI_API_KEY, vertex: envBool('GEMINI_VERTEX', false),
+            project: process.env.GOOGLE_CLOUD_PROJECT, location: process.env.GOOGLE_CLOUD_LOCATION,
+            transcribe: envBool('GEMINI_TRANSCRIBE', true),
+            thinkingLevel: envOneOf('GEMINI_THINKING_LEVEL', ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'], 'LOW'),
+            mediaResolution: envOneOf('GEMINI_MEDIA_RESOLUTION', ['LOW', 'MEDIUM', 'HIGH'], 'MEDIUM')
+        };
+        primary = createGeminiProvider({ ...common, model: env('GEMINI_MODEL', 'gemini-3.1-flash-lite') });
+        const esc = env('GEMINI_ESCALATION_MODEL', 'gemini-3.1-pro-preview');
+        // The second reading only needs the fields: the first reading's transcription is kept.
+        if (esc !== 'none') escalation = createGeminiProvider({ ...common, model: esc, transcribe: false });
+    } else {
+        primary = createMockProvider();
+    }
+
+    const service = new IntakeService({
+        repo, store, edrms, checker,
+        events: createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'intake', logger }),
+        config: { registry: env('INTAKE_REGISTRY_CODE', 'WDH') }
+    });
+    const budget = env('EXTRACTION_MONTHLY_BUDGET_USD', '50');
+    const worker = new ExtractionWorker({
+        repo, service, store, primary, escalation, checker, logger,
+        monthlyBudgetUsd: budget === 'none' ? null : Number(budget),
+        maxEscalationPages: envInt('EXTRACTION_ESCALATE_MAX_PAGES', 10)
+    });
+    logger.info?.({ provider: providerKind, model: primary.model, escalation: escalation?.model ?? null, budgetUsd: budget, storage }, 'intake extraction configured');
+    return { repo, store, service, worker, checks, sequelize, jwtSecret };
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@lrfe/identity",
+  "version": "0.1.0",
+  "description": "Identity & access: sign-in with MFA, sessions, users, fixed roles, permission matrix, security policies, access log",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "seed": "node scripts/seed.js",
+    "reset-password": "node scripts/reset-password.js",
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@lrfe/common": "0.1.0",
+    "nodemailer": "^10.0.13",
+    "sequelize": "^6.37.3"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3",
+    "sinon": "^17.0.1"
+  }
+}

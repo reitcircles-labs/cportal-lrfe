@@ -1,13 +1,12 @@
-import { Component, HostListener, inject } from '@angular/core';
+import { Component, HostListener, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ToastService } from '../state/toast.service';
 import { ConfirmService } from '../state/confirm.service';
 import { IconComponent } from './icon.component';
 
 @Component({
-  selector: 'app-overlays',
-  standalone: true,
-  imports: [IconComponent],
-  template: `
+    selector: 'app-overlays',
+    imports: [IconComponent],
+    template: `
     <div class="toasts" aria-live="polite">
       @for (t of toast.toasts(); track t.id) {
         <div class="toast" [class]="'toast ' + t.kind" role="status">
@@ -35,7 +34,8 @@ import { IconComponent } from './icon.component';
       </div>
     }
   `,
-  styles: [`
+    changeDetection: ChangeDetectionStrategy.Eager,
+    styles: [`
     .toasts { position: fixed; right: 20px; bottom: 20px; z-index: 80; display: flex; flex-direction: column; gap: 10px; width: min(380px, calc(100vw - 32px)); }
     .toast { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: flex-start; padding: 12px 12px 12px 14px; background: var(--color-surface); border: 1px solid var(--color-divider); border-left: 4px solid var(--color-accent); border-radius: var(--radius-md); box-shadow: var(--shadow-md); animation: slide-in .2s ease-out; }
     .toast.success { border-left-color: var(--success); } .toast.success .ic { color: var(--success); }

@@ -1,0 +1,31 @@
+{
+  "name": "cportal-lrfe-backend",
+  "version": "0.1.0",
+  "description": "Namibia land-records backend services (EDRMS intake → ERP land records)",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "dev": "node scripts/dev.js",
+    "dev:identity": "npm run dev -w @lrfe/identity",
+    "dev:gateway": "npm run dev -w @lrfe/gateway",
+    "dev:edrms": "npm run dev -w @lrfe/edrms",
+    "dev:bpm": "npm run dev -w @lrfe/bpm",
+    "dev:intake": "npm run dev -w @lrfe/intake",
+    "seed:identity": "npm run seed -w @lrfe/identity",
+    "reset-password": "npm run reset-password -w @lrfe/identity --",
+    "docs": "node scripts/openapi.js",
+    "docs:check": "node scripts/openapi.js --check",
+    "docs:serve": "node scripts/docs-server.js"
+  },
+  "devDependencies": {
+    "js-yaml": "^4.3.2"
+  }
+}

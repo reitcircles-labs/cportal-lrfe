@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { DOCS, VIEWDOCS, hash } from '../../data/mock-data';
 import { LandDoc } from '../../data/models';
 import { RegistryStore } from '../../state/registry.store';
@@ -14,10 +14,9 @@ const ORDER = ['g1', 'g2', 'b', 'a', 'c'];
 const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outline', Filed: 'tag-accent', Linked: 'tag-accent', Committed: 'tag-accent', Rejected: 'tag-outline' };
 
 @Component({
-  selector: 'app-audit',
-  standalone: true,
-  imports: [DocPageComponent, IconComponent, CanDirective],
-  template: `
+    selector: 'app-audit',
+    imports: [DocPageComponent, IconComponent, CanDirective],
+    template: `
     <div class="page stack" style="gap:22px">
       <header class="row" style="justify-content:space-between;align-items:end">
         <div><div class="card-kicker">Read-only</div><h1 style="margin:4px 0 0;font-size:38px">Audit · Erf 1873, Klein Windhoek</h1></div>
@@ -108,7 +107,8 @@ const TAG: Record<string, string> = { Audited: 'tag-accent', Finding: 'tag-outli
       </section>
     </div>
   `,
-  styles: [`
+    changeDetection: ChangeDetectionStrategy.Eager,
+    styles: [`
     .docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
     .dcell { text-align: left; border: 1px solid var(--color-divider); border-top: 3px solid var(--color-divider); border-radius: 10px; background: var(--color-surface); box-shadow: var(--shadow-sm); padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
     .dcell:hover:not(:disabled) { background: var(--color-accent-100); }
@@ -156,7 +156,7 @@ export class AuditComponent {
     return d.fields.map((f, i) => {
       const edited = !d.isBase && this.store.isEdited(d, f), st = this.store.status(d, f, i);
       return { label: f.label, ex: f.v, val: this.store.value(d, f), conf: f.c ? Math.round(f.c * 100) + '%' : '—', edited,
-        rev: d.isBase ? 'Pilot verified' : edited ? 'Corrected · A. Mwandingi' : st === 'pending' ? 'Not reviewed' : 'Accepted · A. Mwandingi' };
+        rev: d.isBase ? 'Pilot verified' : edited ? 'Corrected by the reviewer' : st === 'pending' ? 'Not reviewed' : 'Accepted by the reviewer' };
     });
   });
   editCount = computed(() => this.provenance().filter(r => r.edited).length);

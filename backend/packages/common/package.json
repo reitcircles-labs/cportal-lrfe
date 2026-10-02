@@ -1,0 +1,28 @@
+{
+  "name": "@lrfe/common",
+  "version": "0.1.0",
+  "description": "Shared ESM building blocks for the land-records services: config, errors, db, auth, events, app bootstrap",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/jwt": "^10.2.2",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.12.5",
+    "fastify-plugin": "^6.0.0",
+    "pg": "^8.12.0",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.3"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3",
+    "sinon": "^17.0.1"
+  }
+}

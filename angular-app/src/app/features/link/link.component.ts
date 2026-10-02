@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DOCS, NEW, MONTHS, docSummary, docYear } from '../../data/mock-data';
 import { LandDoc } from '../../data/models';
@@ -15,10 +15,9 @@ type Tab = 'documents' | 'chain' | 'comments';
 type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
 
 @Component({
-  selector: 'app-link',
-  standalone: true,
-  imports: [IconComponent, CanDirective],
-  template: `
+    selector: 'app-link',
+    imports: [IconComponent, CanDirective],
+    template: `
     <div class="ws" [class.list-hidden]="!listOpen()">
       <!-- Land record list -->
       <aside class="list">
@@ -243,7 +242,8 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
       </div>
     }
   `,
-  styles: [`
+    changeDetection: ChangeDetectionStrategy.Eager,
+    styles: [`
     .ws { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: start; min-height: calc(100vh - var(--topbar-h)); }
     .ws.list-hidden { grid-template-columns: minmax(0, 1fr); }
     .ws.list-hidden .list { display: none; }
@@ -406,7 +406,7 @@ export class LinkComponent {
     if (!this.rbac.can('record.comment')) return;
     const t = this.draft().trim(); if (!t) return;
     const role = this.auth.role();
-    this.store.addComment(rid, t, role?.name || 'J. !Gawaseb', role?.label || 'Records officer');
+    this.store.addComment(rid, t, role?.name || 'You', role?.label || 'Records officer');
     this.draft.set('');
   }
   openCreate() { this.nf.set({ erf: '', township: '', regDiv: 'K', extent: '', tenure: 'Freehold' }); this.createOpen.set(true); }

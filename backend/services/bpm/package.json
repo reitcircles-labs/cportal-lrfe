@@ -1,0 +1,25 @@
+{
+  "name": "@lrfe/bpm",
+  "version": "0.1.0",
+  "description": "Workflow: persisted token-based process engine, human task inbox, approvals (four-eyes), connectors to the other services",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "dependencies": {
+    "@lrfe/common": "0.1.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "json-logic-js": "^2.0.5",
+    "sequelize": "^6.37.3"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "fastify": "^5.12.5",
+    "mocha": "^10.7.3"
+  }
+}

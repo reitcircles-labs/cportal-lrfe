@@ -1,0 +1,24 @@
+{
+  "name": "@lrfe/edrms",
+  "version": "0.1.0",
+  "description": "EDRMS: sealed, versioned documents of record (deeds, grants, SG diagrams) with ISO 23081 record metadata",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^10.1.2",
+    "@lrfe/common": "0.1.0",
+    "@lrfe/storage": "0.1.0",
+    "sequelize": "^6.37.3"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "form-data": "^4.0.6",
+    "mocha": "^10.7.3"
+  }
+}

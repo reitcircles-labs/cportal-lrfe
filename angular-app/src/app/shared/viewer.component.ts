@@ -1,4 +1,4 @@
-import { Component, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
 import { DOCS, VIEWDOCS, NEW, hash, docYear } from '../data/mock-data';
 import { LandDoc } from '../data/models';
@@ -11,10 +11,9 @@ import { CanDirective } from './can.directive';
 const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
 
 @Component({
-  selector: 'app-viewer',
-  standalone: true,
-  imports: [DocPageComponent, IconComponent, CanDirective],
-  template: `
+    selector: 'app-viewer',
+    imports: [DocPageComponent, IconComponent, CanDirective],
+    template: `
     @if (doc(); as d) {
       <div class="dialog-backdrop" (click)="vs.close()">
         <div class="blueprint frame" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" [attr.aria-label]="d.title + ' ' + d.ref">
@@ -94,7 +93,8 @@ const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
       </div>
     }
   `,
-  styles: [`
+    changeDetection: ChangeDetectionStrategy.Eager,
+    styles: [`
     .dialog-backdrop { z-index: 50; padding: 24px; }
     .frame { width: min(1240px, 100%); height: min(880px, calc(100vh - 48px)); overflow: hidden; background: var(--color-surface); box-shadow: var(--shadow-lg); display: grid; grid-template-rows: auto minmax(0, 1fr); }
     .v-bar { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--color-divider); flex-wrap: wrap; }

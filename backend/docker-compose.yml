@@ -1,0 +1,190 @@
+# The whole backend: Postgres + identity, edrms, bpm, intake and the gateway.
+#
+#   docker compose up -d --build        then point the frontend's proxy at http://localhost:3500
+#   docker compose up -d postgres       just the database, for running the services with npm
+#
+# Settings come from the shell or from ./.env (compose reads it for ${...} values; the services
+# themselves get only what is listed below). JWT_SECRET is required. Without BOOTSTRAP_ADMIN_* or
+# SEED_DEMO_PASSWORD nobody can sign in.
+#
+# Ports (host side bound to 127.0.0.1): gateway 3500, identity 3501, edrms 3502, bpm 3503,
+# intake 3504, Postgres ${POSTGRES_HOST_PORT:-5433} (5432 is often taken by a local Postgres).
+# Stop locally running `npm run dev:*` services first; they use the same ports.
+
+name: lrfe
+
+x-service: &service
+  build: .
+  image: lrfe-backend:local
+  restart: unless-stopped
+
+x-env: &env
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (32+ random characters)}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  HOST: 0.0.0.0
+  EVENT_BUS_DRIVER: log
+  DB_CONNECTION_STRING: postgres://${POSTGRES_USER:-lrfe}:${POSTGRES_PASSWORD:-lrfe}@postgres:5432/${POSTGRES_DB:-lrfe}
+  DB_POOL_SIZE: "5"
+  # Dev/UAT only: each service creates its own schema and tables on boot
+  DB_SYNC: "true"
+
+x-healthcheck: &healthcheck
+  # node:22-slim has no curl; every service answers GET /health
+  test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + process.env.PORT + '/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 20s
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lrfe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lrfe}
+      POSTGRES_DB: ${POSTGRES_DB:-lrfe}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  identity:
+    <<: *service
+    working_dir: /app/services/identity
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3501"
+      IDENTITY_STORE: postgres
+      ACCESS_TOKEN_TTL_SECONDS: "900"
+      REFRESH_COOKIE_PATH: /api/auth
+      # false only while the app is served over plain http://localhost
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-System administrator}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
+      IDENTITY_EXPOSE_INVITE_LINKS: ${IDENTITY_EXPOSE_INVITE_LINKS:-true}
+      IDENTITY_INVITE_URL_BASE: ${IDENTITY_INVITE_URL_BASE:-http://localhost:4200/#/invite}
+      # invitation email: smtp | file | none (see services/identity/README.md)
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-none}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-true}
+      SMTP_HELO_NAME: ${SMTP_HELO_NAME:-}
+      SMTP_FAMILY: ${SMTP_FAMILY:-}
+    ports:
+      - "127.0.0.1:3501:3501"
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  edrms:
+    <<: *service
+    working_dir: /app/services/edrms
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3502"
+      EDRMS_STORE: postgres
+      # local = files in the edrms-files volume; s3 needs the AWS_* settings
+      EDRMS_STORAGE: ${EDRMS_STORAGE:-local}
+      EDRMS_LOCAL_DIR: /data/edrms
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME:-}
+      AWS_BUCKET_REGION: ${AWS_BUCKET_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      EDRMS_MAX_FILE_MB: "200"
+      EDRMS_URL_TTL_SECONDS: "300"
+      EDRMS_COUNTRY_CODE: NA
+      EDRMS_REGISTRY_CODE: WDH
+      EDRMS_CONTENT_URL_BASE: /api/document-content
+    volumes:
+      - edrms-files:/data/edrms
+    ports:
+      - "127.0.0.1:3502:3502"
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  bpm:
+    <<: *service
+    working_dir: /app/services/bpm
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3503"
+      BPM_STORE: postgres
+      EDRMS_URL: http://edrms:3502
+    ports:
+      - "127.0.0.1:3503:3503"
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      edrms: { condition: service_healthy }
+
+  intake:
+    <<: *service
+    working_dir: /app/services/intake
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3504"
+      INTAKE_STORE: postgres
+      INTAKE_STORAGE: local
+      INTAKE_LOCAL_DIR: /data/intake
+      INTAKE_MAX_FILE_MB: "50"
+      INTAKE_REGISTRY_CODE: WDH
+      EDRMS_URL: http://edrms:3502
+      # mock = canned answer, no API key, no cost; gemini needs GEMINI_API_KEY
+      EXTRACTION_PROVIDER: ${EXTRACTION_PROVIDER:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite}
+      GEMINI_ESCALATION_MODEL: ${GEMINI_ESCALATION_MODEL:-gemini-3.1-pro-preview}
+      EXTRACTION_MONTHLY_BUDGET_USD: ${EXTRACTION_MONTHLY_BUDGET_USD:-50}
+      INTAKE_RUN_WORKER: "true"
+    volumes:
+      - intake-files:/data/intake
+    ports:
+      - "127.0.0.1:3504:3504"
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      edrms: { condition: service_healthy }
+
+  gateway:
+    <<: *service
+    working_dir: /app/services/gateway
+    command: ["node", "src/index.js"]
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HOST: 0.0.0.0
+      PORT: "3500"
+      IDENTITY_URL: http://identity:3501
+      EDRMS_URL: http://edrms:3502
+      BPM_URL: http://bpm:3503
+      INTAKE_URL: http://intake:3504
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
+    ports:
+      - "127.0.0.1:3500:3500"
+    healthcheck: *healthcheck
+    depends_on:
+      identity: { condition: service_healthy }
+      edrms: { condition: service_healthy }
+      bpm: { condition: service_healthy }
+      intake: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  edrms-files:
+  intake-files:
