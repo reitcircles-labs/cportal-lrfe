@@ -41,6 +41,33 @@ E2E_REUSE=1 npx playwright test                                      # terminal 
 
 Tests that change data then see what earlier runs left behind; restart the stack for a clean one.
 
+## Screenshots for Jira
+
+Tests can take named screenshots at their checkpoints, to attach to the Jira ticket they cover:
+
+```bash
+npm run evidence -- API-606            # one ticket; several: npm run evidence -- API-606 API-609
+```
+
+This runs only the tests tagged with those tickets, with screenshots on, and lists what it took:
+`evidence/<ticket>/NN-<title>.png`, numbered in order, plus `manifest.json` with each title, the
+test and the commit it was taken on ("+ uncommitted changes" when the tree was not clean). The folder
+is gitignored and replaced on every run. Ordinary `npm test` runs take no screenshots.
+
+In a test, tag it with its tickets and call `evidence()` (from `support/evidence.ts`) where a
+screenshot shows what the step proves:
+
+```ts
+test('…', { tag: ['@API-606'] }, async ({ page }) => {
+    …
+    await evidence(page, 'API-606', 'Auditor: integrity of version 1.0 verified');
+});
+```
+
+Scroll the element that matters into view first (`locator.scrollIntoViewIfNeeded()`); full-page
+screenshots come out garbled because the app's sidebar and top bar are fixed. The screens show only
+the test stack's fictitious data.
+
 ## What the stack is
 
 `stack/start-backend.mjs` starts the five services with in-memory stores, the AI replaced by its

@@ -17,6 +17,7 @@ import { userByRole, ENROLLED_USERS } from '../support/catalogue';
 import { signInAs } from '../support/auth';
 import { sampleDeedPdf } from '../support/deed';
 import { trackApi } from '../support/api-idle';
+import { evidence } from '../support/evidence';
 
 const SCAN = userByRole('scan');
 const REVIEWER = userByRole('rev');
@@ -25,9 +26,12 @@ const AUDITOR = userByRole('aud');
 // A second reviewer who may file documents: the correction must be approved by someone else.
 const APPROVER = ENROLLED_USERS.find(u => u.roles.length === 1 && u.roles[0] === 'rev' && u.email !== REVIEWER.email)!;
 
-/** Each person works in their own browser context, signed in as themselves. */
+/**
+ * Each person works in their own browser context, signed in as themselves. The window is wider
+ * than the default so Capture's table shows its buttons in the screenshots for Jira.
+ */
 async function as(browser: Browser, email: string, path: string): Promise<Page> {
-    const context = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+    const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, viewport: { width: 1600, height: 1000 } });
     const page = await context.newPage();
     await signInAs(page, email, path);
     return page;
@@ -51,7 +55,7 @@ async function openInDocuments(page: Page, edrmsNo: string) {
 
 const field = (page: Page, label: string) => page.locator('section.panel', { hasText: 'Verified metadata' }).locator('tr', { hasText: label });
 
-test('a deed goes from scan to sealed record, and a correction is approved by a second person', async ({ browser }) => {
+test('a deed goes from scan to sealed record, and a correction is approved by a second person', { tag: ['@API-606', '@API-609'] }, async ({ browser }) => {
     test.slow();   // seven people, one after the other
     const fileName = `deed-T2210-2008-${Date.now()}.pdf`;
     const source = `E2E vault ${Date.now()}`;
@@ -72,13 +76,16 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await expect(row).toContainText('In review', { timeout: 30_000 });   // read by the canned AI
         await expect(row).toContainText('Deed of transfer T 2210/2008');
         await expect(row).toContainText('0/17 reviewed');
+        await evidence(page, 'API-606', 'Scan operator: the uploaded scan, read by the AI, waits for review');
 
         // API-609: a scan operator cannot open Verify, so "Review →" is disabled for them and stays here.
         const review = row.getByRole('button', { name: 'Review →' });
         await expect(review).toHaveAttribute('aria-disabled', 'true');
         await expect(review).toHaveAttribute('title', /^Requires “View review queue”/);
+        await evidence(page, 'API-609', 'After the fix: Review is disabled for the scan operator');
         await review.click({ force: true });   // Playwright will not click an aria-disabled button by itself
         await expect(page).toHaveURL(/#\/capture$/);
+        await evidence(page, 'API-609', 'After the fix: clicking it keeps the scan operator on Capture');
         await page.context().close();
     });
 
@@ -89,11 +96,13 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await page.locator('tbody tr', { hasText: fileName }).getByRole('button', { name: 'Review →' }).click();
         await expect(page).toHaveURL(/#\/verify\?doc=/);
         await expect(page.locator('.doc-head')).toContainText('T 2210/2008');
+        await evidence(page, 'API-609', 'After the fix: Review still opens Verify for the reviewer');
         await expect(page.locator('.doc-head')).toContainText('Deed of transfer · Erf 1873, Klein Windhoek');
 
         // Nothing can be filed before the fields are reviewed.
         await expect(page.locator('.blockers')).toContainText('17 fields not reviewed yet');
         await expect(page.getByRole('button', { name: 'Approve & file to EDRMS' })).toBeDisabled();
+        await evidence(page, 'API-606', 'Reviewer: nothing can be filed before the fields are reviewed');
 
         // Correct the conveyancer, as if the scan showed initials the AI missed.
         await page.locator('#f-conveyancer').fill('H. J. van Wyk');
@@ -105,12 +114,15 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await expect(page.locator('.blockers')).toContainText('1 field not reviewed yet');
         await page.locator('.frow', { has: page.locator('#f-priorTitle') }).getByTitle('Accept', { exact: true }).click();
         await expect(page.locator('.blockers')).toHaveCount(0);
+        await page.locator('#f-conveyancer').scrollIntoViewIfNeeded();
+        await evidence(page, 'API-606', 'Reviewer: conveyancer corrected, every field reviewed, ready to file');
 
         await page.getByRole('button', { name: 'Approve & file to EDRMS' }).click();
         const toast = page.locator('.toast .t', { hasText: 'Filed as' });
         await expect(toast).toBeVisible();
         edrmsNo = (await toast.textContent())!.replace('Filed as', '').trim();
         expect(edrmsNo).toMatch(/^EDR-NA-\d{4}-\d{6}$/);
+        await evidence(page, 'API-606', 'Reviewer: filed to the EDRMS');
         await page.context().close();
     });
 
@@ -123,6 +135,7 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await expect(field(page, 'Prior title')).toContainText('T 1502/1996');
         await expect(page.getByRole('button', { name: 'Check integrity' })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Request correction' })).toHaveAttribute('aria-disabled', 'true');
+        await evidence(page, 'API-606', 'Records officer: the sealed record, without integrity check or correction');
         await page.context().close();
     });
 
@@ -131,6 +144,7 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await openInDocuments(page, edrmsNo);
         await page.getByRole('button', { name: 'Check integrity' }).click();
         await expect(page.locator('.banner.ok')).toContainText('Integrity verified · version 1.0');
+        await evidence(page, 'API-606', 'Auditor: integrity of version 1.0 verified');
         await page.context().close();
     });
 
@@ -141,12 +155,14 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await page.locator('label.fl', { hasText: 'Consideration' }).locator('input').fill('N$ 650 000,00');
         await page.getByLabel('Reason (required)').fill('Consideration misread; the original shows N$ 650 000,00');
         await expect(page.getByText('1 field changed')).toBeVisible();
+        await evidence(page, 'API-606', 'Reviewer: correction request with a reason');
         await page.getByRole('button', { name: 'Send for approval' }).click();
         await expect(page.locator('.banner', { hasText: 'Correction awaiting approval' })).toBeVisible();
 
         // Four eyes: the person who asked does not get the approval task.
         await page.getByRole('button', { name: 'Tasks' }).click();
         await expect(page.getByRole('menu')).not.toContainText(edrmsNo);
+        await evidence(page, 'API-606', 'Reviewer: correction awaits approval; the requester gets no approval task');
         await page.context().close();
     });
 
@@ -157,6 +173,7 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         const dialog = page.locator('.dialog');
         await expect(dialog).toContainText('N$ 640 000,00');
         await expect(dialog).toContainText('N$ 650 000,00');
+        await evidence(page, 'API-606', 'Second reviewer: approval task from the inbox');
         await dialog.getByRole('button', { name: 'Approve' }).click();
         await expect(page.locator('.toast', { hasText: 'Change approved and applied' })).toBeVisible();
 
@@ -167,6 +184,8 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await expect(v2).toContainText(`Requested by ${REVIEWER.name} · approved by ${APPROVER.name}`);
         await expect(v2).toContainText('N$ 640 000,00 → N$ 650 000,00');
         await expect(page.locator('.ver', { hasText: 'v1.0 · Filed' })).toContainText(`Filed by ${REVIEWER.name}`);
+        await v2.scrollIntoViewIfNeeded();
+        await evidence(page, 'API-606', 'Second reviewer: version 2.0 with the approved change in its history');
         await page.context().close();
     });
 
@@ -175,6 +194,7 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await openInDocuments(page, edrmsNo);
         await page.getByRole('button', { name: 'Check integrity' }).click();
         await expect(page.locator('.banner.ok')).toContainText('Integrity verified · version 2.0');
+        await evidence(page, 'API-606', 'Auditor: integrity of version 2.0 verified');
         await page.context().close();
     });
 });

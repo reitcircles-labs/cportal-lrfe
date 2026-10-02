@@ -21,7 +21,9 @@ export default defineConfig({
     },
     projects: [
         { name: 'setup', testMatch: /auth\.setup\.ts/ },
-        { name: 'chromium', use: { ...devices['Desktop Chrome'] }, dependencies: ['setup'] }
+        // channel 'chromium': the full browser in headless mode, which (unlike the default headless shell)
+        // has the PDF viewer, so scans show on Verify and Documents as they do for users
+        { name: 'chromium', use: { ...devices['Desktop Chrome'], channel: 'chromium' }, dependencies: ['setup'] }
     ],
     webServer: [
         {
