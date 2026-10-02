@@ -2,7 +2,7 @@
  * One deed from scan to sealed record, passed between roles in the browser (API-606):
  *
  *   scan operator   creates a batch and uploads the scan; the (canned) AI reads it
- *   reviewer        corrects a field, accepts the rest, files it to the EDRMS
+ *   reviewer        opens it from Capture, corrects a field, accepts the rest, files it to the EDRMS
  *   records officer finds it in Documents: verified values, but no audit or correction rights
  *   auditor         checks the sealed version's integrity
  *   reviewer        requests a correction to the filed record (four-eyes)
@@ -72,13 +72,22 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await expect(row).toContainText('In review', { timeout: 30_000 });   // read by the canned AI
         await expect(row).toContainText('Deed of transfer T 2210/2008');
         await expect(row).toContainText('0/17 reviewed');
+
+        // API-609: a scan operator cannot open Verify, so "Review →" is disabled for them and stays here.
+        const review = row.getByRole('button', { name: 'Review →' });
+        await expect(review).toHaveAttribute('aria-disabled', 'true');
+        await expect(review).toHaveAttribute('title', /^Requires “View review queue”/);
+        await review.click({ force: true });   // Playwright will not click an aria-disabled button by itself
+        await expect(page).toHaveURL(/#\/capture$/);
         await page.context().close();
     });
 
     await test.step(`reviewer ${REVIEWER.email} corrects, accepts and files it`, async () => {
-        const page = await as(browser, REVIEWER.email, '/verify');
-        await page.getByPlaceholder('Deed no., erf, file, batch').fill(batchId);
-        await page.locator('button.qrow', { hasText: 'T 2210/2008' }).click();
+        // The reviewer opens it from the batch on Capture, with "Review →".
+        const page = await as(browser, REVIEWER.email, '/capture');
+        await page.getByLabel('Batch').selectOption(batchId);
+        await page.locator('tbody tr', { hasText: fileName }).getByRole('button', { name: 'Review →' }).click();
+        await expect(page).toHaveURL(/#\/verify\?doc=/);
         await expect(page.locator('.doc-head')).toContainText('T 2210/2008');
         await expect(page.locator('.doc-head')).toContainText('Deed of transfer · Erf 1873, Klein Windhoek');
 

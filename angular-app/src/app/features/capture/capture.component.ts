@@ -106,7 +106,7 @@ interface Upload { key: number; name: string; state: 'waiting' | 'uploading' | '
                   <td style="text-align:right;white-space:nowrap">
                     <button class="btn btn-secondary btn-icon" title="Open the scan" (click)="openFile(d)"><app-icon name="eye" [size]="15" /></button>
                     @if (d.status === 'failed') { <button class="btn btn-secondary" appCan="verify.edit" (click)="retry(d)">Retry</button> }
-                    @if (d.status === 'ready') { <button class="btn btn-primary" (click)="router.navigate(['/verify'], { queryParams: { doc: d.id } })">Review →</button> }
+                    @if (d.status === 'ready') { <button class="btn btn-primary" appCan="verify.view" (click)="router.navigate(['/verify'], { queryParams: { doc: d.id } })">Review →</button> }
                   </td>
                 </tr>
               }
