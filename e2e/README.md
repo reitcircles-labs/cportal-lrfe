@@ -57,6 +57,15 @@ so it does **not** read your `backend/services/<name>/.env`. Playwright also sta
 | `tests/sign-in.spec.ts` | Sign-in screen for each role (lands on the role's home), wrong password, wrong code, suspended and invited users, first-time authenticator setup, reload keeps the session, sign-out ends it |
 | `tests/screens-by-role.spec.ts` | Each role × each screen: the menu shows exactly the allowed screens; an allowed screen opens with its title, with no server errors and no 403 from its own API calls; a forbidden one shows "Access denied" |
 | `tests/api-by-role.spec.ts` | Each role × each protected endpoint, at the API: refused with 403 without the permission, let through with it; 401 without a token; service-only endpoints refuse user tokens |
+| `tests/deed-workflow.spec.ts` | One deed from scan to sealed record, passed between people: the scan operator uploads it, a reviewer corrects a field, accepts the rest and files it, the records officer sees it (without audit or correction rights), the auditor checks its integrity, a reviewer requests a correction, a second reviewer approves it from the task inbox (the requester does not get the task), and the auditor checks version 2.0 |
+
+Land records (`#/link`) and Audit (`#/audit`) still show demo data, so the workflow stops at the
+EDRMS: linking the document into a land record and the auditor's sign-off follow when those
+services exist.
+
+**Sample scan.** `support/deed.ts` draws a fictitious deed of transfer as a one-page PDF in the
+browser, so no binary file is kept in the repository. Its wording matches the intake service's canned
+AI answer (T 2210/2008, Erf 1873, Klein Windhoek), so the reviewer's fields agree with the scan.
 
 The roles run as one demo user per role plus the two demo users with two roles (`scan+rev`,
 `rev+aud`), whose permissions are the union.
@@ -85,6 +94,9 @@ writes only with roles that must be refused, so it leaves the stack's data as it
   authenticator code, then the page opens already signed in. Sessions cannot be saved and reused
   between tests (Playwright's `storageState`): the refresh token changes on every use and the
   server ends a session whose old token comes back.
+- Don't wait with `waitForLoadState('networkidle')`: a scan shown in the PDF viewer is a request that
+  never finishes in the headless browser. Use `trackApi(page)` from `support/api-idle.ts`, which
+  waits for the app's API calls only.
 - Find elements the way a user does: `getByRole`, `getByLabel`, `getByText`. Add a `data-testid` to
   the Angular template only where that is ambiguous.
 - Each test signs in again, often as the same user in the same 30-second window. That works because

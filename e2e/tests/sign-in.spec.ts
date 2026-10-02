@@ -23,7 +23,8 @@ for (const user of MATRIX_USERS) {
         await enterPassword(page, user.email);
         await expect(page.getByRole('heading', { name: 'Enter your code' })).toBeVisible();
         await enterCode(page, codeFor(secretOf(user.email)));
-        await expect(page).toHaveURL(new RegExp(`#${user.home === '/' ? '/$' : user.home + '$'}`));
+        // Verify adds the document it opens (?doc=) when its queue is not empty
+        await expect(page).toHaveURL(new RegExp(`#${user.home}(\\?.*)?$`));
         await expect(page.locator('aside.sidebar')).toContainText(user.name);
     });
 }

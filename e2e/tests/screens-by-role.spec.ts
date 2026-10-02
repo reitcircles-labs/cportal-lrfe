@@ -6,8 +6,11 @@
 import { expect, test, type Response } from '@playwright/test';
 import { MATRIX_USERS, SCREENS, can } from '../support/catalogue';
 import { signInAs } from '../support/auth';
+import { trackApi } from '../support/api-idle';
 
 const hrefOf = (path: string) => `#/${path}`;
+/** The screen's URL, optionally with a query: Verify and Documents add the open document (?doc=, ?id=). */
+const urlOf = (path: string) => new RegExp(`#/${path}(\\?.*)?$`);
 
 for (const user of MATRIX_USERS) {
     test(`${user.label}: menu and screens follow the role's permissions`, async ({ page }) => {
@@ -22,6 +25,7 @@ for (const user of MATRIX_USERS) {
             }
         });
 
+        const apiIdle = trackApi(page);
         await signInAs(page, user.email, user.home);
 
         await test.step('menu', async () => {
@@ -37,9 +41,9 @@ for (const user of MATRIX_USERS) {
                 await page.goto(`/${hrefOf(screen.path)}`);
                 const heading = page.locator('header.topbar h1');
                 if (allowed) {
-                    await expect.soft(page).toHaveURL(new RegExp(`${hrefOf(screen.path).replace(/[/]/g, '\\/')}$`));
+                    await expect.soft(page).toHaveURL(urlOf(screen.path));
                     await expect.soft(heading).toHaveText(screen.title);
-                    await page.waitForLoadState('networkidle');
+                    await apiIdle();
                     expect.soft(apiProblems, `API errors while on /${screen.path}`).toEqual([]);
                 } else {
                     await expect.soft(page).toHaveURL(new RegExp(`#/denied\\?perm=${screen.anyOf[0].replace('.', '\\.')}$`));
