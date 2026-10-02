@@ -28,7 +28,10 @@ cd ../angular-app && npm install
 
 Each backend service reads its own `.env` file, `backend/services/<name>/.env` (never committed).
 Create them from [backend/.env_example](backend/.env_example), which explains every setting.
-`JWT_SECRET` must be the same in all five. The identity README covers
+`JWT_SECRET` must be the same in all five. Documents are stored on disk unless S3 is configured: set
+`INTAKE_LOCAL_DIR` and `EDRMS_LOCAL_DIR` to folders **outside** the repository (e.g.
+`~/data/cportal-lrfe/intake-store` and `…/edrms-store`) and back them up together with the database,
+which refers to every file in them. The identity README covers
 [email](backend/services/identity/README.md#email-invitations) and the
 [first sign-in](backend/services/identity/README.md#first-sign-in).
 
@@ -103,13 +106,16 @@ set `SEED_DEMO_PASSWORD` against a shared database.
 
 ## First steps in a new system
 
-The system starts with no offices and one administrator (`BOOTSTRAP_ADMIN_*` in identity's `.env`).
+A new system starts with one administrator (`BOOTSTRAP_ADMIN_*` in identity's `.env`) and Namibia's
+two deeds offices, `WDH` Deeds Registry · Windhoek and `REH` Deeds Registry · Rehoboth (created
+when the database has no offices).
 
 1. **Sign in** as that administrator. The first sign-in sets up two-step sign-in: scan the QR code
    with an authenticator app. Password or authenticator lost? See
    [The admin cannot sign in](backend/services/identity/README.md#the-admin-cannot-sign-in).
-2. **Administration → Offices → Add office** for each location (e.g. `WDH` Deeds Registry ·
-   Windhoek). Users are invited into an office, so this comes first.
+2. **Administration → Offices**: check the two deeds offices (fill in Rehoboth's address and
+   contacts) and add any other location, e.g. the Office of the Auditor-General as an external body
+   for auditors. Users are invited into an office.
 3. **Users → Invite user**: they get an email with an activation link. Step by step, including a
    test you can run with your own address:
    [Inviting users and assigning roles](angular-app/docs/user-guide/inviting-users-and-assigning-roles.md).

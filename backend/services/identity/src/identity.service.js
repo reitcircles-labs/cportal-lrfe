@@ -12,7 +12,8 @@ const SYSTEM = { id: null, name: 'System' };
 const normEmail = (email) => String(email || '').trim().toLowerCase();
 const OFFICE_TYPE_LABEL = { registry: 'Registry office', external: 'External body' };
 const isNational = (roleIds) => roleIds.some(r => NATIONAL_ROLES.includes(r));
-const emailNote = (e) => (e.sent ? 'invitation emailed' : `invitation not emailed: ${e.reason}`);
+// the message id lets an admin find the email in the mail provider's delivery log (e.g. Google Email Log Search)
+const emailNote = (e) => (e.sent ? `invitation emailed${e.messageId ? ` (message id ${e.messageId})` : ''}` : `invitation not emailed: ${e.reason}`);
 
 /**
  * Identity & access: sign-in (password + TOTP), sessions, users, the fixed roles' permission
@@ -369,8 +370,8 @@ export class IdentityService {
         if (!this.mailer.enabled) return { sent: false, to: user.email, reason: 'Email is not configured on the server' };
         try {
             const content = invitationEmail({ name: user.name, link: this.inviteLink(token), expiresAt, invitedBy: actor?.name || 'An administrator', roles, issuer: this.config.issuer, resend });
-            await this.mailer.send({ to: user.email, ...content });
-            return { sent: true, to: user.email };
+            const res = await this.mailer.send({ to: user.email, ...content });
+            return { sent: true, to: user.email, ...(res?.id ? { messageId: res.id } : {}) };
         } catch (err) {
             return { sent: false, to: user.email, reason: err.message };
         }

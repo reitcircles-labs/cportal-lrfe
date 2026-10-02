@@ -28,8 +28,10 @@ export const DEMO_USERS = [
  *   admin:        { name, email, password } — created only if no user exists yet
  *   demoPassword: when set, creates the DEMO_USERS that don't exist yet, with this password
  *                 (invited demo users get no password and stay Invited)
+ *   offices:      [{ code, name, type, address, contact }] created only if no office exists yet
+ *                 (DEFAULT_OFFICES at start-up); once any office exists, never touched again
  */
-export async function seedIdentity(repo, { admin, demoPassword, log = () => {} } = {}) {
+export async function seedIdentity(repo, { admin, demoPassword, offices, log = () => {} } = {}) {
     const roles = await repo.listRoles();
     for (const role of ROLES) {
         if (!roles.some(r => r.id === role.id)) {
@@ -59,6 +61,11 @@ export async function seedIdentity(repo, { admin, demoPassword, log = () => {} }
     const missingSod = SOD_RULES.filter(r => !sod.some(x => x.id === r.id));
     if (missingSod.length) await repo.saveSod(missingSod);
     if (!(await repo.getPolicies())) await repo.savePolicies(DEFAULT_POLICIES);
+
+    if (offices?.length && (await repo.listOffices()).length === 0) {
+        for (const o of offices) await repo.createOffice({ ...o, status: 'Active' });
+        log(`offices created: ${offices.map(o => o.code).join(', ')}`);
+    }
 
     if (admin && (await repo.listUsers()).length === 0) {
         await repo.createUser({

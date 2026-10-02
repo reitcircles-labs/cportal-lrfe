@@ -76,6 +76,17 @@ export const OFFICE_CODE_PATTERN = '^[A-Z]{2,5}$';
 /** Roles whose holders may have no office ("national"); everyone else is invited into one. */
 export const NATIONAL_ROLES = ['adm'];
 
+/**
+ * Offices created when a database has none, to start from: Namibia's two deeds offices, as listed
+ * by the Directorate of Deeds Registration (checked 1 October 2026). Windhoek registers land
+ * everywhere except Rehoboth; Rehoboth registers title in Rehoboth town and constituency and the
+ * surrounding farmland. Codes are permanent; names and details can be edited, offices suspended.
+ */
+export const DEFAULT_OFFICES = [
+    { code: 'WDH', name: 'Deeds Registry · Windhoek', type: 'registry', address: 'Robert Mugabe Avenue, Windhoek', contact: '' },
+    { code: 'REH', name: 'Deeds Registry · Rehoboth', type: 'registry', address: '', contact: '' }
+];
+
 export const DEFAULT_POLICIES ={ mfa: true, eid: true, ipAllow: false, timeout: 30, fourEyes: true };
 
 /** Union of the permissions granted by `roleIds`, given the current role definitions. */

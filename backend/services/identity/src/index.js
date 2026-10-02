@@ -6,6 +6,7 @@ import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
 import { seedIdentity } from './seed.js';
+import { DEFAULT_OFFICES } from './catalogue.js';
 
 const store = envOneOf('IDENTITY_STORE', ['postgres', 'memory'], 'postgres');
 const checks = [];
@@ -27,7 +28,7 @@ if (store === 'memory') {
 const admin = process.env.BOOTSTRAP_ADMIN_EMAIL
     ? { name: env('BOOTSTRAP_ADMIN_NAME', 'System administrator'), email: env('BOOTSTRAP_ADMIN_EMAIL'), password: env('BOOTSTRAP_ADMIN_PASSWORD') }
     : undefined;
-checks.push(() => seedIdentity(repo, { admin, demoPassword: process.env.SEED_DEMO_PASSWORD || undefined }));
+checks.push(() => seedIdentity(repo, { admin, demoPassword: process.env.SEED_DEMO_PASSWORD || undefined, offices: DEFAULT_OFFICES }));
 
 // Outgoing email (invitations): MAIL_TRANSPORT=smtp | file | none. See the identity README.
 const mailer = createMailer({
