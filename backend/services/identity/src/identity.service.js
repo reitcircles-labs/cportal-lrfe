@@ -14,6 +14,10 @@ const OFFICE_TYPE_LABEL = { registry: 'Registry office', external: 'External bod
 const isNational = (roleIds) => roleIds.some(r => NATIONAL_ROLES.includes(r));
 // the message id lets an admin find the email in the mail provider's delivery log (e.g. Google Email Log Search)
 const emailNote = (e) => (e.sent ? `invitation emailed${e.messageId ? ` (message id ${e.messageId})` : ''}` : `invitation not emailed: ${e.reason}`);
+// Saving a change that breaks an enabled segregation-of-duties rule is allowed (the admin confirms
+// it), but the access log must show it as an exception, naming the rule(s).
+const conflictNote = (rules) => (rules.length ? ` · duty conflict accepted: ${rules.map(r => r.label).join('; ')}` : '');
+const nameList = (names, max = 10) => names.slice(0, max).join(', ') + (names.length > max ? ` and ${names.length - max} more` : '');
 
 /**
  * Identity & access: sign-in (password + TOTP), sessions, users, the fixed roles' permission
@@ -43,6 +47,12 @@ export class IdentityService {
         const [roles, sod, policies, offices] = await Promise.all([this.repo.listRoles(), this.repo.listSod(), this.repo.getPolicies(), this.repo.listOffices()]);
         roles.sort((a, b) => ROLE_IDS.indexOf(a.id) - ROLE_IDS.indexOf(b.id));
         return { roles, sod, policies: policies ?? DEFAULT_POLICIES, offices };
+    }
+
+    /** Enabled duty rules that `afterPerms` breaks and `beforePerms` did not. */
+    newConflicts(beforePerms, afterPerms, sod) {
+        const had = new Set(sodConflicts(beforePerms, sod).map(r => r.id));
+        return sodConflicts(afterPerms, sod).filter(r => !had.has(r.id));
     }
 
     roleLabels(roleIds, roles) {
@@ -340,7 +350,8 @@ export class IdentityService {
         const ctx = await this.context();
         const roleText = this.roleLabels(roleIds, ctx.roles);
         const mail = await this.emailInvitation(user, token, expiresAt, roleText, actor, false);
-        await this.log('user', 'Invited', user.name, `${office ? office.code : 'National'} · Roles: ${roleText} · ${emailNote(mail)}`, actor);
+        const conflicts = sodConflicts(effectivePerms(roleIds, ctx.roles), ctx.sod);
+        await this.log('user', 'Invited', user.name, `${office ? office.code : 'National'} · Roles: ${roleText}${conflictNote(conflicts)} · ${emailNote(mail)}`, actor);
         // The link is a credential until used: it goes to the user by email, and to the admin only
         // when IDENTITY_EXPOSE_INVITE_LINKS=true (dev). Never into events or logs.
         await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, emailSent: mail.sent }, { actor });
@@ -398,8 +409,9 @@ export class IdentityService {
         this.assertAdminRemains(users.map(u => (u.id === id ? { ...u, roles: roleIds } : u)), ctx.roles);
         const added = roleIds.filter(r => !user.roles.includes(r)).map(r => '+ ' + this.roleLabels([r], ctx.roles));
         const removed = user.roles.filter(r => !roleIds.includes(r)).map(r => '− ' + this.roleLabels([r], ctx.roles));
+        const conflicts = this.newConflicts(effectivePerms(user.roles, ctx.roles), effectivePerms(roleIds, ctx.roles), ctx.sod);
         const updated = await this.repo.updateUser(id, { roles: roleIds });
-        if (added.length + removed.length) await this.log('user', 'Roles changed', user.name, [...added, ...removed].join(', '), actor);
+        if (added.length + removed.length) await this.log('user', 'Roles changed', user.name, [...added, ...removed].join(', ') + conflictNote(conflicts), actor);
         return this.publicUser(updated, ctx);
     }
 
@@ -463,6 +475,14 @@ export class IdentityService {
                 await this.log('role', 'Permissions changed', role.label, [...add, ...rem].join(', '), actor);
             }
         }
+        // A role change can put every holder of the role in conflict at once: log who, and which rule.
+        const created = users
+            .map(u => ({ u, rules: this.newConflicts(effectivePerms(u.roles, ctx.roles), effectivePerms(u.roles, next), ctx.sod) }))
+            .filter(x => x.rules.length);
+        if (created.length) {
+            await this.log('role', 'Duty conflict accepted', `${created.length} user${created.length === 1 ? '' : 's'}`,
+                nameList(created.map(({ u, rules }) => `${u.name} (${rules.map(r => r.label).join('; ')})`)), actor);
+        }
         return { roles: next, changes };
     }
 
@@ -486,6 +506,7 @@ export class IdentityService {
         if (unknown.length) throw new BadRequestError(`Unknown segregation-of-duties rule(s): ${unknown.map(r => r.id).join(', ')}`);
 
         const old = ctx.policies, ch = [];
+        const users = await this.repo.listUsers();
         if (old.mfa !== p.mfa) ch.push('MFA ' + (p.mfa ? 'required' : 'optional'));
         if (old.eid !== p.eid) ch.push('National eID ' + (p.eid ? 'on' : 'off'));
         if (old.ipAllow !== p.ipAllow) ch.push('Network restriction ' + (p.ipAllow ? 'on' : 'off'));
@@ -495,7 +516,10 @@ export class IdentityService {
         const nextSod = ctx.sod.map(rule => {
             const incoming = sod.find(r => r.id === rule.id);
             if (!incoming || typeof incoming.on !== 'boolean' || incoming.on === rule.on) return rule;
-            ch.push((incoming.on ? 'Enabled: ' : 'Disabled: ') + rule.label);
+            // Enabling a rule that users already break turns their roles into accepted exceptions.
+            const breaking = incoming.on ? users.filter(u => sodConflicts(effectivePerms(u.roles, ctx.roles), [{ ...rule, on: true }]).length) : [];
+            ch.push((incoming.on ? 'Enabled: ' : 'Disabled: ') + rule.label +
+                (breaking.length ? ` (duty conflict accepted for ${breaking.length} user${breaking.length === 1 ? '' : 's'}: ${nameList(breaking.map(u => u.name))})` : ''));
             return { ...rule, on: incoming.on };
         });
 

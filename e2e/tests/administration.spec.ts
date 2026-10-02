@@ -194,7 +194,7 @@ test('role changes decide what the user can open', tag, async ({ browser, playwr
     await evidence(page, 'API-607', 'Access log: both role changes');
 });
 
-test('a segregation-of-duties conflict is flagged before and after saving', tag, async ({ browser, playwright }) => {
+test('a segregation-of-duties conflict is flagged before and after saving', { tag: ['@API-607', '@API-611'] }, async ({ browser, playwright }) => {
     const admin = await adminApi(playwright, test.info().project.use.baseURL!);
     const user = await createUser(admin, ['rev'], 'sod');
     await admin.dispose();
@@ -217,7 +217,9 @@ test('a segregation-of-duties conflict is flagged before and after saving', tag,
     await evidence(page, 'API-607', 'Duties: the user is flagged with a conflict');
 
     const log = await logRows(page, 'Users', user.name);
-    await expect(action(log, 'Roles changed').filter({ hasText: '+ Auditor · read-only' })).toHaveCount(1);
+    // API-611: the entry says it is an exception, and which rule it breaks.
+    await expect(action(log, 'Roles changed').filter({ hasText: '+ Auditor · read-only · duty conflict accepted: Reviewers cannot audit documents they can file' })).toHaveCount(1);
+    await evidence(page, 'API-611', 'Access log: the role change that breaks a duty rule');
 });
 
 test('a suspended user is signed out and cannot sign in until reactivated', tag, async ({ browser, playwright }) => {
@@ -309,12 +311,12 @@ test('security policies and the permission matrix are saved, take effect and are
     await evidence(page, 'API-607', 'Access log: policy and permission changes, and their reversal');
 });
 
-// ---------------------------------------------------------------- known bugs
-// Marked test.fail(): they pass while the bug is there and fail ("expected to fail, but passed")
-// as soon as it is fixed, which is the signal to remove the marker.
+// ---------------------------------------------------------------- bugs found by these tests
+// Fixed ones keep guarding against a regression. Open ones are marked test.fail(): they pass while
+// the bug is there and fail ("expected to fail, but passed") once it is fixed, the cue to remove it.
 
 test("the access log records a duty-conflict exception", { tag: ['@API-607', '@API-611'] }, async ({ playwright }) => {
-    test.fail(true, 'API-611: the log only says "Roles changed", not that a duty rule was broken');
+    // API-611: it used to say only "Roles changed".
     const admin = await adminApi(playwright, test.info().project.use.baseURL!);
     const user = await createUser(admin, ['rev'], 'sodlog');
     await admin.api.put(`/api/users/${user.id}/roles`, { headers: admin.headers, data: { roles: ['rev', 'aud'] } });
