@@ -1,0 +1,99 @@
+# End-to-end tests
+
+The web app and the backend together, driven in a real browser by [Playwright](https://playwright.dev).
+Each run starts its own stack, everything in memory, so it always begins from the same known state
+and never touches a real database, bucket, AI or mail server.
+
+## Running
+
+First time only:
+
+```bash
+cd e2e
+npm install
+npm run install-browser     # downloads Playwright's Chromium (see "Ubuntu 20.04" below)
+```
+
+Then:
+
+```bash
+npm test                    # starts the stack, runs every test, stops the stack (about a minute)
+npm run report              # opens the HTML report of the last run
+npx playwright test tests/sign-in.spec.ts       # one file
+npx playwright test -g "rev \(a.mwandingi\)"    # tests whose title matches
+```
+
+A failing test keeps a screenshot, a video and a **trace** under `test-results/`. The trace is a
+step-by-step recording of the page, the network and the console:
+`npx playwright show-trace test-results/<test>/trace.zip` (or open it from the report).
+
+**Ports.** The test stack uses 3600 (gateway), 3601–3604 (identity, edrms, bpm, intake) and 4300
+(the web app), so it runs next to `npm run dev` (3500–3504, 4200). If a test port is busy the run
+stops instead of testing whatever is there. Other ports: `E2E_API_PORT=3700 E2E_WEB_PORT=4400 npm test`.
+
+**Keeping the stack up** between runs (faster while writing tests):
+
+```bash
+node stack/start-backend.mjs                                         # terminal 1
+cd ../angular-app && npx ng serve --port 4300 --proxy-config ../e2e/stack/proxy.e2e.mjs   # terminal 2
+E2E_REUSE=1 npx playwright test                                      # terminal 3, as often as needed
+```
+
+Tests that change data then see what earlier runs left behind; restart the stack for a clean one.
+
+## What the stack is
+
+`stack/start-backend.mjs` starts the five services with in-memory stores, the AI replaced by its
+canned answer (`EXTRACTION_PROVIDER=mock`), emails written to `.stack/mail/` and the 14 fictitious
+demo users seeded (identity's `DEMO_USERS`). Each service runs in an empty folder under `.stack/`,
+so it does **not** read your `backend/services/<name>/.env`. Playwright also starts a second
+`ng serve` on port 4300 whose proxy points at the test gateway (`stack/proxy.e2e.mjs`).
+
+## What is tested
+
+| File | What |
+|---|---|
+| `tests/auth.setup.ts` | Runs first: enrols every demo user's authenticator (MFA is on by default) and keeps the secrets in `.auth/totp.json` |
+| `tests/sign-in.spec.ts` | Sign-in screen for each role (lands on the role's home), wrong password, wrong code, suspended and invited users, first-time authenticator setup, reload keeps the session, sign-out ends it |
+| `tests/screens-by-role.spec.ts` | Each role × each screen: the menu shows exactly the allowed screens; an allowed screen opens with its title, with no server errors and no 403 from its own API calls; a forbidden one shows "Access denied" |
+| `tests/api-by-role.spec.ts` | Each role × each protected endpoint, at the API: refused with 403 without the permission, let through with it; 401 without a token; service-only endpoints refuse user tokens |
+
+The roles run as one demo user per role plus the two demo users with two roles (`scan+rev`,
+`rev+aud`), whose permissions are the union.
+
+### Where the expectations come from
+
+The matrices are not written out by hand; they are read from the application, so a change to a role,
+screen or endpoint is tested without editing the tests (`support/catalogue.ts`):
+
+| Expectation | Source |
+|---|---|
+| Roles, their permissions and home screens | `backend/services/identity/src/catalogue.js` |
+| Users | `DEMO_USERS` in `backend/services/identity/src/seed.js` |
+| Screens: path, permission, title | `angular-app/src/app/app.routes.ts` (read as text; an unreadable route fails the run) |
+| Endpoints and their permission rules | `backend/services/gateway/docs/openapi.yaml`, generated from the route guards |
+
+Because the API matrix reads the generated docs, its first test runs `npm run docs:check` and fails
+if they are out of date: after changing a route, run `npm run docs` in `backend/`.
+
+The API matrix sends only GETs with a role that is allowed (they cannot change anything) and sends
+writes only with roles that must be refused, so it leaves the stack's data as it was.
+
+## Writing tests
+
+- Sign in with `signInAs(page, email, path)` from `support/auth.ts`: the API sign-in with the
+  authenticator code, then the page opens already signed in. Sessions cannot be saved and reused
+  between tests (Playwright's `storageState`): the refresh token changes on every use and the
+  server ends a session whose old token comes back.
+- Find elements the way a user does: `getByRole`, `getByLabel`, `getByText`. Add a `data-testid` to
+  the Angular template only where that is ambiguous.
+- Each test signs in again, often as the same user in the same 30-second window. That works because
+  identity does not yet block a reused code (the TODO in `verifyMfa`). When it does, the tests need
+  one sign-in per user and worker, shared through a fixture.
+
+## Ubuntu 20.04
+
+Playwright no longer ships a Chromium build for Ubuntu 20.04. `npm run install-browser` downloads the
+Ubuntu 22.04 build instead (`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu22.04-x64`), which runs on
+20.04. On a newer system `npx playwright install chromium` is enough. If neither works, the official
+Docker image `mcr.microsoft.com/playwright` has everything.

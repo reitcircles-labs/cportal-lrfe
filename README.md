@@ -10,6 +10,7 @@ manage offices, users, roles and security policies.
 | `backend/` | Five Node.js services behind one gateway | [backend/README.md](backend/README.md) |
 | `backend/services/identity/` | Sign-in, MFA, users, offices, roles, email | [identity README](backend/services/identity/README.md) |
 | `backend/scripts/` | `npm run dev`, API docs, remote access | [scripts README](backend/scripts/README.md) |
+| `e2e/` | End-to-end tests in a browser: sign-in, every role × screen and role × endpoint | [e2e/README.md](e2e/README.md) |
 
 ## Running it locally
 

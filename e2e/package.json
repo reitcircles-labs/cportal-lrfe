@@ -1,0 +1,20 @@
+{
+  "name": "cportal-lrfe-e2e",
+  "version": "0.1.0",
+  "description": "End-to-end tests: the web app and backend together, in a browser",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "report": "playwright show-report",
+    "install-browser": "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu22.04-x64 playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^26.6.4",
+    "js-yaml": "^5.4.2",
+    "typescript": "^7.0.2"
+  }
+}
