@@ -43,6 +43,27 @@ get that password (existing users are never changed). For example `p.hamutenya@d
 (reviewer). The full list is in `src/seed.js`. They are fictitious and share one password, so
 never enable them where real staff can sign in.
 
+## Offices
+
+Every user except system administrators belongs to an office: a registry office or an external
+body (e.g. the Office of the Auditor-General). Administrators manage them under **Administration →
+Offices** (permission "Manage offices"):
+
+- **Code** (2 to 5 letters, e.g. `WDH`): unique and permanent, because it will appear in batch and
+  document numbers. Name, type, address and contact can be edited.
+- **Suspended** offices take no new invitations, and their pending invitations cannot be resent.
+  Their users and work are unchanged. Offices are never deleted.
+- **Inviting** requires an active office; only system administrators can be "National" (no office).
+  **Users → Manage → Change office** moves a user.
+
+**Default offices.** When the database has no offices, identity creates Namibia's two deeds
+offices (`DEFAULT_OFFICES` in `src/catalogue.js`), as listed by the Directorate of Deeds
+Registration in October 2026: `WDH` Deeds Registry · Windhoek, which registers land everywhere except
+Rehoboth, and `REH` Deeds Registry · Rehoboth, for Rehoboth town, constituency and the surrounding
+farmland. Rehoboth's address is left blank to fill in. Once any office exists, nothing is added
+again. (The Registration of Deeds in Rehoboth Act 1976 was repealed by the Deeds Registries Act 2015,
+in force since April 2021; confirm with the Registrar whether the Rehoboth office remains separate.)
+
 ## Email (invitations)
 
 When an administrator invites a user (or clicks **Resend invite**), identity emails them the
@@ -171,6 +192,76 @@ Resend invite** (earlier links stop working).
 
 Development without a mail server: `MAIL_TRANSPORT=file` and open the `.eml` files from `tmp/mail`.
 
+## Serving the app over HTTPS (nginx)
+
+Users need the app at a real `https://` address: invitation emails link to it
+(`IDENTITY_INVITE_URL_BASE`), and Gmail drops invitations whose link points to `localhost`
+(tested 1 October 2026). [`scripts/nginx-cportal-lrfe.conf`](scripts/nginx-cportal-lrfe.conf)
+serves the app at **https://cserver.reitcircles.com** (port 443):
+
+- the built Angular app from `/var/www/cportal-lrfe`;
+- everything under `/api/` passed to the gateway on `127.0.0.1:3500`; the backend services stay
+  on `127.0.0.1` and are not reachable from outside;
+- the existing Let's Encrypt certificate for `cserver.reitcircles.com` (already used by the sites
+  on ports 5070 and 5090); security headers; uploads up to 55 MB; long-term caching of build files,
+  never of `index.html`.
+
+Tested: the site file passes `nginx -t`, and served through it (on a test port with a test
+certificate) the sign-in and invitation pages load and `/api` reaches the gateway.
+
+### Installing (needs sudo)
+
+From the repository root, with the backend running (`npm run dev` in `backend/`):
+
+```bash
+# 1. build the app and copy it where nginx serves it from
+(cd angular-app && npm run build)
+sudo mkdir -p /var/www/cportal-lrfe
+sudo rsync -a --delete angular-app/dist/cportal-lrfe/browser/ /var/www/cportal-lrfe/
+
+# 2. install the site and reload nginx
+sudo cp backend/services/identity/scripts/nginx-cportal-lrfe.conf /etc/nginx/sites-available/cportal-lrfe
+sudo ln -s /etc/nginx/sites-available/cportal-lrfe /etc/nginx/sites-enabled/cportal-lrfe
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+3. **Open port 443** in the server's firewall if it is closed (Hetzner Cloud firewall or `ufw`).
+4. In `services/identity/.env`:
+   ```ini
+   IDENTITY_INVITE_URL_BASE="https://cserver.reitcircles.com/#/invite"
+   COOKIE_SECURE=true          # the sign-in cookie is only sent over HTTPS
+   ```
+   then restart identity. With `COOKIE_SECURE=true`, developers using `http://localhost:4200`
+   through the SSH tunnel can still sign in with Chrome or Firefox (they treat `localhost` as
+   secure); Safari may not keep the sign-in, so use Chrome or Firefox there, or the HTTPS address.
+5. **Check:**
+   ```bash
+   curl -sI https://cserver.reitcircles.com/ | head -1          # HTTP/2 200
+   curl -s https://cserver.reitcircles.com/api/auth/me           # {"status":"Unauthorized",...}: /api reaches the backend
+   ```
+   then open https://cserver.reitcircles.com and sign in. Invite yourself: the link in the email
+   should now open directly.
+
+**Certificate renewal.** The site only reads the certificate files, so renewals apply after the
+next `sudo systemctl reload nginx` (certbot usually does that itself). Check how renewal works with
+`sudo certbot certificates`. The site file also contains a commented-out block redirecting
+`http://` to `https://`; enable it only if certbot does not need port 80 itself (renewal
+"standalone").
+
+### Updating after a change to the app
+
+```bash
+(cd angular-app && npm run build)
+sudo rsync -a --delete angular-app/dist/cportal-lrfe/browser/ /var/www/cportal-lrfe/
+```
+
+No nginx reload is needed. Backend changes need only the services restarted. If you change the
+site file, copy it again and run `sudo nginx -t && sudo systemctl reload nginx`.
+
+The services must keep running for the site to work: `npm run dev` in a tmux session is fine for
+a test server; a production server would run them as system services (systemd) or with
+`docker compose` (see `backend/README.md`).
+
 ## Setting up MFA (the 6-digit code)
 
 MFA is required by default (**Admin → Security policies**). Nobody generates codes for users:
@@ -250,5 +341,7 @@ they accept an invitation).
 | `src/seed.js` | roles, policies, bootstrap admin, demo users (runs on every start; idempotent) |
 | `src/reset-password.js`, `scripts/reset-password.js` | the reset command |
 | `src/mailer.js` | outgoing email (SMTP / file / none) and the invitation email |
+| `src/catalogue.js` | permissions, roles, duty rules, office types and the default offices |
+| `scripts/nginx-cportal-lrfe.conf` | nginx site serving the app over HTTPS |
 | `src/crypto.js`, `src/totp.js` | scrypt passwords, TOTP (RFC 6238) |
 | `src/repo/` | Postgres (Sequelize) and in-memory stores |

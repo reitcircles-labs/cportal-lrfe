@@ -14,7 +14,7 @@ const ADMIN = { id: 'admin-1', name: 'Paulus Hamutenya' };
 /** A mailer that records what it was asked to send, or fails like an unreachable server. */
 function fakeMailer({ fail } = {}) {
     const sent = [];
-    return { sent, enabled: true, async send(m) { if (fail) throw new Error(fail); sent.push(m); return { sent: true }; } };
+    return { sent, enabled: true, async send(m) { if (fail) throw new Error(fail); sent.push(m); return { sent: true, id: `<test-${sent.length}@example.test>` }; } };
 }
 
 async function makeService(mailer, config = {}) {
@@ -35,7 +35,7 @@ describe('invitation email', () => {
         const mailer = fakeMailer();
         const { service, office } = await makeService(mailer);
         const res = await service.invite({ name: 'Nangula Shikongo', email: 'N.Shikongo@deeds.gov.na', officeId: office.id, roles: ['rev'] }, ADMIN);
-        expect(res.email).to.deep.equal({ sent: true, to: 'n.shikongo@deeds.gov.na' });
+        expect(res.email).to.deep.equal({ sent: true, to: 'n.shikongo@deeds.gov.na', messageId: '<test-1@example.test>' });
         expect(res).to.not.have.property('inviteUrl');           // not exposed unless configured
         expect(mailer.sent).to.have.length(1);
         const m = mailer.sent[0];
@@ -58,7 +58,7 @@ describe('invitation email', () => {
         expect(JSON.stringify(published)).to.not.include(token);
         const { items } = await repo.listAccessEvents({ kind: 'user' });
         expect(JSON.stringify(items)).to.not.include(token);
-        expect(items.find(e => e.action === 'Invited').detail).to.include('invitation emailed');
+        expect(items.find(e => e.action === 'Invited').detail).to.include('invitation emailed (message id <test-1@example.test>)');
         expect(published.find(e => e.type === 'identity.user.invited').data).to.include({ emailSent: true });
     });
 

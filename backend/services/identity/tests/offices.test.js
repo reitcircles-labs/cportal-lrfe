@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { makeService, makeApp } from './helpers.js';
 import { createMemoryRepo } from '../src/repo/memory.js';
 import { seedIdentity } from '../src/seed.js';
-import { ROLES } from '../src/catalogue.js';
+import { ROLES, DEFAULT_OFFICES } from '../src/catalogue.js';
 
 const ADMIN = 'p.hamutenya@deeds.gov.na';
 
@@ -93,6 +93,23 @@ describe('offices', () => {
         await repo.updateRolePerms('adm', adm.perms.filter(p => p !== 'admin.offices'));
         await seedIdentity(repo, {});
         expect((await repo.listRoles()).find(r => r.id === 'adm').perms).to.not.include('admin.offices');
+    });
+
+    it('creates the default offices only in a database without offices', async () => {
+        const empty = createMemoryRepo();
+        await seedIdentity(empty, { offices: DEFAULT_OFFICES });
+        expect((await empty.listOffices()).map(o => `${o.code} ${o.status}`)).to.deep.equal(['REH Active', 'WDH Active']);
+        // later starts change nothing: a renamed or suspended default stays as the admin left it
+        const reh = await empty.getOfficeByCode('REH');
+        await empty.updateOffice(reh.id, { name: 'Rehoboth office', status: 'Suspended' });
+        await seedIdentity(empty, { offices: DEFAULT_OFFICES });
+        expect(await empty.getOfficeByCode('REH')).to.include({ name: 'Rehoboth office', status: 'Suspended' });
+        expect(await empty.listOffices()).to.have.length(2);
+
+        const existing = createMemoryRepo();
+        await existing.createOffice({ code: 'KMP', name: 'Somewhere else' });
+        await seedIdentity(existing, { offices: DEFAULT_OFFICES });
+        expect((await existing.listOffices()).map(o => o.code)).to.deep.equal(['KMP']);
     });
 
     it('HTTP: anyone who invites may list offices; only admin.offices may change them', async () => {
