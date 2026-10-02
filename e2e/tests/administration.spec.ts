@@ -344,7 +344,7 @@ test("a suspended user's existing token stops working at once", { tag: ['@API-60
 });
 
 test('dropdowns show the value the screen holds', { tag: ['@API-607', '@API-612'] }, async ({ browser, playwright }) => {
-    test.fail(true, 'API-612: the dropdowns display their first option, not the selected value');
+    // API-612: they used to show their first option (the invite dialog showed "Registrar" and created a reviewer).
     const admin = await adminApi(playwright, test.info().project.use.baseURL!);
     const user = await createUser(admin, ['rec'], 'dropdown');   // in WDH, which is not the first office
     const code = officeCode();
@@ -355,12 +355,21 @@ test('dropdowns show the value the screen holds', { tag: ['@API-607', '@API-612'
 
     await page.getByRole('button', { name: 'Invite user' }).click();
     expect.soft(await shown(field(page.locator('.dialog'), 'Role')), 'invite: the default role').toBe('Metadata reviewer');
+    await evidence(page, 'API-612', 'Invite user: the Role dropdown (default Metadata reviewer)');
     await page.getByRole('button', { name: 'Cancel' }).click();
 
     const drawer = await openUser(page, user);
-    expect.soft(await shown(drawer.locator('select[aria-label="Office"]')), "drawer: the user's office").toBe('WDH · Deeds Registry · Windhoek');
+    const office = drawer.locator('select[aria-label="Office"]');
+    expect.soft(await shown(office), "drawer: the user's office").toBe('WDH · Deeds Registry · Windhoek');
+    await evidence(page, 'API-612', 'Manage user: the Office dropdown (user is in WDH)');
+    // Moving the user to the office that used to be shown by mistake now takes one step.
+    await office.selectOption({ label: 'REH · Deeds Registry · Rehoboth' });
+    await drawer.getByRole('button', { name: 'Change office' }).click();
+    await expect(toast(page, `Office changed for ${user.name}`)).toBeVisible();
+    await expect(page.locator('tbody tr', { hasText: user.email })).toContainText('REH');
 
     await page.goto('/#/admin/offices');
     await page.locator('tbody tr', { hasText: code }).click();
     expect.soft(await shown(field(page.locator('.dialog'), 'Type')), "edit office: the office's type").toBe('External body');
+    await evidence(page, 'API-612', 'Edit office: the Type dropdown (office is an External body)');
 });

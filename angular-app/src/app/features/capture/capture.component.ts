@@ -24,9 +24,9 @@ interface Upload { key: number; name: string; state: 'waiting' | 'uploading' | '
       <aside class="stack" style="gap:18px">
         <div class="stack" style="gap:8px">
           <div class="field"><label for="batch">Batch</label>
-            <select id="batch" class="input" [value]="batchId()" (change)="selectBatch($any($event.target).value)">
+            <select id="batch" class="input" (change)="selectBatch($any($event.target).value)">
               @if (!batches().length) { <option value="">No batches yet</option> }
-              @for (b of batches(); track b.id) { <option [value]="b.id">{{ b.id }}{{ b.source ? ' · ' + b.source : '' }}</option> }
+              @for (b of batches(); track b.id) { <option [value]="b.id" [selected]="b.id === batchId()">{{ b.id }}{{ b.source ? ' · ' + b.source : '' }}</option> }
             </select>
           </div>
           @if (newBatch() === null) {
