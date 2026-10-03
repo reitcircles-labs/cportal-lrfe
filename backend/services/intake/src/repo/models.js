@@ -37,6 +37,8 @@ export function defineModels(sequelize) {
         pages: { type: DataTypes.INTEGER },
         fields: j([]), notes: j([]),
         latestExtractionId: { type: DataTypes.UUID },
+        // the automatic cross-check of the latest reading: { provider, model, version, calls, at } (audit)
+        crosscheck: j(),
         escalated: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
         extractionCostUsd: { type: DataTypes.DECIMAL(12, 6), allowNull: false, defaultValue: 0 },
         extractionError: { type: DataTypes.TEXT },

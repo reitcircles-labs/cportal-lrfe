@@ -252,8 +252,11 @@ upload ─▶ intake (staging store, job queue) ─▶ extraction worker ─▶ 
   checks (11-digit IDs, deed-number pattern, dates in English/Afrikaans/German, m²/ha), from
   checking that each value's quoted evidence is really on the cited page, and from EDRMS
   cross-checks. Errors (bad ID length, duplicate instrument) block filing until corrected.
-- **Cost control:** every model call is stored with tokens and cost (`src/extraction/pricing.js`,
-  prices as of 2026-09-29); the worker pauses at `EXTRACTION_MONTHLY_BUDGET_USD`; `GET /usage`.
+- **Cost control:** every model call is stored with tokens and cost (`src/extraction/pricing.js`:
+  Gemini prices as of 2026-09-29; Jev, any version, $0.042 per 1M input tokens with output free,
+  as of 2026-10-03); the worker pauses at `EXTRACTION_MONTHLY_BUDGET_USD`; `GET /usage` reports
+  Jev next to Gemini. Filed records carry the cross-check (tool, model, version, calls, fields
+  filed despite a flag) in their sealed provenance.
   Defaults: `gemini-3.1-flash-lite`, medium resolution, low thinking; escalation `gemini-3.1-pro-preview`.
 - **Provider** is swappable (`src/extraction/providers.js`): Gemini Developer API (`GEMINI_API_KEY`)
   or Vertex AI (`GEMINI_VERTEX=true`, project, region); `mock` needs no key and costs nothing (default).

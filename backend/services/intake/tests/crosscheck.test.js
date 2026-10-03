@@ -221,3 +221,50 @@ describe('the cross-check decides the second reading', () => {
         expect(r.notes.find(n => n.code === 'escalated').message).to.match(/^Read a second time \(Deed number, Registration date, Property description and 2 more needed checking\)/);
     });
 });
+
+describe('cross-check in the filed record (audit)', () => {
+    async function fileAll(ctx, doc) {
+        let d = await ctx.service.acceptClean(doc.id, actor(users.rev));
+        for (const f of d.fields.filter(x => x.status === 'pending')) d = await ctx.service.updateField(doc.id, f.k, { status: 'accepted' }, actor(users.rev));
+        const filed = await ctx.service.fileDocument(doc.id, actor(users.rev));
+        return ctx.edrmsService.getVersion(filed.filedDocumentId, 1);
+    }
+
+    it('records tool, model, version, calls and the fields filed despite a flag', async () => {
+        const ctx = await makeIntake({ jev: doubtsMarital() });
+        const doc = await ctx.captureAndExtract();
+        expect(doc).not.to.have.property('crosscheck');                         // not sent to the screens
+        const v1 = await fileAll(ctx, doc);
+        expect(v1.provenance.crosscheck).to.deep.include({ provider: 'fake', model: 'fake-jev', calls: 1, flagged: ['marital'] });
+        expect(v1.provenance.crosscheck.version).to.match(/^xcheck-/);
+        expect(v1.provenance.crosscheck.at).to.be.a('string');
+    });
+
+    it('a corrected field is in "corrected", not "flagged"', async () => {
+        const ctx = await makeIntake({ jev: doubtsMarital() });
+        const doc = await ctx.captureAndExtract();
+        await ctx.service.updateField(doc.id, 'marital', { value: 'unmarried' }, actor(users.rev));
+        const v1 = await fileAll(ctx, doc);
+        expect(v1.provenance.crosscheck.flagged).to.deep.equal([]);
+        expect(v1.provenance.corrected).to.deep.equal(['marital']);
+    });
+
+    it('counts every call of a reading read twice', async () => {
+        const MARRIED = 'married in community of property';
+        const jev = createFakeJev({ respond: ({ questions }) => ({
+            ...(questions['marital|wrongParty']?.instructions.field.value === MARRIED ? { 'marital|wrongParty': 0.9 } : {}),
+            ...('marital' in questions ? { marital: 'unmarried' } : {})
+        }) });
+        const ctx = await makeIntake({ jev, escalation: () => ({ ...withField(answer(), 'marital', 'unmarried'), pages: [] }) });
+        const doc = await ctx.captureAndExtract();
+        expect(doc.escalated).to.equal(true);
+        const v1 = await fileAll(ctx, doc);
+        expect(v1.provenance.crosscheck.calls).to.equal(3);
+    });
+
+    it('without a cross-check, the provenance is as before', async () => {
+        const ctx = await makeIntake();
+        const v1 = await fileAll(ctx, await ctx.captureAndExtract());
+        expect(v1.provenance).not.to.have.property('crosscheck');
+    });
+});

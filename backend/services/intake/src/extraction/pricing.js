@@ -1,5 +1,5 @@
 /**
- * Gemini API list prices in USD per 1M tokens (standard tier), from
+ * Model prices in USD per 1M tokens. Gemini: API list prices (standard tier), from
  * https://ai.google.dev/gemini-api/docs/pricing as read on 2026-09-29. The Batch API is half.
  * Thinking tokens are billed as output. Entries with `until` apply up to and including that date.
  * Update this table when prices change; the cost of every extraction is stored with it.
@@ -16,11 +16,22 @@ export const PRICES = {
 };
 
 /**
+ * Prices by model-id prefix, for model families whose API answers with a versioned id
+ * (e.g. "jev-1.13.0" for jev-latest). An exact entry in PRICES wins.
+ *   Jev (TypeSafe): $42 per billion input tokens, output free (https://typesafe.ai, read 2026-10-03).
+ */
+export const PRICE_FAMILIES = [
+    { prefix: 'jev-', rows: [{ in: 0.042, out: 0 }] }
+];
+
+const priceRows = (model) => PRICES[model] ?? PRICE_FAMILIES.find(f => model?.startsWith(f.prefix))?.rows ?? null;
+
+/**
  * Cost of one call, or null when the model is not in the table (the call still succeeds; the
  * missing price is visible in the usage report).
  */
 export function costUsd(model, usage, { at = new Date(), batch = false } = {}) {
-    const rows = PRICES[model];
+    const rows = priceRows(model);
     if (!rows || !usage) return null;
     const day = at.toISOString().slice(0, 10);
     const p = rows.find(r => !r.until || day <= r.until);
