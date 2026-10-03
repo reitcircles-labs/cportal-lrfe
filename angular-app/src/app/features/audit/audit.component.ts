@@ -125,6 +125,7 @@ export class AuditComponent {
   viewer = inject(ViewerService);
   private confirm = inject(ConfirmService);
   selId = signal('a');
+  constructor() { this.store.syncWithEdrms(); }
   async raise(d: LandDoc) {
     if (await this.confirm.ask({ title: 'Raise a finding on ' + d.ref + '?', body: 'The records officer and registrar are notified. The document stays linked but is flagged until the finding is resolved.', confirmLabel: 'Raise finding', tone: 'danger' })) this.store.audit(d, 'finding', this.editCount());
   }
@@ -163,7 +164,7 @@ export class AuditComponent {
   integrity = computed(() => {
     const d = this.sel()!, ls = this.stateOf(d);
     return [
-      { k: 'EDRMS ID', v: this.store.isFiled(d) ? d.edrms : 'Not yet filed' },
+      { k: 'EDRMS ID', v: this.store.isFiled(d) ? this.store.edrmsNo(d) : 'Not yet filed' },
       { k: 'SHA-256', v: hash(d.ref + 'file') },
       { k: 'Captured', v: d.isBase ? 'PILOT-2025 · Vault 1' : 'WDH-B017 · ' + (this.store.src() === 'hot' ? 'hot folder' : 'SC-02') },
       { k: 'Classifier', v: Math.round(d.cls * 100) + '% · ' + d.type },

@@ -256,4 +256,11 @@ describe('mock provider', () => {
         expect(other.fields.find(f => f.k === 'priorTitle').value).to.equal('T 1502/1996');
         expect(mockAnswer({ fileName: 'scan-0001.pdf' })).to.equal(DEMO_ANSWER);
     });
+
+    it('answers an SG diagram for a file named like one', async () => {
+        const { result } = await createMockProvider().extract({ fileName: '03-SG-A-412-2007-diagram.pdf' });
+        expect(result.docType).to.equal('sg_diagram');
+        expect(result.fields.find(f => f.k === 'sgNo').value).to.equal('A 412/2007');
+        expect(result.fields.find(f => f.k === 'extent').value).to.equal('1 214 square metres');
+    });
 });

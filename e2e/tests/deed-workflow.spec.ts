@@ -16,6 +16,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 import { userByRole, ENROLLED_USERS } from '../support/catalogue';
 import { signInAs } from '../support/auth';
 import { sampleDeedPdf } from '../support/deed';
+import { sampleDeed } from '../support/intake';
 import { trackApi } from '../support/api-idle';
 import { evidence } from '../support/evidence';
 
@@ -57,7 +58,8 @@ const field = (page: Page, label: string) => page.locator('section.panel', { has
 
 test('a deed goes from scan to sealed record, and a correction is approved by a second person', { tag: ['@API-606', '@API-609'] }, async ({ browser }) => {
     test.slow();   // seven people, one after the other
-    const fileName = `deed-T2210-2008-${Date.now()}.pdf`;
+    // its own deed number: the EDRMS files each deed once, and T 2210/2008 belongs to the Erf 1873 test
+    const { deedNo, fileName } = sampleDeed();
     const source = `E2E vault ${Date.now()}`;
     let batchId = '';
     let edrmsNo = '';
@@ -72,11 +74,11 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await expect(card).toHaveText(/^WDH-B\d+$/);
         batchId = (await card.textContent())!.trim();
 
-        await page.locator('label.drop input[type=file]').setInputFiles({ name: fileName, mimeType: 'application/pdf', buffer: await sampleDeedPdf(browser) });
+        await page.locator('label.drop input[type=file]').setInputFiles({ name: fileName, mimeType: 'application/pdf', buffer: await sampleDeedPdf(browser, { deedNo, marker: fileName }) });
         await expect(page.getByText('Queued for reading')).toBeVisible();
         const row = page.locator('tbody tr', { hasText: fileName });
         await expect(row).toContainText('In review', { timeout: 30_000 });   // read by the canned AI
-        await expect(row).toContainText('Deed of transfer T 2210/2008');
+        await expect(row).toContainText(`Deed of transfer ${deedNo}`);
         await expect(row).toContainText('0/17 reviewed');
         await evidence(page, 'API-606', 'Scan operator: the uploaded scan, read by the AI, waits for review');
 
@@ -97,7 +99,7 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await page.getByLabel('Batch').selectOption(batchId);
         await page.locator('tbody tr', { hasText: fileName }).getByRole('button', { name: 'Review →' }).click();
         await expect(page).toHaveURL(/#\/verify\?doc=/);
-        await expect(page.locator('.doc-head')).toContainText('T 2210/2008');
+        await expect(page.locator('.doc-head')).toContainText(deedNo);
         await evidence(page, 'API-609', 'After the fix: Review still opens Verify for the reviewer');
         await expect(page.locator('.doc-head')).toContainText('Deed of transfer · Erf 1873, Klein Windhoek');
 

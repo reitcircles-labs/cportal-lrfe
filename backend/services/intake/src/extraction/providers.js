@@ -124,6 +124,8 @@ const DEMO_PAGE = 'DEED OF TRANSFER No. T 2210/2008, registered at the Deeds Reg
  * tests use this to file several distinct deeds on one stack.
  */
 export function mockAnswer(file) {
+    const sg = /SG[ _-]?A[ _-]?(\d{1,6})[ _-](\d{4})/i.exec(file?.fileName || '');
+    if (sg) return sgAnswer(`A ${Number(sg[1])}/${sg[2]}`);
     const m = /T[ _-]?(\d{1,6})[ _-](\d{4})/i.exec(file?.fileName || '');
     if (!m) return DEMO_ANSWER;
     const deedNo = `T ${Number(m[1])}/${m[2]}`;
@@ -131,6 +133,30 @@ export function mockAnswer(file) {
         ...DEMO_ANSWER,
         fields: DEMO_ANSWER.fields.map(f => (f.k === 'deedNo' ? { ...f, value: deedNo, evidence: `DEED OF TRANSFER No. ${deedNo}` } : f)),
         pages: [{ page: 1, text: DEMO_PAGE.replace('T 2210/2008', deedNo) }]
+    };
+}
+
+/** The demo parcel's survey diagram (the testers' sample 03), under the given diagram number. */
+function sgAnswer(sgNo) {
+    const page = `DIAGRAM S.G. No. ${sgNo}. The figure lettered A B C D E F represents Erf 1873, Klein Windhoek, situated in the Municipality of Windhoek, ` +
+        'Registration Division "K", Khomas Region, measuring 1 214 square metres. Beacons A–F (6): iron pegs. Surveyed on 22 October 2007 by me, ' +
+        'L. Hamutenya, Professional Land Surveyor, PLS 0417. Approved by the Surveyor-General on 30 November 2007.';
+    return {
+        docType: 'sg_diagram',
+        docTypeReason: 'Titled "Diagram" with an S.G. number.',
+        languages: ['en'],
+        handwritingPresent: false,
+        fields: [
+            ['sgNo', sgNo, `S.G. No. ${sgNo}`],
+            ['property', 'Erf 1873, Klein Windhoek', 'represents Erf 1873, Klein Windhoek'],
+            ['regDiv', 'K', 'Registration Division "K"'],
+            ['extent', '1 214 square metres', 'measuring 1 214 square metres'],
+            ['beacons', 'A–F (6)', 'Beacons A–F (6)'],
+            ['surveyDate', '22 October 2007', 'Surveyed on 22 October 2007'],
+            ['surveyor', 'L. Hamutenya, PLS 0417', 'L. Hamutenya, Professional Land Surveyor, PLS 0417'],
+            ['approved', '30 November 2007', 'Approved by the Surveyor-General on 30 November 2007']
+        ].map(([k, value, evidence]) => ({ k, value, page: 1, evidence, legible: true })),
+        pages: [{ page: 1, text: page }]
     };
 }
 
