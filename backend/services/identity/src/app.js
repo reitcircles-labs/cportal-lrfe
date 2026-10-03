@@ -10,6 +10,7 @@ export async function buildApp({
     service,
     jwtSecret,
     accessTtlSeconds = 900,
+    revocations,
     cookie = { name: 'lrfe_rt', path: '/api/auth', secure: true },
     ...fastifyOptions
 }) {
@@ -17,7 +18,8 @@ export async function buildApp({
     await app.register(fastifyCookie);
     await app.register(authPlugin, {
         secret: jwtSecret,
-        onDenied: (req, perm) => service.recordDenied(req.user, perm)
+        onDenied: (req, perm) => service.recordDenied(req.user, perm),
+        revocations
     });
     await app.register(identityRoutes, { service, accessTtlSeconds, cookie });
     return app;

@@ -29,14 +29,14 @@ const KIND: Record<AccessKind, [string, string]> = {
         <section class="panel">
           <div class="toolbar">
             <div class="search"><app-icon name="search" [size]="15" /><input class="input" placeholder="Name, email or office" [value]="uq()" (input)="uq.set($any($event.target).value)" aria-label="Search users"></div>
-            <select class="input" style="width:auto;min-width:200px" [value]="uRole()" (change)="uRole.set($any($event.target).value)" aria-label="Filter by role">
-              <option value="all">All roles</option>
-              @for (r of rbac.roles(); track r.id) { <option [value]="r.id">{{ r.label }}</option> }
+            <select class="input" style="width:auto;min-width:200px" (change)="uRole.set($any($event.target).value)" aria-label="Filter by role">
+              <option value="all" [selected]="uRole() === 'all'">All roles</option>
+              @for (r of rbac.roles(); track r.id) { <option [value]="r.id" [selected]="r.id === uRole()">{{ r.label }}</option> }
             </select>
-            <select class="input" style="width:auto;min-width:180px" [value]="uOffice()" (change)="uOffice.set($any($event.target).value)" aria-label="Filter by office">
-              <option value="all">All offices</option>
-              @for (o of rbac.offices(); track o.id) { <option [value]="o.id">{{ o.code }} · {{ o.name }}</option> }
-              <option value="none">No office / national</option>
+            <select class="input" style="width:auto;min-width:180px" (change)="uOffice.set($any($event.target).value)" aria-label="Filter by office">
+              <option value="all" [selected]="uOffice() === 'all'">All offices</option>
+              @for (o of rbac.offices(); track o.id) { <option [value]="o.id" [selected]="o.id === uOffice()">{{ o.code }} · {{ o.name }}</option> }
+              <option value="none" [selected]="uOffice() === 'none'">No office / national</option>
             </select>
             <div class="seg">
               @for (s of statusOpts; track s) { <label class="seg-opt"><input type="radio" name="us" [checked]="uStatus() === s" (change)="uStatus.set(s)">{{ s === 'all' ? 'All' : s }}</label> }
@@ -230,10 +230,10 @@ const KIND: Record<AccessKind, [string, string]> = {
           <div class="stack" style="gap:8px">
             <h4 style="margin:0">Office</h4>
             <div class="row" style="gap:8px;flex-wrap:nowrap">
-              <select class="input" [value]="draftOffice()" (change)="draftOffice.set($any($event.target).value)" aria-label="Office">
-                @if (!u.officeId && !isNational(u.roles)) { <option value="">No office: choose one</option> }
-                @if (isNational(u.roles)) { <option value="">National (no office)</option> }
-                @for (o of officeChoices(u); track o.id) { <option [value]="o.id">{{ o.code }} · {{ o.name }}{{ o.status === 'Suspended' ? ' (suspended)' : '' }}</option> }
+              <select class="input" (change)="draftOffice.set($any($event.target).value)" aria-label="Office">
+                @if (!u.officeId && !isNational(u.roles)) { <option value="" [selected]="!draftOffice()">No office: choose one</option> }
+                @if (isNational(u.roles)) { <option value="" [selected]="!draftOffice()">National (no office)</option> }
+                @for (o of officeChoices(u); track o.id) { <option [value]="o.id" [selected]="o.id === draftOffice()">{{ o.code }} · {{ o.name }}{{ o.status === 'Suspended' ? ' (suspended)' : '' }}</option> }
               </select>
               <button class="btn btn-secondary" [disabled]="draftOffice() === (u.officeId || '') || (!draftOffice() && !isNational(u.roles))" (click)="saveOffice(u)">Change office</button>
             </div>
@@ -287,11 +287,11 @@ const KIND: Record<AccessKind, [string, string]> = {
           <div class="fg">
             <div class="field"><label>Full name</label><input class="input" [value]="inv().name" (input)="setInv('name', $any($event.target).value)" required></div>
             <div class="field"><label>Work email</label><input class="input" type="email" placeholder="name@deeds.gov.na" [value]="inv().email" (input)="setInv('email', $any($event.target).value)" required></div>
-            <div class="field" style="grid-column:1/-1"><label>Office</label><select class="input" [value]="inv().officeId" (change)="setInv('officeId', $any($event.target).value)">
-              @for (o of rbac.activeOffices(); track o.id) { <option [value]="o.id">{{ o.code }} · {{ o.name }}</option> }
-              @if (isNational([inv().role])) { <option value="">National (no office)</option> }
+            <div class="field" style="grid-column:1/-1"><label>Office</label><select class="input" (change)="setInv('officeId', $any($event.target).value)">
+              @for (o of rbac.activeOffices(); track o.id) { <option [value]="o.id" [selected]="o.id === inv().officeId">{{ o.code }} · {{ o.name }}</option> }
+              @if (isNational([inv().role])) { <option value="" [selected]="!inv().officeId">National (no office)</option> }
             </select></div>
-            <div class="field" style="grid-column:1/-1"><label>Role</label><select class="input" [value]="inv().role" (change)="setInv('role', $any($event.target).value)">@for (r of rbac.roles(); track r.id) { <option [value]="r.id">{{ r.label }}</option> }</select></div>
+            <div class="field" style="grid-column:1/-1"><label>Role</label><select class="input" (change)="setInv('role', $any($event.target).value)">@for (r of rbac.roles(); track r.id) { <option [value]="r.id" [selected]="r.id === inv().role">{{ r.label }}</option> }</select></div>
           </div>
           <div class="dialog-actions"><button type="button" class="btn btn-secondary" (click)="inviteOpen.set(false)">Cancel</button><button type="submit" class="btn btn-primary" [disabled]="inviting() || !inv().name.trim() || !inv().email.includes('@')">{{ inviting() ? 'Creating…' : 'Create invitation' }}</button></div>
         </form>
@@ -306,7 +306,7 @@ const KIND: Record<AccessKind, [string, string]> = {
           <div class="dialog-body">{{ f.id ? 'The code cannot be changed.' : 'The code is short and permanent (2 to 5 letters, e.g. WDH); it will appear in batch and document numbers.' }}</div>
           <div class="fg">
             <div class="field"><label>Code</label><input class="input mono" [value]="f.code" [readonly]="!!f.id" maxlength="5" placeholder="WDH" (input)="setOffice('code', $any($event.target).value); $any($event.target).value = officeForm()!.code" required></div>
-            <div class="field"><label>Type</label><select class="input" [value]="f.type" (change)="setOffice('type', $any($event.target).value)">@for (t of officeTypes; track t) { <option [value]="t">{{ typeLabel(t) }}</option> }</select></div>
+            <div class="field"><label>Type</label><select class="input" (change)="setOffice('type', $any($event.target).value)">@for (t of officeTypes; track t) { <option [value]="t" [selected]="t === f.type">{{ typeLabel(t) }}</option> }</select></div>
             <div class="field" style="grid-column:1/-1"><label>Name</label><input class="input" [value]="f.name" placeholder="Deeds Registry · Windhoek" (input)="setOffice('name', $any($event.target).value)" required></div>
             <div class="field" style="grid-column:1/-1"><label>Address (optional)</label><input class="input" [value]="f.address" (input)="setOffice('address', $any($event.target).value)"></div>
             <div class="field" style="grid-column:1/-1"><label>Contact (optional)</label><input class="input" [value]="f.contact" placeholder="Phone or email" (input)="setOffice('contact', $any($event.target).value)"></div>

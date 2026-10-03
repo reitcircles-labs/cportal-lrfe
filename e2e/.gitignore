@@ -1,0 +1,6 @@
+node_modules/
+.stack/
+.auth/
+test-results/
+playwright-report/
+evidence/

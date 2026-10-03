@@ -85,7 +85,9 @@ export class AuthService {
     if (!this.refreshing) {
       this.refreshing = this.api.post<Session>('/auth/refresh', {}, { noRetry: true })
         .then(s => { this.start(s); return true; })
-        .catch(() => { this.clear(); return false; })
+        // A signed-in user whose session ended (idle timeout, suspension) goes to sign-in with a
+        // notice; clearing first would leave them on the screen with failing requests.
+        .catch(() => { if (this.me()) this.expire(); else this.clear(); return false; })
         .finally(() => { this.refreshing = null; });
     }
     return this.refreshing;

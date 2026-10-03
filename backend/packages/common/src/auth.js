@@ -18,8 +18,11 @@ export const ACCESS_TOKEN_TYPE = 'access';
  *
  * `onDenied(request, perm)` is called (best effort, never throws) when a permission check
  * fails, so the caller can write the denial to its access log or publish an event.
+ *
+ * `revocations` (createRevocationList) refuses tokens of sessions that ended before the tokens
+ * expire, e.g. a suspended user's (API-610).
  */
-export const authPlugin = fp(async function authPlugin(app, { secret, onDenied } = {}) {
+export const authPlugin = fp(async function authPlugin(app, { secret, onDenied, revocations } = {}) {
     if (!secret) throw new Error('authPlugin: `secret` is required');
     await app.register(fastifyJwt, { secret });
 
@@ -30,6 +33,7 @@ export const authPlugin = fp(async function authPlugin(app, { secret, onDenied }
             throw new UnauthorizedError('Invalid or expired token');
         }
         if (request.user?.typ !== ACCESS_TOKEN_TYPE) throw new UnauthorizedError('Invalid or expired token');
+        if (revocations?.isRevoked(request.user)) throw new UnauthorizedError('Session ended, sign in again');
     }
 
     async function deny(request, perm) {

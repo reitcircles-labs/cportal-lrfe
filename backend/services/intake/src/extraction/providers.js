@@ -98,14 +98,14 @@ export function sanitize(r) {
 
 /**
  * Deterministic stand-in (EXTRACTION_PROVIDER=mock, and the tests): no API key, no cost.
- * `respond(file)` returns the answer; the default describes the demo's T 2210/2008.
+ * `respond(file)` returns the answer; the default is mockAnswer(file).
  */
 export function createMockProvider({ model = 'mock-extractor', respond } = {}) {
     return {
         name: 'mock',
         model,
         async extract(file) {
-            const result = respond ? await respond(file) : DEMO_ANSWER;
+            const result = respond ? await respond(file) : mockAnswer(file);
             return { result: sanitize(result), usage: { inputTokens: 1000, outputTokens: 1200, thoughtsTokens: 0 }, model, durationMs: 1 };
         }
     };
@@ -117,6 +117,22 @@ const DEMO_PAGE = 'DEED OF TRANSFER No. T 2210/2008, registered at the Deeds Reg
     'Petrus Nghishidi (Identity No. 72110800345) and Maria Nghishidi (Identity No. 75060200418), married in community of property, in ½ share each: ' +
     'Erf 1873, Klein Windhoek, situated in the Municipality of Windhoek, Registration Division "K", Khomas Region; measuring 1 214 square metres; ' +
     'as will more fully appear from Diagram S.G. No. A 412/2007, and held under Deed of Transfer No. T 1502/1996.';
+
+/**
+ * The demo's T 2210/2008, or the same deed under another number when the file name carries one
+ * ("deed-T4821-2008.pdf" → T 4821/2008). The EDRMS files each instrument once, so the end-to-end
+ * tests use this to file several distinct deeds on one stack.
+ */
+export function mockAnswer(file) {
+    const m = /T[ _-]?(\d{1,6})[ _-](\d{4})/i.exec(file?.fileName || '');
+    if (!m) return DEMO_ANSWER;
+    const deedNo = `T ${Number(m[1])}/${m[2]}`;
+    return {
+        ...DEMO_ANSWER,
+        fields: DEMO_ANSWER.fields.map(f => (f.k === 'deedNo' ? { ...f, value: deedNo, evidence: `DEED OF TRANSFER No. ${deedNo}` } : f)),
+        pages: [{ page: 1, text: DEMO_PAGE.replace('T 2210/2008', deedNo) }]
+    };
+}
 
 export const DEMO_ANSWER = {
     docType: 'deed_of_transfer',

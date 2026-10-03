@@ -24,6 +24,17 @@ describe('identity HTTP API', () => {
         expect(after.statusCode).to.equal(401);
     });
 
+    it("a suspended user's access token is refused at once, not only after it expires (API-610)", async () => {
+        const { app, login, auth, service, user } = await makeApp({ clock: () => new Date() });
+        const { token } = await login('j.gawaseb@deeds.gov.na');
+        expect((await app.inject({ url: '/auth/me', headers: auth(token) })).statusCode).to.equal(200);
+        const admin = await user('p.hamutenya@deeds.gov.na');
+        await service.setStatus((await user('j.gawaseb@deeds.gov.na')).id, 'Suspended', '', { id: admin.id, name: admin.name });
+        const after = await app.inject({ url: '/auth/me', headers: auth(token) });
+        expect(after.statusCode).to.equal(401);
+        expect(after.json().message).to.equal('Session ended, sign in again');
+    });
+
     it('two-step MFA sign-in with a challenge token', async () => {
         const { app, clock } = await makeApp({ mfa: true });
         const step1 = await app.inject({ method: 'POST', url: '/auth/login', payload: { email: 'm.nakale@oag.gov.na', password: PASSWORD } });

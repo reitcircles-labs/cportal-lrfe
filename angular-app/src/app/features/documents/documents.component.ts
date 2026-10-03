@@ -30,9 +30,9 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
       <aside class="rail">
         <div class="rail-head">
           <div class="search"><app-icon name="search" [size]="15" /><input class="input" placeholder="EDRMS no., deed no., erf, owner" [value]="q()" (input)="onSearch($any($event.target).value)" aria-label="Search documents"></div>
-          <select class="input" [value]="type()" (change)="type.set($any($event.target).value); load()" aria-label="Document type">
-            <option value="">All document types</option>
-            @for (t of docTypes(); track t.id) { <option [value]="t.id">{{ t.label }}</option> }
+          <select class="input" (change)="type.set($any($event.target).value); load()" aria-label="Document type">
+            <option value="" [selected]="!type()">All document types</option>
+            @for (t of docTypes(); track t.id) { <option [value]="t.id" [selected]="t.id === type()">{{ t.label }}</option> }
           </select>
         </div>
         <div class="rail-list">

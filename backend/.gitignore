@@ -4,3 +4,4 @@ tmp/
 coverage/
 # editor backups (e.g. .env~ holds the same secrets as .env)
 *~
+.tools/

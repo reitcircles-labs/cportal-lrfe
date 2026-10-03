@@ -8,7 +8,8 @@
 # SEED_DEMO_PASSWORD nobody can sign in.
 #
 # Ports (host side bound to 127.0.0.1): gateway 3500, identity 3501, edrms 3502, bpm 3503,
-# intake 3504, Postgres ${POSTGRES_HOST_PORT:-5433} (5432 is often taken by a local Postgres).
+# intake 3504, Postgres ${POSTGRES_HOST_PORT:-5433} (5432 is often taken by a local Postgres),
+# NATS ${NATS_HOST_PORT:-4222} (the event bus; its monitoring page on 8222).
 # Stop locally running `npm run dev:*` services first; they use the same ports.
 
 name: lrfe
@@ -22,7 +23,9 @@ x-env: &env
   JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (32+ random characters)}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   HOST: 0.0.0.0
-  EVENT_BUS_DRIVER: log
+  # the services connect to NATS in the background and retry until it is up
+  EVENT_BUS_DRIVER: nats
+  NATS_URL: nats://nats:4222
   DB_CONNECTION_STRING: postgres://${POSTGRES_USER:-lrfe}:${POSTGRES_PASSWORD:-lrfe}@postgres:5432/${POSTGRES_DB:-lrfe}
   DB_POOL_SIZE: "5"
   # Dev/UAT only: each service creates its own schema and tables on boot
@@ -53,6 +56,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+
+  # Event bus between the services (e.g. a suspended user's sessions are refused by all of them at
+  # once). JetStream is on, for durable events later; its data lives in the natsdata volume.
+  nats:
+    image: nats:2.15-alpine
+    restart: unless-stopped
+    command: ["-js", "-sd", "/data", "-m", "8222", "-n", "lrfe"]
+    ports:
+      - "127.0.0.1:${NATS_HOST_PORT:-4222}:4222"
+      - "127.0.0.1:8222:8222"
+    volumes:
+      - natsdata:/data
 
   identity:
     <<: *service
@@ -186,5 +201,6 @@ services:
 
 volumes:
   pgdata:
+  natsdata:
   edrms-files:
   intake-files:

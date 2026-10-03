@@ -199,7 +199,10 @@ export class LoginComponent {
   private async drawQr(url: string) {
     this.qr.set(null);
     try {
-      const { toDataURL } = await import('qrcode');   // loaded only for enrolment, not with the app
+      // loaded only for enrolment, not with the app. qrcode is a CommonJS package: depending on how it
+      // is bundled its functions are named exports or sit on `default` (the dev server in CI mode).
+      const qrcode: any = await import('qrcode');
+      const toDataURL: typeof import('qrcode').toDataURL = qrcode.toDataURL ?? qrcode.default?.toDataURL;
       const image = await toDataURL(url, { errorCorrectionLevel: 'M', margin: 0, width: 400, color: { dark: '#000000', light: '#ffffff' } });
       if (this.otpauthUrl() === url) this.qr.set(image);
     } catch { /* fallback: the setup key */ }

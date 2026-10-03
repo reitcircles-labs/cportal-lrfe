@@ -88,10 +88,23 @@ describe('IdentityService', () => {
         });
 
         it('logout revokes the session', async () => {
-            const { service } = await makeService();
+            const { service, published } = await makeService();
             const { refreshToken, claims } = await service.login({ email: SCAN, password: PASSWORD });
             await service.logout({ sid: claims.sid });
             await rejects(service.refresh(refreshToken), 401);
+            // every service is told to refuse that session's access tokens (API-610)
+            const revoked = published.find(e => e.type === 'identity.session.revoked');
+            expect(revoked.data).to.include({ sid: claims.sid, reason: 'signed out' });
+        });
+
+        it("suspension tells every service to refuse the user's tokens until they expire", async () => {
+            const { service, user, published, clock } = await makeService();
+            const admin = await user(ADMIN), scan = await user(SCAN);
+            await service.setStatus(scan.id, 'Suspended', '', { id: admin.id, name: admin.name });
+            const revoked = published.find(e => e.type === 'identity.session.revoked');
+            expect(revoked.data).to.include({ userId: scan.id, reason: 'suspended', revokedAt: clock().toISOString() });
+            // kept for the access-token lifetime (900 s) plus a minute of clock slack
+            expect(Date.parse(revoked.data.expiresAt) - clock().getTime()).to.equal(960_000);
         });
     });
 
@@ -145,6 +158,31 @@ describe('IdentityService', () => {
             await rejects(service.setStatus(admin.id, 'Suspended', '', actor), 403);
         });
 
+        it('logs a role change that breaks a duty rule as an accepted exception', async () => {
+            const { service, user, repo } = await makeService();
+            const actor = { id: (await user(ADMIN)).id, name: 'Admin' };
+            await service.setUserRoles((await user('a.mwandingi@deeds.gov.na')).id, ['rev', 'aud'], actor);
+            const { items } = await repo.listAccessEvents({ kind: 'user' });
+            expect(items[0]).to.include({
+                action: 'Roles changed', target: 'Aina Mwandingi',
+                detail: '+ Auditor · read-only · duty conflict accepted: Reviewers cannot audit documents they can file'
+            });
+            // Someone already in conflict who gains a role that breaks no further rule: no new exception.
+            // (Records officer would: finalizing + signing off audits is another rule.)
+            await service.setUserRoles((await user('w.beukes@deeds.gov.na')).id, ['rev', 'aud', 'scan'], actor);
+            const after = await repo.listAccessEvents({ kind: 'user' });
+            expect(after.items[0].detail).to.not.include('duty conflict');
+        });
+
+        it('notes the duty rules broken by an invitation', async () => {
+            const { service, user, repo, office } = await makeService();
+            const actor = { id: (await user(ADMIN)).id, name: 'Admin' };
+            await service.invite({ name: 'Both Hats', email: 'both@deeds.gov.na', officeId: office.id, roles: ['rev', 'aud'] }, actor);
+            const { items } = await repo.listAccessEvents({ kind: 'user' });
+            expect(items[0].action).to.equal('Invited');
+            expect(items[0].detail).to.include('Roles: Metadata reviewer, Auditor · read-only · duty conflict accepted: Reviewers cannot audit documents they can file');
+        });
+
         it('never leaves the system without an active roles administrator', async () => {
             const { service, user } = await makeService();
             const admin = await user(ADMIN), sup = await user('e.shivute@deeds.gov.na');
@@ -193,6 +231,19 @@ describe('IdentityService', () => {
             expect(login.claims.perms).to.not.include('capture.rescan');
         });
 
+        it('logs the users a permission change puts in conflict', async () => {
+            const { service, user, repo } = await makeService();
+            const actor = { id: (await user(ADMIN)).id, name: 'Admin' };
+            const rev = (await service.listRoles()).find(r => r.id === 'rev');
+            await service.saveMatrix({ rev: [...rev.perms, 'audit.signoff'] }, actor);
+            const { items } = await repo.listAccessEvents({ kind: 'role' });
+            expect(items[0].action).to.equal('Duty conflict accepted');
+            // every active or invited reviewer, but not Willem Beukes, who was in conflict already
+            expect(items[0].detail).to.include('Aina Mwandingi (Reviewers cannot audit documents they can file)');
+            expect(items[0].detail).to.not.include('Willem Beukes');
+            expect(items[1]).to.include({ action: 'Permissions changed', target: 'Metadata reviewer', detail: '+ Sign off & raise findings' });
+        });
+
         it('rejects unknown roles/permissions and removing admin.roles from everyone', async () => {
             const { service, user } = await makeService();
             const actor = { id: (await user(ADMIN)).id, name: 'Admin' };
@@ -211,7 +262,8 @@ describe('IdentityService', () => {
             expect(res.changes).to.equal(2);
             expect(res.sod.find(r => r.id === 'sod4').on).to.equal(true);
             const { items } = await repo.listAccessEvents({ kind: 'policy' });
-            expect(items[0].detail).to.equal('Session timeout 30 → 45 min · Enabled: Scan operators cannot file what they capture');
+            // David Garoeb (scan + review) already breaks the rule being enabled: logged as an exception (API-611)
+            expect(items[0].detail).to.equal('Session timeout 30 → 45 min · Enabled: Scan operators cannot file what they capture (duty conflict accepted for 1 user: David Garoeb)');
             await rejects(service.savePolicies({ policies: { ...res.policies, timeout: 1 } }, actor), 400);
             await rejects(service.savePolicies({ policies: res.policies, sod: [{ id: 'sod99', on: true }] }, actor), 400);
         });
