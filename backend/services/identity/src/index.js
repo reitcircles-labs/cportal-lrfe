@@ -1,4 +1,4 @@
-import { createEventBus, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEventBus, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { IdentityService } from './identity.service.js';
 import { createMailer } from './mailer.js';
@@ -45,11 +45,14 @@ const mailer = createMailer({
     dir: env('MAIL_FILE_DIR', './tmp/mail')
 });
 
+const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'identity' });
+const accessTtlSeconds = envInt('ACCESS_TOKEN_TTL_SECONDS', 900);
 const service = new IdentityService({
     repo,
     mailer,
-    events: createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'identity' }),
+    events,
     config: {
+        accessTtlSeconds,
         exposeInviteLinks: envBool('IDENTITY_EXPOSE_INVITE_LINKS', false),
         inviteUrlBase: env('IDENTITY_INVITE_URL_BASE', 'http://localhost:4200/#/invite')
     }
@@ -58,7 +61,8 @@ const service = new IdentityService({
 const app = await buildApp({
     service,
     jwtSecret: env('JWT_SECRET'),
-    accessTtlSeconds: envInt('ACCESS_TOKEN_TTL_SECONDS', 900),
+    accessTtlSeconds,
+    revocations: createRevocationList({ events }),
     cookie: {
         name: 'lrfe_rt',
         path: env('REFRESH_COOKIE_PATH', '/api/auth'),
@@ -67,7 +71,7 @@ const app = await buildApp({
     logger: { level: env('LOG_LEVEL', 'info') }
 });
 
-await startService(app, { port: envInt('PORT', 3501), checks, onClose: () => sequelize?.close() });
+await startService(app, { port: envInt('PORT', 3501), checks, onClose: async () => { await events.close(); await sequelize?.close(); } });
 
 // Report the email setup once, without blocking start-up (a mail server outage must not stop sign-in).
 if (!mailer.enabled) app.log.info('email: not configured (MAIL_TRANSPORT=none); invitation links are not emailed');

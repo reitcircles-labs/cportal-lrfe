@@ -5,4 +5,5 @@ export {
 export { createSequelize, healthCheck, ensureSchema } from './db.js';
 export { authPlugin, actorOf, describeGuard, signServiceToken, createServiceTokenSigner, ACCESS_TOKEN_TYPE, SERVICE_TOKEN_TYPE } from './auth.js';
 export { createEventBus } from './events.js';
+export { createRevocationList, SESSION_REVOKED } from './revocations.js';
 export { createBaseApp, startService } from './app.js';

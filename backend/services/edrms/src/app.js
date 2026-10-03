@@ -11,10 +11,11 @@ export async function buildApp({
     jwtSecret,
     contentUrl = { base: '/api/document-content', secret: jwtSecret },
     maxFileBytes = 200 * 1024 * 1024,
+    revocations,
     ...fastifyOptions
 }) {
     const app = createBaseApp({ name: 'edrms', trustProxy: true, ...fastifyOptions });
-    await app.register(authPlugin, { secret: jwtSecret });
+    await app.register(authPlugin, { secret: jwtSecret, revocations });
     await app.register(multipart, {
         limits: { fileSize: maxFileBytes, files: 1, fields: 5, fieldSize: 1024 * 1024 }
     });

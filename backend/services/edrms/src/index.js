@@ -1,4 +1,4 @@
-import { createEventBus, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEventBus, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { EdrmsService } from './edrms.service.js';
 import { createMemoryRepo } from './repo/memory.js';
@@ -23,10 +23,11 @@ if (envOneOf('EDRMS_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
 }
 
 const jwtSecret = env('JWT_SECRET');
+const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'edrms' });
 const service = new EdrmsService({
     repo,
     store: createStoreFromEnv(),
-    events: createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'edrms' }),
+    events,
     config: {
         country: env('EDRMS_COUNTRY_CODE', 'NA'),
         registry: env('EDRMS_REGISTRY_CODE', 'WDH'),
@@ -39,7 +40,8 @@ const app = await buildApp({
     jwtSecret,
     contentUrl: { base: env('EDRMS_CONTENT_URL_BASE', '/api/document-content'), secret: env('EDRMS_CONTENT_URL_SECRET', jwtSecret) },
     maxFileBytes: envInt('EDRMS_MAX_FILE_MB', 200) * 1024 * 1024,
+    revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }
 });
 
-await startService(app, { port: envInt('PORT', 3502), checks, onClose: () => sequelize?.close() });
+await startService(app, { port: envInt('PORT', 3502), checks, onClose: async () => { await events.close(); await sequelize?.close(); } });

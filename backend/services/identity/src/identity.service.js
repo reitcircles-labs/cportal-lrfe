@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '@lrfe/common';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, SESSION_REVOKED } from '@lrfe/common';
 import {
     PERMS, PERM_GROUPS, ROLE_IDS, ACCESS_KINDS, DEFAULT_POLICIES, effectivePerms, sodConflicts, isKnownPerm, normalizePerms, permLabel,
     OFFICE_TYPES, OFFICE_CODE_PATTERN, NATIONAL_ROLES
@@ -36,6 +36,8 @@ export class IdentityService {
             minPasswordLength: 12,
             exposeInviteLinks: false,
             inviteUrlBase: 'http://localhost:4200/#/invite',
+            // how long an access token lives; a revocation is kept until the last one has expired
+            accessTtlSeconds: 900,
             ...config
         };
         this.dummyHash = null;
@@ -187,6 +189,7 @@ export class IdentityService {
         if (!safeEqual(sha256(secret), session.refreshHash)) {
             // An old refresh token was replayed: treat the session as compromised.
             await this.repo.updateSession(sid, { revokedAt: now });
+            await this.announceRevoked({ sid, reason: 'refresh token replayed' });
             throw expired();
         }
         const ctx = await this.context();
@@ -212,8 +215,23 @@ export class IdentityService {
         const session = await this.repo.getSession(sid);
         if (!session || session.revokedAt) return;
         await this.repo.updateSession(sid, { revokedAt: this.clock() });
+        await this.announceRevoked({ sid, reason: 'signed out' });
         const user = await this.repo.getUser(session.userId);
         if (user) await this.log('session', 'Signed out', user.name, '', actor || { id: user.id, name: user.name });
+    }
+
+    /**
+     * Tell every service that tokens of this session (sid) or user (userId, tokens issued until
+     * now) must be refused from now on, not only once they expire (createRevocationList, API-610).
+     * Never throws: the session is already ended in the database either way.
+     */
+    async announceRevoked({ userId, sid, reason }) {
+        const now = this.clock();
+        // a minute of slack for clocks that differ between services
+        const expiresAt = new Date(now.getTime() + (this.config.accessTtlSeconds + 60) * 1000);
+        try {
+            await this.events?.publish(SESSION_REVOKED, { userId, sid, reason, revokedAt: now.toISOString(), expiresAt: expiresAt.toISOString() });
+        } catch { /* the event bus logs its own failures */ }
     }
 
     async me(userId) {
@@ -426,6 +444,7 @@ export class IdentityService {
             this.assertAdminRemains(users.map(u => (u.id === id ? { ...u, status } : u)), ctx.roles);
             const updated = await this.repo.updateUser(id, { status: 'Suspended' });
             await this.repo.revokeUserSessions(id, this.clock());
+            await this.announceRevoked({ userId: id, reason: 'suspended' });
             await this.log('user', 'Suspended', user.name, reason || 'Access revoked', actor);
             return this.publicUser(updated, ctx);
         }

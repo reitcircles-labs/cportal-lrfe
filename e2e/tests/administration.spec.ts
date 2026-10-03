@@ -222,7 +222,7 @@ test('a segregation-of-duties conflict is flagged before and after saving', { ta
     await evidence(page, 'API-611', 'Access log: the role change that breaks a duty rule');
 });
 
-test('a suspended user is signed out and cannot sign in until reactivated', tag, async ({ browser, playwright }) => {
+test('a suspended user is signed out and cannot sign in until reactivated', { tag: ['@API-607', '@API-610'] }, async ({ browser, playwright }) => {
     const admin = await adminApi(playwright, test.info().project.use.baseURL!);
     const user = await createUser(admin, ['rec'], 'suspend');
     await admin.dispose();
@@ -237,9 +237,12 @@ test('a suspended user is signed out and cannot sign in until reactivated', tag,
     await expect(page.locator('tbody tr', { hasText: user.email })).toContainText('Suspended');
     await evidence(page, 'API-607', 'Suspension: the user is suspended');
 
-    // Their open session cannot continue past a reload, and a new sign-in is refused.
-    await them.reload();
-    await expect(them).toHaveURL(/#\/login/);
+    // Their open page stops working at its next request (API-610: the event bus tells every
+    // service at once), and a new sign-in is refused.
+    await them.goto('/#/documents');
+    await expect(them).toHaveURL(/#\/login\?expired=1/);
+    await expect(them.getByText('Your session ended. Sign in again to continue.')).toBeVisible();
+    await evidence(them, 'API-610', 'Suspended user: the next screen they open sends them to sign-in');
     await them.getByLabel('Email').fill(user.email);
     await them.getByLabel('Password').fill(NEW_USER_PASSWORD);
     await them.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -328,7 +331,7 @@ test("the access log records a duty-conflict exception", { tag: ['@API-607', '@A
 });
 
 test("a suspended user's existing token stops working at once", { tag: ['@API-607', '@API-610'] }, async ({ playwright }) => {
-    test.fail(true, 'API-610: the access token keeps working until it expires (up to 15 minutes)');
+    // API-610: it used to keep working until it expired (up to 15 minutes).
     const base = test.info().project.use.baseURL!;
     const admin = await adminApi(playwright, base);
     const user = await createUser(admin, ['rec'], 'suspendtoken');
@@ -338,8 +341,9 @@ test("a suspended user's existing token stops working at once", { tag: ['@API-60
 
     expect((await admin.api.post(`/api/users/${user.id}/suspend`, { headers: admin.headers, data: {} })).status()).toBe(200);
     expect((await theirs.post('/api/auth/refresh')).status(), 'renewing is refused').toBe(401);
+    // every service: identity, edrms, bpm, intake (the revocation reaches them over NATS within milliseconds)
     for (const path of ['/api/auth/me', '/api/documents', '/api/tasks', '/api/intake/catalogue']) {
-        expect.soft((await theirs.get(path, { headers })).status(), `${path} with the token from before the suspension`).toBe(401);
+        await expect.poll(async () => (await theirs.get(path, { headers })).status(), { message: `${path} with the token from before the suspension`, timeout: 5000 }).toBe(401);
     }
     await theirs.dispose();
     await admin.dispose();

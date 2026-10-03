@@ -95,8 +95,15 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
 - Each service owns one Postgres schema (`identity`, later `edrms`, `intake`, …) and never reads
   another service's tables.
 - Services publish domain events (`identity.user.invited`, `edrms.document.filed`, …) through
-  `createEventBus()`. Today the driver only logs; the audit service will add a broker driver
-  (Pub/Sub) and a transactional outbox.
+  `createEventBus()`. With `EVENT_BUS_DRIVER=nats` (what `npm run dev` and docker compose use)
+  they go over NATS (`NATS_URL`, subjects `lrfe.<type>`) to every service; with `log` (the default)
+  they are logged and stay in the service. A service that cannot reach NATS logs a warning and keeps
+  working. Durable events for the audit service (a JetStream stream and a transactional outbox)
+  come with that service.
+- Ending a session before its access tokens expire: identity publishes `identity.session.revoked`
+  (a user suspended, a session signed out) and every service refuses the matching tokens until they
+  would have expired (`createRevocationList`, passed to `authPlugin`). Normal sign-in, refresh and
+  the idle timeout are not involved.
 - Service-to-service calls use short-lived service tokens (`signServiceToken(app, 'intake')`,
   guarded by `app.requireService('intake')`). User tokens never pass a service guard, and
   service tokens never pass a user guard.

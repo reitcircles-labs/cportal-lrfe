@@ -27,8 +27,8 @@ A failing test keeps a screenshot, a video and a **trace** under `test-results/`
 step-by-step recording of the page, the network and the console:
 `npx playwright show-trace test-results/<test>/trace.zip` (or open it from the report).
 
-**Ports.** The test stack uses 3600 (gateway), 3601–3604 (identity, edrms, bpm, intake) and 4300
-(the web app), so it runs next to `npm run dev` (3500–3504, 4200). If a test port is busy the run
+**Ports.** The test stack uses 3600 (gateway), 3601–3604 (identity, edrms, bpm, intake), 3605
+(NATS) and 4300 (the web app), so it runs next to `npm run dev` (3500–3504, 4200). If a test port is busy the run
 stops instead of testing whatever is there. Other ports: `E2E_API_PORT=3700 E2E_WEB_PORT=4400 npm test`.
 
 **Keeping the stack up** between runs (faster while writing tests):
@@ -72,7 +72,8 @@ the test stack's fictitious data.
 
 `stack/start-backend.mjs` starts the five services with in-memory stores, the AI replaced by its
 canned answer (`EXTRACTION_PROVIDER=mock`), emails written to `.stack/mail/` and the 14 fictitious
-demo users seeded (identity's `DEMO_USERS`). Each service runs in an empty folder under `.stack/`,
+demo users seeded (identity's `DEMO_USERS`), and a NATS server of its own as the event bus between
+the services (`backend/scripts/nats.js`; the first run downloads it into `backend/.tools/`). Each service runs in an empty folder under `.stack/`,
 so it does **not** read your `backend/services/<name>/.env`. Playwright also starts a second
 `ng serve` on port 4300 whose proxy points at the test gateway (`stack/proxy.e2e.mjs`).
 
@@ -85,7 +86,7 @@ so it does **not** read your `backend/services/<name>/.env`. Playwright also sta
 | `tests/screens-by-role.spec.ts` | Each role × each screen: the menu shows exactly the allowed screens; an allowed screen opens with its title, with no server errors and no 403 from its own API calls; a forbidden one shows "Access denied" |
 | `tests/api-by-role.spec.ts` | Each role × each protected endpoint, at the API: refused with 403 without the permission, let through with it; 401 without a token; service-only endpoints refuse user tokens |
 | `tests/deed-workflow.spec.ts` | One deed from scan to sealed record, passed between people: the scan operator uploads it, a reviewer corrects a field, accepts the rest and files it, the records officer sees it (without audit or correction rights), the auditor checks its integrity, a reviewer requests a correction, a second reviewer approves it from the task inbox (the requester does not get the task), and the auditor checks version 2.0 |
-| `tests/administration.spec.ts` | As the system administrator: add, edit, suspend and reactivate an office; invite a user who activates the account from the email (read from `.stack/mail/`) and signs in for the first time; role changes decide what the user can open; a duty conflict is flagged before and after saving; a suspended user is signed out and refused until reactivated; policies and the permission matrix are saved, take effect and are put back. Each checked in the access log. One test documents an open bug (API-610) with `test.fail()` |
+| `tests/administration.spec.ts` | As the system administrator: add, edit, suspend and reactivate an office; invite a user who activates the account from the email (read from `.stack/mail/`) and signs in for the first time; role changes decide what the user can open; a duty conflict is flagged before and after saving; a suspended user is signed out and refused until reactivated; policies and the permission matrix are saved, take effect and are put back. Each checked in the access log. |
 
 Land records (`#/link`) and Audit (`#/audit`) still show demo data, so the workflow stops at the
 EDRMS: linking the document into a land record and the auditor's sign-off follow when those

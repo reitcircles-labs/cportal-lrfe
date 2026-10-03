@@ -2,8 +2,13 @@
 /**
  * Run every backend service in watch mode from one terminal:
  *
- *   npm run dev                      all five services, and the API docs on http://localhost:3510
- *   npm run dev -- identity intake   only these (add `docs` to include the API docs)
+ *   npm run dev                      NATS, all five services, and the API docs on http://localhost:3510
+ *   npm run dev -- identity intake   only these (add `nats` for the event bus, `docs` for the API docs)
+ *
+ * NATS (scripts/nats.js, port 4222) is the event bus between the services. When it is part of the
+ * run, the services use it (EVENT_BUS_DRIVER=nats, NATS_URL), whatever their .env says; set
+ * EVENT_BUS_DRIVER in the shell to choose otherwise (e.g. EVENT_BUS_DRIVER=log npm run dev).
+ * The first run downloads nats-server into backend/.tools/.
  *
  * Each service starts in its own directory, so it reads its own .env exactly as
  * `npm run dev:<name>` does. Output lines are prefixed with the service name. Ctrl+C stops all
@@ -18,6 +23,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // gateway after the services it proxies to; docs last
 const PROCESSES = {
+    // the event bus first; the services connect when it is up (and retry until then)
+    nats: { cwd: ROOT, args: ['scripts/nats.js'], optional: true },
     identity: { cwd: join(ROOT, 'services', 'identity'), args: ['--watch', 'src/index.js'] },
     edrms: { cwd: join(ROOT, 'services', 'edrms'), args: ['--watch', 'src/index.js'] },
     bpm: { cwd: join(ROOT, 'services', 'bpm'), args: ['--watch', 'src/index.js'] },
@@ -27,7 +34,7 @@ const PROCESSES = {
     docs: { cwd: ROOT, args: ['scripts/docs-server.js'], optional: true }
 };
 const SERVICES = Object.keys(PROCESSES);
-const COLORS = [36, 33, 35, 32, 34, 90];
+const COLORS = [37, 36, 33, 35, 32, 34, 90];
 
 const wanted = process.argv.slice(2);
 const unknown = wanted.filter(s => !SERVICES.includes(s));
@@ -48,6 +55,11 @@ const label = (name) => {
 // five would try to bind the same port.
 const env = { ...process.env };
 delete env.PORT;
+// With NATS in this run, point the services at it (a shell setting still wins over this).
+if (names.includes('nats') && !process.env.EVENT_BUS_DRIVER) {
+    env.EVENT_BUS_DRIVER = 'nats';
+    env.NATS_URL ??= `nats://127.0.0.1:${process.env.NATS_PORT || 4222}`;
+}
 
 const children = new Map();
 let stopping = false;
@@ -61,6 +73,7 @@ function pipe(stream, out, prefix, name) {
             out.write(prefix + line + '\n');
             const busy = line.match(/EADDRINUSE: address already in use (\S+)/);
             if (busy) out.write(`${prefix}↳ ${busy[1]} is taken, probably by a copy started separately (${name === 'docs' ? 'npm run docs:serve' : `npm run dev:${name}`}). Stop it, or leave ${name} out: npm run dev -- <the others>\n`);
+            if (name === 'nats' && /address already in use/.test(line)) out.write(`${prefix}↳ port ${process.env.NATS_PORT || 4222} is taken, probably by another NATS (npm run nats, Docker); the services will use that one\n`);
         }
     });
     stream.on('end', () => { if (rest) out.write(prefix + rest + '\n'); });

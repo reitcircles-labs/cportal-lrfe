@@ -1,4 +1,4 @@
-import { createEventBus, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, signServiceToken, startService } from '@lrfe/common';
+import { createEventBus, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, signServiceToken, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { BpmEngine } from './engine/engine.js';
 import { createConnectors } from './connectors/index.js';
@@ -25,12 +25,13 @@ if (envOneOf('BPM_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
 
 // Connectors need a service token, and tokens are signed by the app's JWT plugin: the engine
 // gets its connectors once the app exists.
-const engine = new BpmEngine({ repo, events: createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'bpm' }) });
-const app = await buildApp({ engine, jwtSecret: env('JWT_SECRET'), logger: { level: env('LOG_LEVEL', 'info') } });
+const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'bpm' });
+const engine = new BpmEngine({ repo, events });
+const app = await buildApp({ engine, jwtSecret: env('JWT_SECRET'), revocations: createRevocationList({ events }), logger: { level: env('LOG_LEVEL', 'info') } });
 engine.connectors = createConnectors({
     urls: { edrms: env('EDRMS_URL', 'http://localhost:3502') },
     serviceToken: () => signServiceToken(app, 'bpm')
 });
 checks.push(() => deployAll(engine, { log: (m) => app.log.info(m) }));
 
-await startService(app, { port: envInt('PORT', 3503), checks, onClose: () => sequelize?.close() });
+await startService(app, { port: envInt('PORT', 3503), checks, onClose: async () => { await events.close(); await sequelize?.close(); } });

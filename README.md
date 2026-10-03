@@ -44,7 +44,7 @@ Two processes: the backend (five services and the API docs) and the frontend. Wi
 
 ```bash
 tmux new -s lr                          # a session named "lr"
-cd backend && npm run dev               # window 1: backend; wait for the services to start
+cd backend && npm run dev               # window 1: NATS + backend; wait for the services to start
 # Ctrl-b c   opens a second window
 cd angular-app && npm start             # window 2: frontend
 # Ctrl-b d   leaves tmux; everything keeps running. Back to it: tmux attach -t lr
@@ -61,9 +61,11 @@ so no other port is needed in the browser.
 | 3500 | gateway: the only backend entry point the app uses |
 | 3501 · 3502 · 3503 · 3504 | identity · edrms · bpm · intake |
 | 3510 | API docs (Swagger UI), started by `npm run dev` |
+| 4222 · 8222 | NATS, the event bus between the services · its monitoring page; started by `npm run dev` |
 
-**Started correctly when:** the backend log shows each service listening, with no errors from
-identity (it connects to the database first). With email configured, identity also logs
+**Started correctly when:** the backend log shows each service listening and
+`event bus: connected to NATS`, with no errors from identity (it connects to the database first).
+The first run downloads the NATS server into `backend/.tools/`. With email configured, identity also logs
 `email: … accepted the connection and login`.
 
 ### Stop

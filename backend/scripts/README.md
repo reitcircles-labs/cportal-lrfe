@@ -2,7 +2,8 @@
 
 | Script | Run with (from `backend/`) | What it does |
 |---|---|---|
-| `dev.js` | `npm run dev` | Starts all five services and the API docs in one terminal |
+| `dev.js` | `npm run dev` | Starts NATS, all five services and the API docs in one terminal; the services use NATS as their event bus |
+| `nats.js` | `npm run nats` | Starts a local NATS server (port 4222, monitoring 8222, JetStream on); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256 |
 | `openapi.js` | `npm run docs` · `npm run docs:check` | Generates `services/<name>/docs/openapi.yaml` · checks they are up to date |
 | `docs-server.js` | `npm run docs:serve` | Swagger UI for the API docs on http://localhost:3510 |
 | `remoteConnect.sh` | `./scripts/remoteConnect.sh 4200 3510` **on your laptop** | Opens the server's ports on your laptop over SSH, to test the app remotely |
@@ -38,7 +39,7 @@ internet). This script forwards the ports you name over one SSH connection, so
 
 1. **On the server**, start what you want to reach:
    ```bash
-   cd backend && npm run dev                 # services + API docs (3500–3504, 3510)
+   cd backend && npm run dev                 # NATS + services + API docs (4222, 3500–3504, 3510)
    cd angular-app && npx ng serve            # the app (4200)
    ```
 2. **On the laptop**, connect and keep the window open:

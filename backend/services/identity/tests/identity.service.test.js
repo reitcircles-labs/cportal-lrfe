@@ -88,10 +88,23 @@ describe('IdentityService', () => {
         });
 
         it('logout revokes the session', async () => {
-            const { service } = await makeService();
+            const { service, published } = await makeService();
             const { refreshToken, claims } = await service.login({ email: SCAN, password: PASSWORD });
             await service.logout({ sid: claims.sid });
             await rejects(service.refresh(refreshToken), 401);
+            // every service is told to refuse that session's access tokens (API-610)
+            const revoked = published.find(e => e.type === 'identity.session.revoked');
+            expect(revoked.data).to.include({ sid: claims.sid, reason: 'signed out' });
+        });
+
+        it("suspension tells every service to refuse the user's tokens until they expire", async () => {
+            const { service, user, published, clock } = await makeService();
+            const admin = await user(ADMIN), scan = await user(SCAN);
+            await service.setStatus(scan.id, 'Suspended', '', { id: admin.id, name: admin.name });
+            const revoked = published.find(e => e.type === 'identity.session.revoked');
+            expect(revoked.data).to.include({ userId: scan.id, reason: 'suspended', revokedAt: clock().toISOString() });
+            // kept for the access-token lifetime (900 s) plus a minute of clock slack
+            expect(Date.parse(revoked.data.expiresAt) - clock().getTime()).to.equal(960_000);
         });
     });
 
