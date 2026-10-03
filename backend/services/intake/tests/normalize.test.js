@@ -84,5 +84,9 @@ describe('prompt, schema and pricing', () => {
         expect(costUsd('gemini-3.8-flash', usage, { at: new Date('2026-12-31T12:00:00Z') })).to.equal(0.006375);
         expect(costUsd('gemini-3.8-flash', usage, { at: new Date('2027-01-01T00:00:00Z') })).to.equal(0.01275);
         expect(costUsd('some-new-model', usage)).to.equal(null);
+        // Jev: $0.042 per 1M input tokens, output free; priced by family, whatever version answers
+        expect(costUsd('jev-1.13.0', { inputTokens: 3000, outputTokens: 40 })).to.equal(0.000126);
+        expect(costUsd('jev-latest', { inputTokens: 1_000_000, outputTokens: 1_000_000 })).to.equal(0.042);
+        expect(costUsd('fake-jev', { inputTokens: 3000 })).to.equal(null);
     });
 });

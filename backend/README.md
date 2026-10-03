@@ -252,11 +252,30 @@ upload ─▶ intake (staging store, job queue) ─▶ extraction worker ─▶ 
   checks (11-digit IDs, deed-number pattern, dates in English/Afrikaans/German, m²/ha), from
   checking that each value's quoted evidence is really on the cited page, and from EDRMS
   cross-checks. Errors (bad ID length, duplicate instrument) block filing until corrected.
-- **Cost control:** every model call is stored with tokens and cost (`src/extraction/pricing.js`,
-  prices as of 2026-09-29); the worker pauses at `EXTRACTION_MONTHLY_BUDGET_USD`; `GET /usage`.
+- **Cost control:** every model call is stored with tokens and cost (`src/extraction/pricing.js`:
+  Gemini prices as of 2026-09-29; Jev, any version, $0.042 per 1M input tokens with output free,
+  as of 2026-10-03); the worker pauses at `EXTRACTION_MONTHLY_BUDGET_USD`; `GET /usage` reports
+  Jev next to Gemini. Filed records carry the cross-check (tool, model, version, calls, fields
+  filed despite a flag) in their sealed provenance.
   Defaults: `gemini-3.1-flash-lite`, medium resolution, low thinking; escalation `gemini-3.1-pro-preview`.
 - **Provider** is swappable (`src/extraction/providers.js`): Gemini Developer API (`GEMINI_API_KEY`)
   or Vertex AI (`GEMINI_VERTEX=true`, project, region); `mock` needs no key and costs nothing (default).
+  **Check the connection** with the service's `.env`, no services or database involved:
+  `cd services/intake && node scripts/gemini-check.mjs --ping` (free), or without `--ping` to read
+  the testers' sample PDFs and compare every field with the expected values (about $0.02;
+  `--file scan.pdf` for any document, `--escalate`, `--model`; see the script's header).
+- **Jev** (TypeSafe, `src/extraction/jev.js`) can judge what Gemini read (epic API-618). Off by
+  default: `JEV_ENABLED=true` with `TYPESAFE_API_KEY` (or `JEV_PROVIDER=fake`: fixed answers,
+  nothing sent); `JEV_MODEL` (`jev-latest`), `JEV_TIMEOUT_MS` (5000), thresholds `JEV_FLAG_AT`
+  (0.8) and `JEV_ESCALATE_AT` (0.9), measured on the sample documents with
+  `node scripts/jev-check.mjs` (API-621; check again on real documents). Enabled without a key, or when Jev
+  fails or is slow, documents are handled exactly as without Jev. Jev runs in the US: real deed
+  text needs data-protection approval first.
+  What it does (`src/extraction/crosscheck.js`): cross-checks each reading's fields against the
+  transcription (warning from `JEV_FLAG_AT`); decides the second reading (only for a format error,
+  an unrecognised type, or a doubt from `JEV_ESCALATE_AT`, instead of the 30% rule); where the two
+  readings disagree, picks the value the text states. Every call is stored as a `crosscheck`
+  extraction. Messages on screen never name Jev or a model.
 - **Worker** runs inside the service for local work, or alone (`npm run worker -w @lrfe/intake`,
   several in parallel — Postgres `SKIP LOCKED`). Retries with backoff; non-retryable errors fail at once.
 

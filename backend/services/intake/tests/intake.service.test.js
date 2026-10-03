@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { makeIntake, answer, withField, actor, users, pdf, fileOf, rejects } from './helpers.js';
+import { ExtractionError } from '../src/extraction/providers.js';
 
 const field = (doc, k) => doc.fields.find(f => f.k === k);
 
@@ -109,7 +110,7 @@ describe('intake: worker behaviour', () => {
         const doc = await service.captureDocument({ batchId: batch.id, file: fileOf() }, actor(users.scan));
         await worker.drain();
         let d = await service.getDocument(doc.id);
-        expect(d).to.include({ status: 'queued', extractionError: '503 overloaded' });
+        expect(d).to.include({ status: 'queued', extractionError: 'Reading failed; it will be tried again automatically.' });
         expect(await worker.drain()).to.equal(0);          // not due yet
         clock.advance(61_000);
         await worker.drain();
@@ -118,12 +119,31 @@ describe('intake: worker behaviour', () => {
         expect(d.extractions.map(e => e.ok)).to.deep.equal([false, true]);
     });
 
+    it('shows a neutral reading error; the raw message stays in the trail and the attempt', async () => {
+        const { service, worker, batch, repo } = await makeIntake({ respond: () => { const e = new Error('gemini-3.1-flash-lite call failed: 429 RESOURCE_EXHAUSTED'); e.retryable = true; throw e; } });
+        const doc = await service.captureDocument({ batchId: batch.id, file: fileOf() }, actor(users.scan));
+        await worker.drain();
+        const d = await service.getDocument(doc.id);
+        expect(d.extractionError).to.equal('Reading failed; it will be tried again automatically.');
+        expect(JSON.stringify(await service.listDocuments({ batchId: batch.id }))).not.to.match(/gemini/i);
+        expect(d.extractions[0].error).to.contain('gemini-3.1-flash-lite');
+        const trail = await repo.listEvents(doc.id);
+        expect(trail.find(e => e.action === 'extraction_retry').detail).to.contain('429 RESOURCE_EXHAUSTED');
+    });
+
+    it('a file-specific reading error is shown as such', async () => {
+        const { service, worker, batch } = await makeIntake({ respond: () => { throw new ExtractionError('Files over 15 MB need Cloud Storage input on Vertex AI (not implemented yet)', { retryable: false, publicMessage: 'The file is too large to be read automatically (over 15 MB)' }); } });
+        const doc = await service.captureDocument({ batchId: batch.id, file: fileOf() }, actor(users.scan));
+        await worker.drain();
+        expect(await service.getDocument(doc.id)).to.include({ status: 'failed', extractionError: 'The file is too large to be read automatically (over 15 MB)' });
+    });
+
     it('a non-retryable error fails at once; the reviewer can request a new reading', async () => {
         let fail = true;
         const { service, worker, batch } = await makeIntake({ respond: () => { if (fail) { const e = new Error('400 invalid document'); e.retryable = false; throw e; } return answer(); } });
         const doc = await service.captureDocument({ batchId: batch.id, file: fileOf() }, actor(users.scan));
         await worker.drain();
-        expect((await service.getDocument(doc.id)).status).to.equal('failed');
+        expect(await service.getDocument(doc.id)).to.include({ status: 'failed', extractionError: 'The document could not be read. Read it again, or reject it.' });
         fail = false;
         await service.requestExtraction(doc.id, {}, actor(users.rev));
         await rejects(service.requestExtraction(doc.id, {}, actor(users.rev)), 409, 'already queued');

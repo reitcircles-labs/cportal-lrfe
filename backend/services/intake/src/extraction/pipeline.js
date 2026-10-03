@@ -2,6 +2,7 @@ import { docType } from '../doc-types.js';
 import { normalize, occursIn } from './normalize.js';
 import { PROMPT_VERSION } from './prompt.js';
 import { costUsd } from './pricing.js';
+import { crossCheck, preferReadings } from './crosscheck.js';
 
 /** A field's flag for the review screen, from its checks. */
 export function flagOf(row) {
@@ -51,18 +52,28 @@ export function buildRows(answer, { model } = {}) {
     return { rows, ignored: answer.fields.map(x => x.k).filter(k => !known.has(k)) };
 }
 
+/** The highest cross-check doubt on a row (0 when it was not cross-checked). */
+const doubt = (r) => Math.max(0, ...Object.values(r.xcheck || {}));
+
+const listLabels = (rows) => rows.length <= 3 ? rows.map(r => r.label).join(', ')
+    : `${rows.slice(0, 3).map(r => r.label).join(', ')} and ${rows.length - 3} more`;
+
 /**
- * Should the answer be re-read by the stronger model? Not for long documents (`pages` over
- * `maxPages`): a second reading re-sends every page, and costs more than the first. The reviewer
- * can still ask for one.
+ * Should the answer be re-read by the stronger model? Always for an unrecognised type or a field
+ * failing a format check. Otherwise: when the fields were cross-checked (`judged`), only if one is
+ * doubted from `escalateAt` on; without a cross-check, when 30% of the fields need checking.
+ * Not for long documents (`pages` over `maxPages`): a second reading re-sends every page, and costs
+ * more than the first. The reviewer can still ask for one. The reason is shown on screen.
  */
-export function needsEscalation(answer, rows, { pages = null, maxPages = Infinity } = {}) {
+export function needsEscalation(answer, rows, { pages = null, maxPages = Infinity, judged = false, escalateAt = 0.9 } = {}) {
     let reason = null;
     if (answer.docType === 'unknown') reason = 'Document type not recognised';
     else {
         const conflicts = rows.filter(r => r.checks.some(c => c.level === 'error' && c.code !== 'duplicate'));
+        const doubted = rows.filter(r => doubt(r) >= escalateAt);
         const weak = rows.filter(r => r.flag === 'check' || r.flag === 'missing').length;
         if (conflicts.length) reason = `${conflicts.length} field(s) failed format checks`;
+        else if (judged) { if (doubted.length) reason = `${listLabels(doubted)} needed checking`; }
         else if (rows.length && weak / rows.length >= 0.3) reason = `${weak} of ${rows.length} fields need checking`;
     }
     if (reason && pages != null && pages > maxPages) return { skipped: `${reason}, but the document has ${pages} pages (automatic re-reading stops at ${maxPages}); request it from the review screen if needed` };
@@ -74,28 +85,30 @@ const problems = (r) => r.checks.filter(c => c.level === 'error' || (c.level ===
 /**
  * Combine two readings field by field; neither is simply trusted. Agreement keeps the value.
  * On disagreement the reading with fewer problems (format errors, missing evidence, empty form
- * lines) wins — the second model on a tie — and the other reading is kept as `alt`. A value only
- * one model found is kept and flagged.
+ * lines) wins — the second model on a tie — unless `prefer` (k → 'first' | 'second', from the
+ * cross-check) decides it; the other reading is kept as `alt`. A value only
+ * one model found is kept and flagged. Messages say "first/second reading", never the model: the
+ * screen shows them as they are (`alt.model` stays for the backend).
  */
-export function mergeRows(a, b, { firstModel, secondModel }) {
+export function mergeRows(a, b, { firstModel, secondModel, prefer = new Map() }) {
     const keys = [...new Set([...b.map(r => r.k), ...a.map(r => r.k)])];
     const order = (k) => { const i = b.findIndex(r => r.k === k); return i >= 0 ? i : 1000 + a.findIndex(r => r.k === k); };
     return keys.sort((x, y) => order(x) - order(y)).map(k => {
         const x = a.find(r => r.k === k), y = b.find(r => r.k === k);
         if (x?.value && y?.value) {
             if (x.value === y.value) return y;
-            const firstWins = problems(x) < problems(y);
-            const [win, lose, loseModel] = firstWins ? [x, y, secondModel] : [y, x, firstModel];
+            const firstWins = prefer.has(k) ? prefer.get(k) === 'first' : problems(x) < problems(y);
+            const [win, lose, loseModel, reading] = firstWins ? [x, y, secondModel, 'second'] : [y, x, firstModel, 'first'];
             const chosen = structuredClone(win);
-            chosen.checks.push({ level: 'warn', code: 'models_disagree', message: `${loseModel} read “${lose.value}”` });
-            chosen.alt = { model: loseModel, value: lose.value };
+            chosen.checks.push({ level: 'warn', code: 'models_disagree', message: `The ${reading} reading gave “${lose.value}”` });
+            chosen.alt = { model: loseModel, reading, value: lose.value };
             chosen.flag = flagOf(chosen);
             return chosen;
         }
         if (x?.value) {
             const kept = structuredClone(x);
             kept.checks = kept.checks.filter(c => c.code !== 'missing');
-            kept.checks.push({ level: 'warn', code: 'single_reading', message: `Only ${firstModel} found this; ${secondModel} did not` });
+            kept.checks.push({ level: 'warn', code: 'single_reading', message: 'Found by the first reading only' });
             kept.flag = flagOf(kept);
             return kept;
         }
@@ -111,7 +124,7 @@ async function attempt(provider, file, role, clock) {
         const r = await provider.extract(file);
         return { ok: true, role, provider: provider.name, model: r.model, promptVersion: PROMPT_VERSION, usage: r.usage, costUsd: costUsd(r.model, r.usage, { at }), durationMs: r.durationMs, answer: r.result, at };
     } catch (err) {
-        return { ok: false, role, provider: provider.name, model: provider.model, promptVersion: PROMPT_VERSION, usage: null, costUsd: null, durationMs: null, error: err.message, retryable: err.retryable !== false, at };
+        return { ok: false, role, provider: provider.name, model: provider.model, promptVersion: PROMPT_VERSION, usage: null, costUsd: null, durationMs: null, error: err.message, retryable: err.retryable !== false, ...(err.publicMessage ? { publicMessage: err.publicMessage } : {}), at };
     }
 }
 
@@ -127,16 +140,23 @@ async function evaluate(answer, model, checker) {
  * is configured and the document is not too long — a second reading, merged field by field with
  * the first (see mergeRows). The longer transcription is kept.
  *
+ * With a judge (`jev`), each reading's fields are cross-checked against the transcription (see
+ * ./crosscheck.js) before anything is decided: the cross-check decides whether a second reading is
+ * needed, and where the two readings disagree, which value the text supports. Each judge call is
+ * one more attempt; a failed one never fails the extraction (the decision then falls back to the
+ * rules used without a judge).
+ *
  * Returns { attempts, answer, rows, notes, escalated } or throws the primary's error (so the job
  * can be retried) with the failed attempt attached.
  */
-export async function runExtraction({ file, primary, escalation = null, checker, forceEscalation = false, pages = null, maxEscalationPages = Infinity, clock = () => new Date() }) {
+export async function runExtraction({ file, primary, escalation = null, checker, jev = null, jevConfig = null, forceEscalation = false, pages = null, maxEscalationPages = Infinity, clock = () => new Date() }) {
     const attempts = [];
     const first = await attempt(forceEscalation && escalation ? escalation : primary, file, forceEscalation && escalation ? 'escalation' : 'primary', clock);
     attempts.push(first);
     if (!first.ok) {
         const err = new Error(first.error);
         err.retryable = first.retryable;
+        if (first.publicMessage) err.publicMessage = first.publicMessage;
         err.attempts = attempts;
         throw err;
     }
@@ -145,22 +165,42 @@ export async function runExtraction({ file, primary, escalation = null, checker,
     const notes = [];
     if (ignored.length) notes.push({ level: 'info', code: 'ignored_fields', message: `Fields not used for this document type: ${ignored.join(', ')}` });
 
-    const decision = !forceEscalation && escalation ? needsEscalation(answer, rows, { pages, maxPages: maxEscalationPages }) : null;
+    /** Cross-check one reading's rows against `transcript` (the first reading's, if the other has none). */
+    const judge = async (rs, typeId, transcript) => {
+        if (!jev) return false;
+        const x = await crossCheck({ jev, answer: { docType: typeId, pages: transcript }, rows: rs, flagAt: jevConfig?.flagAt ?? 0.8, clock });
+        if (x.attempt) attempts.push(x.attempt);
+        if (x.note && !notes.some(n => n.code === x.note.code)) notes.push(x.note);
+        rs.forEach(r => { r.flag = flagOf(r); });
+        return !!x.attempt?.ok;
+    };
+    const judged = await judge(rows, answer.docType, answer.pages);
+
+    const decision = !forceEscalation && escalation ? needsEscalation(answer, rows, { pages, maxPages: maxEscalationPages, judged, escalateAt: jevConfig?.escalateAt ?? 0.9 }) : null;
     let escalated = forceEscalation && !!escalation;
     if (decision?.skipped) notes.push({ level: 'info', code: 'escalation_skipped', message: decision.skipped });
     if (decision?.reason) {
         const second = await attempt(escalation, file, 'escalation', clock);
         attempts.push(second);
-        if (!second.ok) notes.push({ level: 'warn', code: 'escalation_failed', message: `Second reading failed (${second.error}); showing the first reading` });
+        // the error (with the model) is kept on the attempt; the note is shown on screen
+        if (!second.ok) notes.push({ level: 'warn', code: 'escalation_failed', message: 'Second reading failed; showing the first reading' });
         else {
             escalated = true;
-            notes.push({ level: 'info', code: 'escalated', message: `Also read by ${second.model} (${decision.reason}); the two readings are combined field by field` });
+            notes.push({ level: 'info', code: 'escalated', message: `Read a second time (${decision.reason}); the two readings are combined field by field` });
             if (second.answer.docType !== answer.docType && answer.docType !== 'unknown') {
-                notes.push({ level: 'warn', code: 'doctype_disagree', message: `${first.model} read this as ${answer.docType}, ${second.model} as ${second.answer.docType}; keeping ${answer.docType}` });
+                const label = (id) => docType(id)?.label || 'not recognised';
+                notes.push({ level: 'warn', code: 'doctype_disagree', message: `The two readings disagree on the document type (${label(answer.docType)} / ${label(second.answer.docType)}); keeping ${label(answer.docType)}` });
             } else {
                 const again = await evaluate(second.answer, second.model, checker);
-                rows = answer.docType === 'unknown' ? again.rows : mergeRows(rows, again.rows, { firstModel: first.model, secondModel: second.model });
                 const pagesKept = transcriptionLength(second.answer) > transcriptionLength(answer) ? second.answer.pages : answer.pages;
+                await judge(again.rows, second.answer.docType, pagesKept);
+                let prefer;
+                if (jev && answer.docType !== 'unknown') {
+                    const p = await preferReadings({ jev, typeId: answer.docType, first: rows, second: again.rows, pages: pagesKept, clock });
+                    if (p.attempt) attempts.push(p.attempt);
+                    prefer = p.prefer;
+                }
+                rows = answer.docType === 'unknown' ? again.rows : mergeRows(rows, again.rows, { firstModel: first.model, secondModel: second.model, prefer });
                 answer = { ...(answer.docType === 'unknown' ? second.answer : answer), pages: pagesKept };
             }
         }

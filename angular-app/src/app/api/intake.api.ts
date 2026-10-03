@@ -14,7 +14,7 @@ export interface IntakeField {
   k: string; label: string; type: string; required: boolean;
   extracted: string | null; evidence: { page: number | null; text: string } | null; model: string | null;
   value: string; normalized: string | null; status: FieldStatus; checks: IntakeCheck[]; flag: FieldFlag;
-  alt: { model: string; value: string } | null;
+  alt: { reading?: 'first' | 'second'; value: string } | null;
 }
 
 export interface IntakeBatch {

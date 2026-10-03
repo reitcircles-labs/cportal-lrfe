@@ -1,4 +1,4 @@
-import { Op, UniqueConstraintError } from 'sequelize';
+import { DataTypes, Op, UniqueConstraintError } from 'sequelize';
 import { ConflictError } from '@lrfe/common';
 import { defineModels, SCHEMA } from './models.js';
 
@@ -13,7 +13,15 @@ export function createSequelizeRepo(sequelize) {
 
     return {
         models: m,
-        async sync() { await sequelize.sync(); },
+        /** Create missing tables, then bring older ones up to date (idempotent, safe on every start). */
+        async sync() {
+            await sequelize.sync();
+            // 'crosscheck' (API-622) came after the table was first created
+            await sequelize.query(`ALTER TYPE "${SCHEMA}"."enum_extraction_role" ADD VALUE IF NOT EXISTS 'crosscheck'`);
+            const q = sequelize.getQueryInterface();
+            const document = { tableName: 'document', schema: SCHEMA };
+            if (!(await q.describeTable(document)).crosscheck) await q.addColumn(document, 'crosscheck', { type: DataTypes.JSONB });   // API-624
+        },
 
         async nextBatchNumber(registry) {
             const [[{ last }]] = await sequelize.query(

@@ -37,6 +37,8 @@ const COMMON = {
     // plain http on localhost: a Secure cookie would not be sent back by every client
     COOKIE_SECURE: 'false'
 };
+// E2E_JEV=fake: the automatic cross-check on, with the fake judge (fixed answers, nothing sent)
+if (process.env.E2E_JEV === 'fake') Object.assign(COMMON, { JEV_ENABLED: 'true', JEV_PROVIDER: 'fake' });
 const SERVICES = ['identity', 'edrms', 'bpm', 'intake'];
 const POSTGRES = process.env.E2E_DB === 'postgres';
 const pgData = join(STACK_DIR, 'pg');

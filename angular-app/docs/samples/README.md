@@ -103,6 +103,15 @@ value with the scan. The AI may word a value slightly differently (for example "
 | Undivided share | ¼ share each |
 | Consideration | inheritance, no consideration |
 
+> **Watch the marital regime.** The deed says the late Petrus Nghishidi was married in community
+> of property, and that the two heirs are both unmarried. The field is about the heirs, so it must
+> read **unmarried**. In a check on 3 October 2026, gemini-3.1-flash-lite read "married in community
+> of property" in 1 of 6 readings: correct it before filing if it does.
+>
+> In the same check Gemini always took Tomas Nghishidi's ID number from the margin note
+> (01112500379), so the 10-digit warning described below may not appear with the real AI. It always
+> appears with the canned AI used by the automated tests.
+
 > **The deliberate mistake.** Tomas Nghishidi's ID number is typed as **0111250379**, with only 10
 > digits, and a hand-written note in the margin gives the corrected number **01112500379**. A
 > Namibian ID number has 11 digits, so the app flags a 10-digit value. The reviewer must make sure

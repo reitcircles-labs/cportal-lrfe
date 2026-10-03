@@ -1,7 +1,7 @@
 import { ALL_FIELD_KEYS, DOC_TYPES, DOC_TYPE_IDS } from '../doc-types.js';
 
 /** Bump whenever the prompt or schema changes; stored with every extraction for traceability. */
-export const PROMPT_VERSION = 'lr-extract-2026-09-29.2';   // .2: deed of sale
+export const PROMPT_VERSION = 'lr-extract-2026-10-03.1';   // marital regime: whose (API-621); 09-29.2: deed of sale
 
 /** The instruction sent with each document. Generated from doc-types.js. */
 export function buildPrompt({ transcribe = true } = {}) {

@@ -5,6 +5,7 @@ import { docType } from './doc-types.js';
 import { normalize } from './extraction/normalize.js';
 import { countPages } from './pages.js';
 import { flagOf } from './extraction/pipeline.js';
+import { XCHECK_CODES } from './extraction/crosscheck.js';
 
 export const ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const SYSTEM = { id: null, name: 'System' };
@@ -155,16 +156,20 @@ export class IntakeService {
     async applyExtraction(id, { attempts, answer, rows, notes, escalated }) {
         const d = await this.requireDocument(id);
         let cost = d.extractionCostUsd || 0, latest = null;
+        const checks = attempts.filter(a => a.role === 'crosscheck' && a.ok);
+        const last = checks[checks.length - 1];
+        const crosscheck = last ? { provider: last.provider, model: last.model, version: last.promptVersion, calls: checks.length, at: last.at } : null;
         for (const a of attempts) {
             const extractionId = randomUUID();
             await this.repo.addExtraction({ id: extractionId, documentId: id, role: a.role, ok: a.ok, provider: a.provider, model: a.model, promptVersion: a.promptVersion, answer: a.answer ?? null, usage: a.usage, costUsd: a.costUsd, durationMs: a.durationMs, error: a.error ?? null, createdAt: a.at });
             cost += a.costUsd || 0;
-            if (a.ok) latest = extractionId;
+            // the reading the fields come from (the cross-check call judges it, it does not read)
+            if (a.ok && a.role !== 'crosscheck') latest = extractionId;
         }
         const updated = await this.save(d, {
             status: 'ready', docType: answer.docType, docTypeReason: answer.docTypeReason, languages: answer.languages, handwritingPresent: answer.handwritingPresent,
             // pages counted at capture; the transcription's count if that is larger (or the file could not be parsed)
-            pages: Math.max(d.pages || 0, answer.pages.length) || null, fields: rows, notes, latestExtractionId: latest, escalated: !!escalated,
+            pages: Math.max(d.pages || 0, answer.pages.length) || null, fields: rows, notes, latestExtractionId: latest, crosscheck, escalated: !!escalated,
             extractionCostUsd: Math.round(cost * 1e6) / 1e6, extractionError: null, claimedById: null, claimedByName: null, claimedAt: null
         });
         const flags = this.summary(updated).flags;
@@ -173,13 +178,14 @@ export class IntakeService {
         return updated;
     }
 
-    async markExtractionFailed(id, { attempts = [], error, final }) {
+    /** `error` is shown on screen (neutral); `detail` (the raw error) only goes to the trail. */
+    async markExtractionFailed(id, { attempts = [], error, detail = error, final }) {
         const d = await this.requireDocument(id);
         for (const a of attempts) {
             await this.repo.addExtraction({ id: randomUUID(), documentId: id, role: a.role, ok: false, provider: a.provider, model: a.model, promptVersion: a.promptVersion, answer: null, usage: null, costUsd: null, durationMs: null, error: a.error, createdAt: a.at });
         }
         await this.save(d, { status: final ? 'failed' : 'queued', extractionError: error });
-        await this.event(id, final ? 'extraction_failed' : 'extraction_retry', SYSTEM, { detail: error });
+        await this.event(id, final ? 'extraction_failed' : 'extraction_retry', SYSTEM, { detail });
     }
 
     // ---------------------------------------------------------------- reading
@@ -255,8 +261,9 @@ export class IntakeService {
                 Object.assign(row, { value: n.value, normalized: n.normalized, status: 'edited' });
                 row.checks = [...n.checks];
                 if (!n.value && def.required) row.checks.push({ level: 'warn', code: 'missing', message: 'Required field is empty' });
-                // the evidence and "models disagree" notes were about the old value
+                // the evidence, "models disagree" and cross-check notes were about the old value
                 row.alt = null;
+                delete row.xcheck;
             }
             await this.recheck(d.docType, rows);
             d = await this.save(d, { fields: rows });
@@ -321,7 +328,10 @@ export class IntakeService {
                     intakeDocumentId: d.id, extractionId: extraction.id, provider: extraction.provider, model: extraction.model,
                     promptVersion: extraction.promptVersion, extractedAt: extraction.createdAt, escalated: !!d.escalated,
                     extracted: Object.fromEntries(d.fields.filter(f => f.extracted != null).map(f => [f.k, f.extracted])),
-                    corrected: d.fields.filter(f => f.status === 'edited').map(f => f.k)
+                    corrected: d.fields.filter(f => f.status === 'edited').map(f => f.k),
+                    // tool, model, version and calls of the cross-check, and the fields it still
+                    // flagged when filed as read (corrected ones are in `corrected`); audit only
+                    ...(d.crosscheck ? { crosscheck: { ...d.crosscheck, flagged: d.fields.filter(f => f.checks.some(c => XCHECK_CODES.includes(c.code))).map(f => f.k) } } : {})
                 }
             }
         });

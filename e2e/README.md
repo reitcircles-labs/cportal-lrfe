@@ -77,6 +77,13 @@ throwaway PostgreSQL instance under `.stack/pg` with the server binaries already
 (`PG_BIN`, or the newest `/usr/lib/postgresql/<version>/bin`), on port 3606, TCP only, and stops and
 removes it at the end. It never touches another database on the machine. No Docker needed.
 
+## With the automatic cross-check on
+
+`E2E_JEV=fake` (with any Playwright command, also together with `E2E_DB=postgres`) switches the
+intake cross-check on with the fake judge: fixed answers, nothing sent anywhere. Every document then
+goes through the cross-check; the same tests must pass. Without it, the cross-check is off, as it is
+by default on every system.
+
 ## In CI
 
 `.github/workflows/tests.yml` runs the backend unit tests, the API docs check and this suite on

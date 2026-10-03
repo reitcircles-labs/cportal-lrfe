@@ -35,7 +35,7 @@ export const DOC_TYPES = [
             f('transferor', 'Transferor', 'text', 'Party transferring the property (seller, estate, municipality, State)', true),
             f('transferorId', 'Transferor ID no.', 'id_number', 'Identity/registration number of the transferor'),
             ...PARTY('tee', 1, 'Transferee'), ...PARTY('tee', 2, 'Transferee'), ...PARTY('tee', 3, 'Transferee'), ...PARTY('tee', 4, 'Transferee'),
-            f('marital', 'Marital regime', 'text', 'e.g. "married in community of property", "unmarried"'),
+            f('marital', 'Marital regime', 'text', 'Marital regime of the transferee(s) acquiring the property (not of the transferor or a deceased), e.g. "married in community of property", "unmarried"'),
             f('share', 'Undivided share', 'text', 'Share(s) acquired, e.g. "½ share each"'),
             f('price', 'Consideration', 'money', 'Purchase price, or the words used for inheritance/donation'),
             f('conveyancer', 'Conveyancer', 'text', 'Conveyancer who appeared before the Registrar'),

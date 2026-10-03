@@ -1,6 +1,15 @@
 import { hostname } from 'node:os';
 import { runExtraction } from './extraction/pipeline.js';
 
+/**
+ * The reading error the screens show: never the model, provider or raw API message (those go to
+ * the log, the job and the stored attempt).
+ */
+export function readingError(err, final) {
+    if (err?.publicMessage) return err.publicMessage;
+    return final ? 'The document could not be read. Read it again, or reject it.' : 'Reading failed; it will be tried again automatically.';
+}
+
 async function toBuffer(stream) {
     const chunks = [];
     for await (const c of stream) chunks.push(c);
@@ -12,14 +21,15 @@ async function toBuffer(stream) {
  * and hands the result to IntakeService. Runs inside the intake service for local work
  * (INTAKE_RUN_WORKER=true) or as its own process (npm run worker) — several workers can share
  * the queue (Postgres SKIP LOCKED).
+ * `jev` (optional, see ./extraction/jev.js) judges what the model read; null means no Jev.
  *
  * Failures are retried with backoff (1 min, 4 min, …) up to the job's maxAttempts; a model error
  * that retrying cannot fix (bad request) fails at once. When this month's spend reaches
  * `monthlyBudgetUsd`, the worker stops taking jobs until the next month (or a higher budget).
  */
 export class ExtractionWorker {
-    constructor({ repo, service, store, primary, escalation = null, checker, monthlyBudgetUsd = null, maxEscalationPages = 10, pollMs = 2000, staleMs = 10 * 60_000, clock = () => new Date(), logger = console }) {
-        Object.assign(this, { repo, service, store, primary, escalation, checker, monthlyBudgetUsd, maxEscalationPages, pollMs, staleMs, clock, logger });
+    constructor({ repo, service, store, primary, escalation = null, checker, jev = null, jevConfig = null, monthlyBudgetUsd = null, maxEscalationPages = 10, pollMs = 2000, staleMs = 10 * 60_000, clock = () => new Date(), logger = console }) {
+        Object.assign(this, { repo, service, store, primary, escalation, checker, jev, jevConfig, monthlyBudgetUsd, maxEscalationPages, pollMs, staleMs, clock, logger });
         this.workerId = `${hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
         this.running = false;
         this.budgetWarned = false;
@@ -45,7 +55,7 @@ export class ExtractionWorker {
             const buffer = await toBuffer(await this.store.getStream(doc.fileKey));
             const result = await runExtraction({
                 file: { buffer, mimeType: doc.mimeType, fileName: doc.fileName },
-                primary: this.primary, escalation: this.escalation, checker: this.checker,
+                primary: this.primary, escalation: this.escalation, checker: this.checker, jev: this.jev, jevConfig: this.jevConfig,
                 forceEscalation: !!job.options?.escalate, pages: doc.pages ?? null, maxEscalationPages: this.maxEscalationPages, clock: this.clock
             });
             await this.service.applyExtraction(job.documentId, result);
@@ -57,7 +67,7 @@ export class ExtractionWorker {
             await this.repo.updateJob(job.id, final
                 ? { status: 'failed', lastError: err.message, updatedAt: this.clock() }
                 : { status: 'queued', lastError: err.message, runAfter: new Date(this.clock().getTime() + delay), updatedAt: this.clock() });
-            await this.service.markExtractionFailed(job.documentId, { attempts: err.attempts || [], error: err.message, final }).catch(e => this.logger.error({ err: e.message }, 'could not record the failure'));
+            await this.service.markExtractionFailed(job.documentId, { attempts: err.attempts || [], error: readingError(err, final), detail: err.message, final }).catch(e => this.logger.error({ err: e.message }, 'could not record the failure'));
         }
         return true;
     }
