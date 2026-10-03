@@ -2,6 +2,7 @@ import { docType } from '../doc-types.js';
 import { normalize, occursIn } from './normalize.js';
 import { PROMPT_VERSION } from './prompt.js';
 import { costUsd } from './pricing.js';
+import { crossCheck } from './crosscheck.js';
 
 /** A field's flag for the review screen, from its checks. */
 export function flagOf(row) {
@@ -127,10 +128,13 @@ async function evaluate(answer, model, checker) {
  * is configured and the document is not too long — a second reading, merged field by field with
  * the first (see mergeRows). The longer transcription is kept.
  *
+ * Finally, with a judge (`jev`), the fields are cross-checked against the transcription (see
+ * ./crosscheck.js); its call is one more attempt, and a failure never fails the extraction.
+ *
  * Returns { attempts, answer, rows, notes, escalated } or throws the primary's error (so the job
  * can be retried) with the failed attempt attached.
  */
-export async function runExtraction({ file, primary, escalation = null, checker, forceEscalation = false, pages = null, maxEscalationPages = Infinity, clock = () => new Date() }) {
+export async function runExtraction({ file, primary, escalation = null, checker, jev = null, jevConfig = null, forceEscalation = false, pages = null, maxEscalationPages = Infinity, clock = () => new Date() }) {
     const attempts = [];
     const first = await attempt(forceEscalation && escalation ? escalation : primary, file, forceEscalation && escalation ? 'escalation' : 'primary', clock);
     attempts.push(first);
@@ -164,6 +168,12 @@ export async function runExtraction({ file, primary, escalation = null, checker,
                 answer = { ...(answer.docType === 'unknown' ? second.answer : answer), pages: pagesKept };
             }
         }
+    }
+    if (jev) {
+        const x = await crossCheck({ jev, answer, rows, flagAt: jevConfig?.flagAt ?? 0.5, clock });
+        if (x.attempt) attempts.push(x.attempt);
+        if (x.note) notes.push(x.note);
+        rows.forEach(r => { r.flag = flagOf(r); });
     }
     return { attempts, answer, rows, notes, escalated };
 }

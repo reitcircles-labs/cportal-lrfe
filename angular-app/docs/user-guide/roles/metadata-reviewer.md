@@ -55,6 +55,13 @@ Why a field is flagged, and what to do:
 | "Diagram A 412/2007 is not in the EDRMS yet" | Same, for the SG diagram | Information only; file 03 before 04 and it disappears |
 | "A Namibian ID number has 11 digits; this has 10" | The value cannot be a valid ID | Correct it from the scan (see sample 05) |
 | "*T …* is already filed as EDR-NA-…" (**· conflict**) | This deed is already in the EDRMS | Do not file a duplicate: **Reject** it, reason "Duplicate of EDR-NA-…" |
+| "May describe another party or item than this field asks for" | An automatic check thinks the value belongs to someone or something else in the document, e.g. the deceased's marital regime in the heirs' field | Read the scan: correct the value if it belongs to someone else, otherwise accept it |
+| "Could not be confirmed in the document text" | The automatic check did not find this value for this field in the text | Compare with the scan; correct or accept |
+| "The document text seems to contain this" (on an empty required field) | The value may be in the document after all | Look for it on the scan and type it in |
+
+The automatic checks are switched on per system; where they are off, these three messages do not
+appear. A document that could not be checked shows the note "Automatic cross-check unavailable for
+this document" and is reviewed as usual.
 
 ## Correct a value before filing (sample 05)
 

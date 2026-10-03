@@ -159,7 +159,8 @@ export class IntakeService {
             const extractionId = randomUUID();
             await this.repo.addExtraction({ id: extractionId, documentId: id, role: a.role, ok: a.ok, provider: a.provider, model: a.model, promptVersion: a.promptVersion, answer: a.answer ?? null, usage: a.usage, costUsd: a.costUsd, durationMs: a.durationMs, error: a.error ?? null, createdAt: a.at });
             cost += a.costUsd || 0;
-            if (a.ok) latest = extractionId;
+            // the reading the fields come from (the cross-check call judges it, it does not read)
+            if (a.ok && a.role !== 'crosscheck') latest = extractionId;
         }
         const updated = await this.save(d, {
             status: 'ready', docType: answer.docType, docTypeReason: answer.docTypeReason, languages: answer.languages, handwritingPresent: answer.handwritingPresent,
@@ -255,8 +256,9 @@ export class IntakeService {
                 Object.assign(row, { value: n.value, normalized: n.normalized, status: 'edited' });
                 row.checks = [...n.checks];
                 if (!n.value && def.required) row.checks.push({ level: 'warn', code: 'missing', message: 'Required field is empty' });
-                // the evidence and "models disagree" notes were about the old value
+                // the evidence, "models disagree" and cross-check notes were about the old value
                 row.alt = null;
+                delete row.xcheck;
             }
             await this.recheck(d.docType, rows);
             d = await this.save(d, { fields: rows });

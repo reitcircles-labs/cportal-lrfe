@@ -51,7 +51,7 @@ export function defineModels(sequelize) {
     const Extraction = sequelize.define('extraction', {
         id: { type: DataTypes.UUID, primaryKey: true },
         documentId: { type: DataTypes.UUID, allowNull: false },
-        role: { type: DataTypes.ENUM('primary', 'escalation'), allowNull: false },
+        role: { type: DataTypes.ENUM('primary', 'escalation', 'crosscheck'), allowNull: false },
         ok: { type: DataTypes.BOOLEAN, allowNull: false },
         provider: { type: DataTypes.STRING, allowNull: false },
         model: { type: DataTypes.STRING, allowNull: false },

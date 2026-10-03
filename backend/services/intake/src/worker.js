@@ -46,7 +46,7 @@ export class ExtractionWorker {
             const buffer = await toBuffer(await this.store.getStream(doc.fileKey));
             const result = await runExtraction({
                 file: { buffer, mimeType: doc.mimeType, fileName: doc.fileName },
-                primary: this.primary, escalation: this.escalation, checker: this.checker,
+                primary: this.primary, escalation: this.escalation, checker: this.checker, jev: this.jev, jevConfig: this.jevConfig,
                 forceEscalation: !!job.options?.escalate, pages: doc.pages ?? null, maxEscalationPages: this.maxEscalationPages, clock: this.clock
             });
             await this.service.applyExtraction(job.documentId, result);

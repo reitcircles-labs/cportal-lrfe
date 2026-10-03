@@ -48,9 +48,10 @@ export const injectFetch = (app) => async (url, { method, headers, body }) => {
 
 /**
  * Intake + worker + a real in-process edrms. `respond` scripts the model's answer per call
- * (default: the demo deed); `escalation` optionally scripts a second model.
+ * (default: the demo deed); `escalation` optionally scripts a second model; `jev` an optional
+ * cross-check judge (e.g. createFakeJev).
  */
-export async function makeIntake({ respond, escalation, budgetUsd = null } = {}) {
+export async function makeIntake({ respond, escalation, budgetUsd = null, jev = null, jevConfig = null } = {}) {
     const clock = makeClock();
     const edrmsService = new EdrmsService({ repo: edrmsRepo(), store: createMemoryStore(), events: createEventBus({ driver: 'memory', source: 'edrms' }), clock });
     const edrmsApp = await buildEdrms({ service: edrmsService, jwtSecret: SECRET });
@@ -67,7 +68,7 @@ export async function makeIntake({ respond, escalation, budgetUsd = null } = {})
     const calls = [];
     const primary = createMockProvider({ model: 'gemini-3.1-flash-lite', respond: async (f) => { calls.push(['primary', f.fileName]); return respond ? respond(f, calls.length) : answer(); } });
     const esc = escalation ? createMockProvider({ model: 'gemini-3.1-pro-preview', respond: async (f) => { calls.push(['escalation', f.fileName]); return escalation(f); } }) : null;
-    const worker = new ExtractionWorker({ repo, service, store, primary, escalation: esc, checker, clock, monthlyBudgetUsd: budgetUsd, logger: { warn() {}, error() {}, info() {} } });
+    const worker = new ExtractionWorker({ repo, service, store, primary, escalation: esc, checker, jev, jevConfig, clock, monthlyBudgetUsd: budgetUsd, logger: { warn() {}, error() {}, info() {} } });
 
     const batch = await service.createBatch({ source: 'Vault 3 · T-series 2008' }, actor(users.scan));
     /** Capture a file and run the worker until the queue is empty. */
