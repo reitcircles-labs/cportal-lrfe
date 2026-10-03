@@ -174,13 +174,14 @@ export class IntakeService {
         return updated;
     }
 
-    async markExtractionFailed(id, { attempts = [], error, final }) {
+    /** `error` is shown on screen (neutral); `detail` (the raw error) only goes to the trail. */
+    async markExtractionFailed(id, { attempts = [], error, detail = error, final }) {
         const d = await this.requireDocument(id);
         for (const a of attempts) {
             await this.repo.addExtraction({ id: randomUUID(), documentId: id, role: a.role, ok: false, provider: a.provider, model: a.model, promptVersion: a.promptVersion, answer: null, usage: null, costUsd: null, durationMs: null, error: a.error, createdAt: a.at });
         }
         await this.save(d, { status: final ? 'failed' : 'queued', extractionError: error });
-        await this.event(id, final ? 'extraction_failed' : 'extraction_retry', SYSTEM, { detail: error });
+        await this.event(id, final ? 'extraction_failed' : 'extraction_retry', SYSTEM, { detail });
     }
 
     // ---------------------------------------------------------------- reading

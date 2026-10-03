@@ -76,7 +76,8 @@ const problems = (r) => r.checks.filter(c => c.level === 'error' || (c.level ===
  * Combine two readings field by field; neither is simply trusted. Agreement keeps the value.
  * On disagreement the reading with fewer problems (format errors, missing evidence, empty form
  * lines) wins — the second model on a tie — and the other reading is kept as `alt`. A value only
- * one model found is kept and flagged.
+ * one model found is kept and flagged. Messages say "first/second reading", never the model: the
+ * screen shows them as they are (`alt.model` stays for the backend).
  */
 export function mergeRows(a, b, { firstModel, secondModel }) {
     const keys = [...new Set([...b.map(r => r.k), ...a.map(r => r.k)])];
@@ -86,17 +87,17 @@ export function mergeRows(a, b, { firstModel, secondModel }) {
         if (x?.value && y?.value) {
             if (x.value === y.value) return y;
             const firstWins = problems(x) < problems(y);
-            const [win, lose, loseModel] = firstWins ? [x, y, secondModel] : [y, x, firstModel];
+            const [win, lose, loseModel, reading] = firstWins ? [x, y, secondModel, 'second'] : [y, x, firstModel, 'first'];
             const chosen = structuredClone(win);
-            chosen.checks.push({ level: 'warn', code: 'models_disagree', message: `${loseModel} read “${lose.value}”` });
-            chosen.alt = { model: loseModel, value: lose.value };
+            chosen.checks.push({ level: 'warn', code: 'models_disagree', message: `The ${reading} reading gave “${lose.value}”` });
+            chosen.alt = { model: loseModel, reading, value: lose.value };
             chosen.flag = flagOf(chosen);
             return chosen;
         }
         if (x?.value) {
             const kept = structuredClone(x);
             kept.checks = kept.checks.filter(c => c.code !== 'missing');
-            kept.checks.push({ level: 'warn', code: 'single_reading', message: `Only ${firstModel} found this; ${secondModel} did not` });
+            kept.checks.push({ level: 'warn', code: 'single_reading', message: 'Found by the first reading only' });
             kept.flag = flagOf(kept);
             return kept;
         }
@@ -112,7 +113,7 @@ async function attempt(provider, file, role, clock) {
         const r = await provider.extract(file);
         return { ok: true, role, provider: provider.name, model: r.model, promptVersion: PROMPT_VERSION, usage: r.usage, costUsd: costUsd(r.model, r.usage, { at }), durationMs: r.durationMs, answer: r.result, at };
     } catch (err) {
-        return { ok: false, role, provider: provider.name, model: provider.model, promptVersion: PROMPT_VERSION, usage: null, costUsd: null, durationMs: null, error: err.message, retryable: err.retryable !== false, at };
+        return { ok: false, role, provider: provider.name, model: provider.model, promptVersion: PROMPT_VERSION, usage: null, costUsd: null, durationMs: null, error: err.message, retryable: err.retryable !== false, ...(err.publicMessage ? { publicMessage: err.publicMessage } : {}), at };
     }
 }
 
@@ -141,6 +142,7 @@ export async function runExtraction({ file, primary, escalation = null, checker,
     if (!first.ok) {
         const err = new Error(first.error);
         err.retryable = first.retryable;
+        if (first.publicMessage) err.publicMessage = first.publicMessage;
         err.attempts = attempts;
         throw err;
     }
@@ -155,12 +157,14 @@ export async function runExtraction({ file, primary, escalation = null, checker,
     if (decision?.reason) {
         const second = await attempt(escalation, file, 'escalation', clock);
         attempts.push(second);
-        if (!second.ok) notes.push({ level: 'warn', code: 'escalation_failed', message: `Second reading failed (${second.error}); showing the first reading` });
+        // the error (with the model) is kept on the attempt; the note is shown on screen
+        if (!second.ok) notes.push({ level: 'warn', code: 'escalation_failed', message: 'Second reading failed; showing the first reading' });
         else {
             escalated = true;
-            notes.push({ level: 'info', code: 'escalated', message: `Also read by ${second.model} (${decision.reason}); the two readings are combined field by field` });
+            notes.push({ level: 'info', code: 'escalated', message: `Read a second time (${decision.reason}); the two readings are combined field by field` });
             if (second.answer.docType !== answer.docType && answer.docType !== 'unknown') {
-                notes.push({ level: 'warn', code: 'doctype_disagree', message: `${first.model} read this as ${answer.docType}, ${second.model} as ${second.answer.docType}; keeping ${answer.docType}` });
+                const label = (id) => docType(id)?.label || 'not recognised';
+                notes.push({ level: 'warn', code: 'doctype_disagree', message: `The two readings disagree on the document type (${label(answer.docType)} / ${label(second.answer.docType)}); keeping ${label(answer.docType)}` });
             } else {
                 const again = await evaluate(second.answer, second.model, checker);
                 rows = answer.docType === 'unknown' ? again.rows : mergeRows(rows, again.rows, { firstModel: first.model, secondModel: second.model });

@@ -1,6 +1,15 @@
 import { hostname } from 'node:os';
 import { runExtraction } from './extraction/pipeline.js';
 
+/**
+ * The reading error the screens show: never the model, provider or raw API message (those go to
+ * the log, the job and the stored attempt).
+ */
+export function readingError(err, final) {
+    if (err?.publicMessage) return err.publicMessage;
+    return final ? 'The document could not be read. Read it again, or reject it.' : 'Reading failed; it will be tried again automatically.';
+}
+
 async function toBuffer(stream) {
     const chunks = [];
     for await (const c of stream) chunks.push(c);
@@ -58,7 +67,7 @@ export class ExtractionWorker {
             await this.repo.updateJob(job.id, final
                 ? { status: 'failed', lastError: err.message, updatedAt: this.clock() }
                 : { status: 'queued', lastError: err.message, runAfter: new Date(this.clock().getTime() + delay), updatedAt: this.clock() });
-            await this.service.markExtractionFailed(job.documentId, { attempts: err.attempts || [], error: err.message, final }).catch(e => this.logger.error({ err: e.message }, 'could not record the failure'));
+            await this.service.markExtractionFailed(job.documentId, { attempts: err.attempts || [], error: readingError(err, final), detail: err.message, final }).catch(e => this.logger.error({ err: e.message }, 'could not record the failure'));
         }
         return true;
     }

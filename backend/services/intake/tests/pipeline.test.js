@@ -50,7 +50,8 @@ describe('extraction pipeline', () => {
         expect(r.attempts.map(x => [x.role, x.model])).to.deep.equal([['primary', 'gemini-3.1-flash-lite'], ['escalation', 'gemini-3.1-pro-preview']]);
         const id = row(r.rows, 'tee2Id');
         expect(id.value).to.equal('01112503790');
-        expect(id.alt).to.deep.equal({ model: 'gemini-3.1-flash-lite', value: '0111250379' });
+        expect(id.alt).to.deep.equal({ model: 'gemini-3.1-flash-lite', reading: 'first', value: '0111250379' });
+        expect(id.checks.find(c => c.code === 'models_disagree').message).to.equal('The first reading gave “0111250379”');
         expect(codes(id)).to.include('models_disagree');
         expect(id.flag).to.equal('check');
         expect(r.notes.map(n => n.code)).to.include('escalated');
@@ -74,7 +75,7 @@ describe('extraction pipeline', () => {
         expect(r.escalated).to.equal(true);
         const property = row(r.rows, 'property');
         expect(property.value).to.equal('Erf 1873, Klein Windhoek');                         // Pro's blank line lost
-        expect(property.alt).to.deep.equal({ model: 'gemini-3.1-pro-preview', value: 'Erf no. ________ Klein Windhoek' });
+        expect(property.alt).to.deep.equal({ model: 'gemini-3.1-pro-preview', reading: 'second', value: 'Erf no. ________ Klein Windhoek' });
         expect(row(r.rows, 'price')).to.include({ value: 'N$ 640 000,00', flag: 'check' });  // only Flash-Lite found it
         expect(codes(row(r.rows, 'price'))).to.include('single_reading');
         expect(row(r.rows, 'regDate').value).to.equal('14 March 2008');
@@ -262,5 +263,38 @@ describe('mock provider', () => {
         expect(result.docType).to.equal('sg_diagram');
         expect(result.fields.find(f => f.k === 'sgNo').value).to.equal('A 412/2007');
         expect(result.fields.find(f => f.k === 'extent').value).to.equal('1 214 square metres');
+    });
+});
+
+describe('nothing the screen shows names a model or provider', () => {
+    const MODEL_NAMES = /gemini|flash|pro-preview|google|vertex|model/i;
+    const shown = (r) => JSON.stringify([r.rows.map(x => x.checks.map(c => c.message)), r.notes.map(n => n.message)]);
+
+    it('after a second reading: disagreements, single readings and the escalation note', async () => {
+        const weak = withField(answer(), 'tee2Id', '0111250379');
+        const strong = answer({ fields: DEMO_ANSWER.fields.filter(f => f.k !== 'conveyancer').map(f => (f.k === 'tee2Id' ? { ...f, value: '01112503790', evidence: f.evidence.replace(f.value, '01112503790') } : f)) });
+        const r = await runExtraction({
+            file, checker: noChecks,
+            primary: createMockProvider({ model: 'gemini-3.1-flash-lite', respond: () => weak }),
+            escalation: createMockProvider({ model: 'gemini-3.1-pro-preview', respond: () => strong })
+        });
+        expect(codes(row(r.rows, 'tee2Id'))).to.include('models_disagree');
+        expect(row(r.rows, 'conveyancer').checks.find(c => c.code === 'single_reading').message).to.equal('Found by the first reading only');
+        expect(r.notes.find(n => n.code === 'escalated').message).to.match(/^Read a second time \(/);
+        expect(shown(r)).not.to.match(MODEL_NAMES);
+    });
+
+    it('when the second reading fails, or the readings disagree on the type', async () => {
+        const weak = withField(answer(), 'tee2Id', '0111250379');
+        const failing = { name: 'gemini', model: 'gemini-3.1-pro-preview', extract: async () => { throw new Error('gemini-3.1-pro-preview call failed: 500 INTERNAL'); } };
+        const r1 = await runExtraction({ file, checker: noChecks, primary: createMockProvider({ respond: () => weak }), escalation: failing });
+        expect(r1.notes.find(n => n.code === 'escalation_failed').message).to.equal('Second reading failed; showing the first reading');
+        expect(r1.attempts[1].error).to.contain('gemini-3.1-pro-preview');          // kept for the backend
+        expect(shown(r1)).not.to.match(MODEL_NAMES);
+
+        const other = answer({ docType: 'mortgage_bond' });
+        const r2 = await runExtraction({ file, checker: noChecks, primary: createMockProvider({ respond: () => weak }), escalation: createMockProvider({ model: 'gemini-3.1-pro-preview', respond: () => other }) });
+        expect(r2.notes.find(n => n.code === 'doctype_disagree').message).to.equal('The two readings disagree on the document type (Deed of transfer / Mortgage bond); keeping Deed of transfer');
+        expect(shown(r2)).not.to.match(MODEL_NAMES);
     });
 });

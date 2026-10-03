@@ -165,7 +165,7 @@ const LINK_MAX_AGE_MS = 240_000;
                           @if (f.status === 'edited' && f.extracted !== null && f.extracted !== f.value) { <div class="small muted">AI read “{{ f.extracted }}”</div> }
                           @for (c of f.checks; track $index) { <div class="small chk" [class.err]="c.level === 'error'" [class.warn]="c.level === 'warn'">{{ c.message }}</div> }
                           @if (f.alt; as a) {
-                            <div class="small row" style="gap:8px">{{ a.model }} read “{{ a.value }}”
+                            <div class="small row" style="gap:8px">{{ a.reading === 'first' ? 'First' : a.reading === 'second' ? 'Second' : 'Other' }} reading: “{{ a.value }}”
                               @if (editable()) { <button class="btn btn-ghost small" (click)="save(f, a.value); $event.stopPropagation()">Use this reading</button> }</div>
                           }
                         </div>

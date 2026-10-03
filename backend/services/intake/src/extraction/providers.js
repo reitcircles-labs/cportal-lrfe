@@ -10,10 +10,12 @@ import { buildPrompt, buildResponseSchema } from './prompt.js';
  */
 
 export class ExtractionError extends AppError {
-    constructor(message, { retryable = true, cause } = {}) {
+    /** `publicMessage`: what the screens may show (no model or provider names); see readingError(). */
+    constructor(message, { retryable = true, cause, publicMessage } = {}) {
         super(502, message);
         this.retryable = retryable;
         if (cause) this.cause = cause;
+        if (publicMessage) this.publicMessage = publicMessage;
     }
 }
 
@@ -43,7 +45,7 @@ export function createGeminiProvider({
             try {
                 let filePart;
                 if (buffer.length <= INLINE_LIMIT) filePart = { inlineData: { mimeType, data: buffer.toString('base64') } };
-                else if (vertex) throw new ExtractionError('Files over 15 MB need Cloud Storage input on Vertex AI (not implemented yet)', { retryable: false });
+                else if (vertex) throw new ExtractionError('Files over 15 MB need Cloud Storage input on Vertex AI (not implemented yet)', { retryable: false, publicMessage: 'The file is too large to be read automatically (over 15 MB)' });
                 else {
                     uploaded = await ai.files.upload({ file: new Blob([buffer], { type: mimeType }), config: { mimeType, displayName: fileName } });
                     filePart = { fileData: { fileUri: uploaded.uri, mimeType } };
