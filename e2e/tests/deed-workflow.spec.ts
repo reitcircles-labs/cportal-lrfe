@@ -67,8 +67,10 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await page.getByRole('button', { name: 'New batch' }).click();
         await page.getByLabel('Source of the new batch').fill(source);
         await page.getByRole('button', { name: 'Create batch' }).click();
-        await expect(page.locator('.card-title')).toHaveText(/^WDH-B\d+$/);
-        batchId = (await page.locator('.card-title').textContent())!.trim();
+        // the card of our batch (another test's batch may be on screen a moment before)
+        const card = page.locator('.blueprint', { hasText: source }).locator('.card-title');
+        await expect(card).toHaveText(/^WDH-B\d+$/);
+        batchId = (await card.textContent())!.trim();
 
         await page.locator('label.drop input[type=file]').setInputFiles({ name: fileName, mimeType: 'application/pdf', buffer: await sampleDeedPdf(browser) });
         await expect(page.getByText('Queued for reading')).toBeVisible();
@@ -167,7 +169,8 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
     });
 
     await test.step(`second reviewer ${APPROVER.email} approves it from the task inbox`, async () => {
-        const page = await as(browser, APPROVER.email, '/verify');
+        // (Documents, not Verify: opening Verify takes the first document in the queue for review)
+        const page = await as(browser, APPROVER.email, '/documents');
         await page.getByRole('button', { name: 'Tasks' }).click();
         await page.getByRole('menuitem', { name: new RegExp(`Approve change to ${edrmsNo}`) }).click();
         const dialog = page.locator('.dialog');

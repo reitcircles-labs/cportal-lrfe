@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { runExtraction, buildRows } from '../src/extraction/pipeline.js';
-import { createMockProvider, createGeminiProvider, sanitize, DEMO_ANSWER } from '../src/extraction/providers.js';
+import { createMockProvider, createGeminiProvider, sanitize, DEMO_ANSWER, mockAnswer } from '../src/extraction/providers.js';
 import { createChecker, noChecks } from '../src/extraction/checks.js';
 import { answer, withField } from './helpers.js';
 
@@ -244,5 +244,16 @@ describe('cross-document checks', () => {
         const rows = rowsFor(answer());
         await createChecker({ edrms: { async lookupRef() { throw new Error('ECONNREFUSED'); } } }).check('deed_of_transfer', rows);
         expect(codes(row(rows, 'deedNo'))).to.include('crosscheck_unavailable');
+    });
+});
+
+describe('mock provider', () => {
+    it('reads the deed number from the file name when it carries one, else answers T 2210/2008', async () => {
+        const mock = createMockProvider();
+        const other = (await mock.extract({ fileName: 'deed-T4821-2008-ab12.pdf' })).result;
+        expect(other.fields.find(f => f.k === 'deedNo')).to.include({ value: 'T 4821/2008', evidence: 'DEED OF TRANSFER No. T 4821/2008' });
+        expect(other.pages[0].text).to.include('DEED OF TRANSFER No. T 4821/2008');
+        expect(other.fields.find(f => f.k === 'priorTitle').value).to.equal('T 1502/1996');
+        expect(mockAnswer({ fileName: 'scan-0001.pdf' })).to.equal(DEMO_ANSWER);
     });
 });

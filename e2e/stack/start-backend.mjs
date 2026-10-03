@@ -8,10 +8,15 @@
  *
  * Each service runs in its own empty folder under .stack/, so it does not read the developer's
  * backend/services/<name>/.env: the tests never touch a real database, bucket, AI or mail server.
+ *
+ * E2E_DB=postgres (npm run test:postgres) runs the same services on PostgreSQL instead of memory,
+ * with documents stored as files: a private, throwaway PostgreSQL instance is created under
+ * .stack/pg with the server binaries already installed on the machine (PG_BIN, or the newest
+ * /usr/lib/postgresql/<version>/bin), on its own port, TCP only, and removed with the stack.
  * The gateway starts last, once the others answer /health, so "gateway up" means "stack ready".
  */
-import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { connect } from 'node:net';
 import { join } from 'node:path';
 import { BACKEND_DIR, DEMO_PASSWORD, MAIL_DIR, PORTS, STACK_DIR, WEB_URL } from './config.mjs';
@@ -33,7 +38,46 @@ const COMMON = {
     COOKIE_SECURE: 'false'
 };
 const SERVICES = ['identity', 'edrms', 'bpm', 'intake'];
+const POSTGRES = process.env.E2E_DB === 'postgres';
+const pgData = join(STACK_DIR, 'pg');
+if (POSTGRES) {
+    Object.assign(COMMON, {
+        IDENTITY_STORE: 'postgres', EDRMS_STORE: 'postgres', BPM_STORE: 'postgres', INTAKE_STORE: 'postgres',
+        DB_CONNECTION_STRING: `postgres://lrfe@127.0.0.1:${PORTS.postgres}/e2e`, DB_SYNC: 'true',
+        EDRMS_STORAGE: 'local', EDRMS_LOCAL_DIR: join(STACK_DIR, 'files', 'edrms'),
+        INTAKE_STORAGE: 'local', INTAKE_LOCAL_DIR: join(STACK_DIR, 'files', 'intake')
+    });
+}
 
+/** Directory with initdb/pg_ctl/psql: PG_BIN, or the newest /usr/lib/postgresql/<version>/bin. */
+function pgBin() {
+    if (process.env.PG_BIN) return process.env.PG_BIN;
+    const root = '/usr/lib/postgresql';
+    const versions = existsSync(root) ? readdirSync(root).filter(v => existsSync(join(root, v, 'bin', 'initdb'))).sort((a, b) => Number(b) - Number(a)) : [];
+    if (!versions.length) throw new Error('E2E_DB=postgres needs PostgreSQL server binaries: install postgresql, or set PG_BIN to the folder with initdb and pg_ctl');
+    return join(root, versions[0], 'bin');
+}
+
+/** A fresh PostgreSQL instance for this run only, with an empty database `e2e`. */
+function startPostgres() {
+    const bin = pgBin();
+    const run = (cmd, args) => execFileSync(join(bin, cmd), args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    run('initdb', ['-D', pgData, '-U', 'lrfe', '--auth=trust', '-E', 'UTF8', '--no-locale']);
+    // TCP only (-k ''): a socket path under .stack/ can exceed the 107-byte limit; no fsync: data is thrown away
+    run('pg_ctl', ['-D', pgData, '-o', `-p ${PORTS.postgres} -h 127.0.0.1 -k '' -c fsync=off -c synchronous_commit=off`, '-l', join(STACK_DIR, 'pg.log'), '-w', 'start']);
+    run('psql', ['-h', '127.0.0.1', '-p', String(PORTS.postgres), '-U', 'lrfe', '-d', 'postgres', '-qc', 'CREATE DATABASE e2e']);
+    console.log(`e2e PostgreSQL ${run('pg_ctl', ['--version']).toString().trim().replace(/^pg_ctl \(PostgreSQL\) /, '')} on port ${PORTS.postgres}`);
+}
+
+function stopPostgres() {
+    if (!POSTGRES || !existsSync(join(pgData, 'postmaster.pid'))) return;
+    try { execFileSync(join(pgBin(), 'pg_ctl'), ['-D', pgData, '-m', 'fast', '-w', 'stop'], { stdio: 'ignore' }); } catch { /* already gone */ }
+}
+
+// A PostgreSQL left running by an interrupted run would keep its port: stop it before clearing.
+if (existsSync(join(STACK_DIR, 'pg', 'postmaster.pid'))) {
+    try { execFileSync(join(pgBin(), 'pg_ctl'), ['-D', join(STACK_DIR, 'pg'), '-m', 'immediate', '-w', 'stop'], { stdio: 'ignore' }); } catch { /* not running */ }
+}
 rmSync(STACK_DIR, { recursive: true, force: true });
 mkdirSync(MAIL_DIR, { recursive: true });
 
@@ -74,6 +118,7 @@ function stop(code = 0) {
     if (stopping) return;
     stopping = true;
     for (const c of children) c.kill('SIGTERM');
+    stopPostgres();
     setTimeout(() => { for (const c of children) c.kill('SIGKILL'); process.exit(code); }, 5000).unref();
     Promise.all(children.map(c => c.exitCode !== null ? null : new Promise(r => c.once('exit', r)))).then(() => process.exit(code));
 }
@@ -112,6 +157,13 @@ async function waitPort(port, timeoutMs = 120_000) {
     throw new Error(`nothing listening on port ${port} after ${timeoutMs / 1000}s`);
 }
 
+try {
+    if (POSTGRES) startPostgres();
+} catch (err) {
+    console.error(`could not start PostgreSQL: ${err.stderr?.toString().trim() || err.message}`);
+    stopPostgres();
+    process.exit(1);
+}
 startNats();
 try {
     await waitPort(PORTS.nats);   // the first run downloads nats-server, hence the long wait

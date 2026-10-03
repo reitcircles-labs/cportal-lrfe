@@ -31,7 +31,9 @@ export default defineConfig({
             cwd: E2E_DIR,
             url: `${GATEWAY_URL}/health`,
             reuseExistingServer: reuse,
-            timeout: 90_000,
+            timeout: 120_000,
+            // let it stop the services and its PostgreSQL (E2E_DB=postgres), which runs detached
+            gracefulShutdown: { signal: 'SIGTERM', timeout: 15_000 },
             stdout: 'pipe'
         },
         {

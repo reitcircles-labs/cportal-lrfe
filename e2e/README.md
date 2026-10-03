@@ -17,7 +17,8 @@ npm run install-browser     # downloads Playwright's Chromium (see "Ubuntu 20.04
 Then:
 
 ```bash
-npm test                    # starts the stack, runs every test, stops the stack (about a minute)
+npm test                    # starts the stack, runs every test, stops the stack (about two minutes)
+npm run test:postgres       # the same on PostgreSQL instead of memory (see "On PostgreSQL")
 npm run report              # opens the HTML report of the last run
 npx playwright test tests/sign-in.spec.ts       # one file
 npx playwright test -g "rev \(a.mwandingi\)"    # tests whose title matches
@@ -68,6 +69,20 @@ Scroll the element that matters into view first (`locator.scrollIntoViewIfNeeded
 screenshots come out garbled because the app's sidebar and top bar are fixed. The screens show only
 the test stack's fictitious data.
 
+## On PostgreSQL
+
+`npm run test:postgres` (or `E2E_DB=postgres` with any Playwright command) runs the same services on
+PostgreSQL, with documents stored as files, instead of in memory. The stack creates a private,
+throwaway PostgreSQL instance under `.stack/pg` with the server binaries already on the machine
+(`PG_BIN`, or the newest `/usr/lib/postgresql/<version>/bin`), on port 3606, TCP only, and stops and
+removes it at the end. It never touches another database on the machine. No Docker needed.
+
+## In CI
+
+`.github/workflows/tests.yml` runs the backend unit tests, the API docs check and this suite on
+every pull request and push to main; nightly (01:00 UTC) and on demand it also runs the suite on
+PostgreSQL. A failed run keeps the HTML report and the screenshots, videos and traces as artifacts.
+
 ## What the stack is
 
 `stack/start-backend.mjs` starts the five services with in-memory stores, the AI replaced by its
@@ -87,6 +102,7 @@ so it does **not** read your `backend/services/<name>/.env`. Playwright also sta
 | `tests/api-by-role.spec.ts` | Each role × each protected endpoint, at the API: refused with 403 without the permission, let through with it; 401 without a token; service-only endpoints refuse user tokens |
 | `tests/deed-workflow.spec.ts` | One deed from scan to sealed record, passed between people: the scan operator uploads it, a reviewer corrects a field, accepts the rest and files it, the records officer sees it (without audit or correction rights), the auditor checks its integrity, a reviewer requests a correction, a second reviewer approves it from the task inbox (the requester does not get the task), and the auditor checks version 2.0 |
 | `tests/administration.spec.ts` | As the system administrator: add, edit, suspend and reactivate an office; invite a user who activates the account from the email (read from `.stack/mail/`) and signs in for the first time; role changes decide what the user can open; a duty conflict is flagged before and after saving; a suspended user is signed out and refused until reactivated; policies and the permission matrix are saved, take effect and are put back. Each checked in the access log. |
+| `tests/edge-cases.spec.ts` | The less travelled paths: a reviewer rejects a document (the scan operator sees why); two reviewers on one document (the second can look, not change, until the first leaves); a correction rejected by the approver (reason required, record unchanged) or withdrawn by the requester; a TIFF refused at capture; the same scan captured twice; a deed already in the EDRMS flagged and refused; the service refusing to file an unreviewed document |
 
 Land records (`#/link`) and Audit (`#/audit`) still show demo data, so the workflow stops at the
 EDRMS: linking the document into a land record and the auditor's sign-off follow when those
@@ -126,6 +142,10 @@ writes only with roles that must be refused, so it leaves the stack's data as it
 - Don't wait with `waitForLoadState('networkidle')`: a scan shown in the PDF viewer is a request that
   never finishes in the headless browser. Use `trackApi(page)` from `support/api-idle.ts`, which
   waits for the app's API calls only.
+- A test that needs a document at a later step gets one from `support/intake.ts`:
+  `readyDocument()` (read by the canned AI, waiting for review) or `filedDocument()` (in the EDRMS).
+  Each gets its own deed number (`sampleDeed()`): the EDRMS files each deed once, and the canned AI
+  reads the number from the file name (`deed-T4821-2008-….pdf`).
 - A test that needs a fresh user (so it does not change a demo user other tests rely on) creates one
   with `createUser(adminApi, roles)` from `support/admin.ts`: invited, activated from the email and
   enrolled in MFA through the API.

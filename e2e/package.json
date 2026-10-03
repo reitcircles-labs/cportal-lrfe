@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "report": "playwright show-report",
     "install-browser": "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu22.04-x64 playwright install chromium",
-    "evidence": "node stack/evidence.mjs"
+    "evidence": "node stack/evidence.mjs",
+    "test:postgres": "E2E_DB=postgres playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

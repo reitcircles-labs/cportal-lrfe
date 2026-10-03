@@ -4,6 +4,7 @@
  *
  *   npm run nats                 start it on its own (npm run dev starts it with the services)
  *   NATS_PORT=4223 npm run nats  another port
+ *   npm run nats -- --install    only download it (CI: the @lrfe/common tests then run against it)
  *
  * The first run downloads the official nats-server release for this machine into backend/.tools/
  * and checks it against the release's SHA-256 checksums; later runs start it straight away. It
@@ -66,6 +67,8 @@ if (!existsSync(binary)) {
         process.exit(1);
     }
 }
+
+if (process.argv.includes('--install')) process.exit(0);
 
 mkdirSync(storeDir, { recursive: true });
 const args = ['-a', '127.0.0.1', '-p', String(port), '-js', '-sd', storeDir, '-n', 'lrfe-dev'];

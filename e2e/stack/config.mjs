@@ -21,6 +21,7 @@ export const PORTS = {
     bpm: apiBase + 3,
     intake: apiBase + 4,
     nats: apiBase + 5,
+    postgres: apiBase + 6,
     web: Number(process.env.E2E_WEB_PORT || 4300)
 };
 export const WEB_URL = `http://localhost:${PORTS.web}`;

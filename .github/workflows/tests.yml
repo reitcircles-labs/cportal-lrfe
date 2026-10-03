@@ -1,0 +1,94 @@
+# Backend unit tests and the end-to-end browser tests (e2e/README.md).
+#
+#   every pull request and push to main   backend tests, API docs check, e2e on the in-memory stack
+#   nightly, and on demand (Run workflow)  the same e2e suite on PostgreSQL as well
+#
+# On failure, the Playwright HTML report and test-results (screenshots, videos, traces) are kept as
+# artifacts of the run for 14 days.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 1 * * *'   # 01:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: NATS server, for the event-bus tests
+        run: npm run nats -- --install
+      - run: npm test
+      - name: API docs are up to date
+        run: npm run docs:check
+
+  e2e:
+    name: e2e (${{ matrix.db }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # PostgreSQL nightly and on demand only: it repeats the whole suite on a fresh database
+        db: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["memory","postgres"]' || '["memory"]') }}
+    env:
+      E2E_DB: ${{ matrix.db }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            angular-app/package-lock.json
+            e2e/package-lock.json
+      - name: Install
+        run: |
+          npm ci --prefix backend
+          npm ci --prefix angular-app
+          npm ci --prefix e2e
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            backend/.tools
+          key: e2e-tools-${{ runner.os }}-${{ hashFiles('e2e/package-lock.json', 'backend/scripts/nats.js') }}
+      - name: Browser and NATS server
+        run: |
+          (cd e2e && npx playwright install --with-deps chromium)
+          npm --prefix backend run nats -- --install
+      # The runner has PostgreSQL installed (not running); the test stack starts a private
+      # instance of it under e2e/.stack/ (see e2e/stack/start-backend.mjs).
+      - name: End-to-end tests
+        working-directory: e2e
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-${{ matrix.db }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 14
