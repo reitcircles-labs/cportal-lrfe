@@ -1,6 +1,6 @@
 # Inviting users and assigning roles
 
-*For administrators. Last checked against the app on 1 October 2026.*
+*For administrators. Last checked against the app on 3 October 2026.*
 
 Nobody can create their own account. An administrator **invites** each person by email and gives
 them one or more **roles**; the role decides what they can see and do. This guide explains how
@@ -73,7 +73,8 @@ administration rights.
 ## Suspending and reactivating
 
 - **Users** → the user → **Manage** → **Suspend**. They cannot sign in again, and an open session
-  ends within 15 minutes. Use this when someone leaves, or their access must stop.
+  ends at once: their next click takes them to the sign-in page. Use this when someone leaves, or
+  their access must stop.
 - **Reactivate** gives them back the same roles.
 - A user who lost their phone: **Reset MFA**; they scan a new QR code at their next sign-in.
 
@@ -113,8 +114,8 @@ address you can read.
 | 6 | Administrator | **Manage** → change the role to **Metadata reviewer** → **Save roles** | Roles saved |
 | 7 | New user | Sign out and in again (or wait up to 15 minutes) | The app opens on **Verify metadata**; the menu now also has Verify metadata and Land record. Capture is still listed (reviewers may look) but uploading is disabled |
 | 8 | Administrator | **Manage** → tick **Metadata reviewer** and **Auditor · read-only** → **Save roles** | A duty-conflict warning: "Reviewers cannot audit documents they can file". Try **Cancel**, then save anyway |
-| 9 | Administrator | **Access log** | Entries for the invitation (invitation emailed), its acceptance, MFA enrolment, sign-ins, each role change and the conflict exception |
-| 10 | Administrator | **Manage → Suspend** | The test user cannot sign in, and an open session ends within 15 minutes; **Reactivate** restores them with the same roles |
+| 9 | Administrator | **Access log** | Entries for the invitation (invitation emailed), its acceptance, MFA enrolment, sign-ins, and each role change; the conflicting one ends with "duty conflict accepted: Reviewers cannot audit documents they can file" |
+| 10 | Administrator | **Manage → Suspend** | The test user cannot sign in, and their open session ends at once (their next click shows "Your session ended"); **Reactivate** restores them with the same roles |
 | 11 | Optional | Invite `info+lrtest2@…`, do not accept it, click **Resend invite** | A second email arrives; the link in the first one no longer works |
 
 ### If something does not work

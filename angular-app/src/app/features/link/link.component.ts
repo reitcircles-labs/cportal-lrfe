@@ -96,7 +96,7 @@ type SFilter = 'all' | 'draft' | 'scanned' | 'verified' | 'finalized';
                               <td><div class="dcell"><span class="di"><app-icon name="file" [size]="16" /></span><span class="stack" style="gap:0"><b class="num">{{ d.ref }}</b><span class="small muted">{{ d.title }}</span></span></div></td>
                               <td class="num">{{ year(d) }}</td>
                               <td style="font-size:13.5px;max-width:320px">{{ summary(d) }}</td>
-                              <td class="small muted num">{{ store.isFiled(d) ? d.edrms : '—' }}</td>
+                              <td class="small muted num">{{ store.isFiled(d) ? store.edrmsNo(d) : '—' }}</td>
                               <td><span class="tag" [class.tag-accent]="store.isFiled(d)" [class.tag-neutral]="!store.isFiled(d)">{{ store.isFiled(d) ? 'Filed' : 'In review' }}</span></td>
                               <td style="text-align:right;white-space:nowrap">
                                 <button class="btn btn-ghost btn-icon" title="View document" (click)="viewer.open('record', d.id, 0, r.id)"><app-icon name="eye" [size]="17" /></button>
@@ -343,6 +343,7 @@ export class LinkComponent {
 
   constructor() {
     this.route.queryParamMap.subscribe(p => { const r = p.get('record'); if (r) this.select(r); });
+    this.store.syncWithEdrms();   // Erf 1873's documents filed for real count as filed here
   }
 
   filters = computed(() => {

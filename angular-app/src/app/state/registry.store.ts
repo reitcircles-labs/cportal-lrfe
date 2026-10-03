@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { ToastService } from './toast.service';
 import { AuthService } from './auth.service';
+import { ApiService } from '../api/api.service';
 import { AuditEntry, FieldEdit, FieldStatus, LandDoc, LinkState, DocField } from '../data/models';
 import { DOCS, TOTAL, ROLE, hash, VIEWDOCS, ALL_DOCS, LAND_RECORDS, LandRecordRow, QUEUE } from '../data/mock-data';
 
@@ -29,6 +30,40 @@ export class RegistryStore {
   private clock = 0;
   private toast = inject(ToastService);
   private auth = inject(AuthService);
+  private api = inject(ApiService);
+
+  // ---------- bridge to the live EDRMS ----------
+  /** EDRMS numbers of demo documents that were filed for real (see syncWithEdrms). */
+  readonly realEdrms = signal<Record<string, string>>({});
+  private syncing: Promise<void> | null = null;
+
+  /**
+   * Erf 1873's documents (T 2210/2008, SG A 412/2007, T 4521/2019) count as filed once a reviewer
+   * has filed a document with the same reference in the live EDRMS (Capture → Verify), with the
+   * values the reviewer filed (e.g. a corrected ID number). Until the land-records service exists,
+   * this lets testers take the sample documents from upload to a finalized record. The rest of the
+   * Land record and Audit screens stays demo data.
+   */
+  syncWithEdrms(): Promise<void> {
+    return (this.syncing ??= (async () => {
+      for (const d of DOCS) {
+        if (this.filed()[d.id]) continue;
+        let doc: { edrmsNo: string; fields?: { k: string; v: string }[] };
+        try {
+          doc = await this.api.get('/documents/lookup', { instrumentRef: d.ref.replace(/^SG /, '') });
+        } catch { continue; }   // not filed (yet), or no access
+        for (const f of doc.fields ?? []) {
+          const demo = d.fields.find(x => x.k === f.k);
+          if (demo && f.v && f.v !== demo.v) this.fs.update(all => ({ ...all, [d.id]: { ...(all[d.id] || {}), [f.k]: { value: f.v, status: 'edited' } } }));
+        }
+        this.filed.update(m => ({ ...m, [d.id]: true }));
+        this.realEdrms.update(m => ({ ...m, [d.id]: doc.edrmsNo }));
+      }
+    })().finally(() => { this.syncing = null; }));
+  }
+
+  /** The document's EDRMS number: the live one if it was filed for real, else the demo's. */
+  edrmsNo(doc: LandDoc) { return this.realEdrms()[doc.id] ?? doc.edrms; }
 
   // ---------- land records (ERP) ----------
   readonly records = signal<LandRecordRow[]>(LAND_RECORDS);
