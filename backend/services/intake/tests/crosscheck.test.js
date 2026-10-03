@@ -137,3 +137,87 @@ describe('cross-check in the intake service', () => {
         expect(after.fields.filter(f => f.status === 'pending').map(f => f.k)).to.include('marital');
     });
 });
+
+describe('the cross-check decides the second reading', () => {
+    const MARRIED = 'married in community of property';
+    /** A first reading where many quotes are not on the page: 30%+ of fields "check" by the code rules. */
+    const sloppy = () => answer({ fields: answer().fields.map((f, i) => (i % 2 ? { ...f, evidence: `${f.value} (quoted from a page that says otherwise)` } : f)) });
+    const second = (a = answer()) => createMockProvider({ model: 'gemini-3.1-pro-preview', respond: () => ({ ...a, pages: [] }) });   // second readings do not transcribe
+    /** Doubts the deceased's marital regime in the heirs' field, as on sample 05, and picks "unmarried" when asked to choose. */
+    const doubtsMarried = (p = 0.9) => createFakeJev({ respond: ({ questions }) => ({
+        ...Object.fromEntries(Object.entries(questions)
+            .filter(([id, q]) => id === 'marital|wrongParty' && q.instructions.field?.value === MARRIED).map(([id]) => [id, p])),
+        ...('marital' in questions ? { marital: 'unmarried' } : {})
+    }) });
+    const roles = (r) => r.attempts.map(a => a.role);
+
+    it('without a judge, the 30% rule still sends a sloppy reading to the second model', async () => {
+        const r = await runExtraction({ file, primary: primary(sloppy()), escalation: second(), checker: noChecks });
+        expect(r.escalated).to.equal(true);
+    });
+
+    it('with a judge that finds nothing doubtful, the same reading is not read again', async () => {
+        const r = await runExtraction({ file, primary: primary(sloppy()), escalation: second(), checker: noChecks, jev: createFakeJev() });
+        expect(r.escalated).to.equal(false);
+        expect(roles(r)).to.deep.equal(['primary', 'crosscheck']);
+    });
+
+    it('a doubt from JEV_ESCALATE_AT on sends a clean-looking reading to the second model, saying why', async () => {
+        const r = await runExtraction({ file, primary: primary(), escalation: second(withField(answer(), 'marital', 'unmarried')), checker: noChecks, jev: doubtsMarried(), jevConfig: { flagAt: 0.5, escalateAt: 0.7 } });
+        expect(r.escalated).to.equal(true);
+        expect(r.notes.find(n => n.code === 'escalated').message).to.equal('Read a second time (Marital regime needed checking); the two readings are combined field by field');
+        const m = row(r.rows, 'marital');
+        expect(m.value).to.equal('unmarried');                          // the second reading's value has no doubt
+        expect(m.alt).to.include({ reading: 'first', value: MARRIED });
+        expect(roles(r)).to.deep.equal(['primary', 'crosscheck', 'escalation', 'crosscheck', 'crosscheck']);
+    });
+
+    it('a doubt below JEV_ESCALATE_AT only marks the field', async () => {
+        const r = await runExtraction({ file, primary: primary(), escalation: second(), checker: noChecks, jev: doubtsMarried(0.6), jevConfig: { flagAt: 0.5, escalateAt: 0.7 } });
+        expect(r.escalated).to.equal(false);
+        expect(row(r.rows, 'marital').flag).to.equal('check');
+    });
+
+    it('a format error still sends the reading to the second model', async () => {
+        const r = await runExtraction({ file, primary: primary(withField(answer(), 'tee2Id', '0111250379')), escalation: second(), checker: noChecks, jev: createFakeJev() });
+        expect(r.escalated).to.equal(true);
+        expect(r.notes.find(n => n.code === 'escalated').message).to.contain('1 field(s) failed format checks');
+    });
+
+    it('when the judge fails, the decision falls back to the 30% rule', async () => {
+        const jev = { name: 'typesafe', model: 'jev-latest', ask: async () => { throw new JevError('Jev answered 529'); } };
+        const r = await runExtraction({ file, primary: primary(sloppy()), escalation: second(), checker: noChecks, jev });
+        expect(r.escalated).to.equal(true);
+        expect(r.notes.filter(n => n.code === 'xcheck_unavailable')).to.have.length(1);
+    });
+
+    it('the second reading is cross-checked against the first transcription', async () => {
+        const jev = doubtsMarried();
+        await runExtraction({ file, primary: primary(), escalation: second(withField(answer(), 'marital', 'unmarried')), checker: noChecks, jev });
+        expect(jev.calls[1].state.document.pages[0].text).to.contain('T 2210/2008');
+    });
+
+    it('where the readings disagree, a confident choice decides which value is kept', async () => {
+        // Both readings look equally good to the code; by default the second would win
+        const jev = createFakeJev({ respond: ({ questions }) => ('marital' in questions ? { marital: MARRIED } : { 'deedNo|unsupported': 0.9 }) });
+        const r = await runExtraction({ file, primary: primary(), escalation: second(withField(answer(), 'marital', 'unmarried')), checker: noChecks, jev, jevConfig: { flagAt: 0.95, escalateAt: 0.7 } });
+        expect(r.escalated).to.equal(true);
+        const choiceCall = jev.calls[2];
+        expect(Object.keys(choiceCall.questions.marital.criteria)).to.deep.equal([MARRIED, 'unmarried', 'neither of these']);
+        const m = row(r.rows, 'marital');
+        expect(m.value).to.equal(MARRIED);
+        expect(m.alt).to.include({ reading: 'second', value: 'unmarried' });
+    });
+
+    it('an unsure choice is ignored, and the rules decide as before', async () => {
+        const jev = createFakeJev({ respond: ({ questions }) => ('marital' in questions ? { marital: { choice: MARRIED, confidence: 0.2 } } : { 'deedNo|unsupported': 0.9 }) });
+        const r = await runExtraction({ file, primary: primary(), escalation: second(withField(answer(), 'marital', 'unmarried')), checker: noChecks, jev, jevConfig: { flagAt: 0.95, escalateAt: 0.7 } });
+        expect(row(r.rows, 'marital').value).to.equal('unmarried');
+    });
+
+    it('names at most three fields in the reason', async () => {
+        const many = createFakeJev({ respond: ({ questions }) => Object.fromEntries(Object.keys(questions).filter(id => id.endsWith('|unsupported')).slice(0, 5).map(id => [id, 0.9])) });
+        const r = await runExtraction({ file, primary: primary(), escalation: second(), checker: noChecks, jev: many });
+        expect(r.notes.find(n => n.code === 'escalated').message).to.match(/^Read a second time \(Deed number, Registration date, Property description and 2 more needed checking\)/);
+    });
+});

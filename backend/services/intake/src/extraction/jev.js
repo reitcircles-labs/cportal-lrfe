@@ -96,7 +96,8 @@ export function createJevClient({
 /**
  * Deterministic stand-in (tests, CI, and JEV_PROVIDER=fake): no key, no network.
  * `respond({ state, questions })` returns answers by question id; questions it leaves out get the
- * defaults: noul 0.02 ("no"), choice the first option, score the first level.
+ * defaults: noul 0.02 ("no"), choice the first option (confidence 1, or `{ choice, confidence }`),
+ * score the first level.
  */
 export function createFakeJev({ model = 'fake-jev', respond } = {}) {
     const calls = [];
@@ -114,7 +115,7 @@ export function createFakeJev({ model = 'fake-jev', respond } = {}) {
                 else if (q.type === 'choice') {
                     const options = Object.keys(q.criteria);
                     const pick = typeof a === 'string' ? a : a?.choice ?? options[0];
-                    answers[id] = { type: 'choice', choice: pick, probabilities: Object.fromEntries(options.map(o => [o, o === pick ? 1 : 0])), confidence: 1 };
+                    answers[id] = { type: 'choice', choice: pick, probabilities: Object.fromEntries(options.map(o => [o, o === pick ? 1 : 0])), confidence: a?.confidence ?? 1 };
                 } else answers[id] = { type: 'score', score: a?.score ?? 0, probabilities: {}, confidence: 1 };
             }
             const tokens = Math.ceil(JSON.stringify({ state, questions }).length / 4);

@@ -267,6 +267,11 @@ upload ─▶ intake (staging store, job queue) ─▶ extraction worker ─▶ 
   (0.5) and `JEV_ESCALATE_AT` (0.7), provisional until measured. Enabled without a key, or when Jev
   fails or is slow, documents are handled exactly as without Jev. Jev runs in the US: real deed
   text needs data-protection approval first.
+  What it does (`src/extraction/crosscheck.js`): cross-checks each reading's fields against the
+  transcription (warning from `JEV_FLAG_AT`); decides the second reading (only for a format error,
+  an unrecognised type, or a doubt from `JEV_ESCALATE_AT`, instead of the 30% rule); where the two
+  readings disagree, picks the value the text states. Every call is stored as a `crosscheck`
+  extraction. Messages on screen never name Jev or a model.
 - **Worker** runs inside the service for local work, or alone (`npm run worker -w @lrfe/intake`,
   several in parallel — Postgres `SKIP LOCKED`). Retries with backoff; non-retryable errors fail at once.
 

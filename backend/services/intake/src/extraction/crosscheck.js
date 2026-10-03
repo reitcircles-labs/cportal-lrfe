@@ -1,6 +1,6 @@
 import { docType } from '../doc-types.js';
 import { costUsd } from './pricing.js';
-import { noul } from './jev.js';
+import { choice, noul } from './jev.js';
 
 /**
  * Automatic cross-check of extracted fields against the document text, by a judging model
@@ -116,3 +116,47 @@ export async function crossCheck({ jev, answer, rows, flagAt = 0.5, clock = () =
 }
 
 const round = (p) => Math.round((Number(p) || 0) * 1000) / 1000;
+
+// How concentrated the choice between two readings must be to decide it (else: fewer problems wins).
+// Provisional until measured (API-621).
+export const PREFER_CONFIDENCE = 0.5;
+const NEITHER = 'neither of these';
+
+/**
+ * Where two readings give different values for a field, ask which value the text states for it:
+ * one choice per field, the options being the two values themselves (so the answer can only be one
+ * of them) or "neither". Returns { prefer: Map k → 'first' | 'second', attempt } — fields without a
+ * confident answer are left out, and mergeRows falls back to counting problems.
+ */
+export async function preferReadings({ jev, typeId, first, second, pages, clock = () => new Date() }) {
+    const prefer = new Map();
+    const t = docType(typeId);
+    if (!jev || !t || !pages?.length) return { prefer, attempt: null };
+    const questions = {}, pairs = {};
+    for (const x of first) {
+        const y = second.find(r => r.k === x.k);
+        const def = t.fields.find(f => f.k === x.k);
+        if (!def || !x.value || !y?.value || x.value === y.value || x.value === NEITHER || y.value === NEITHER) continue;
+        pairs[x.k] = { first: x.value, second: y.value };
+        questions[x.k] = choice({
+            question: 'Which value does `document.pages` state for the field described by `field.label` and `field.meaning`?',
+            field: { label: def.label, meaning: def.desc }
+        }, { [x.value]: null, [y.value]: null, [NEITHER]: 'The text states neither value for this field' });
+    }
+    if (!Object.keys(questions).length) return { prefer, attempt: null };
+    const at = clock();
+    const base = { role: 'crosscheck', provider: jev.name, promptVersion: CROSSCHECK_VERSION, at };
+    let r;
+    try {
+        r = await jev.ask({ state: { document: { type: t.label, pages: statePages({ pages }, []) } }, questions });
+    } catch (err) {
+        return { prefer, attempt: { ...base, ok: false, model: jev.model, usage: null, costUsd: null, durationMs: null, error: err.message, retryable: err.retryable !== false } };
+    }
+    for (const [k, p] of Object.entries(pairs)) {
+        const a = r.answers[k];
+        if (!a || (a.confidence ?? 0) < PREFER_CONFIDENCE) continue;
+        if (a.choice === p.first) prefer.set(k, 'first');
+        else if (a.choice === p.second) prefer.set(k, 'second');
+    }
+    return { prefer, attempt: { ...base, ok: true, model: r.model, usage: r.usage, costUsd: costUsd(r.model, r.usage, { at }), durationMs: r.durationMs, answer: { answers: r.answers } } };
+}
