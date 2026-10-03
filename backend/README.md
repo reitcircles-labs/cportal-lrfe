@@ -257,6 +257,10 @@ upload ─▶ intake (staging store, job queue) ─▶ extraction worker ─▶ 
   Defaults: `gemini-3.1-flash-lite`, medium resolution, low thinking; escalation `gemini-3.1-pro-preview`.
 - **Provider** is swappable (`src/extraction/providers.js`): Gemini Developer API (`GEMINI_API_KEY`)
   or Vertex AI (`GEMINI_VERTEX=true`, project, region); `mock` needs no key and costs nothing (default).
+  **Check the connection** with the service's `.env`, no services or database involved:
+  `cd services/intake && node scripts/gemini-check.mjs --ping` (free), or without `--ping` to read
+  the testers' sample PDFs and compare every field with the expected values (about $0.02;
+  `--file scan.pdf` for any document, `--escalate`, `--model`; see the script's header).
 - **Worker** runs inside the service for local work, or alone (`npm run worker -w @lrfe/intake`,
   several in parallel — Postgres `SKIP LOCKED`). Retries with backoff; non-retryable errors fail at once.
 
