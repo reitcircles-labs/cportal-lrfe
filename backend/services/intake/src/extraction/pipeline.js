@@ -65,7 +65,7 @@ const listLabels = (rows) => rows.length <= 3 ? rows.map(r => r.label).join(', '
  * Not for long documents (`pages` over `maxPages`): a second reading re-sends every page, and costs
  * more than the first. The reviewer can still ask for one. The reason is shown on screen.
  */
-export function needsEscalation(answer, rows, { pages = null, maxPages = Infinity, judged = false, escalateAt = 0.7 } = {}) {
+export function needsEscalation(answer, rows, { pages = null, maxPages = Infinity, judged = false, escalateAt = 0.9 } = {}) {
     let reason = null;
     if (answer.docType === 'unknown') reason = 'Document type not recognised';
     else {
@@ -168,7 +168,7 @@ export async function runExtraction({ file, primary, escalation = null, checker,
     /** Cross-check one reading's rows against `transcript` (the first reading's, if the other has none). */
     const judge = async (rs, typeId, transcript) => {
         if (!jev) return false;
-        const x = await crossCheck({ jev, answer: { docType: typeId, pages: transcript }, rows: rs, flagAt: jevConfig?.flagAt ?? 0.5, clock });
+        const x = await crossCheck({ jev, answer: { docType: typeId, pages: transcript }, rows: rs, flagAt: jevConfig?.flagAt ?? 0.8, clock });
         if (x.attempt) attempts.push(x.attempt);
         if (x.note && !notes.some(n => n.code === x.note.code)) notes.push(x.note);
         rs.forEach(r => { r.flag = flagOf(r); });
@@ -176,7 +176,7 @@ export async function runExtraction({ file, primary, escalation = null, checker,
     };
     const judged = await judge(rows, answer.docType, answer.pages);
 
-    const decision = !forceEscalation && escalation ? needsEscalation(answer, rows, { pages, maxPages: maxEscalationPages, judged, escalateAt: jevConfig?.escalateAt ?? 0.7 }) : null;
+    const decision = !forceEscalation && escalation ? needsEscalation(answer, rows, { pages, maxPages: maxEscalationPages, judged, escalateAt: jevConfig?.escalateAt ?? 0.9 }) : null;
     let escalated = forceEscalation && !!escalation;
     if (decision?.skipped) notes.push({ level: 'info', code: 'escalation_skipped', message: decision.skipped });
     if (decision?.reason) {

@@ -122,10 +122,10 @@ describe('Jev settings', () => {
     afterEach(() => KEYS.forEach(k => (saved[k] === undefined ? delete process.env[k] : (process.env[k] = saved[k]))));
     const quiet = { warn() {} };
 
-    it('is off by default, with provisional thresholds', () => {
+    it('is off by default, with the measured thresholds', () => {
         const { jev, jevConfig } = jevFromEnv({ logger: quiet });
         expect(jev).to.equal(null);
-        expect(jevConfig).to.deep.equal({ flagAt: 0.5, escalateAt: 0.7 });
+        expect(jevConfig).to.deep.equal({ flagAt: 0.8, escalateAt: 0.9 });
     });
 
     it('stays off, with a warning, when enabled without a key', () => {

@@ -84,10 +84,11 @@ const probability = (name, fallback) => {
  * JEV_PROVIDER=fake answers from fixed rules (tests, demo stacks): nothing is sent anywhere.
  */
 export function jevFromEnv({ logger = console } = {}) {
-    // Thresholds on Jev's probabilities; provisional until measured on our documents (API-621)
+    // Thresholds on Jev's probabilities, from the measurement on the sample documents (API-621):
+    // planted mistakes scored ≥ 0.86, correct values ≤ 0.72. Check again on real documents.
     const jevConfig = {
-        flagAt: probability('JEV_FLAG_AT', 0.5),          // a field is marked "check" from here
-        escalateAt: probability('JEV_ESCALATE_AT', 0.7)    // the document gets the second reading from here
+        flagAt: probability('JEV_FLAG_AT', 0.8),          // a field is marked "check" from here
+        escalateAt: probability('JEV_ESCALATE_AT', 0.9)    // the document gets the second reading from here
     };
     if (!envBool('JEV_ENABLED', false)) return { jev: null, jevConfig };
     if (envOneOf('JEV_PROVIDER', ['typesafe', 'fake'], 'typesafe') === 'fake') return { jev: createFakeJev(), jevConfig };

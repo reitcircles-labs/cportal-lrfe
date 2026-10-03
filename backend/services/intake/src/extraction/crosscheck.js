@@ -86,7 +86,7 @@ export function statePages(answer, rows) {
  * Cross-check `rows` in place. Returns { attempt, note }: `attempt` is the model call to store with
  * the extraction (null when no call was made), `note` a document note when the check could not run.
  */
-export async function crossCheck({ jev, answer, rows, flagAt = 0.5, clock = () => new Date() }) {
+export async function crossCheck({ jev, answer, rows, flagAt = 0.8, clock = () => new Date() }) {
     if (!jev || !docType(answer.docType)) return { attempt: null, note: null };
     const questions = buildQuestions(answer.docType, rows);
     if (!Object.keys(questions).length) return { attempt: null, note: null };
@@ -118,7 +118,7 @@ export async function crossCheck({ jev, answer, rows, flagAt = 0.5, clock = () =
 const round = (p) => Math.round((Number(p) || 0) * 1000) / 1000;
 
 // How concentrated the choice between two readings must be to decide it (else: fewer problems wins).
-// Provisional until measured (API-621).
+// On the samples (API-621) right choices had confidence ≥ 0.97; one "neither" had 0.57.
 export const PREFER_CONFIDENCE = 0.5;
 const NEITHER = 'neither of these';
 

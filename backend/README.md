@@ -267,7 +267,8 @@ upload ─▶ intake (staging store, job queue) ─▶ extraction worker ─▶ 
 - **Jev** (TypeSafe, `src/extraction/jev.js`) can judge what Gemini read (epic API-618). Off by
   default: `JEV_ENABLED=true` with `TYPESAFE_API_KEY` (or `JEV_PROVIDER=fake`: fixed answers,
   nothing sent); `JEV_MODEL` (`jev-latest`), `JEV_TIMEOUT_MS` (5000), thresholds `JEV_FLAG_AT`
-  (0.5) and `JEV_ESCALATE_AT` (0.7), provisional until measured. Enabled without a key, or when Jev
+  (0.8) and `JEV_ESCALATE_AT` (0.9), measured on the sample documents with
+  `node scripts/jev-check.mjs` (API-621; check again on real documents). Enabled without a key, or when Jev
   fails or is slow, documents are handled exactly as without Jev. Jev runs in the US: real deed
   text needs data-protection approval first.
   What it does (`src/extraction/crosscheck.js`): cross-checks each reading's fields against the
