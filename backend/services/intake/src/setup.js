@@ -5,6 +5,7 @@ import { IntakeService } from './intake.service.js';
 import { createEdrmsClient } from './edrms-client.js';
 import { createChecker } from './extraction/checks.js';
 import { createGeminiProvider, createMockProvider } from './extraction/providers.js';
+import { createFakeJev, createJevClient } from './extraction/jev.js';
 import { ExtractionWorker } from './worker.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
@@ -54,6 +55,8 @@ export function setupFromEnv({ logger = console } = {}) {
         primary = createMockProvider();
     }
 
+    const { jev, jevConfig } = jevFromEnv({ logger });
+
     const service = new IntakeService({
         repo, store, edrms, checker,
         events: createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'intake', logger }),
@@ -61,10 +64,42 @@ export function setupFromEnv({ logger = console } = {}) {
     });
     const budget = env('EXTRACTION_MONTHLY_BUDGET_USD', '50');
     const worker = new ExtractionWorker({
-        repo, service, store, primary, escalation, checker, logger,
+        repo, service, store, primary, escalation, checker, logger, jev, jevConfig,
         monthlyBudgetUsd: budget === 'none' ? null : Number(budget),
         maxEscalationPages: envInt('EXTRACTION_ESCALATE_MAX_PAGES', 10)
     });
-    logger.info?.({ provider: providerKind, model: primary.model, escalation: escalation?.model ?? null, budgetUsd: budget, storage }, 'intake extraction configured');
+    logger.info?.({ provider: providerKind, model: primary.model, escalation: escalation?.model ?? null, jev: jev ? `${jev.name}:${jev.model}` : null, budgetUsd: budget, storage }, 'intake extraction configured');
     return { repo, store, service, worker, checks, sequelize, jwtSecret };
+}
+
+const probability = (name, fallback) => {
+    const raw = env(name, String(fallback)), p = Number(raw);
+    if (!(p >= 0 && p <= 1)) throw new Error(`${name} must be a probability between 0 and 1, got "${raw}"`);
+    return p;
+};
+
+/**
+ * Jev (TypeSafe) judges what Gemini read. Off unless JEV_ENABLED=true; when enabled without a key it
+ * stays off (with a warning) so that documents are handled exactly as without Jev.
+ * JEV_PROVIDER=fake answers from fixed rules (tests, demo stacks): nothing is sent anywhere.
+ */
+export function jevFromEnv({ logger = console } = {}) {
+    // Thresholds on Jev's probabilities; provisional until measured on our documents (API-621)
+    const jevConfig = {
+        flagAt: probability('JEV_FLAG_AT', 0.5),          // a field is marked "check" from here
+        escalateAt: probability('JEV_ESCALATE_AT', 0.7)    // the document gets the second reading from here
+    };
+    if (!envBool('JEV_ENABLED', false)) return { jev: null, jevConfig };
+    if (envOneOf('JEV_PROVIDER', ['typesafe', 'fake'], 'typesafe') === 'fake') return { jev: createFakeJev(), jevConfig };
+    if (!process.env.TYPESAFE_API_KEY) {
+        logger.warn?.('JEV_ENABLED=true but TYPESAFE_API_KEY is not set: documents are not checked by Jev');
+        return { jev: null, jevConfig };
+    }
+    const jev = createJevClient({
+        apiKey: process.env.TYPESAFE_API_KEY,
+        model: env('JEV_MODEL', 'jev-latest'),
+        baseUrl: env('JEV_BASE_URL', 'https://api.typesafe.ai'),
+        timeoutMs: envInt('JEV_TIMEOUT_MS', 5000)
+    });
+    return { jev, jevConfig };
 }

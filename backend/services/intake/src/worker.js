@@ -12,14 +12,15 @@ async function toBuffer(stream) {
  * and hands the result to IntakeService. Runs inside the intake service for local work
  * (INTAKE_RUN_WORKER=true) or as its own process (npm run worker) — several workers can share
  * the queue (Postgres SKIP LOCKED).
+ * `jev` (optional, see ./extraction/jev.js) judges what the model read; null means no Jev.
  *
  * Failures are retried with backoff (1 min, 4 min, …) up to the job's maxAttempts; a model error
  * that retrying cannot fix (bad request) fails at once. When this month's spend reaches
  * `monthlyBudgetUsd`, the worker stops taking jobs until the next month (or a higher budget).
  */
 export class ExtractionWorker {
-    constructor({ repo, service, store, primary, escalation = null, checker, monthlyBudgetUsd = null, maxEscalationPages = 10, pollMs = 2000, staleMs = 10 * 60_000, clock = () => new Date(), logger = console }) {
-        Object.assign(this, { repo, service, store, primary, escalation, checker, monthlyBudgetUsd, maxEscalationPages, pollMs, staleMs, clock, logger });
+    constructor({ repo, service, store, primary, escalation = null, checker, jev = null, jevConfig = null, monthlyBudgetUsd = null, maxEscalationPages = 10, pollMs = 2000, staleMs = 10 * 60_000, clock = () => new Date(), logger = console }) {
+        Object.assign(this, { repo, service, store, primary, escalation, checker, jev, jevConfig, monthlyBudgetUsd, maxEscalationPages, pollMs, staleMs, clock, logger });
         this.workerId = `${hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
         this.running = false;
         this.budgetWarned = false;

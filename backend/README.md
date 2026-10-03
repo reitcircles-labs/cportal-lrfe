@@ -261,6 +261,12 @@ upload ─▶ intake (staging store, job queue) ─▶ extraction worker ─▶ 
   `cd services/intake && node scripts/gemini-check.mjs --ping` (free), or without `--ping` to read
   the testers' sample PDFs and compare every field with the expected values (about $0.02;
   `--file scan.pdf` for any document, `--escalate`, `--model`; see the script's header).
+- **Jev** (TypeSafe, `src/extraction/jev.js`) can judge what Gemini read (epic API-618). Off by
+  default: `JEV_ENABLED=true` with `TYPESAFE_API_KEY` (or `JEV_PROVIDER=fake`: fixed answers,
+  nothing sent); `JEV_MODEL` (`jev-latest`), `JEV_TIMEOUT_MS` (5000), thresholds `JEV_FLAG_AT`
+  (0.5) and `JEV_ESCALATE_AT` (0.7), provisional until measured. Enabled without a key, or when Jev
+  fails or is slow, documents are handled exactly as without Jev. Jev runs in the US: real deed
+  text needs data-protection approval first.
 - **Worker** runs inside the service for local work, or alone (`npm run worker -w @lrfe/intake`,
   several in parallel — Postgres `SKIP LOCKED`). Retries with backoff; non-retryable errors fail at once.
 
