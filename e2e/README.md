@@ -77,6 +77,12 @@ throwaway PostgreSQL instance under `.stack/pg` with the server binaries already
 (`PG_BIN`, or the newest `/usr/lib/postgresql/<version>/bin`), on port 3606, TCP only, and stops and
 removes it at the end. It never touches another database on the machine. No Docker needed.
 
+## With stored files encrypted
+
+`E2E_BAO=fake` (with any Playwright command, also with `E2E_DB=postgres`) encrypts the files the
+services store, with in-memory keys instead of OpenBao (nothing sent anywhere): today the edrms
+records (`EDRMS_ENCRYPTION=fake`). The same tests must pass. Without it, files are stored as before.
+
 ## With the automatic cross-check on
 
 `E2E_JEV=fake` (with any Playwright command, also together with `E2E_DB=postgres`) switches the

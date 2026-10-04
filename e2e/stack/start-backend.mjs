@@ -39,6 +39,8 @@ const COMMON = {
 };
 // E2E_JEV=fake: the automatic cross-check on, with the fake judge (fixed answers, nothing sent)
 if (process.env.E2E_JEV === 'fake') Object.assign(COMMON, { JEV_ENABLED: 'true', JEV_PROVIDER: 'fake' });
+// E2E_BAO=fake: stored files encrypted, with in-memory keys instead of OpenBao (nothing sent)
+if (process.env.E2E_BAO === 'fake') Object.assign(COMMON, { EDRMS_ENCRYPTION: 'fake' });
 const SERVICES = ['identity', 'edrms', 'bpm', 'intake'];
 const POSTGRES = process.env.E2E_DB === 'postgres';
 const pgData = join(STACK_DIR, 'pg');

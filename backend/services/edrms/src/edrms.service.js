@@ -5,6 +5,16 @@ import { validateRecordMetadata } from './record-metadata.js';
 import { sealOf } from './seal.js';
 import { storageKey } from './storage/index.js';
 
+/**
+ * The encrypting store's key service (OpenBao) failed: sealed, unreachable, or this service's login
+ * or key refused. Screens get a neutral message (no tool names); the cause stays on the error for logs.
+ */
+const UNAVAILABLE = 'The document store is temporarily unavailable. Try again shortly.';
+function storeError(err) {
+    if (err?.name !== 'KeyringError') return err;
+    return Object.assign(new AppError(503, UNAVAILABLE), { cause: err });
+}
+
 const MIME_TYPES = ['application/pdf', 'image/tiff', 'image/png', 'image/jpeg'];
 const SYSTEM = { id: null, name: 'System' };
 
@@ -119,7 +129,7 @@ export class EdrmsService {
             const id = randomUUID();
             const now = this.clock();
             const key = storageKey(id, 1, file.fileName);
-            const { sha256, size } = await this.store.put({ key, body: file.stream, contentType: file.mimeType });
+            const { sha256, size, encryption } = await this.store.put({ key, body: file.stream, contentType: file.mimeType }).catch(err => { throw storeError(err); });
             uploadedKey = key;
             assertComplete(file, size);
 
@@ -132,7 +142,8 @@ export class EdrmsService {
                         id: randomUUID(), documentId: id, versionNumber: 1, label: '1.0', kind: 'filed', reason: null, changes: [],
                         fields, recordMetadata, storageKey: key, fileName: key.split('/').pop(), mimeType: file.mimeType, size, sha256,
                         createdAt: now, createdById: reviewer.id, createdByName: reviewer.name ?? null,
-                        ...(provenance ? { provenance } : {})
+                        ...(provenance ? { provenance } : {}),
+                        ...(encryption ? { encryption } : {})
                     };
                     version.seal = sealOf(id, edrmsNo, version);
                     return {
@@ -217,13 +228,17 @@ export class EdrmsService {
 
             const previous = await this.repo.getVersion(id, doc.currentVersion);
             const n = doc.currentVersion + 1;
-            let content = { storageKey: previous.storageKey, fileName: previous.fileName, mimeType: previous.mimeType, size: previous.size, sha256: previous.sha256 };
+            // Without a new file the version points at the previous one's file, encrypted as it was
+            let content = {
+                storageKey: previous.storageKey, fileName: previous.fileName, mimeType: previous.mimeType, size: previous.size, sha256: previous.sha256,
+                ...(previous.encryption ? { encryption: previous.encryption } : {})
+            };
             if (file) {
                 const key = storageKey(id, n, file.fileName);
-                const { sha256, size } = await this.store.put({ key, body: file.stream, contentType: file.mimeType });
+                const { sha256, size, encryption } = await this.store.put({ key, body: file.stream, contentType: file.mimeType }).catch(err => { throw storeError(err); });
                 uploadedKey = key;
                 assertComplete(file, size);
-                content = { storageKey: key, fileName: key.split('/').pop(), mimeType: file.mimeType, size, sha256 };
+                content = { storageKey: key, fileName: key.split('/').pop(), mimeType: file.mimeType, size, sha256, ...(encryption ? { encryption } : {}) };
             }
 
             const now = this.clock();
@@ -254,8 +269,9 @@ export class EdrmsService {
 
     // ---------------------------------------------------------------- reading
 
+    /** A version as clients see it: without its storage key and its encryption record (wrapped key). */
     publicVersion(v) {
-        const { storageKey: _key, ...rest } = v;
+        const { storageKey: _key, encryption: _encryption, ...rest } = v;
         return rest;
     }
 
@@ -307,7 +323,8 @@ export class EdrmsService {
 
     async openContent(id, versionNumber) {
         const v = await this.getVersion(id, versionNumber);
-        return { stream: await this.store.getStream(v.storageKey), mimeType: v.mimeType, size: v.size, fileName: v.fileName };
+        const stream = await this.store.getStream(v.storageKey, { encryption: v.encryption }).catch(err => { throw storeError(err); });
+        return { stream, mimeType: v.mimeType, size: v.size, fileName: v.fileName };
     }
 
     /**
@@ -318,9 +335,15 @@ export class EdrmsService {
         const doc = await this.requireDocument(id);
         const v = await this.getVersion(id, versionNumber);
         const hash = createHash('sha256');
-        for await (const chunk of await this.store.getStream(v.storageKey)) hash.update(chunk);
-        const contentSha256 = hash.digest('hex');
-        const seal = sealOf(id, doc.edrmsNo, { ...v, sha256: contentSha256 });
+        let contentSha256 = null;
+        try {
+            for await (const chunk of await this.store.getStream(v.storageKey, { encryption: v.encryption })) hash.update(chunk);
+            contentSha256 = hash.digest('hex');
+        } catch (err) {
+            // An encrypted file that fails authentication was changed or cut off: not intact.
+            if (err?.code !== 'EDECRYPT') throw storeError(err);
+        }
+        const seal = sealOf(id, doc.edrmsNo, { ...v, sha256: contentSha256 ?? v.sha256 });
         return {
             documentId: id, edrmsNo: doc.edrmsNo, version: v.versionNumber,
             contentIntact: contentSha256 === v.sha256, sealIntact: seal === v.seal, intact: contentSha256 === v.sha256 && seal === v.seal,

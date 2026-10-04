@@ -55,7 +55,10 @@ export function defineModels(sequelize) {
         approvedByName: { type: DataTypes.STRING },
         // Filing only: how the values were produced (intake extraction: model, prompt version,
         // extracted vs corrected fields). Sealed with the version.
-        provenance: { type: DataTypes.JSONB }
+        provenance: { type: DataTypes.JSONB },
+        // Encrypted content (EDRMS_ENCRYPTION): algorithm, KEK name, wrapped data key, chunk size,
+        // ciphertext SHA-256 and size. Not sealed (re-wrapping after a key rotation updates it); never sent to clients.
+        encryption: { type: DataTypes.JSONB }
     }, opts({
         timestamps: false,
         indexes: [{ unique: true, fields: ['documentId', 'versionNumber'] }]

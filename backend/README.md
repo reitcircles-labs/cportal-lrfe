@@ -24,8 +24,8 @@ packages/storage/                  @lrfe/storage — S3 / local / memory blob st
 
 Stored files are to be encrypted with keys protected by OpenBao. Settings per service
 (`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION` = `off` (default) | `bao` | `fake`; with `bao`: `BAO_ADDR`,
-`BAO_ROLE_ID`, `BAO_SECRET_ID_FILE`, `BAO_KEY_NAME`, default `edrms-files` / `intake-files`); the
-services read them from API-638 / API-639. Design and decisions in
+`BAO_ROLE_ID`, `BAO_SECRET_ID_FILE`, `BAO_KEY_NAME`, default `edrms-files` / `intake-files`); edrms
+reads its settings (API-638); intake follows (API-639). Design and decisions in
 [`packages/storage/README.md`](packages/storage/README.md); installing OpenBao in
 [`scripts/README.md`](scripts/README.md#openbao-installation-rules); storage research in
 [`docs/storage_integrations.md`](docs/storage_integrations.md).
