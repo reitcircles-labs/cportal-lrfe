@@ -22,6 +22,11 @@ backend/
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 ```
 
+Stored files are to be encrypted with keys protected by OpenBao: design and decisions in
+[`packages/storage/README.md`](packages/storage/README.md); installing OpenBao in
+[`scripts/README.md`](scripts/README.md#openbao-installation-rules); storage research in
+[`docs/storage_integrations.md`](docs/storage_integrations.md).
+
 Planned next: connect the frontend's Capture and Verify screens to intake; **land-records**
 (ERP records, linking, finalize); **audit** (hash-chained trail, sign-off, evidence export); **search**.
 
