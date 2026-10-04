@@ -20,7 +20,9 @@ export function createSequelizeRepo(sequelize) {
             await sequelize.query(`ALTER TYPE "${SCHEMA}"."enum_extraction_role" ADD VALUE IF NOT EXISTS 'crosscheck'`);
             const q = sequelize.getQueryInterface();
             const document = { tableName: 'document', schema: SCHEMA };
-            if (!(await q.describeTable(document)).crosscheck) await q.addColumn(document, 'crosscheck', { type: DataTypes.JSONB });   // API-624
+            const columns = await q.describeTable(document);
+            if (!columns.crosscheck) await q.addColumn(document, 'crosscheck', { type: DataTypes.JSONB });   // API-624
+            if (!columns.encryption) await q.addColumn(document, 'encryption', { type: DataTypes.JSONB });   // API-639
         },
 
         async nextBatchNumber(registry) {

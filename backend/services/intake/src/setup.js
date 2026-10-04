@@ -1,6 +1,6 @@
 import dns from 'node:dns';
 import { createEventBus, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck } from '@lrfe/common';
-import { createLocalStore, createMemoryStore, createS3Store } from '@lrfe/storage';
+import { createEncryptingStore, createLocalStore, createMemoryStore, createS3Store, keyringFromEnv } from '@lrfe/storage';
 import { IntakeService } from './intake.service.js';
 import { createEdrmsClient } from './edrms-client.js';
 import { createChecker } from './extraction/checks.js';
@@ -28,9 +28,12 @@ export function setupFromEnv({ logger = console } = {}) {
     }
 
     const storage = envOneOf('INTAKE_STORAGE', ['s3', 'local', 'memory'], 'local');
-    const store = storage === 'memory' ? createMemoryStore()
+    const plainStore = storage === 'memory' ? createMemoryStore()
         : storage === 'local' ? createLocalStore({ root: env('INTAKE_LOCAL_DIR', './tmp/intake-store') })
         : createS3Store({ bucket: env('AWS_BUCKET_NAME'), region: env('AWS_BUCKET_REGION'), accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY });
+    // INTAKE_ENCRYPTION=bao (or fake): scans are encrypted under intake-files (packages/storage/README.md)
+    const keyring = keyringFromEnv({ setting: 'INTAKE_ENCRYPTION', defaultKeyName: 'intake-files' });
+    const store = keyring ? createEncryptingStore(plainStore, keyring) : plainStore;
 
     const jwtSecret = env('JWT_SECRET');
     const edrms = createEdrmsClient({ baseUrl: env('EDRMS_URL', 'http://localhost:3502'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'intake' }) });

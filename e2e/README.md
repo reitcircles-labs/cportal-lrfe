@@ -80,8 +80,8 @@ removes it at the end. It never touches another database on the machine. No Dock
 ## With stored files encrypted
 
 `E2E_BAO=fake` (with any Playwright command, also with `E2E_DB=postgres`) encrypts the files the
-services store, with in-memory keys instead of OpenBao (nothing sent anywhere): today the edrms
-records (`EDRMS_ENCRYPTION=fake`). The same tests must pass. Without it, files are stored as before.
+services store, with in-memory keys instead of OpenBao (nothing sent anywhere): the edrms records
+and intake's scans (`EDRMS_ENCRYPTION=fake`, `INTAKE_ENCRYPTION=fake`). The same tests must pass. Without it, files are stored as before.
 
 ## With the automatic cross-check on
 
