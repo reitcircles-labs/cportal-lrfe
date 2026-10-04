@@ -6,6 +6,7 @@ export { createLinkSigner } from './links.js';
 export { createEncryptingStore } from './encrypted.js';
 export { createEncryptStream, createDecryptStream, cipherSizeOf, DecryptionError, ALG, FORMAT, DEFAULT_CHUNK_SIZE } from './encryption.js';
 export { createFakeKeyring } from './fake-keyring.js';
+export { createBaoKeyring, keyringFromEnv, KeyringError } from './bao-keyring.js';
 
 /** <prefix>/<id>/v<version>/<safe file name> */
 export function storageKey(prefix, id, versionNumber, fileName) {

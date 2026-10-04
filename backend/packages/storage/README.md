@@ -200,6 +200,16 @@ checked with an independent decoder (WebCrypto) written from this description.
 `createEncryptingStore(store, keyring, { chunkSize })` wraps any store; `createFakeKeyring()` wraps
 data keys with an in-memory key for tests (no OpenBao).
 
+**The OpenBao keyring (`src/bao-keyring.js`, API-636):** `createBaoKeyring({ addr, roleId,
+secretIdFile, keyName })` logs in with the service's AppRole on first use, renews the token after
+3/4 of its lifetime, and logs in again when renewal fails or a token is refused. OpenBao answers 403
+both for an expired token and for a key outside the policy, so a 403 gets one fresh login before it
+counts as not allowed. Errors (`KeyringError`): `EUNAVAILABLE` (sealed, unreachable, slow, after
+retries; the services answer "temporarily unavailable"), `ELOGIN`, `EDENIED`, `EKEY`.
+`keyringFromEnv({ setting, defaultKeyName })` builds it from the service's settings
+(`<SERVICE>_ENCRYPTION` = `off` | `bao` | `fake`, `BAO_ADDR`, `BAO_ROLE_ID`, `BAO_SECRET_ID_FILE`,
+`BAO_KEY_NAME`).
+
 ## 7. Seeing the state of the vault
 
 OpenBao has a web UI at `/ui` (inherited from Vault), switched on with `ui = true` in its
