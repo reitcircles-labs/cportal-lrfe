@@ -19,6 +19,12 @@
  * token in dev-init.json in the data folder (readable by this user only): fine for development,
  * never for production. Later starts unseal with it. Ctrl+C stops OpenBao.
  *
+ * Every start then prepares document encryption (packages/storage/README.md), idempotently: the
+ * transit engine, one key per service (edrms-files, intake-files), a policy per service allowing
+ * only datakey and decrypt on its own key, and an AppRole per service (edrms, intake; 1 h tokens,
+ * bound to 127.0.0.1). Each service's role ID and secret ID go to approle/ in the data folder
+ * (this user only), and the settings for the services' .env files are printed.
+ *
  * Production: OpenBao must not run as the same user as the portal. An administrator installs it
  * as a dedicated user and service; the script only points to the rules.
  */
@@ -122,10 +128,13 @@ if (args.includes('--install')) process.exit(0);
 // ---------------------------------------------------------------- configure and start
 
 // Initialising waits for the first Raft leader election (about 5 s): allow a minute per call
-const api = async (path, init, timeoutMs = 60_000) => {
-    const res = await fetch(`${addr}/v1/${path}`, { ...init, headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+const api = async (path, init = {}, timeoutMs = 60_000) => {
+    const { token, ...rest } = init;
+    const res = await fetch(`${addr}/v1/${path}`, {
+        ...rest, headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Vault-Token': token } : {}) }, signal: AbortSignal.timeout(timeoutMs)
+    });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(`${path}: HTTP ${res.status} ${JSON.stringify(body.errors || body)}`);
+    if (!res.ok) throw Object.assign(new Error(`${path}: HTTP ${res.status} ${JSON.stringify(body.errors || body)}`), { status: res.status });
     return body;
 };
 const sealStatus = () => api('sys/seal-status', undefined, 2000);
@@ -184,8 +193,65 @@ try {
     }
     console.log(`OpenBao ${VERSION} (development) on ${addr}: initialised, unsealed. Data in ${dataDir}.`);
     console.log(`  export BAO_ADDR=${addr}   # the root token is in ${initFile}`);
+    await prepareEncryption(JSON.parse(readFileSync(initFile, 'utf8')).rootToken);
 } catch (err) {
     console.error(`OpenBao: ${err.message}`);
     server.kill('SIGTERM');
     process.exitCode = 1;
+}
+
+// ---------------------------------------------------------------- document encryption (development)
+
+/** One transit key, policy and AppRole per service that stores files (packages/storage/README.md §4). */
+async function prepareEncryption(root) {
+    // Right after unsealing, the Raft node elects itself leader (about 5 s); until then requests fail
+    // with "local node not active". sys/health answers 200 once the node is active.
+    for (let i = 0; ; i++) {
+        const res = await fetch(`${addr}/v1/sys/health`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
+        if (res?.status === 200) break;
+        if (i >= 120) throw new Error('OpenBao did not become active within a minute after unsealing');
+        await new Promise(r => setTimeout(r, 500));
+    }
+    const SERVICES = [
+        { name: 'edrms', setting: 'EDRMS_ENCRYPTION', key: 'edrms-files' },
+        { name: 'intake', setting: 'INTAKE_ENCRYPTION', key: 'intake-files' }
+    ];
+    const as = (method, path, body) => api(path, { method, token: root, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const exists = (path) => as('GET', path).then(() => true, (err) => { if (err.status === 404) return false; throw err; });
+
+    const mounts = await as('GET', 'sys/mounts');
+    if (!(mounts.data || mounts)['transit/']) await as('POST', 'sys/mounts/transit', { type: 'transit' });
+    const auths = await as('GET', 'sys/auth');
+    if (!(auths.data || auths)['approle/']) await as('POST', 'sys/auth/approle', { type: 'approle' });
+
+    const dir = join(dataDir, 'approle');
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const lines = [];
+    for (const s of SERVICES) {
+        // the KEK: created once, never exportable (it never leaves OpenBao)
+        if (!(await exists(`transit/keys/${s.key}`))) await as('POST', `transit/keys/${s.key}`, { type: 'aes256-gcm96', exportable: false });
+        // the policy: a new data key and unwrapping, on this service's key only
+        await as('PUT', `sys/policies/acl/${s.key}`, {
+            policy: `# ${s.name}: new data keys and unwrapping, on its own key only (written by bao.js)\n` +
+                `path "transit/datakey/plaintext/${s.key}" { capabilities = ["update"] }\n` +
+                `path "transit/decrypt/${s.key}" { capabilities = ["update"] }\n`
+        });
+        // the AppRole: short-lived renewable tokens, usable from this machine only
+        await as('POST', `auth/approle/role/${s.name}`, {
+            token_policies: [s.key], token_ttl: '1h', token_max_ttl: '24h',
+            token_bound_cidrs: ['127.0.0.1/32'], secret_id_bound_cidrs: ['127.0.0.1/32']
+        });
+        const roleId = (await as('GET', `auth/approle/role/${s.name}/role-id`)).data.role_id;
+        const secretFile = join(dir, `${s.name}-secret-id`);
+        // keep a secret ID that still logs in; otherwise issue a new one
+        const current = existsSync(secretFile) ? readFileSync(secretFile, 'utf8').trim() : null;
+        const valid = current && await api('auth/approle/login', { method: 'POST', body: JSON.stringify({ role_id: roleId, secret_id: current }) }).then(() => true, () => false);
+        if (!valid) writeFileSync(secretFile, (await as('POST', `auth/approle/role/${s.name}/secret-id`)).data.secret_id + '\n', { mode: 0o600 });
+        writeFileSync(join(dir, `${s.name}-role-id`), roleId + '\n', { mode: 0o600 });
+        lines.push(`  ${s.name} (backend/services/${s.name}/.env):`,
+            `    ${s.setting}=bao`, `    BAO_ADDR=${addr}`, `    BAO_ROLE_ID=${roleId}`, `    BAO_SECRET_ID_FILE=${secretFile}`, `    BAO_KEY_NAME=${s.key}`);
+    }
+    console.log(`Document encryption ready: transit keys ${SERVICES.map(s => s.key).join(', ')}; AppRoles ${SERVICES.map(s => s.name).join(', ')}.`);
+    console.log('  Settings for the services (development only):');
+    console.log(lines.join('\n'));
 }

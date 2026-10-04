@@ -153,6 +153,47 @@ can be written to swap.** Acceptable for development; in production use encrypte
 5. **Root token only for the initial setup**, then revoked; administrators and services get their
    own logins and policies. Turn on an audit device and keep its log with the portal's audit trail.
 
+### Document encryption: keys, policies and AppRoles
+
+The services encrypt stored files with keys protected by OpenBao (design:
+[`packages/storage/README.md`](../packages/storage/README.md)). Each service that stores files has
+one transit key (KEK), one policy and one AppRole:
+
+| Service | Transit key (KEK) | Policy allows | AppRole |
+|---|---|---|---|
+| edrms | `edrms-files` | `transit/datakey/plaintext/edrms-files`, `transit/decrypt/edrms-files` | `edrms` |
+| intake | `intake-files` | `transit/datakey/plaintext/intake-files`, `transit/decrypt/intake-files` | `intake` |
+
+**Development:** every `npm run bao -- --dev` checks and, where missing, creates all of this:
+transit engine, keys (`aes256-gcm96`, not exportable), policies, AppRole login, roles (tokens 1 h,
+at most 24 h, usable from 127.0.0.1 only). It keeps each service's role ID and secret ID in
+`~/data/cportal-lrfe/openbao/approle/` (this user only; a secret ID is reused while it still logs
+in) and prints the settings to copy into `services/edrms/.env` and `services/intake/.env`
+(`EDRMS_ENCRYPTION=bao` / `INTAKE_ENCRYPTION=bao`, `BAO_ADDR`, `BAO_ROLE_ID`, `BAO_SECRET_ID_FILE`,
+`BAO_KEY_NAME`).
+
+**Production:**
+
+1. **An administrator creates them**, with their own login and an admin policy, never with the root
+   token and never from a service. The same names and policies as above; keys never exportable.
+2. **Bind each role to its service's server:** `secret_id_bound_cidrs` and `token_bound_cidrs` set
+   to that server's address, so a stolen secret ID is useless elsewhere.
+3. **Deliver the secret ID safely:** a file owned by the service's user, mode `0600`, outside the
+   repository (`BAO_SECRET_ID_FILE`), or a one-time response-wrapped token that the service unwraps.
+   Give secret IDs a lifetime (`secret_id_ttl`) and rotate them; the role ID can sit in the
+   service's configuration.
+4. **Rotation by a separate key-admin role**, which may rotate keys and re-wrap stored keys but
+   **not decrypt**, so it never sees a data key:
+   ```hcl
+   # policy "key-admin"
+   path "transit/keys/+/rotate" { capabilities = ["update"] }
+   path "transit/rewrap/+"      { capabilities = ["update"] }
+   path "transit/keys/+"        { capabilities = ["read"] }
+   ```
+   Rotating a KEK leaves files as they are; `rewrap` updates the wrapped keys in the services'
+   databases (see the storage README, section 3).
+5. **Never share a key or a role between services:** each could then open the other's files.
+
 ### Storage: why not the portal's PostgreSQL
 
 OpenBao keeps its data in **integrated Raft storage on its own disk**, as OpenBao recommends: no
