@@ -181,9 +181,24 @@ later).
 - A sealed or unreachable vault fails safe: filing, capture and viewing answer "document store
   temporarily unavailable" (neutral, no tool names on screen); the intake reader retries later.
 
-**Chunk format (to be built in API-635):** a small header (magic, format version, chunk size, nonce
-prefix; no key material), then chunks of e.g. 64 KiB, each AES-256-GCM with its own nonce, the
-chunk number and a last-chunk marker in the authenticated data.
+**Chunk format (format 1, `src/encryption.js`, API-635):**
+
+```
+header  20 bytes   "LRFE" · format 1 · 3 reserved · chunk size (uint32 BE, default 64 KiB) · nonce prefix (8 random bytes)
+chunks             AES-256-GCM ciphertext of each chunk + 16-byte tag
+                   nonce = nonce prefix ‖ chunk number (uint32 BE)
+                   authenticated data = header ‖ chunk number ‖ last-chunk flag
+```
+
+Every chunk has the full chunk size except the last (1 byte to a full chunk; 0 only for an empty
+file): a chunk is only cut when more data follows. No key material is in the file. Decryption
+releases a chunk only after its tag is verified; a changed byte or header, reordered chunks, a
+cut-off end and appended bytes fail with `DecryptionError`. A cut-off file is detected at the end
+of the stream, so a reader must treat a stream that ends with an error as failed. The format was
+checked with an independent decoder (WebCrypto) written from this description.
+
+`createEncryptingStore(store, keyring, { chunkSize })` wraps any store; `createFakeKeyring()` wraps
+data keys with an in-memory key for tests (no OpenBao).
 
 ## 7. Seeing the state of the vault
 
