@@ -4,8 +4,9 @@ Shared file storage for the backend services: the stores (S3, local folder, memo
 SHA-256, and signed file links. This README also describes **how stored files are encrypted with
 OpenBao** (epic API-633): the options investigated, the questions asked and the decisions taken.
 
-*Design written 4 October 2026 (API-634), before the implementation (API-635 to API-640); updated
-at the end of the epic if the implementation changes anything.*
+*Design written 4 October 2026 (API-634). Implemented in API-635 to API-641 as described here, and
+checked end to end against a real OpenBao (API-640: the e2e suite with `E2E_BAO=real`, in memory
+and on PostgreSQL). Off by default: `EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION=bao` turns it on.*
 
 ## 1. The storage interface today
 

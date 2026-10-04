@@ -16,10 +16,10 @@
  * The gateway starts last, once the others answer /health, so "gateway up" means "stack ready".
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { connect } from 'node:net';
 import { join } from 'node:path';
-import { BACKEND_DIR, DEMO_PASSWORD, MAIL_DIR, PORTS, STACK_DIR, WEB_URL } from './config.mjs';
+import { BACKEND_DIR, BAO_DIR, DEMO_PASSWORD, MAIL_DIR, PORTS, STACK_DIR, WEB_URL } from './config.mjs';
 
 const url = (name) => `http://127.0.0.1:${PORTS[name]}`;
 const COMMON = {
@@ -39,8 +39,13 @@ const COMMON = {
 };
 // E2E_JEV=fake: the automatic cross-check on, with the fake judge (fixed answers, nothing sent)
 if (process.env.E2E_JEV === 'fake') Object.assign(COMMON, { JEV_ENABLED: 'true', JEV_PROVIDER: 'fake' });
-// E2E_BAO=fake: stored files encrypted, with in-memory keys instead of OpenBao (nothing sent)
-if (process.env.E2E_BAO === 'fake') Object.assign(COMMON, { EDRMS_ENCRYPTION: 'fake', INTAKE_ENCRYPTION: 'fake' });
+// E2E_BAO=fake: stored files encrypted, with in-memory keys instead of OpenBao (nothing sent).
+// E2E_BAO=real: a throwaway OpenBao for this run (scripts/bao.js --dev on its own port and folder);
+// edrms and intake encrypt with it, each logged in with its own AppRole (SERVICE_ENV, set once it is up).
+const E2E_BAO = process.env.E2E_BAO || 'off';
+if (!['off', 'fake', 'real'].includes(E2E_BAO)) throw new Error(`E2E_BAO must be fake or real, got "${E2E_BAO}"`);
+if (E2E_BAO === 'fake') Object.assign(COMMON, { EDRMS_ENCRYPTION: 'fake', INTAKE_ENCRYPTION: 'fake' });
+const SERVICE_ENV = {};
 const SERVICES = ['identity', 'edrms', 'bpm', 'intake'];
 const POSTGRES = process.env.E2E_DB === 'postgres';
 const pgData = join(STACK_DIR, 'pg');
@@ -82,6 +87,10 @@ function stopPostgres() {
 if (existsSync(join(STACK_DIR, 'pg', 'postmaster.pid'))) {
     try { execFileSync(join(pgBin(), 'pg_ctl'), ['-D', join(STACK_DIR, 'pg'), '-m', 'immediate', '-w', 'stop'], { stdio: 'ignore' }); } catch { /* not running */ }
 }
+// Likewise a throwaway OpenBao left by an interrupted run (only ours: matched by its config path).
+if (existsSync(join(BAO_DIR, 'openbao.hcl'))) {
+    try { execFileSync('pkill', ['-f', join(BAO_DIR, 'openbao.hcl')], { stdio: 'ignore' }); } catch { /* not running */ }
+}
 rmSync(STACK_DIR, { recursive: true, force: true });
 mkdirSync(MAIL_DIR, { recursive: true });
 
@@ -93,7 +102,7 @@ function start(name) {
     const cwd = join(STACK_DIR, name);
     mkdirSync(cwd, { recursive: true });
     const child = spawn(process.execPath, [join(BACKEND_DIR, 'services', name, 'src', 'index.js')], {
-        cwd, env: { ...base, ...COMMON, PORT: String(PORTS[name]) }, stdio: ['ignore', 'pipe', 'pipe']
+        cwd, env: { ...base, ...COMMON, ...SERVICE_ENV[name], PORT: String(PORTS[name]) }, stdio: ['ignore', 'pipe', 'pipe']
     });
     for (const [stream, out] of [[child.stdout, process.stdout], [child.stderr, process.stderr]]) {
         stream.on('data', chunk => out.write(String(chunk).replace(/^(?=.)/gm, `[${name}] `)));
@@ -148,6 +157,45 @@ function startNats() {
     children.push(child);
 }
 
+/**
+ * E2E_BAO=real: the backend's own OpenBao launcher (development mode) on the test port, its data
+ * under .stack/bao. It initialises, unseals and creates the keys, policies and AppRoles; resolves
+ * once that is done, then hands each service its own login.
+ */
+function startBao(timeoutMs = 180_000) {
+    const child = spawn(process.execPath, [join(BACKEND_DIR, 'scripts', 'bao.js'), '--dev'], {
+        env: { ...base, BAO_PORT: String(PORTS.bao), BAO_DATA_DIR: BAO_DIR }, stdio: ['ignore', 'pipe', 'pipe']
+    });
+    child.on('exit', (code, signal) => {
+        if (stopping) return;
+        console.error(`[bao] exited (${signal || `code ${code}`}); stopping the test stack`);
+        stop(1);
+    });
+    children.push(child);
+    // OpenBao logs harmless [ERROR] lines on first initialisation and shutdown: show bao.js's own errors only
+    child.stderr.on('data', chunk => String(chunk).split('\n').filter(l => /^OpenBao: |Could not/.test(l))
+        .forEach(l => process.stderr.write(`[bao] ${l}\n`)));
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`OpenBao was not ready within ${timeoutMs / 1000}s`)), timeoutMs);
+        child.stdout.on('data', chunk => {
+            for (const l of String(chunk).split('\n')) {
+                if (/Downloading|Installed|unsealed\.|Document encryption ready/.test(l)) process.stdout.write(`[bao] ${l}\n`);
+                if (/Document encryption ready/.test(l)) {
+                    clearTimeout(timer);
+                    const login = (name, key) => ({
+                        [`${name.toUpperCase()}_ENCRYPTION`]: 'bao', BAO_ADDR: `http://127.0.0.1:${PORTS.bao}`, BAO_KEY_NAME: key,
+                        BAO_ROLE_ID: readFileSync(join(BAO_DIR, 'approle', `${name}-role-id`), 'utf8').trim(),
+                        BAO_SECRET_ID_FILE: join(BAO_DIR, 'approle', `${name}-secret-id`)
+                    });
+                    SERVICE_ENV.edrms = login('edrms', 'edrms-files');
+                    SERVICE_ENV.intake = login('intake', 'intake-files');
+                    resolve();
+                }
+            }
+        });
+    });
+}
+
 async function waitPort(port, timeoutMs = 120_000) {
     const until = Date.now() + timeoutMs;
     while (Date.now() < until) {
@@ -170,6 +218,7 @@ try {
 }
 startNats();
 try {
+    if (E2E_BAO === 'real') await startBao();   // the first run downloads OpenBao
     await waitPort(PORTS.nats);   // the first run downloads nats-server, hence the long wait
     for (const name of SERVICES) start(name);
     await Promise.all(SERVICES.map(n => waitHealthy(n)));
