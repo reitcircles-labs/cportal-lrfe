@@ -99,3 +99,92 @@ The config is only read as `KEY=VALUE` lines, never run as a script.
 
 The sign-in cookie works because the browser sees `http://localhost`, as in local development.
 Use the app at `localhost`, not at the server's address.
+
+## OpenBao: installation rules
+
+OpenBao (the open-source fork of HashiCorp Vault) is the project's secrets vault: it will hold the
+services' secrets and the keys that encrypt stored documents. These rules decide **who may run it,
+where its data lives and how it is backed up**. `bao.js` installs it for development only; a
+production installation is done by an administrator, following the production rules below.
+
+### Development: `npm run bao -- --dev`
+
+| What | Where / how |
+|---|---|
+| Program | OpenBao 2.7.1, downloaded on the first run into `backend/.tools/openbao-2.7.1/` (git-ignored), checked against the release's SHA-256 checksums |
+| Runs as | Your own user. Fine for development only |
+| Address | `http://127.0.0.1:8200` (`BAO_PORT` for another port), no TLS: reachable from this server only |
+| Data | Integrated Raft storage in `~/data/cportal-lrfe/openbao` (`BAO_DATA_DIR`), outside git, folder `0700`, files `0600` |
+| Unseal key and root token | `dev-init.json` in the data folder, written on the first start and used to unseal on later starts. **Development only:** never copy it elsewhere, never use this setup for real secrets |
+
+Using the command line while it runs:
+
+```bash
+export BAO_ADDR=http://127.0.0.1:8200
+export BAO_TOKEN=$(node -p "require(process.env.HOME + '/data/cportal-lrfe/openbao/dev-init.json').rootToken")
+.tools/openbao-2.7.1/bao status
+```
+
+Ctrl+C stops it. To start over on a development system, stop it and delete the data folder.
+
+### Memory locking and swap
+
+OpenBao 2.x never locks its memory: mlock was removed in OpenBao 2.0, and the `disable_mlock`
+setting is obsolete (it only logs "unknown or unsupported field"). Vault's advice for integrated
+storage was `disable_mlock = true` anyway. The consequence: **on a machine with swap, key material
+can be written to swap.** Acceptable for development; in production use encrypted swap or no swap.
+
+### Production rules
+
+`npm run bao -- --prod` refuses to install. In production:
+
+1. **Never run OpenBao as the same user as the portal.** Anything running as the same user (the
+   services, a shell) could read OpenBao's data folder, configuration and process. An administrator
+   creates a dedicated `openbao` user with no login shell, and runs OpenBao as a system service
+   (systemd) under that user, started at boot.
+2. **TLS on the listener**, with a certificate the services trust. Listen only where the services
+   can reach it, never on the internet.
+3. **Data folder owned by `openbao`, mode `0700`**, on an encrypted disk (LUKS). Swap encrypted or
+   off (see above).
+4. **Unseal keys split among named people** (Shamir, e.g. 5 shares, any 3 unseal), each kept by a
+   different person, or automatic unsealing by a hardware security module (PKCS#11). Unseal keys are
+   **never** stored with the data, the configuration or the backups. Write down who holds them and
+   what to do after a restart (OpenBao starts sealed).
+5. **Root token only for the initial setup**, then revoked; administrators and services get their
+   own logins and policies. Turn on an audit device and keep its log with the portal's audit trail.
+
+### Storage: why not the portal's PostgreSQL
+
+OpenBao keeps its data in **integrated Raft storage on its own disk**, as OpenBao recommends: no
+extra software, and OpenBao encrypts everything before writing it. OpenBao can also store its data
+in PostgreSQL, but **not in the portal's database**: if that database fails, the vault fails with
+it and nothing can be decrypted, not even from backups; and the portal's database administrators
+would control the vault's storage (they could delete it, making every document unreadable). If
+PostgreSQL is ever wanted, it must be a separate cluster with its own backups.
+
+### Backups
+
+| Do | Do not |
+|---|---|
+| `bao operator raft snapshot save <file>`: a consistent snapshot, taken while OpenBao runs | `tar.gz` of the live data folder: the database files are open and changing; the copy may not restore |
+| Run it from cron with a token that may only take snapshots; check it with `bao operator raft snapshot inspect` | Keep the only copy on the same server |
+| Copy snapshots off-site, ideally to storage that cannot be overwritten; keep a history (e.g. 30 daily, 12 monthly, 7 yearly) | Keep the unseal keys next to the snapshots: a snapshot with its unseal keys gives access to everything |
+| Back up the configuration file and TLS certificates with the server's configuration | |
+| **Restore drill**, e.g. monthly: restore the latest snapshot into a throwaway OpenBao (`bao operator raft snapshot restore <file>`), unseal it, decrypt a sample document | Assume a backup works before it has been restored |
+
+```bash
+# cron, e.g. 15 2 * * *  (production: runs as the openbao user, with TLS)
+f=/var/backups/openbao/bao-$(date +%F).snap
+bao operator raft snapshot save "$f" && bao operator raft snapshot inspect "$f" >/dev/null
+```
+
+### One node, and moving to three
+
+`bao.js` runs a single node: no high availability. If OpenBao or its server is down, no document
+can be stored or opened, and if the server is lost, only the off-site snapshots remain. Production
+should run three OpenBao nodes (ideally across two sites); Raft lets nodes join the existing
+cluster (`bao operator raft join`), so a single node can grow without starting over.
+
+References: [OpenBao storage](https://openbao.org/docs/configuration/storage/),
+[integrated storage (Raft)](https://openbao.org/docs/configuration/storage/raft/),
+[mlock removal](https://openbao.org/docs/rfcs/mlock-removal).
