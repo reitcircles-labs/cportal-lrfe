@@ -34,6 +34,8 @@ export function setupFromEnv({ logger = console } = {}) {
     // INTAKE_ENCRYPTION=bao (or fake): scans are encrypted under intake-files (packages/storage/README.md)
     const keyring = keyringFromEnv({ setting: 'INTAKE_ENCRYPTION', defaultKeyName: 'intake-files' });
     const store = keyring ? createEncryptingStore(plainStore, keyring) : plainStore;
+    // With INTAKE_ENCRYPTION=bao, start only once the vault answers (waits up to a minute while it starts)
+    if (keyring?.check) checks.push(() => keyring.check());
 
     const jwtSecret = env('JWT_SECRET');
     const edrms = createEdrmsClient({ baseUrl: env('EDRMS_URL', 'http://localhost:3502'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'intake' }) });

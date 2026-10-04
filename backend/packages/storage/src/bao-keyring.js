@@ -125,6 +125,28 @@ export function createBaoKeyring({
             const plaintext = Buffer.from(d.plaintext, 'base64');
             if (plaintext.length !== 32) throw new KeyringError('OpenBao returned an unexpected data key', 'EKEY');
             return plaintext;
+        },
+        /**
+         * Startup check: log in and get one data key on this service's key, which proves the vault is
+         * reachable and unsealed, the login works and the policy allows the key. While the vault is
+         * unavailable (sealed, starting, unreachable) it retries until `waitMs`; a refused login or
+         * key fails at once.
+         */
+        async check({ waitMs = 60_000, intervalMs = 2000 } = {}) {
+            const deadline = clock() + waitMs;
+            for (;;) {
+                try {
+                    const { plaintext } = await this.newDataKey();
+                    plaintext.fill(0);
+                    return;
+                } catch (err) {
+                    if (err.code !== 'EUNAVAILABLE') throw err;
+                    if (clock() >= deadline) {
+                        throw new KeyringError(`OpenBao at ${base} is sealed or unreachable (waited ${Math.round(waitMs / 1000)} s): ${err.message}`, 'EUNAVAILABLE', { cause: err });
+                    }
+                    await sleep(intervalMs);
+                }
+            }
         }
     };
 }

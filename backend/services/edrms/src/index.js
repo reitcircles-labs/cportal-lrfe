@@ -22,11 +22,15 @@ if (envOneOf('EDRMS_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
     }
 }
 
+const store = createStoreFromEnv();
+// With EDRMS_ENCRYPTION=bao, start only once the vault answers (waits up to a minute while it starts)
+if (store.keyring?.check) checks.push(() => store.keyring.check());
+
 const jwtSecret = env('JWT_SECRET');
 const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'edrms' });
 const service = new EdrmsService({
     repo,
-    store: createStoreFromEnv(),
+    store,
     events,
     config: {
         country: env('EDRMS_COUNTRY_CODE', 'NA'),

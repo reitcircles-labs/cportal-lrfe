@@ -10,6 +10,7 @@ export function createFakeKeyring({ keyName = 'fake-files' } = {}) {
     return {
         name: 'fake',
         keyName,
+        async check() {},
         async newDataKey() {
             const plaintext = randomBytes(32);
             const iv = randomBytes(12);

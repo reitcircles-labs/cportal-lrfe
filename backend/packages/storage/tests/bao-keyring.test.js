@@ -180,6 +180,43 @@ describe('OpenBao keyring (AppRole)', () => {
         expect(Buffer.concat(chunks).equals(plain)).to.equal(true);
     });
 
+    describe('startup check', () => {
+        const checking = (opts = {}) => createBaoKeyring({ addr: bao.addr, roleId: 'role-edrms', secretId: 'secret-edrms', keyName: 'edrms-files', retries: 0, ...opts });
+
+        it('passes at once when the vault is ready', async () => {
+            await checking().check({ waitMs: 1000, intervalMs: 20 });
+            expect(bao.state.calls).to.include('transit/datakey/plaintext/edrms-files');
+        });
+
+        it('waits for a vault that is still sealed (starting up), then passes', async () => {
+            bao.state.sealed = true;
+            setTimeout(() => { bao.state.sealed = false; }, 150);
+            const t0 = Date.now();
+            await checking().check({ waitMs: 3000, intervalMs: 30 });
+            expect(Date.now() - t0).to.be.within(100, 3000);
+        });
+
+        it('gives up after the wait with a clear message', async () => {
+            bao.state.sealed = true;
+            const err = await checking().check({ waitMs: 200, intervalMs: 30 }).catch(e => e);
+            expect(err.code).to.equal('EUNAVAILABLE');
+            expect(err.message).to.match(new RegExp(`^OpenBao at ${bao.addr} is sealed or unreachable \\(waited 0 s\\): .*Vault is sealed`));
+        });
+
+        it('a refused login or key fails at once, without waiting', async () => {
+            let t0 = Date.now();
+            expect((await checking({ secretId: 'wrong' }).check({ waitMs: 5000, intervalMs: 1000 }).catch(e => e)).code).to.equal('ELOGIN');
+            expect(Date.now() - t0).to.be.below(900);
+            t0 = Date.now();
+            expect((await checking({ keyName: 'intake-files' }).check({ waitMs: 5000, intervalMs: 1000 }).catch(e => e)).code).to.equal('EDENIED');
+            expect(Date.now() - t0).to.be.below(900);
+        });
+
+        it('the fake keyring always passes', async () => {
+            await keyringFromEnv({ setting: 'X', defaultKeyName: 'k', env: { X: 'fake' } }).check();
+        });
+    });
+
     it('refuses to start without its settings', () => {
         expect(() => createBaoKeyring({ roleId: 'r', secretId: 's', keyName: 'k' })).to.throw('BAO_ADDR');
         expect(() => createBaoKeyring({ addr: 'x', secretId: 's', keyName: 'k' })).to.throw('BAO_ROLE_ID');

@@ -2,7 +2,7 @@
 
 | Script | Run with (from `backend/`) | What it does |
 |---|---|---|
-| `dev.js` | `npm run dev` | Starts NATS, all five services and the API docs in one terminal; the services use NATS as their event bus |
+| `dev.js` | `npm run dev` | Starts NATS, all five services and the API docs in one terminal; the services use NATS as their event bus. Starts OpenBao first when edrms or intake encrypts with it (`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION=bao`), or when `bao` is named |
 | `nats.js` | `npm run nats` | Starts a local NATS server (port 4222, monitoring 8222, JetStream on); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256 |
 | `bao.js` | `npm run bao` (asks: development or production?) · `-- --dev` · `-- --prod` | Development: a local OpenBao vault on http://127.0.0.1:8200, data in `~/data/cportal-lrfe/openbao` (outside git); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256, and initialises it. Production: refuses; see [OpenBao: installation rules](#openbao-installation-rules) |
 | `openapi.js` | `npm run docs` · `npm run docs:check` | Generates `services/<name>/docs/openapi.yaml` · checks they are up to date |
@@ -126,6 +126,17 @@ export BAO_TOKEN=$(node -p "require(process.env.HOME + '/data/cportal-lrfe/openb
 ```
 
 Ctrl+C stops it. To start over on a development system, stop it and delete the data folder.
+
+**With `npm run dev`:** once a service's `.env` has `EDRMS_ENCRYPTION=bao` or
+`INTAKE_ENCRYPTION=bao` (with the settings `bao.js` prints), `npm run dev` starts OpenBao first,
+prefixed `bao │`, and stops it with the rest. An OpenBao already running on port 8200 (e.g. started
+with `npm run bao -- --dev`) is used instead. Without any service on `bao`, OpenBao is not started.
+
+**Startup check:** a service on `bao` logs in and requests one data key before it starts. While
+the vault is starting or sealed it waits up to a minute, then exits with "OpenBao at … is sealed or
+unreachable"; a wrong role or secret ID, or a key its policy does not allow, stops it at once
+("startup check failed"). If the vault fails later, the service answers "The document store is
+temporarily unavailable" (503) until it is back, and the intake reader pauses.
 
 ### Memory locking and swap
 

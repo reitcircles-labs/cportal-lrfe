@@ -44,6 +44,8 @@ cp .env_example services/gateway/.env
 # (watch mode, each reads its own .env; Ctrl+C stops all)
 npm run dev
 npm run dev -- identity gateway            # only some of them (add `docs` for the API docs)
+# With document encryption (EDRMS_ENCRYPTION / INTAKE_ENCRYPTION=bao in their .env, settings printed by
+# `npm run bao -- --dev`), npm run dev also starts OpenBao; those services wait for it at startup
 # Testing from a laptop: forward the ports over SSH, see scripts/README.md (remoteConnect.sh)
 
 # Quickest: no database, seeded with the 14 demo users; documents stored in ./tmp

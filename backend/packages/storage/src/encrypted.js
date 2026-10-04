@@ -29,6 +29,7 @@ export function createEncryptingStore(store, keyring, { chunkSize = DEFAULT_CHUN
     return {
         kind: `encrypted-${store.kind}`,
         inner: store,
+        keyring,
         encrypted: true,
         async put({ key, body, contentType }) {
             const dek = await keyring.newDataKey();
