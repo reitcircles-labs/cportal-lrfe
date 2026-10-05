@@ -31,7 +31,8 @@ Stored files are to be encrypted with keys protected by OpenBao. Settings per se
 [`docs/storage_integrations.md`](docs/storage_integrations.md).
 
 Planned next: connect the frontend's Capture and Verify screens to intake; **land-records**
-(ERP records, linking, finalize); **audit** (hash-chained trail, sign-off, evidence export); **search**.
+(records built from filed documents, reviewed and versioned: design in
+[`services/land-records/README.md`](services/land-records/README.md), epic API-642); **audit** (hash-chained trail, sign-off, evidence export); **search**.
 
 ## Running
 
