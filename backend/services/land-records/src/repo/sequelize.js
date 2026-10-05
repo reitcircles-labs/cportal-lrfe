@@ -23,7 +23,11 @@ export function createSequelizeRepo(sequelize) {
     return {
         models: m,
         /** Create missing tables (idempotent, safe on every start). */
-        async sync() { await sequelize.sync(); },
+        async sync() {
+            await sequelize.sync();
+            // columns added after the table was first created
+            await sequelize.query(`ALTER TABLE "${SCHEMA}"."record_version" ADD COLUMN IF NOT EXISTS "reviewInstanceId" UUID`);
+        },
 
         async createRecord({ year, build }) {
             return uniqueToConflict(() => sequelize.transaction(async (transaction) => {

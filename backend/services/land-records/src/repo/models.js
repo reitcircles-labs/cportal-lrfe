@@ -48,6 +48,7 @@ export function defineModels(sequelize) {
         // against the version that was current when this one was opened
         changes: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
         reviewComment: { type: DataTypes.TEXT },
+        reviewInstanceId: { type: DataTypes.UUID },                         // the bpm land-record-review instance
         createdAt: { type: DataTypes.DATE, allowNull: false },
         createdById: s(), createdByName: s(),
         updatedAt: { type: DataTypes.DATE, allowNull: false },

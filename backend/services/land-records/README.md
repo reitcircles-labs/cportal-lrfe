@@ -126,20 +126,31 @@ create ──► draft ──submit──► in review ──approve (second per
 
 ## 6. Review and commit (four-eyes, through bpm)
 
-- Submitting starts a bpm process **`land-record-review`** with the record, the version and the
-  submitter. Its approval task is for users with `record.finalize`, **excluding the submitter**,
-  and appears in the task inbox (the bell), like document corrections.
-- With the security policy **"Four-eyes finalization"** on (default), the approver must also differ
-  from the reviewers who filed the record's documents in edrms (the policy's existing wording).
-- **What the reviewer sees:** the submitted version, the checks, the overrides, and the **difference
-  from the current committed version**: core fields changed (path, before, after), owners and
-  shares, documents added, removed or moved to a newer version.
-- **Approve:** bpm calls land-records (service token) to commit: the version becomes `committed`
-  and current, the previous one `superseded`, the seal is computed, the event
-  `records.record.committed` is published.
-- **Reject:** a comment is required; the version returns to the submitter as a draft with the
-  comment.
-- **Withdraw:** the submitter withdraws before a decision; the task disappears.
+- **Submit** (`POST /records/:id/draft/submit {revision}`): refused while the data is incomplete for
+  the parcel kind's schema or any error check fails (the lists are returned). The draft is frozen
+  (`in_review`, checks stored as submitted) and land-records starts the bpm process
+  **`land-record-review`** (`bpm/src/definitions/land-record-review.json`) with the record, the
+  version and the submitter. If bpm cannot be reached, the draft stays editable.
+- Its approval task is for users with `record.finalize`, **excluding the submitter**, and appears
+  in the task inbox (the bell), like document corrections. Due in 72 hours.
+- With the security policy **"Four-eyes finalization"** on (default), the approver should also differ
+  from the reviewers who filed the record's documents in edrms (the policy's existing wording). Not
+  enforced yet: the policy lives in identity and no service reads it; until then only the
+  submitter is excluded.
+- **What the reviewer sees** (`GET /records/:id/review`): the submitted version, the checks, the
+  overrides (who, why), and the **difference from the current committed version**: core fields
+  changed (path, before, after), owners and shares, encumbrances, documents added, removed or moved
+  to a newer version.
+- **Approve:** bpm calls land-records (`POST /records/:id/versions/:n/commit`, bpm service token
+  only): the version becomes `committed` and current, the previous one `superseded`, the seal is
+  computed and chained, `records.record.committed` is published. The approver is checked again
+  (never the submitter); a repeated call is harmless.
+- **Reject:** a comment is required; bpm calls `…/reject` and the version returns to the submitter as
+  a draft with the comment (`reviewComment`), `records.draft.rejected` is published. Resubmitting
+  starts a new review.
+- **Withdraw** (`POST /records/:id/draft/withdraw`): the submitter, before a decision; land-records
+  cancels the bpm instance, the task disappears, the draft is editable again.
+- Every step is in the version's change log: submit, withdraw, reject (with comment), commit.
 
 ## 7. Seal and history
 
@@ -179,7 +190,7 @@ PostgreSQL full-text and trigram search behind one search function; a dedicated 
 All under `/api/records` through the gateway; every service checks the token and permission itself.
 Every draft change needs the draft's current `revision` (409 otherwise), recomputes suggestions and
 checks, is logged in the version's `changes` (who, what, when) and published as `records.draft.changed`.
-Opening a new draft, submit and withdraw, and the decisions from bpm follow in API-647 and API-648.
+Opening a new draft follows in API-648.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
@@ -191,14 +202,15 @@ Opening a new draft, submit and withdraw, and the decisions from bpm follow in A
 | `POST /records/:id/draft/documents {edrmsDocumentId}` | `record.link` | pin a document (its current version) |
 | `DELETE /records/:id/draft/documents/:edrmsDocumentId?revision=` | `record.unlink` | remove a document |
 | `POST /records/:id/draft` | `record.create` or `record.link` | open a new draft from the current version |
-| `POST /records/:id/draft/submit` · `…/withdraw` | `record.link` | submit for review · withdraw |
+| `POST /records/:id/draft/submit {revision}` · `…/withdraw` | `record.link` | submit for review · withdraw (submitter only) |
+| `GET /records/:id/review` | `record.view` | what the reviewer sees: version, checks, overrides, difference from the current version |
 | `GET /records/:id/comments` · `POST` | `record.view` · `record.comment` | discussion |
 | `GET /records/document-search?…` · `GET /records/:id/suggestions` | `record.view` | find documents (API-645) |
 | `POST /records/:id/versions/:n/commit` · `…/reject` | service token from bpm | decisions from the review process |
 
 ## 11. Events
 
-`records.record.created`, `records.draft.changed`, `records.draft.submitted`,
+`records.record.created`, `records.draft.changed`, `records.draft.submitted`, `records.draft.withdrawn`,
 `records.record.committed`, `records.draft.rejected`, `records.record.flagged`; consumed:
 `edrms.document.amended`.
 

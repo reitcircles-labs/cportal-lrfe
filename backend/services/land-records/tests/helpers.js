@@ -125,3 +125,41 @@ export async function makeWithEdrms() {
     };
     return { ...ctx, edrmsService, docs };
 }
+
+/**
+ * land-records with a real in-process edrms (sample documents) and bpm (its engine, routes and the
+ * "land-record-review" definition), wired both ways over app.inject: land-records starts and
+ * withdraws reviews in bpm; bpm's connectors commit or reject in land-records.
+ */
+export async function makeWithReview() {
+    const ctx = await makeWithEdrms();
+    const { signServiceToken, createServiceTokenSigner } = await import('@lrfe/common');
+    const { BpmEngine } = await import('../../bpm/src/engine/engine.js');
+    const { createMemoryRepo: bpmRepo } = await import('../../bpm/src/repo/memory.js');
+    const { createConnectors } = await import('../../bpm/src/connectors/index.js');
+    const { loadDefinitions } = await import('../../bpm/src/definitions/index.js');
+    const { buildApp: buildBpm } = await import('../../bpm/src/app.js');
+    const { createBpmClient } = await import('../src/bpm-client.js');
+
+    const app = await buildApp({ service: ctx.service, jwtSecret: SECRET });
+    await app.ready();
+    const engine = new BpmEngine({ repo: bpmRepo(), events: createEventBus({ driver: 'memory', source: 'bpm' }) });
+    const bpm = await buildBpm({ engine, jwtSecret: SECRET });
+    const inject = (target) => async (url, { method, headers, body }) => {
+        const u = new URL(url);
+        const r = await target.inject({ method, url: u.pathname + u.search, headers, payload: body });
+        return { ok: r.statusCode < 400, status: r.statusCode, text: async () => r.body };
+    };
+    engine.connectors = createConnectors({ urls: { edrms: 'http://edrms', records: 'http://records' }, serviceToken: () => signServiceToken(bpm, 'bpm'), fetchImpl: inject(app) });
+    for (const d of await loadDefinitions()) await engine.deployDefinition(d);
+    await bpm.ready();
+    ctx.service.bpm = createBpmClient({ baseUrl: 'http://bpm', serviceToken: createServiceTokenSigner({ secret: SECRET, service: 'land-records' }), fetchImpl: inject(bpm) });
+
+    const token = (u) => app.jwt.sign({ typ: 'access', sub: u.id, name: u.name, perms: u.perms });
+    const as = (u) => ({ authorization: `Bearer ${token(u)}` });
+    /** The user's bpm inbox. */
+    const inbox = async (u) => (await bpm.inject({ url: '/tasks', headers: as(u) })).json().tasks;
+    /** Complete a bpm task as `u`: the raw response. */
+    const decide = (u, taskId, output) => bpm.inject({ method: 'POST', url: `/tasks/${taskId}/complete`, headers: as(u), payload: { output } });
+    return { ...ctx, app, bpm, engine, as, inbox, decide };
+}

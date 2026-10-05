@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { AppError, BadRequestError, ConflictError, NotFoundError, normalizeSearch } from '@lrfe/common';
+import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError, normalizeSearch } from '@lrfe/common';
 import { PARCEL_KINDS, formatRecordNo, kindOf, parcelKey, parcelLabel, schemaFor, validateVersion } from './catalogue.js';
-import { verifyChain } from './seal.js';
 import { parcelFromProperty, propertyMatches } from './parcel-match.js';
-import { checksFor, sameName, suggestFromDocuments } from './derive.js';
+import { blocking, checksFor, sameName, suggestFromDocuments } from './derive.js';
+import { diffVersions } from './diff.js';
+import { sealOf, verifyChain } from './seal.js';
 
 export { propertyMatches };
 
@@ -27,13 +28,14 @@ export function searchTextOf(record, ...datas) {
 /**
  * Land records (README.md): creating a record with its first draft, editing the draft (core fields,
  * pinned documents, suggestions and checks, comments), and reading records, versions and the seal
- * chain. Review and commit follow in API-647 and API-648.
+ * chain; review and commit through bpm (API-647). Changes after a commit follow in API-648.
  */
 export class RecordsService {
-    constructor({ repo, events, edrms = null, clock = () => new Date(), config = {} }) {
+    constructor({ repo, events, edrms = null, bpm = null, clock = () => new Date(), config = {} }) {
         this.repo = repo;
         this.events = events;
         this.edrms = edrms;
+        this.bpm = bpm;
         this.clock = clock;
         this.config = { country: 'NA', ...config };
     }
@@ -227,6 +229,162 @@ export class RecordsService {
         if (!doc) throw new NotFoundError('The document is not in this record');
         data.documents = data.documents.filter(d => d !== doc);
         return this.saveDraft(draft, revision, data, { action: 'unlink', edrmsNo: doc.edrmsNo, ref: doc.ref ?? null }, actor);
+    }
+
+    // ---------------------------------------------------------------- review and commit (API-647)
+
+    requireBpm() {
+        if (!this.bpm) throw new AppError(503, 'The review process is not configured');
+        return this.bpm;
+    }
+
+    /** A change-log entry. */
+    entry(actor, change) {
+        return { at: this.clock().toISOString(), byId: actor.id, byName: actor.name ?? null, ...change };
+    }
+
+    /**
+     * Submit the draft for review: refused while the data is incomplete or an error check fails
+     * (the list is returned). The draft is frozen and a bpm "land-record-review" starts, whose
+     * approval task goes to holders of record.finalize other than the submitter.
+     */
+    async submit(recordId, { revision }, actor = SYSTEM) {
+        const { record, version } = await this.requireDraft(recordId);
+        if (revision !== version.revision) throw new ConflictError('The draft was changed by someone else: reload it and try again', { revision: version.revision });
+        const problems = validateVersion(version.data, { complete: true });
+        if (problems.length) throw new BadRequestError('The record is not complete yet', { problems });
+        const checks = checksFor(version.data, { flags: record.flags });
+        const failing = blocking(checks);
+        if (failing.length) throw new BadRequestError(`${failing.length} check${failing.length > 1 ? 's' : ''} must pass before review: ${failing.map(c => c.message).join('; ')}`, { failing });
+
+        const bpm = this.requireBpm();
+        const now = this.clock();
+        const frozen = await this.repo.updateVersion(recordId, version.versionNumber, {
+            state: 'in_review', revision: revision + 1, checks, reviewComment: null,
+            submittedAt: now, submittedById: actor.id, submittedByName: actor.name ?? null,
+            changes: [...(version.changes || []), this.entry(actor, { action: 'submit' })], updatedAt: now
+        }, { expectedRevision: revision });
+        if (!frozen) throw new ConflictError('The draft was changed by someone else: reload it and try again');
+        await this.repo.updateRecord(recordId, { draftState: 'in_review', updatedAt: now });
+
+        let instance;
+        try {
+            instance = await bpm.startReview({
+                record: { id: recordId, recordNo: record.recordNo, label: record.label, versionNumber: version.versionNumber },
+                submittedBy: { id: actor.id, name: actor.name ?? actor.id }
+            });
+        } catch (err) {
+            // the review did not start: the draft is editable again, as before
+            await this.repo.updateVersion(recordId, version.versionNumber, {
+                state: 'draft', revision, submittedAt: null, submittedById: null, submittedByName: null, changes: version.changes || [], updatedAt: now
+            });
+            await this.repo.updateRecord(recordId, { draftState: 'draft' });
+            throw err;
+        }
+        await this.repo.updateVersion(recordId, version.versionNumber, { reviewInstanceId: instance.id });
+        await this.events?.publish('records.draft.submitted', {
+            recordId, recordNo: record.recordNo, versionNumber: version.versionNumber, reviewInstanceId: instance.id
+        }, { actor });
+        return this.getRecord(recordId);
+    }
+
+    /** The submitter takes the version back before a decision: the review task disappears. */
+    async withdraw(recordId, actor = SYSTEM) {
+        const record = await this.requireRecord(recordId);
+        if (record.draftState !== 'in_review') throw new ConflictError('The record has no version in review');
+        const version = await this.repo.getVersion(recordId, record.draftVersion);
+        if (version.submittedById !== actor.id) throw new ForbiddenError('Only the person who submitted the version can withdraw it');
+        if (version.reviewInstanceId) await this.requireBpm().cancel(version.reviewInstanceId, 'Withdrawn by the submitter');
+        await this.backToDraft(record, version, this.entry(actor, { action: 'withdraw' }));
+        await this.events?.publish('records.draft.withdrawn', { recordId, recordNo: record.recordNo, versionNumber: version.versionNumber }, { actor });
+        return this.getRecord(recordId);
+    }
+
+    async backToDraft(record, version, change, patch = {}) {
+        const now = this.clock();
+        const saved = await this.repo.updateVersion(record.id, version.versionNumber, {
+            state: 'draft', revision: version.revision + 1, reviewInstanceId: null,
+            changes: [...(version.changes || []), change], updatedAt: now, ...patch
+        }, { expectedRevision: version.revision });
+        if (!saved) throw new ConflictError('The version was changed at the same time: try again');
+        await this.repo.updateRecord(record.id, { draftState: 'draft', updatedAt: now });
+    }
+
+    /** The version in review, for a decision from bpm. */
+    async requireInReview(recordId, versionNumber) {
+        const record = await this.requireRecord(recordId);
+        const version = await this.repo.getVersion(recordId, versionNumber);
+        if (!version) throw new NotFoundError('Version not found');
+        return { record, version };
+    }
+
+    /**
+     * Approved (from bpm): the version is committed, sealed and chained to the previous current
+     * version, which is superseded. The approver must not be the submitter. A repeated call for
+     * a version already committed by the same approver returns it unchanged.
+     */
+    async commitFromReview(recordId, versionNumber, { by, comment }, service = 'bpm') {
+        const { record, version } = await this.requireInReview(recordId, versionNumber);
+        if (version.state === 'committed' && version.approvedById === by.id) return this.getRecord(recordId);
+        if (version.state !== 'in_review') throw new ConflictError(`Version ${versionNumber} is not in review (${version.state})`);
+        if (by.id === version.submittedById) throw new ForbiddenError('The submitter cannot approve their own version (four-eyes)');
+
+        const previous = record.currentVersion ? await this.repo.getVersion(recordId, record.currentVersion) : null;
+        const committedAt = this.clock();
+        const sealed = { ...version, approvedById: by.id, approvedByName: by.name ?? null, committedAt, previousSeal: previous?.seal ?? null };
+        const seal = sealOf(record, sealed);
+        const actor = { id: by.id, name: by.name };
+        await this.repo.commit({
+            recordId, versionNumber,
+            versionPatch: {
+                approvedById: by.id, approvedByName: by.name ?? null, committedAt, previousSeal: sealed.previousSeal, seal,
+                reviewComment: comment || null, updatedAt: committedAt,
+                changes: [...(version.changes || []), this.entry(actor, { action: 'commit', via: service, ...(comment ? { comment } : {}) })]
+            },
+            recordPatch: {
+                status: 'committed', currentVersion: versionNumber, draftVersion: null, draftState: null, updatedAt: committedAt,
+                searchText: searchTextOf(record, version.data)
+            },
+            supersede: previous?.versionNumber
+        });
+        await this.events?.publish('records.record.committed', {
+            recordId, recordNo: record.recordNo, versionNumber, seal, previousSeal: sealed.previousSeal,
+            submittedBy: { id: version.submittedById, name: version.submittedByName }, approvedBy: actor
+        }, { actor });
+        return this.getRecord(recordId);
+    }
+
+    /** Rejected (from bpm): the version returns to the submitter as a draft, with the comment. */
+    async rejectFromReview(recordId, versionNumber, { by, comment }, service = 'bpm') {
+        const { record, version } = await this.requireInReview(recordId, versionNumber);
+        if (version.state === 'draft' && version.reviewComment === comment) return this.getRecord(recordId);
+        if (version.state !== 'in_review') throw new ConflictError(`Version ${versionNumber} is not in review (${version.state})`);
+        if (!String(comment || '').trim()) throw new BadRequestError('A rejection needs a comment');
+        const actor = { id: by.id, name: by.name };
+        await this.backToDraft(record, version, this.entry(actor, { action: 'reject', via: service, comment }), { reviewComment: comment });
+        await this.events?.publish('records.draft.rejected', {
+            recordId, recordNo: record.recordNo, versionNumber, comment, submittedBy: { id: version.submittedById, name: version.submittedByName }
+        }, { actor });
+        return this.getRecord(recordId);
+    }
+
+    /**
+     * What the reviewer sees: the version (draft or in review), its checks and the difference
+     * from the current committed version.
+     */
+    async review(recordId) {
+        const record = await this.requireRecord(recordId);
+        if (!record.draftVersion) throw new NotFoundError('The record has no version waiting for review');
+        const version = await this.repo.getVersion(recordId, record.draftVersion);
+        const current = record.currentVersion ? await this.repo.getVersion(recordId, record.currentVersion) : null;
+        const checks = version.state === 'in_review' && version.checks?.length ? version.checks : checksFor(version.data, { flags: record.flags });
+        return {
+            record: this.summary(record), version, checks, blocking: blocking(checks).map(c => c.id),
+            overrides: [...(version.data.owners || []).filter(o => o.source?.from === 'manual').map(o => ({ what: `owner ${o.name}`, by: o.source.by ?? null, reason: o.source.reason ?? null })),
+                ...(version.data.extent?.source?.from === 'manual' ? [{ what: 'extent', by: version.data.extent.source.by ?? null, reason: version.data.extent.source.reason ?? null }] : [])],
+            diff: diffVersions(current?.data ?? null, version.data),
+            currentVersion: current ? { versionNumber: current.versionNumber, seal: current.seal, committedAt: current.committedAt } : null
+        };
     }
 
     // ---------------------------------------------------------------- comments

@@ -141,6 +141,8 @@ services:
       PORT: "3503"
       BPM_STORE: postgres
       EDRMS_URL: http://edrms:3502
+      # called only when a land record review is decided (no start-up dependency)
+      RECORDS_URL: http://land-records:3505
     ports:
       - "127.0.0.1:3503:3503"
     healthcheck: *healthcheck
@@ -187,6 +189,7 @@ services:
       RECORDS_STORE: postgres
       RECORDS_COUNTRY_CODE: NA
       EDRMS_URL: http://edrms:3502
+      BPM_URL: http://bpm:3503
     ports:
       - "127.0.0.1:3505:3505"
     healthcheck: *healthcheck

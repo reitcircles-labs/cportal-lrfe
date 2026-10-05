@@ -96,6 +96,34 @@ export async function recordsRoutes(app, { service }) {
         schema: { ...idParams(), body: { type: 'object', additionalProperties: false, required: ['body'], properties: { body: { type: 'string', minLength: 1, maxLength: 4000 } } } }
     }, async (req, reply) => reply.code(201).send(await service.addComment(req.params.id, req.body, actorOf(req))));
 
+    // ------------------------------------------------ review and commit (API-647)
+
+    app.post('/records/:id/draft/submit', {
+        onRequest: app.requirePerm('record.link'),
+        schema: { ...idParams(), body: { type: 'object', additionalProperties: false, required: ['revision'], properties: { revision } } }
+    }, async (req) => service.submit(req.params.id, req.body, actorOf(req)));
+
+    app.post('/records/:id/draft/withdraw', { onRequest: app.requirePerm('record.link'), schema: idParams() },
+        async (req) => service.withdraw(req.params.id, actorOf(req)));
+
+    app.get('/records/:id/review', { onRequest: canView, schema: idParams() }, async (req) => service.review(req.params.id));
+
+    // Decisions of the bpm "land-record-review" process (approval task done by a second person)
+    const decision = {
+        ...idParams(versionParam),
+        body: {
+            type: 'object', additionalProperties: false, required: ['by'],
+            properties: {
+                by: { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1 }, name: { type: 'string' } } },
+                comment: { type: 'string', maxLength: 4000 }
+            }
+        }
+    };
+    app.post('/records/:id/versions/:n/commit', { onRequest: app.requireService('bpm'), schema: decision },
+        async (req) => service.commitFromReview(req.params.id, req.params.n, req.body, req.user.sub));
+    app.post('/records/:id/versions/:n/reject', { onRequest: app.requireService('bpm'), schema: decision },
+        async (req) => service.rejectFromReview(req.params.id, req.params.n, req.body, req.user.sub));
+
     // ------------------------------------------------ reading
 
     app.get('/records/:id', { onRequest: canView, schema: idParams() }, async (req) => service.getRecord(req.params.id));

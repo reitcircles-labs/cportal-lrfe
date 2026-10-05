@@ -138,7 +138,7 @@ describe('document-amendment process (bpm ↔ edrms)', () => {
         const { bpm, as } = await setup();
         expect((await bpm.inject({ url: '/tasks' })).statusCode).to.equal(401);
         const list = (await bpm.inject({ url: '/processes', headers: as(users.kristofina) })).json().processes;
-        expect(list.map(p => p.key)).to.deep.equal(['document-amendment']);
+        expect(list.map(p => p.key)).to.deep.equal(['document-amendment', 'land-record-review']);
         expect(list[0].start).to.deep.equal({ perm: 'verify.edit' });
     });
 });

@@ -34,6 +34,17 @@ export default {
         },
         'POST /records/{id}/draft/documents': { tag: 'Records', summary: 'Link a filed document to the draft', description: '`{ revision, edrmsDocumentId }`. The document is pinned at its current EDRMS version, with its seal and a snapshot of its verified fields.' },
         'DELETE /records/{id}/draft/documents/{edrmsDocumentId}': { tag: 'Records', summary: 'Remove a document from the draft', description: '`?revision=` the draft\'s current revision.' },
+        'POST /records/{id}/draft/submit': {
+            tag: 'Records', summary: 'Submit the draft for review',
+            description: '`{ revision }`. Refused (400) while the data is incomplete (`problems`) or an error check fails (`failing`). The draft is frozen and the bpm process `land-record-review` starts: an approval task for `record.finalize`, never the submitter.'
+        },
+        'POST /records/{id}/draft/withdraw': { tag: 'Records', summary: 'Withdraw a version from review', description: 'Only the submitter, before a decision. The review task disappears and the draft is editable again.' },
+        'GET /records/{id}/review': {
+            tag: 'Records', summary: 'What the reviewer sees',
+            description: '`{ record, version, checks, blocking, overrides, diff, currentVersion }`. `diff` against the current committed version: `fields` (path, before, after), `owners` (added, removed, changed), `encumbrances`, `documents` (added, removed, updated to a newer EDRMS version).'
+        },
+        'POST /records/{id}/versions/{n}/commit': { tag: 'Records', summary: 'Commit an approved version (bpm only)', description: '`{ by, comment }`. Seals the version, chains it to the previous one (superseded) and makes it current. `by` must not be the submitter. Repeating it is harmless.' },
+        'POST /records/{id}/versions/{n}/reject': { tag: 'Records', summary: 'Return a rejected version to the submitter (bpm only)', description: '`{ by, comment }`. The version becomes a draft again with the comment.' },
         'GET /records/{id}/comments': { tag: 'Records', summary: 'Comments on a record' },
         'POST /records/{id}/comments': { tag: 'Records', summary: 'Comment on a record', description: '`{ body }`. Kept with the version open at the time.' },
         'GET /records/{id}': { tag: 'Records', summary: 'One land record with its current version and open draft' },

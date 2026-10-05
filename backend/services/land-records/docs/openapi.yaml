@@ -607,6 +607,349 @@ paths:
         allOf:
           - record.comment
       x-gateway-path: /api/records/{id}/comments
+  /records/{id}/draft/submit:
+    post:
+      tags:
+        - Records
+      summary: Submit the draft for review
+      description: >-
+        `{ revision }`. Refused (400) while the data is incomplete (`problems`) or an error check fails (`failing`). The draft is frozen and
+        the bpm process `land-record-review` starts: an approval task for `record.finalize`, never the submitter.
+
+
+        **Access:** Signed-in user with permission `record.link`.
+      operationId: postRecordsIdDraftSubmit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - revision
+              properties:
+                revision:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.link
+      x-gateway-path: /api/records/{id}/draft/submit
+  /records/{id}/draft/withdraw:
+    post:
+      tags:
+        - Records
+      summary: Withdraw a version from review
+      description: |-
+        Only the submitter, before a decision. The review task disappears and the draft is editable again.
+
+        **Access:** Signed-in user with permission `record.link`.
+      operationId: postRecordsIdDraftWithdraw
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.link
+      x-gateway-path: /api/records/{id}/draft/withdraw
+  /records/{id}/review:
+    get:
+      tags:
+        - Records
+      summary: What the reviewer sees
+      description: >-
+        `{ record, version, checks, blocking, overrides, diff, currentVersion }`. `diff` against the current committed version: `fields`
+        (path, before, after), `owners` (added, removed, changed), `encumbrances`, `documents` (added, removed, updated to a newer EDRMS
+        version).
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: getRecordsIdReview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+      x-gateway-path: /api/records/{id}/review
+  /records/{id}/versions/{n}/commit:
+    post:
+      tags:
+        - Records
+      summary: Commit an approved version (bpm only)
+      description: >-
+        `{ by, comment }`. Seals the version, chains it to the previous one (superseded) and makes it current. `by` must not be the
+        submitter. Repeating it is harmless.
+
+
+        **Access:** Service token only, from: `bpm`. Browsers cannot call this.
+      operationId: postRecordsIdVersionsNCommit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - by
+              properties:
+                by:
+                  type: object
+                  required:
+                    - id
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                    name:
+                      type: string
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - bpm
+      x-gateway-path: /api/records/{id}/versions/{n}/commit
+  /records/{id}/versions/{n}/reject:
+    post:
+      tags:
+        - Records
+      summary: Return a rejected version to the submitter (bpm only)
+      description: |-
+        `{ by, comment }`. The version becomes a draft again with the comment.
+
+        **Access:** Service token only, from: `bpm`. Browsers cannot call this.
+      operationId: postRecordsIdVersionsNReject
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - by
+              properties:
+                by:
+                  type: object
+                  required:
+                    - id
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                    name:
+                      type: string
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - bpm
+      x-gateway-path: /api/records/{id}/versions/{n}/reject
   /records/{id}:
     get:
       tags:
