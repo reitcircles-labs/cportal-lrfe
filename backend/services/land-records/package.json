@@ -1,0 +1,22 @@
+{
+  "name": "@lrfe/land-records",
+  "version": "0.1.0",
+  "description": "Land records: filed EDRMS documents aggregated per parcel, versioned, reviewed by a second person, sealed",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "dependencies": {
+    "@lrfe/common": "0.1.0",
+    "ajv": "^8.20.0",
+    "sequelize": "^6.37.3"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3"
+  }
+}

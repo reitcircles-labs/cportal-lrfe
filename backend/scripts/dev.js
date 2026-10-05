@@ -2,7 +2,7 @@
 /**
  * Run every backend service in watch mode from one terminal:
  *
- *   npm run dev                      NATS, all five services, and the API docs on http://localhost:3510
+ *   npm run dev                      NATS, all six services, and the API docs on http://localhost:3510
  *   npm run dev -- identity intake   only these (add `nats` for the event bus, `docs` for the API docs,
  *                                    `bao` for OpenBao; it is added anyway when one of them needs it)
  *
@@ -39,12 +39,13 @@ const PROCESSES = {
     edrms: { cwd: join(ROOT, 'services', 'edrms'), args: ['--watch', 'src/index.js'] },
     bpm: { cwd: join(ROOT, 'services', 'bpm'), args: ['--watch', 'src/index.js'] },
     intake: { cwd: join(ROOT, 'services', 'intake'), args: ['--watch', 'src/index.js'] },
+    'land-records': { cwd: join(ROOT, 'services', 'land-records'), args: ['--watch', 'src/index.js'] },
     gateway: { cwd: join(ROOT, 'services', 'gateway'), args: ['--watch', 'src/index.js'] },
     // reads docs/openapi.yaml on every request: `npm run docs` updates it without a restart
     docs: { cwd: ROOT, args: ['scripts/docs-server.js'], optional: true }
 };
 const SERVICES = Object.keys(PROCESSES);
-const COLORS = [31, 37, 36, 33, 35, 32, 34, 90];
+const COLORS = [31, 37, 36, 33, 35, 32, 94, 34, 90];
 
 const wanted = process.argv.slice(2);
 const unknown = wanted.filter(s => !SERVICES.includes(s));

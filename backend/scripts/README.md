@@ -2,7 +2,7 @@
 
 | Script | Run with (from `backend/`) | What it does |
 |---|---|---|
-| `dev.js` | `npm run dev` | Starts NATS, all five services and the API docs in one terminal; the services use NATS as their event bus. Starts OpenBao first when edrms or intake encrypts with it (`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION=bao`), or when `bao` is named |
+| `dev.js` | `npm run dev` | Starts NATS, all six services and the API docs in one terminal; the services use NATS as their event bus. Starts OpenBao first when edrms or intake encrypts with it (`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION=bao`), or when `bao` is named |
 | `nats.js` | `npm run nats` | Starts a local NATS server (port 4222, monitoring 8222, JetStream on); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256 |
 | `bao.js` | `npm run bao` (asks: development or production?) · `-- --dev` · `-- --prod` | Development: a local OpenBao vault on http://127.0.0.1:8200, data in `~/data/cportal-lrfe/openbao` (outside git); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256, and initialises it. Production: refuses; see [OpenBao: installation rules](#openbao-installation-rules) |
 | `openapi.js` | `npm run docs` · `npm run docs:check` | Generates `services/<name>/docs/openapi.yaml` · checks they are up to date |

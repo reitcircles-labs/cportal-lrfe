@@ -18,7 +18,8 @@ backend/
     ├── identity/           :3501  sign-in + MFA, sessions, users, roles, policies, access log
     ├── edrms/              :3502  sealed, versioned documents of record (S3 / local / memory storage)
     ├── bpm/                :3503  workflow engine: processes, task inbox, four-eyes approvals
-    └── intake/             :3504  capture, AI extraction (Gemini), field review, filing into edrms
+    ├── intake/             :3504  capture, AI extraction (Gemini), field review, filing into edrms
+    └── land-records/       :3505  land records: filed documents per parcel, reviewed versions, seals
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 ```
 
@@ -41,7 +42,7 @@ npm install
 cp .env_example services/identity/.env     # edit; see the comments in the file
 cp .env_example services/gateway/.env
 
-# All five services + the API docs (http://localhost:3510) in one terminal
+# All six services + the API docs (http://localhost:3510) in one terminal
 # (watch mode, each reads its own .env; Ctrl+C stops all)
 npm run dev
 npm run dev -- identity gateway            # only some of them (add `docs` for the API docs)
@@ -64,7 +65,7 @@ npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password: se
 npm run dev:identity
 ```
 
-Everything in containers (Postgres + all five services, one image built from `Dockerfile`):
+Everything in containers (Postgres + all six services, one image built from `Dockerfile`):
 
 ```bash
 JWT_SECRET=… SEED_DEMO_PASSWORD='demo-password-2026' docker compose up -d --build

@@ -27,10 +27,10 @@ const COMMON = {
     HOST: '127.0.0.1',
     LOG_LEVEL: process.env.E2E_LOG_LEVEL || 'warn',
     JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
-    IDENTITY_URL: url('identity'), EDRMS_URL: url('edrms'), BPM_URL: url('bpm'), INTAKE_URL: url('intake'),
+    IDENTITY_URL: url('identity'), EDRMS_URL: url('edrms'), BPM_URL: url('bpm'), INTAKE_URL: url('intake'), RECORDS_URL: url('land-records'),
     EVENT_BUS_DRIVER: 'nats', NATS_URL: `nats://127.0.0.1:${PORTS.nats}`,
     IDENTITY_STORE: 'memory', EDRMS_STORE: 'memory', EDRMS_STORAGE: 'memory', BPM_STORE: 'memory',
-    INTAKE_STORE: 'memory', INTAKE_STORAGE: 'memory', EXTRACTION_PROVIDER: 'mock',
+    INTAKE_STORE: 'memory', RECORDS_STORE: 'memory', INTAKE_STORAGE: 'memory', EXTRACTION_PROVIDER: 'mock',
     SEED_DEMO_PASSWORD: DEMO_PASSWORD,
     MAIL_TRANSPORT: 'file', MAIL_FILE_DIR: MAIL_DIR, MAIL_FROM: 'Deeds Registry (e2e) <noreply@example.com>',
     IDENTITY_INVITE_URL_BASE: `${WEB_URL}/#/invite`,
@@ -46,12 +46,12 @@ const E2E_BAO = process.env.E2E_BAO || 'off';
 if (!['off', 'fake', 'real'].includes(E2E_BAO)) throw new Error(`E2E_BAO must be fake or real, got "${E2E_BAO}"`);
 if (E2E_BAO === 'fake') Object.assign(COMMON, { EDRMS_ENCRYPTION: 'fake', INTAKE_ENCRYPTION: 'fake' });
 const SERVICE_ENV = {};
-const SERVICES = ['identity', 'edrms', 'bpm', 'intake'];
+const SERVICES = ['identity', 'edrms', 'bpm', 'intake', 'land-records'];
 const POSTGRES = process.env.E2E_DB === 'postgres';
 const pgData = join(STACK_DIR, 'pg');
 if (POSTGRES) {
     Object.assign(COMMON, {
-        IDENTITY_STORE: 'postgres', EDRMS_STORE: 'postgres', BPM_STORE: 'postgres', INTAKE_STORE: 'postgres',
+        IDENTITY_STORE: 'postgres', EDRMS_STORE: 'postgres', BPM_STORE: 'postgres', INTAKE_STORE: 'postgres', RECORDS_STORE: 'postgres',
         DB_CONNECTION_STRING: `postgres://lrfe@127.0.0.1:${PORTS.postgres}/e2e`, DB_SYNC: 'true',
         EDRMS_STORAGE: 'local', EDRMS_LOCAL_DIR: join(STACK_DIR, 'files', 'edrms'),
         INTAKE_STORAGE: 'local', INTAKE_LOCAL_DIR: join(STACK_DIR, 'files', 'intake')
