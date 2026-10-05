@@ -49,9 +49,9 @@ export function makeClock(start = Date.parse('2026-09-28T09:00:00Z')) {
     return clock;
 }
 
-export function makeService() {
+/** `store`: e.g. an encrypting store around a memory store (default: a plain memory store). */
+export function makeService({ store = createMemoryStore() } = {}) {
     const repo = createMemoryRepo();
-    const store = createMemoryStore();
     const events = createEventBus({ driver: 'memory', source: 'edrms' });
     const published = [];
     events.subscribe('*', e => published.push(e));
@@ -60,8 +60,8 @@ export function makeService() {
     return { repo, store, service, published, clock };
 }
 
-export async function makeApp() {
-    const ctx = makeService();
+export async function makeApp(options = {}) {
+    const ctx = makeService(options);
     const app = await buildApp({ service: ctx.service, jwtSecret: JWT_SECRET, contentUrl: { base: '/api/document-content', secret: 'content-secret' } });
     await app.ready();
     const userToken = (perms, extra = {}) => app.jwt.sign({ typ: 'access', sub: 'u3', name: 'Aina Mwandingi', perms, ...extra });

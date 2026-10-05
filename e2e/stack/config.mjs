@@ -12,6 +12,8 @@ export const ANGULAR_DIR = join(REPO_DIR, 'angular-app');
 /** Scratch space for the running stack: emails written by identity, service working dirs. Gitignored. */
 export const STACK_DIR = join(E2E_DIR, '.stack');
 export const MAIL_DIR = join(STACK_DIR, 'mail');
+/** E2E_BAO=real: the throwaway OpenBao's data, config and the services' AppRole files. */
+export const BAO_DIR = join(STACK_DIR, 'bao');
 
 const apiBase = Number(process.env.E2E_API_PORT || 3600);
 export const PORTS = {
@@ -22,6 +24,7 @@ export const PORTS = {
     intake: apiBase + 4,
     nats: apiBase + 5,
     postgres: apiBase + 6,
+    bao: apiBase + 7,          // E2E_BAO=real; its cluster port is the next one
     web: Number(process.env.E2E_WEB_PORT || 4300)
 };
 export const WEB_URL = `http://localhost:${PORTS.web}`;

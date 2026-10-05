@@ -77,6 +77,22 @@ throwaway PostgreSQL instance under `.stack/pg` with the server binaries already
 (`PG_BIN`, or the newest `/usr/lib/postgresql/<version>/bin`), on port 3606, TCP only, and stops and
 removes it at the end. It never touches another database on the machine. No Docker needed.
 
+## With stored files encrypted
+
+`E2E_BAO=fake` (with any Playwright command, also with `E2E_DB=postgres`) encrypts the files the
+services store, with in-memory keys instead of OpenBao (nothing sent anywhere): the edrms records
+and intake's scans (`EDRMS_ENCRYPTION=fake`, `INTAKE_ENCRYPTION=fake`). The same tests must pass. Without it, files are stored as before.
+
+`E2E_BAO=real` starts a throwaway OpenBao for the run (the backend's `scripts/bao.js --dev` on port
+3607, data in `.stack/bao`, stopped and removed with the stack): it creates the keys, policies and
+AppRoles, and edrms and intake encrypt with it, each logged in with its own AppRole. The first run
+downloads OpenBao into `backend/.tools/`.
+
+`tests/encryption.spec.ts` (@API-640) runs only with `E2E_BAO`: a filed record opens as the
+original (its SHA-256 matches the sealed version) and passes **Check integrity**; with `real`, each
+service's AppRole may use only its own key; with `E2E_DB=postgres` (files in folders), every stored
+file is ciphertext.
+
 ## With the automatic cross-check on
 
 `E2E_JEV=fake` (with any Playwright command, also together with `E2E_DB=postgres`) switches the

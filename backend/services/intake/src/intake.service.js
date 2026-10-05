@@ -25,6 +25,17 @@ async function toBuffer(stream) {
  * Extracted values never go to the EDRMS directly: only what a reviewer accepted or corrected
  * is filed, with the extraction's provenance attached.
  */
+
+/**
+ * The encrypting store's key service (OpenBao) failed: sealed, unreachable, or this service's login
+ * or key refused. Screens get a neutral message (no tool names); the cause stays on the error.
+ */
+export const STORE_UNAVAILABLE = 'The document store is temporarily unavailable. Try again shortly.';
+export function storeError(err) {
+    if (err?.name !== 'KeyringError') return err;
+    return Object.assign(new AppError(503, STORE_UNAVAILABLE), { cause: err, code: err.code });
+}
+
 export class IntakeService {
     constructor({ repo, store, events, edrms, checker, clock = () => new Date(), config = {} }) {
         this.repo = repo;
@@ -104,16 +115,17 @@ export class IntakeService {
             if (!ACCEPTED_TYPES.includes(file.mimeType)) throw new BadRequestError(`Upload a PDF, PNG or JPEG (got ${file.mimeType}). TIFF needs converting first.`);
             const id = randomUUID();
             key = storageKey('intake', id, 1, file.fileName);
-            const { sha256, size } = await this.store.put({ key, body: file.stream, contentType: file.mimeType });
+            const { sha256, size, encryption } = await this.store.put({ key, body: file.stream, contentType: file.mimeType }).catch(err => { throw storeError(err); });
             if (file.stream.truncated) throw new AppError(413, 'The file is larger than the allowed upload size');
             if (!size) throw new BadRequestError('The file is empty');
             const existing = await this.repo.findBySha(sha256);
             if (existing) throw new ConflictError(`This file was already captured (${existing.fileName}, batch ${existing.batchId})`, { documentId: existing.id });
 
-            const pages = await countPages(await toBuffer(await this.store.getStream(key)), file.mimeType);
+            const pages = await countPages(await toBuffer(await this.readFile(key, encryption)), file.mimeType);
             const now = this.clock();
             const doc = await this.repo.createDocument({
                 id, batchId, status: 'queued', fileKey: key, fileName: key.split('/').pop(), mimeType: file.mimeType, size, sha256, pages,
+                ...(encryption ? { encryption } : {}),
                 capturedById: actor.id, capturedByName: actor.name, capturedAt: now, fields: [], notes: [], languages: [],
                 escalated: false, extractionCostUsd: 0, updatedAt: now
             });
@@ -213,9 +225,14 @@ export class IntakeService {
         return this.repo.listEvents(id);
     }
 
+    /** The staged scan as a stream, decrypted when it was stored encrypted. */
+    async readFile(key, encryption) {
+        return this.store.getStream(key, { encryption }).catch(err => { throw storeError(err); });
+    }
+
     async openFile(id) {
         const d = await this.requireDocument(id);
-        return { stream: await this.store.getStream(d.fileKey), mimeType: d.mimeType, fileName: d.fileName };
+        return { stream: await this.readFile(d.fileKey, d.encryption), mimeType: d.mimeType, fileName: d.fileName };
     }
 
     // ---------------------------------------------------------------- review
@@ -316,7 +333,8 @@ export class IntakeService {
         if (blockers.length) throw new ConflictError('Not ready to file', { blockers });
         const t = docType(d.docType);
         const extraction = d.latestExtractionId ? await this.repo.getExtraction(d.latestExtractionId) : null;
-        const buffer = await toBuffer(await this.store.getStream(d.fileKey));
+        // the plain scan goes to edrms over TLS; edrms encrypts it under its own key
+        const buffer = await toBuffer(await this.readFile(d.fileKey, d.encryption));
         const result = await this.edrms.fileDocument({
             buffer, fileName: d.fileName, mimeType: d.mimeType,
             meta: {

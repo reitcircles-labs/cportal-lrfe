@@ -24,7 +24,8 @@
     "docs": "node scripts/openapi.js",
     "docs:check": "node scripts/openapi.js --check",
     "docs:serve": "node scripts/docs-server.js",
-    "nats": "node scripts/nats.js"
+    "nats": "node scripts/nats.js",
+    "bao": "node scripts/bao.js"
   },
   "devDependencies": {
     "js-yaml": "^4.3.2"

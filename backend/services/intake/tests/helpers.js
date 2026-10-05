@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { createEventBus, createServiceTokenSigner } from '@lrfe/common';
-import { createMemoryStore } from '@lrfe/storage';
+import { createEncryptingStore, createMemoryStore } from '@lrfe/storage';
 import { IntakeService } from '../src/intake.service.js';
 import { createMemoryRepo } from '../src/repo/memory.js';
 import { createEdrmsClient } from '../src/edrms-client.js';
@@ -49,17 +49,19 @@ export const injectFetch = (app) => async (url, { method, headers, body }) => {
 /**
  * Intake + worker + a real in-process edrms. `respond` scripts the model's answer per call
  * (default: the demo deed); `escalation` optionally scripts a second model; `jev` an optional
- * cross-check judge (e.g. createFakeJev).
+ * cross-check judge (e.g. createFakeJev); `keyring` / `edrmsKeyring` encrypt intake's / edrms's stored files.
  */
-export async function makeIntake({ respond, escalation, budgetUsd = null, jev = null, jevConfig = null } = {}) {
+export async function makeIntake({ respond, escalation, budgetUsd = null, jev = null, jevConfig = null, keyring = null, edrmsKeyring = null } = {}) {
     const clock = makeClock();
-    const edrmsService = new EdrmsService({ repo: edrmsRepo(), store: createMemoryStore(), events: createEventBus({ driver: 'memory', source: 'edrms' }), clock });
+    const edrmsPlainStore = createMemoryStore();
+    const edrmsService = new EdrmsService({ repo: edrmsRepo(), store: edrmsKeyring ? createEncryptingStore(edrmsPlainStore, edrmsKeyring) : edrmsPlainStore, events: createEventBus({ driver: 'memory', source: 'edrms' }), clock });
     const edrmsApp = await buildEdrms({ service: edrmsService, jwtSecret: SECRET });
     await edrmsApp.ready();
     const edrms = createEdrmsClient({ baseUrl: 'http://edrms', serviceToken: createServiceTokenSigner({ secret: SECRET, service: 'intake' }), fetchImpl: injectFetch(edrmsApp) });
 
     const repo = createMemoryRepo();
-    const store = createMemoryStore();
+    const plainStore = createMemoryStore();
+    const store = keyring ? createEncryptingStore(plainStore, keyring) : plainStore;
     const events = createEventBus({ driver: 'memory', source: 'intake' });
     const published = [];
     events.subscribe('*', e => published.push(e));
@@ -81,7 +83,7 @@ export async function makeIntake({ respond, escalation, budgetUsd = null, jev = 
     async function seedEdrms(meta) {
         return (await edrmsService.fileDocument({ meta: { reviewedBy: actor(users.rev), title: 'Seed', pages: 1, ...meta }, file: fileOf(pdf(meta.sourceId)) })).document;
     }
-    return { clock, repo, store, service, worker, edrmsService, edrmsApp, published, calls, batch, captureAndExtract, seedEdrms };
+    return { clock, repo, store, plainStore, service, worker, edrmsService, edrmsPlainStore, edrmsApp, published, calls, batch, captureAndExtract, seedEdrms };
 }
 
 export async function makeHttp(opts) {

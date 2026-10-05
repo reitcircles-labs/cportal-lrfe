@@ -22,6 +22,14 @@ backend/
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 ```
 
+Stored files are to be encrypted with keys protected by OpenBao. Settings per service
+(`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION` = `off` (default) | `bao` | `fake`; with `bao`: `BAO_ADDR`,
+`BAO_ROLE_ID`, `BAO_SECRET_ID_FILE`, `BAO_KEY_NAME`, default `edrms-files` / `intake-files`); edrms
+(API-638) and intake (API-639) read them. Design and decisions in
+[`packages/storage/README.md`](packages/storage/README.md); installing OpenBao in
+[`scripts/README.md`](scripts/README.md#openbao-installation-rules); storage research in
+[`docs/storage_integrations.md`](docs/storage_integrations.md).
+
 Planned next: connect the frontend's Capture and Verify screens to intake; **land-records**
 (ERP records, linking, finalize); **audit** (hash-chained trail, sign-off, evidence export); **search**.
 
@@ -36,6 +44,8 @@ cp .env_example services/gateway/.env
 # (watch mode, each reads its own .env; Ctrl+C stops all)
 npm run dev
 npm run dev -- identity gateway            # only some of them (add `docs` for the API docs)
+# With document encryption (EDRMS_ENCRYPTION / INTAKE_ENCRYPTION=bao in their .env, settings printed by
+# `npm run bao -- --dev`), npm run dev also starts OpenBao; those services wait for it at startup
 # Testing from a laptop: forward the ports over SSH, see scripts/README.md (remoteConnect.sh)
 
 # Quickest: no database, seeded with the 14 demo users; documents stored in ./tmp

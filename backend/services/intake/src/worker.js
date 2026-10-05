@@ -5,6 +5,8 @@ import { runExtraction } from './extraction/pipeline.js';
  * The reading error the screens show: never the model, provider or raw API message (those go to
  * the log, the job and the stored attempt).
  */
+const PAUSED = 'Reading paused: the document store is temporarily unavailable; it will be tried again automatically.';
+
 export function readingError(err, final) {
     if (err?.publicMessage) return err.publicMessage;
     return final ? 'The document could not be read. Read it again, or reject it.' : 'Reading failed; it will be tried again automatically.';
@@ -52,7 +54,7 @@ export class ExtractionWorker {
         if (!job) return false;
         try {
             const doc = await this.service.markExtracting(job.documentId);
-            const buffer = await toBuffer(await this.store.getStream(doc.fileKey));
+            const buffer = await toBuffer(await this.service.readFile(doc.fileKey, doc.encryption));
             const result = await runExtraction({
                 file: { buffer, mimeType: doc.mimeType, fileName: doc.fileName },
                 primary: this.primary, escalation: this.escalation, checker: this.checker, jev: this.jev, jevConfig: this.jevConfig,
@@ -61,6 +63,7 @@ export class ExtractionWorker {
             await this.service.applyExtraction(job.documentId, result);
             await this.repo.updateJob(job.id, { status: 'done', lastError: null, updatedAt: this.clock() });
         } catch (err) {
+            if (err.code === 'EUNAVAILABLE') return this.pause(job, err);
             const final = err.retryable === false || job.attempts >= job.maxAttempts;
             const delay = 60_000 * 4 ** (job.attempts - 1);
             this.logger.error({ err: err.message, documentId: job.documentId, attempt: job.attempts, final }, 'extraction failed');
@@ -69,6 +72,19 @@ export class ExtractionWorker {
                 : { status: 'queued', lastError: err.message, runAfter: new Date(this.clock().getTime() + delay), updatedAt: this.clock() });
             await this.service.markExtractionFailed(job.documentId, { attempts: err.attempts || [], error: readingError(err, final), detail: err.message, final }).catch(e => this.logger.error({ err: e.message }, 'could not record the failure'));
         }
+        return true;
+    }
+
+    /**
+     * The scan's key service (OpenBao) is unavailable: nothing was read and no model was called, so
+     * the job goes back in the queue a minute later without using up an attempt; a vault outage
+     * never makes a reading fail for good.
+     */
+    async pause(job, err) {
+        this.logger.warn({ err: err.cause?.message || err.message, documentId: job.documentId }, 'extraction paused: document store unavailable');
+        await this.repo.updateJob(job.id, { status: 'queued', attempts: Math.max(0, job.attempts - 1), lastError: err.message, runAfter: new Date(this.clock().getTime() + 60_000), updatedAt: this.clock() });
+        await this.service.markExtractionFailed(job.documentId, { attempts: [], error: PAUSED, detail: err.cause?.message || err.message, final: false })
+            .catch(e => this.logger.error({ err: e.message }, 'could not record the pause'));
         return true;
     }
 

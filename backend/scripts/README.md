@@ -2,8 +2,9 @@
 
 | Script | Run with (from `backend/`) | What it does |
 |---|---|---|
-| `dev.js` | `npm run dev` | Starts NATS, all five services and the API docs in one terminal; the services use NATS as their event bus |
+| `dev.js` | `npm run dev` | Starts NATS, all five services and the API docs in one terminal; the services use NATS as their event bus. Starts OpenBao first when edrms or intake encrypts with it (`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION=bao`), or when `bao` is named |
 | `nats.js` | `npm run nats` | Starts a local NATS server (port 4222, monitoring 8222, JetStream on); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256 |
+| `bao.js` | `npm run bao` (asks: development or production?) · `-- --dev` · `-- --prod` | Development: a local OpenBao vault on http://127.0.0.1:8200, data in `~/data/cportal-lrfe/openbao` (outside git); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256, and initialises it. Production: refuses; see [OpenBao: installation rules](#openbao-installation-rules) |
 | `openapi.js` | `npm run docs` · `npm run docs:check` | Generates `services/<name>/docs/openapi.yaml` · checks they are up to date |
 | `docs-server.js` | `npm run docs:serve` | Swagger UI for the API docs on http://localhost:3510 |
 | `remoteConnect.sh` | `./scripts/remoteConnect.sh 4200 3510` **on your laptop** | Opens the server's ports on your laptop over SSH, to test the app remotely |
@@ -98,3 +99,144 @@ The config is only read as `KEY=VALUE` lines, never run as a script.
 
 The sign-in cookie works because the browser sees `http://localhost`, as in local development.
 Use the app at `localhost`, not at the server's address.
+
+## OpenBao: installation rules
+
+OpenBao (the open-source fork of HashiCorp Vault) is the project's secrets vault: it will hold the
+services' secrets and the keys that encrypt stored documents. These rules decide **who may run it,
+where its data lives and how it is backed up**. `bao.js` installs it for development only; a
+production installation is done by an administrator, following the production rules below.
+
+### Development: `npm run bao -- --dev`
+
+| What | Where / how |
+|---|---|
+| Program | OpenBao 2.7.1, downloaded on the first run into `backend/.tools/openbao-2.7.1/` (git-ignored), checked against the release's SHA-256 checksums |
+| Runs as | Your own user. Fine for development only |
+| Address | `http://127.0.0.1:8200` (`BAO_PORT` for another port), no TLS: reachable from this server only |
+| Data | Integrated Raft storage in `~/data/cportal-lrfe/openbao` (`BAO_DATA_DIR`), outside git, folder `0700`, files `0600` |
+| Unseal key and root token | `dev-init.json` in the data folder, written on the first start and used to unseal on later starts. **Development only:** never copy it elsewhere, never use this setup for real secrets |
+
+Using the command line while it runs:
+
+```bash
+export BAO_ADDR=http://127.0.0.1:8200
+export BAO_TOKEN=$(node -p "require(process.env.HOME + '/data/cportal-lrfe/openbao/dev-init.json').rootToken")
+.tools/openbao-2.7.1/bao status
+```
+
+Ctrl+C stops it. To start over on a development system, stop it and delete the data folder.
+
+**With `npm run dev`:** once a service's `.env` has `EDRMS_ENCRYPTION=bao` or
+`INTAKE_ENCRYPTION=bao` (with the settings `bao.js` prints), `npm run dev` starts OpenBao first,
+prefixed `bao │`, and stops it with the rest. An OpenBao already running on port 8200 (e.g. started
+with `npm run bao -- --dev`) is used instead. Without any service on `bao`, OpenBao is not started.
+
+**Startup check:** a service on `bao` logs in and requests one data key before it starts. While
+the vault is starting or sealed it waits up to a minute, then exits with "OpenBao at … is sealed or
+unreachable"; a wrong role or secret ID, or a key its policy does not allow, stops it at once
+("startup check failed"). If the vault fails later, the service answers "The document store is
+temporarily unavailable" (503) until it is back, and the intake reader pauses.
+
+### Memory locking and swap
+
+OpenBao 2.x never locks its memory: mlock was removed in OpenBao 2.0, and the `disable_mlock`
+setting is obsolete (it only logs "unknown or unsupported field"). Vault's advice for integrated
+storage was `disable_mlock = true` anyway. The consequence: **on a machine with swap, key material
+can be written to swap.** Acceptable for development; in production use encrypted swap or no swap.
+
+### Production rules
+
+`npm run bao -- --prod` refuses to install. In production:
+
+1. **Never run OpenBao as the same user as the portal.** Anything running as the same user (the
+   services, a shell) could read OpenBao's data folder, configuration and process. An administrator
+   creates a dedicated `openbao` user with no login shell, and runs OpenBao as a system service
+   (systemd) under that user, started at boot.
+2. **TLS on the listener**, with a certificate the services trust. Listen only where the services
+   can reach it, never on the internet.
+3. **Data folder owned by `openbao`, mode `0700`**, on an encrypted disk (LUKS). Swap encrypted or
+   off (see above).
+4. **Unseal keys split among named people** (Shamir, e.g. 5 shares, any 3 unseal), each kept by a
+   different person, or automatic unsealing by a hardware security module (PKCS#11). Unseal keys are
+   **never** stored with the data, the configuration or the backups. Write down who holds them and
+   what to do after a restart (OpenBao starts sealed).
+5. **Root token only for the initial setup**, then revoked; administrators and services get their
+   own logins and policies. Turn on an audit device and keep its log with the portal's audit trail.
+
+### Document encryption: keys, policies and AppRoles
+
+The services encrypt stored files with keys protected by OpenBao (design:
+[`packages/storage/README.md`](../packages/storage/README.md)). Each service that stores files has
+one transit key (KEK), one policy and one AppRole:
+
+| Service | Transit key (KEK) | Policy allows | AppRole |
+|---|---|---|---|
+| edrms | `edrms-files` | `transit/datakey/plaintext/edrms-files`, `transit/decrypt/edrms-files` | `edrms` |
+| intake | `intake-files` | `transit/datakey/plaintext/intake-files`, `transit/decrypt/intake-files` | `intake` |
+
+**Development:** every `npm run bao -- --dev` checks and, where missing, creates all of this:
+transit engine, keys (`aes256-gcm96`, not exportable), policies, AppRole login, roles (tokens 1 h,
+at most 24 h, usable from 127.0.0.1 only). It keeps each service's role ID and secret ID in
+`~/data/cportal-lrfe/openbao/approle/` (this user only; a secret ID is reused while it still logs
+in) and prints the settings to copy into `services/edrms/.env` and `services/intake/.env`
+(`EDRMS_ENCRYPTION=bao` / `INTAKE_ENCRYPTION=bao`, `BAO_ADDR`, `BAO_ROLE_ID`, `BAO_SECRET_ID_FILE`,
+`BAO_KEY_NAME`).
+
+**Production:**
+
+1. **An administrator creates them**, with their own login and an admin policy, never with the root
+   token and never from a service. The same names and policies as above; keys never exportable.
+2. **Bind each role to its service's server:** `secret_id_bound_cidrs` and `token_bound_cidrs` set
+   to that server's address, so a stolen secret ID is useless elsewhere.
+3. **Deliver the secret ID safely:** a file owned by the service's user, mode `0600`, outside the
+   repository (`BAO_SECRET_ID_FILE`), or a one-time response-wrapped token that the service unwraps.
+   Give secret IDs a lifetime (`secret_id_ttl`) and rotate them; the role ID can sit in the
+   service's configuration.
+4. **Rotation by a separate key-admin role**, which may rotate keys and re-wrap stored keys but
+   **not decrypt**, so it never sees a data key:
+   ```hcl
+   # policy "key-admin"
+   path "transit/keys/+/rotate" { capabilities = ["update"] }
+   path "transit/rewrap/+"      { capabilities = ["update"] }
+   path "transit/keys/+"        { capabilities = ["read"] }
+   ```
+   Rotating a KEK leaves files as they are; `rewrap` updates the wrapped keys in the services'
+   databases (see the storage README, section 3).
+5. **Never share a key or a role between services:** each could then open the other's files.
+
+### Storage: why not the portal's PostgreSQL
+
+OpenBao keeps its data in **integrated Raft storage on its own disk**, as OpenBao recommends: no
+extra software, and OpenBao encrypts everything before writing it. OpenBao can also store its data
+in PostgreSQL, but **not in the portal's database**: if that database fails, the vault fails with
+it and nothing can be decrypted, not even from backups; and the portal's database administrators
+would control the vault's storage (they could delete it, making every document unreadable). If
+PostgreSQL is ever wanted, it must be a separate cluster with its own backups.
+
+### Backups
+
+| Do | Do not |
+|---|---|
+| `bao operator raft snapshot save <file>`: a consistent snapshot, taken while OpenBao runs | `tar.gz` of the live data folder: the database files are open and changing; the copy may not restore |
+| Run it from cron with a token that may only take snapshots; check it with `bao operator raft snapshot inspect` | Keep the only copy on the same server |
+| Copy snapshots off-site, ideally to storage that cannot be overwritten; keep a history (e.g. 30 daily, 12 monthly, 7 yearly) | Keep the unseal keys next to the snapshots: a snapshot with its unseal keys gives access to everything |
+| Back up the configuration file and TLS certificates with the server's configuration | |
+| **Restore drill**, e.g. monthly: restore the latest snapshot into a throwaway OpenBao (`bao operator raft snapshot restore <file>`), unseal it, decrypt a sample document | Assume a backup works before it has been restored |
+
+```bash
+# cron, e.g. 15 2 * * *  (production: runs as the openbao user, with TLS)
+f=/var/backups/openbao/bao-$(date +%F).snap
+bao operator raft snapshot save "$f" && bao operator raft snapshot inspect "$f" >/dev/null
+```
+
+### One node, and moving to three
+
+`bao.js` runs a single node: no high availability. If OpenBao or its server is down, no document
+can be stored or opened, and if the server is lost, only the off-site snapshots remain. Production
+should run three OpenBao nodes (ideally across two sites); Raft lets nodes join the existing
+cluster (`bao operator raft join`), so a single node can grow without starting over.
+
+References: [OpenBao storage](https://openbao.org/docs/configuration/storage/),
+[integrated storage (Raft)](https://openbao.org/docs/configuration/storage/raft/),
+[mlock removal](https://openbao.org/docs/rfcs/mlock-removal).

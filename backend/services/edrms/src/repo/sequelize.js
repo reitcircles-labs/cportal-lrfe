@@ -28,6 +28,7 @@ export function createSequelizeRepo(sequelize) {
             // sync() creates missing tables but never alters existing ones. Columns added after a
             // table first existed are added here, idempotently, until real migrations exist.
             await sequelize.query(`ALTER TABLE "${SCHEMA}"."document_version" ADD COLUMN IF NOT EXISTS "provenance" JSONB`);
+            await sequelize.query(`ALTER TABLE "${SCHEMA}"."document_version" ADD COLUMN IF NOT EXISTS "encryption" JSONB`);   // API-638
         },
 
         async createDocument({ year, build }) {

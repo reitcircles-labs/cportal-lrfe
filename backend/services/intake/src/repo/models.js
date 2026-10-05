@@ -39,6 +39,8 @@ export function defineModels(sequelize) {
         latestExtractionId: { type: DataTypes.UUID },
         // the automatic cross-check of the latest reading: { provider, model, version, calls, at } (audit)
         crosscheck: j(),
+        // encrypted scan (INTAKE_ENCRYPTION): algorithm, KEK name, wrapped data key, chunk size, ciphertext SHA-256 and size; never sent to clients
+        encryption: j(),
         escalated: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
         extractionCostUsd: { type: DataTypes.DECIMAL(12, 6), allowNull: false, defaultValue: 0 },
         extractionError: { type: DataTypes.TEXT },
