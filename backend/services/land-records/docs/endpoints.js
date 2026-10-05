@@ -24,6 +24,18 @@ export default {
             tag: 'Documents', summary: 'Documents that match this parcel, with the reasons',
             description: '`{ parcel, items }`. Each item: the document, `reasons` (property is this parcel; SG diagram cited by, prior title of, or citing a document already in the record), `inThisRecord`, `linkedTo`.'
         },
+        'POST /records': {
+            tag: 'Records', summary: 'Create a land record (draft v1)',
+            description: '`{ parcel }`, or `{ edrmsDocumentId }` to read the parcel from a filed document\'s property field and link that document. One record per parcel: 409 with `recordId` when the parcel already has one.'
+        },
+        'PATCH /records/{id}/draft': {
+            tag: 'Records', summary: 'Edit the draft: core fields, attributes, suggestions',
+            description: '`{ revision, changes, accept, reason }`. `changes`: parcel (same kind), extent, tenure, owners, encumbrances, attributes (null removes). `accept`: take over the documents\' suggested owners, extent or encumbrances. Owners or an extent that differ from the suggestions are marked as entered by hand and need a `reason`. Suggestions (`derived`) and checks are recomputed. 409 when `revision` is not the draft\'s current revision.'
+        },
+        'POST /records/{id}/draft/documents': { tag: 'Records', summary: 'Link a filed document to the draft', description: '`{ revision, edrmsDocumentId }`. The document is pinned at its current EDRMS version, with its seal and a snapshot of its verified fields.' },
+        'DELETE /records/{id}/draft/documents/{edrmsDocumentId}': { tag: 'Records', summary: 'Remove a document from the draft', description: '`?revision=` the draft\'s current revision.' },
+        'GET /records/{id}/comments': { tag: 'Records', summary: 'Comments on a record' },
+        'POST /records/{id}/comments': { tag: 'Records', summary: 'Comment on a record', description: '`{ body }`. Kept with the version open at the time.' },
         'GET /records/{id}': { tag: 'Records', summary: 'One land record with its current version and open draft' },
         'GET /records/{id}/versions': { tag: 'Records', summary: 'All versions of a record: state, who submitted and approved, seal, changes' },
         'GET /records/{id}/versions/{n}': { tag: 'Records', summary: 'One version, with its data (core, attributes, pinned documents)' },

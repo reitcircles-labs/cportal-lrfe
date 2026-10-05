@@ -2,6 +2,9 @@ const idParams = (extra = {}) => ({
     params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' }, ...extra } }
 });
 const versionParam = { n: { type: 'integer', minimum: 1 } };
+const revision = { type: 'integer', minimum: 1 };
+const uuid = { type: 'string', format: 'uuid' };
+const actorOf = (req) => ({ id: req.user.sub, name: req.user.name });
 
 export async function recordsRoutes(app, { service }) {
     const canView = app.requirePerm('record.view');
@@ -44,6 +47,56 @@ export async function recordsRoutes(app, { service }) {
         const fields = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k.slice('field.'.length), v]));
         return service.searchDocuments({ q, docType, recordId, fields, limit });
     });
+
+    // ------------------------------------------------ creating and editing (API-646)
+
+    app.post('/records', {
+        onRequest: app.requirePerm('record.create'),
+        schema: {
+            body: {
+                type: 'object', additionalProperties: false,
+                properties: { parcel: { type: 'object' }, attributes: { type: 'object' }, edrmsDocumentId: uuid },
+                anyOf: [{ required: ['parcel'] }, { required: ['edrmsDocumentId'] }]
+            }
+        }
+    }, async (req, reply) => reply.code(201).send(await service.createRecord(req.body, actorOf(req))));
+
+    app.patch('/records/:id/draft', {
+        onRequest: app.requireAnyPerm('record.create', 'record.link'),
+        schema: {
+            ...idParams(),
+            body: {
+                type: 'object', additionalProperties: false, required: ['revision'],
+                properties: {
+                    revision,
+                    changes: { type: 'object' },
+                    accept: { type: 'array', uniqueItems: true, items: { type: 'string', enum: ['owners', 'extent', 'encumbrances'] } },
+                    reason: { type: 'string', minLength: 1, maxLength: 1000 }
+                }
+            }
+        }
+    }, async (req) => service.updateDraft(req.params.id, req.body, actorOf(req)));
+
+    app.post('/records/:id/draft/documents', {
+        onRequest: app.requirePerm('record.link'),
+        schema: { ...idParams(), body: { type: 'object', additionalProperties: false, required: ['revision', 'edrmsDocumentId'], properties: { revision, edrmsDocumentId: uuid } } }
+    }, async (req) => service.addDocument(req.params.id, req.body, actorOf(req)));
+
+    app.delete('/records/:id/draft/documents/:edrmsDocumentId', {
+        onRequest: app.requirePerm('record.unlink'),
+        schema: {
+            ...idParams({ edrmsDocumentId: uuid }),
+            querystring: { type: 'object', additionalProperties: false, required: ['revision'], properties: { revision } }
+        }
+    }, async (req) => service.removeDocument(req.params.id, req.params.edrmsDocumentId, req.query, actorOf(req)));
+
+    app.get('/records/:id/comments', { onRequest: canView, schema: idParams() }, async (req) => service.listComments(req.params.id));
+    app.post('/records/:id/comments', {
+        onRequest: app.requirePerm('record.comment'),
+        schema: { ...idParams(), body: { type: 'object', additionalProperties: false, required: ['body'], properties: { body: { type: 'string', minLength: 1, maxLength: 4000 } } } }
+    }, async (req, reply) => reply.code(201).send(await service.addComment(req.params.id, req.body, actorOf(req))));
+
+    // ------------------------------------------------ reading
 
     app.get('/records/:id', { onRequest: canView, schema: idParams() }, async (req) => service.getRecord(req.params.id));
     app.get('/records/:id/suggestions', { onRequest: canView, schema: idParams() }, async (req) => service.suggestions(req.params.id));

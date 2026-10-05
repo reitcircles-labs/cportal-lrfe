@@ -75,13 +75,16 @@ committed with. `attributes` stays free unless a schema chooses to describe part
 
 ## 3. Owners and extent: suggested from documents, confirmed
 
-When documents are added or removed, the service **suggests** the core facts from them; the officer
-confirms each suggestion or overrides it (an override needs a reason and is shown to the reviewer).
+When documents are added or removed, the service **suggests** the core facts from them (the draft's
+`derived`); the officer confirms a suggestion (`accept`) or overrides it (an override needs a reason,
+is marked `source: {from: "manual", by, reason}` and is shown to the reviewer).
 
-- **Owners and shares:** the transferees (or grantees) of the **latest** linked deed of transfer or
-  grant by registration date, with their ID numbers; shares from the deed's share field ("½ share
-  each" → 1/2 each, "¼ share each" → 1/4 each; a single transferee holds 1/1). Estate transfers work
-  the same way (the heirs are the transferees).
+- **Owners and shares:** the title deeds are read in registration order. A deed of grant gives the
+  grantees the whole parcel; a deed of transfer moves the transferor's share to the transferees, and
+  the other holders keep theirs (Erf 1873: T 2210/2008 gives Petrus and Maria ½ each; T 4521/2019
+  moves the late Petrus's ½ to Ndapewa and Tomas, ¼ each; Maria keeps ½). Shares from the deed's
+  share field ("½ share each" → 1/2 each); without one, the passing share is split equally (noted).
+  A transferor who is not a holder, or none named: the transferees take the whole parcel.
 - **Extent:** from the linked SG diagram; else from the latest deed.
 - **Encumbrances:** from linked mortgage bonds (bond number, mortgagee) that are not cancelled.
 - **Chain of title:** the deeds in registration order, each citing its prior title.
@@ -171,23 +174,26 @@ and whether a document is already in this or another record: API-645. edrms sear
 PostgreSQL full-text and trigram search behind one search function; a dedicated engine
 (OpenSearch) can replace it later.
 
-## 10. API (planned)
+## 10. API
 
 All under `/api/records` through the gateway; every service checks the token and permission itself.
+Every draft change needs the draft's current `revision` (409 otherwise), recomputes suggestions and
+checks, is logged in the version's `changes` (who, what, when) and published as `records.draft.changed`.
+Opening a new draft, submit and withdraw, and the decisions from bpm follow in API-647 and API-648.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `GET /records?q=&status=` | `record.view` | list and search records |
 | `GET /records/:id` | `record.view` | the record with its current version, open draft and flags |
 | `GET /records/:id/versions/:n` · `…/verify` | `record.view` | a version · verify the seal chain |
-| `POST /records {parcel}` | `record.create` | create a record (draft v1) |
-| `PATCH /records/:id/draft {revision, changes}` | `record.create` or `record.link` | edit core fields and attributes; confirm or override suggestions |
+| `POST /records {parcel}` · `{edrmsDocumentId}` | `record.create` | create a record (draft v1); from a filed document: parcel read from its property field, document linked |
+| `PATCH /records/:id/draft {revision, changes, accept, reason}` | `record.create` or `record.link` | edit core fields and attributes; `accept` suggested owners, extent, encumbrances; `reason` for values entered by hand |
 | `POST /records/:id/draft/documents {edrmsDocumentId}` | `record.link` | pin a document (its current version) |
-| `DELETE /records/:id/draft/documents/:edrmsDocumentId` | `record.unlink` | remove a document |
+| `DELETE /records/:id/draft/documents/:edrmsDocumentId?revision=` | `record.unlink` | remove a document |
 | `POST /records/:id/draft` | `record.create` or `record.link` | open a new draft from the current version |
 | `POST /records/:id/draft/submit` · `…/withdraw` | `record.link` | submit for review · withdraw |
 | `GET /records/:id/comments` · `POST` | `record.view` · `record.comment` | discussion |
-| `GET /documents/search?…` · `GET /records/:id/suggestions` | `record.view` | find documents (API-645) |
+| `GET /records/document-search?…` · `GET /records/:id/suggestions` | `record.view` | find documents (API-645) |
 | `POST /records/:id/versions/:n/commit` · `…/reject` | service token from bpm | decisions from the review process |
 
 ## 11. Events

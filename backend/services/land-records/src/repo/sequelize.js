@@ -93,6 +93,11 @@ export function createSequelizeRepo(sequelize) {
                     version: plain(await m.Version.findOne({ where: { recordId, versionNumber }, transaction }))
                 };
             });
+        },
+
+        async addComment(comment) { return plain(await m.Comment.create(comment)); },
+        async listComments(recordId) {
+            return (await m.Comment.findAll({ where: { recordId }, order: [['createdAt', 'ASC']] })).map(plain);
         }
     };
 }

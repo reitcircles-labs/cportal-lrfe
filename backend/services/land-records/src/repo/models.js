@@ -64,5 +64,15 @@ export function defineModels(sequelize) {
         last: { type: DataTypes.INTEGER, allowNull: false }
     }, opts());
 
-    return { Record, Version, Counter };
+    // Discussion on a record (README.md section 10), kept with the version it was written on.
+    const Comment = sequelize.define('record_comment', {
+        id: { type: DataTypes.UUID, primaryKey: true },
+        recordId: { type: DataTypes.UUID, allowNull: false },
+        versionNumber: { type: DataTypes.INTEGER },
+        body: { type: DataTypes.TEXT, allowNull: false },
+        authorId: s(), authorName: s(),
+        createdAt: d()
+    }, opts({ indexes: [{ fields: ['recordId', 'createdAt'] }] }));
+
+    return { Record, Version, Counter, Comment };
 }

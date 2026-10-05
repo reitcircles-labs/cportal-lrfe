@@ -11,6 +11,7 @@ export function createMemoryRepo() {
     const records = new Map();
     const versions = [];
     const counters = new Map();
+    const comments = [];
     const findVersion = (recordId, n) => versions.find(v => v.recordId === recordId && v.versionNumber === n);
 
     return {
@@ -87,6 +88,11 @@ export function createMemoryRepo() {
             if (supersede) Object.assign(findVersion(recordId, supersede), { state: 'superseded' });
             Object.assign(records.get(recordId), clone(recordPatch));
             return { record: clone(records.get(recordId)), version: clone(v) };
+        },
+
+        async addComment(comment) { comments.push(clone(comment)); return clone(comment); },
+        async listComments(recordId) {
+            return comments.filter(c => c.recordId === recordId).sort((a, b) => a.createdAt - b.createdAt).map(clone);
         }
     };
 }
