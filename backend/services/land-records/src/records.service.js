@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestError, ConflictError, NotFoundError } from '@lrfe/common';
+import { AppError, BadRequestError, ConflictError, NotFoundError, normalizeSearch } from '@lrfe/common';
 import { PARCEL_KINDS, formatRecordNo, kindOf, parcelKey, parcelLabel, schemaFor, validateVersion } from './catalogue.js';
 import { verifyChain } from './seal.js';
 
@@ -20,9 +20,10 @@ export function searchTextOf(record, ...datas) {
  * versions and the seal chain. Editing drafts, review and commit follow in API-646 to API-648.
  */
 export class RecordsService {
-    constructor({ repo, events, clock = () => new Date(), config = {} }) {
+    constructor({ repo, events, edrms = null, clock = () => new Date(), config = {} }) {
         this.repo = repo;
         this.events = events;
+        this.edrms = edrms;
         this.clock = clock;
         this.config = { country: 'NA', ...config };
     }
@@ -71,6 +72,72 @@ export class RecordsService {
         });
         await this.events?.publish('records.record.created', { recordId: id, recordNo: record.recordNo, parcelKey: key }, { actor });
         return this.getRecord(id);
+    }
+
+    // ---------------------------------------------------------------- finding documents (API-645)
+
+    requireEdrms() {
+        if (!this.edrms) throw new AppError(503, 'The document store is not configured');
+        return this.edrms;
+    }
+
+    /** A filed document as land records show it, with the records that already hold it. */
+    documentSummary(d, pinnedBy, recordId) {
+        const linked = (pinnedBy.get(d.id) || []).filter(x => x.recordId !== recordId);
+        const unique = [...new Map(linked.map(x => [x.recordId, { recordId: x.recordId, recordNo: x.recordNo, label: x.label }])).values()];
+        return {
+            edrmsDocumentId: d.id, edrmsNo: d.edrmsNo, docType: d.docType, title: d.title, ref: d.instrumentRef ?? null,
+            property: d.props?.property ?? null, currentVersion: d.currentVersion, filedAt: d.filedAt,
+            inThisRecord: !!recordId && (pinnedBy.get(d.id) || []).some(x => x.recordId === recordId),
+            linkedTo: unique
+        };
+    }
+
+    /**
+     * Search filed documents by their verified metadata (edrms searchDocuments: words, word starts,
+     * spelling variants of names, document type, field filters), marking those already in a record.
+     */
+    async searchDocuments({ q, docType, fields = {}, recordId, limit = 50 } = {}) {
+        if (recordId) await this.requireRecord(recordId);
+        const { items, total } = await this.requireEdrms().searchDocuments({ q, docType, fields, limit });
+        const pinnedBy = await this.repo.findRecordsPinning(items.map(d => d.id));
+        return { items: items.map(d => this.documentSummary(d, pinnedBy, recordId)), total };
+    }
+
+    /**
+     * Documents that match this parcel, with the reasons: the property described is this parcel;
+     * or the chain of the documents already in the record (their SG diagram, their prior title,
+     * deeds and bonds that cite them as prior title).
+     */
+    async suggestions(recordId) {
+        const record = await this.requireRecord(recordId);
+        const version = await this.repo.getVersion(recordId, record.draftVersion ?? record.currentVersion);
+        const parcel = version.data.parcel;
+        const edrms = this.requireEdrms();
+        const found = new Map();                     // edrms id → { doc, reasons }
+        const add = (doc, reason) => {
+            const entry = found.get(doc.id) || { doc, reasons: [] };
+            if (!entry.reasons.includes(reason)) entry.reasons.push(reason);
+            found.set(doc.id, entry);
+        };
+
+        // 1. the property field describes this parcel
+        const { items } = await edrms.searchDocuments({ q: parcelWords(parcel), limit: 200 });
+        for (const d of items) if (propertyMatches(parcel, d.props?.property)) add(d, `Property: ${d.props.property}`);
+
+        // 2. the chain of the documents already pinned
+        for (const p of version.data.documents || []) {
+            const f = p.fields || {}, ref = p.ref || f.deedNo || f.sgNo;
+            if (f.sgRef) for (const d of (await edrms.searchDocuments({ fields: { sgNo: f.sgRef } })).items) add(d, `SG diagram cited by ${ref}`);
+            if (f.priorTitle) for (const d of (await edrms.searchDocuments({ fields: { deedNo: f.priorTitle } })).items) add(d, `Prior title of ${ref}`);
+            if (ref) for (const d of (await edrms.searchDocuments({ fields: { priorTitle: ref } })).items) add(d, `Cites ${ref} as prior title`);
+        }
+
+        const pinnedBy = await this.repo.findRecordsPinning([...found.keys()]);
+        const items2 = [...found.values()].map(({ doc, reasons }) => ({ ...this.documentSummary(doc, pinnedBy, recordId), reasons }));
+        // not yet in this record first, then by registration reference
+        items2.sort((a, b) => (a.inThisRecord - b.inThisRecord) || String(a.ref).localeCompare(String(b.ref)));
+        return { recordId, parcel: parcelLabel(parcel), items: items2 };
     }
 
     // ---------------------------------------------------------------- reading
@@ -126,4 +193,30 @@ export class RecordsService {
         const versions = verifyChain(r, committed);
         return { recordId: id, recordNo: r.recordNo, intact: versions.every(v => v.intact && v.linked), versions, checkedAt: this.clock() };
     }
+}
+
+/** The words that identify a parcel in a document's text (for a first, broad search). */
+function parcelWords(parcel) {
+    if (parcel.kind === 'erf') return [parcel.number, parcel.township].filter(Boolean).join(' ');
+    if (parcel.kind === 'farm_portion') return [parcel.farmName, parcel.farmNumber].filter(Boolean).join(' ');
+    if (parcel.kind === 'sectional_unit') return [parcel.schemeName, parcel.unit].filter(Boolean).join(' ');
+    return '';
+}
+
+/**
+ * Does a document's property field describe this parcel? Every identifying word must be there as
+ * a whole word ("Erf 1873, Klein Windhoek" matches; "Erf 18730" or "Erf 1873, Eros" does not).
+ */
+export function propertyMatches(parcel, property) {
+    if (!property) return false;
+    const words = new Set(normalizeSearch(property).split(' '));
+    const need = (...vals) => vals.filter(Boolean).flatMap(v => normalizeSearch(v).split(' ')).filter(Boolean);
+    let required = [];
+    if (parcel.kind === 'erf') required = need('erf', parcel.number, parcel.township, parcel.portion ? `portion ${parcel.portion}` : null);
+    else if (parcel.kind === 'farm_portion') required = need('farm', parcel.farmName, parcel.farmNumber, parcel.portion ? `portion ${parcel.portion}` : null);
+    else if (parcel.kind === 'sectional_unit') required = need(parcel.schemeName, 'unit', parcel.unit);
+    if (!required.length || !required.every(w => words.has(w))) return false;
+    // no other portion than the parcel's own
+    if (!parcel.portion && words.has('portion')) return false;
+    return true;
 }

@@ -1,4 +1,5 @@
-import { createEventBus, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEventBus, createRevocationList, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEdrmsClient } from './edrms-client.js';
 import { buildApp } from './app.js';
 import { RecordsService } from './records.service.js';
 import { createMemoryRepo } from './repo/memory.js';
@@ -21,12 +22,15 @@ if (envOneOf('RECORDS_STORE', ['postgres', 'memory'], 'postgres') === 'memory') 
     }
 }
 
+const jwtSecret = env('JWT_SECRET');
 const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'land-records' });
-const service = new RecordsService({ repo, events, config: { country: env('RECORDS_COUNTRY_CODE', 'NA') } });
+// documents are read from edrms with a land-records service token
+const edrms = createEdrmsClient({ baseUrl: env('EDRMS_URL', 'http://localhost:3502'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'land-records' }) });
+const service = new RecordsService({ repo, events, edrms, config: { country: env('RECORDS_COUNTRY_CODE', 'NA') } });
 
 const app = await buildApp({
     service,
-    jwtSecret: env('JWT_SECRET'),
+    jwtSecret,
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }
 });

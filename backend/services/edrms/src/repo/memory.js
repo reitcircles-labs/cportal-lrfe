@@ -1,4 +1,6 @@
 import { ConflictError } from '@lrfe/common';
+import { matchScore, normalizeSearch, searchTextOf } from '../search.js';
+import { normalizeRef } from '../catalogue.js';
 
 const clone = (v) => (v === undefined ? v : structuredClone(v));
 const UNIQUE = ['edrmsNo', 'sourceId', 'instrumentRef'];
@@ -35,14 +37,19 @@ export function createMemoryRepo() {
             const [k, v] = Object.entries(where)[0];
             return clone([...docs.values()].find(d => d[k] === v)) ?? null;
         },
+        /** Same rules as PostgreSQL: words, word starts, spelling variants; best matches first. */
         async listDocuments({ q, docType, batchId, props = {}, limit = 50, offset = 0 } = {}) {
-            const needle = q?.toLowerCase();
+            const needle = q ? normalizeSearch(q) : null;
+            const own = q ? normalizeRef(q) : null;      // the document's own reference or EDRMS number ranks first
             const all = [...docs.values()]
                 .filter(d => !docType || d.docType === docType)
                 .filter(d => !batchId || d.batchId === batchId)
                 .filter(d => Object.entries(props).every(([k, v]) => d.props[k] === v))
-                .filter(d => !needle || [d.title, d.instrumentRef, d.edrmsNo, JSON.stringify(d.props)].some(s => String(s ?? '').toLowerCase().includes(needle)))
-                .sort((a, b) => (a.edrmsNo < b.edrmsNo ? 1 : -1));
+                .map(d => ({ d, score: needle ? matchScore(needle, d.searchText || searchTextOf(d)) : 1 }))
+                .filter(x => x.score > 0)
+                .map(x => ({ ...x, score: x.score + (own && (x.d.instrumentRef === own || x.d.edrmsNo === own) ? 1000 : 0) }))
+                .sort((a, b) => b.score - a.score || (a.d.edrmsNo < b.d.edrmsNo ? 1 : -1))
+                .map(x => x.d);
             return { items: all.slice(offset, offset + limit).map(clone), total: all.length };
         },
         async listVersions(documentId) {

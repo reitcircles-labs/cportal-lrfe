@@ -68,6 +68,20 @@ export function createSequelizeRepo(sequelize) {
             const [n] = await m.Version.update(patch, { where });
             return n ? plain(await m.Version.findOne({ where: { recordId, versionNumber } })) : null;
         },
+        async findRecordsPinning(documentIds) {
+            const out = new Map();
+            if (!documentIds.length) return out;
+            const [rows] = await sequelize.query(
+                `SELECT d->>'edrmsDocumentId' AS "documentId", r."id" AS "recordId", r."recordNo", r."label", v."versionNumber", v."state"
+                   FROM "${SCHEMA}"."record_version" v
+                   JOIN "${SCHEMA}"."land_record" r ON r."id" = v."recordId"
+                   CROSS JOIN LATERAL jsonb_array_elements(COALESCE(v."data"->'documents', '[]'::jsonb)) d
+                  WHERE v."state" <> 'superseded' AND d->>'edrmsDocumentId' IN (:ids)`,
+                { replacements: { ids: documentIds } }
+            );
+            for (const { documentId, ...rest } of rows) out.set(documentId, [...(out.get(documentId) || []), rest]);
+            return out;
+        },
         async commit({ recordId, versionNumber, versionPatch, recordPatch, supersede }) {
             return sequelize.transaction(async (transaction) => {
                 const [n] = await m.Version.update({ ...versionPatch, state: 'committed' }, { where: { recordId, versionNumber, state: 'in_review' }, transaction });

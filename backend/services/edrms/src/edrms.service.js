@@ -3,6 +3,7 @@ import { AppError, BadRequestError, ConflictError, NotFoundError } from '@lrfe/c
 import { DOC_TYPE_IDS, docType, formatEdrmsNo, instrumentRefOf, normalizeRef } from './catalogue.js';
 import { validateRecordMetadata } from './record-metadata.js';
 import { sealOf } from './seal.js';
+import { searchTextOf } from './search.js';
 import { storageKey } from './storage/index.js';
 
 /**
@@ -152,6 +153,7 @@ export class EdrmsService {
                             id, edrmsNo, docType: meta.docType, title: meta.title.trim(), instrumentRef,
                             registry: meta.registry || this.config.registry, batchId: meta.batchId ?? null, sourceId: String(meta.sourceId),
                             pages: meta.pages, fields, props: propsOf(fields), recordMetadata, currentVersion: 1,
+                            searchText: searchTextOf({ title: meta.title.trim(), instrumentRef, edrmsNo, fields }),
                             filedAt: now, filedById: reviewer.id, filedByName: reviewer.name ?? null, updatedAt: now
                         }
                     };
@@ -252,7 +254,8 @@ export class EdrmsService {
             version.seal = sealOf(id, doc.edrmsNo, version);
             const updated = await this.repo.addVersion(id, doc.currentVersion, version, {
                 fields, props: propsOf(fields), recordMetadata: nextMetadata,
-                instrumentRef: instrumentRefOf(doc.docType, fields), currentVersion: n, updatedAt: now
+                instrumentRef: instrumentRefOf(doc.docType, fields), currentVersion: n, updatedAt: now,
+                searchText: searchTextOf({ title: doc.title, instrumentRef: instrumentRefOf(doc.docType, fields), edrmsNo: doc.edrmsNo, fields })
             });
             uploadedKey = null;
             await this.events.publish('edrms.document.amended', {
@@ -289,9 +292,15 @@ export class EdrmsService {
         };
     }
 
-    async listDocuments(query) {
+    /**
+     * The one search function (API-645): words and word starts over title, references, EDRMS number
+     * and every verified field value, spelling variants of names, field filters; best matches first.
+     * A dedicated search engine could replace the repo query behind it without changing callers.
+     */
+    async searchDocuments(query) {
         if (query.docType && !DOC_TYPE_IDS.includes(query.docType)) throw new BadRequestError(`Unknown docType "${query.docType}"`);
-        return this.repo.listDocuments(query);
+        const { items, total } = await this.repo.listDocuments(query);
+        return { items: items.map(({ searchText: _s, ...d }) => d), total };
     }
 
     async findByReference({ edrmsNo, instrumentRef, sourceId }) {

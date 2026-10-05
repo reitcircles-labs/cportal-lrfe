@@ -186,11 +186,13 @@ services:
       PORT: "3505"
       RECORDS_STORE: postgres
       RECORDS_COUNTRY_CODE: NA
+      EDRMS_URL: http://edrms:3502
     ports:
       - "127.0.0.1:3505:3505"
     healthcheck: *healthcheck
     depends_on:
       postgres: { condition: service_healthy }
+      edrms: { condition: service_healthy }
 
   gateway:
     <<: *service

@@ -91,3 +91,37 @@ export async function makeHttp() {
     const as = (u) => ({ authorization: `Bearer ${app.jwt.sign({ typ: 'access', sub: u.id, name: u.name, perms: u.perms })}` });
     return { ...ctx, app, as };
 }
+
+/**
+ * land-records with a real in-process edrms (its routes, its search) holding the testers' sample
+ * documents for Erf 1873 and one other parcel (edrms tests/helpers.js fileSamples).
+ */
+export async function makeWithEdrms() {
+    const { createServiceTokenSigner } = await import('@lrfe/common');
+    const { createMemoryStore } = await import('@lrfe/storage');
+    const { EdrmsService } = await import('../../edrms/src/edrms.service.js');
+    const { createMemoryRepo: edrmsRepo } = await import('../../edrms/src/repo/memory.js');
+    const { buildApp: buildEdrms } = await import('../../edrms/src/app.js');
+    const { fileSamples } = await import('../../edrms/tests/helpers.js');
+    const { createEdrmsClient } = await import('../src/edrms-client.js');
+
+    const edrmsService = new EdrmsService({ repo: edrmsRepo(), store: createMemoryStore(), events: createEventBus({ driver: 'memory', source: 'edrms' }) });
+    const docs = await fileSamples(edrmsService);
+    const edrmsApp = await buildEdrms({ service: edrmsService, jwtSecret: SECRET });
+    await edrmsApp.ready();
+    const fetchImpl = async (url, { method, headers }) => {
+        const u = new URL(url);
+        const r = await edrmsApp.inject({ method, url: u.pathname + u.search, headers });
+        return { status: r.statusCode, text: async () => r.body };
+    };
+    const edrms = createEdrmsClient({ baseUrl: 'http://edrms', serviceToken: createServiceTokenSigner({ secret: SECRET, service: 'land-records' }), fetchImpl });
+    const ctx = makeService();
+    ctx.service.edrms = edrms;
+    /** A document as it is pinned into a record version (README.md section 2). */
+    ctx.pin = async (doc) => {
+        const full = await edrmsService.getDocument(doc.id);
+        const v = full.versions.find(x => x.versionNumber === full.currentVersion);
+        return { edrmsDocumentId: full.id, edrmsNo: full.edrmsNo, version: v.versionNumber, seal: v.seal, docType: full.docType, ref: full.instrumentRef, fields: full.props };
+    };
+    return { ...ctx, edrmsService, docs };
+}

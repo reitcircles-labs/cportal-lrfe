@@ -17,6 +17,8 @@ servers:
 tags:
   - name: Records
     description: Land records, their versions and seal chain.
+  - name: Documents
+    description: Filed EDRMS documents, found for land records.
   - name: Service
     description: Health and metadata.
 paths:
@@ -136,6 +138,75 @@ paths:
         allOf:
           - record.view
       x-gateway-path: /api/records
+  /records/document-search:
+    get:
+      tags:
+        - Documents
+      summary: Search filed documents to add to a land record
+      description: >-
+        `{ items, total }`. The edrms search (words, word starts, spelling variants of names, `docType`, `field.<key>=<value>` filters),
+        each document with `linkedTo` (other records that hold it) and, with `recordId`, `inThisRecord`.
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: getRecordsDocumentSearch
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: docType
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+        - name: recordId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+      x-gateway-path: /api/records/document-search
   /records/{id}:
     get:
       tags:
@@ -186,6 +257,61 @@ paths:
         allOf:
           - record.view
       x-gateway-path: /api/records/{id}
+  /records/{id}/suggestions:
+    get:
+      tags:
+        - Documents
+      summary: Documents that match this parcel, with the reasons
+      description: >-
+        `{ parcel, items }`. Each item: the document, `reasons` (property is this parcel; SG diagram cited by, prior title of, or citing a
+        document already in the record), `inThisRecord`, `linkedTo`.
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: getRecordsIdSuggestions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+      x-gateway-path: /api/records/{id}/suggestions
   /records/{id}/versions:
     get:
       tags:

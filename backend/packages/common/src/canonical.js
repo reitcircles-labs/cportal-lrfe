@@ -10,3 +10,16 @@ export function canonicalJson(value) {
 }
 
 export const sha256Hex = (s) => createHash('sha256').update(s).digest('hex');
+
+/**
+ * Text as it is searched and compared: lowercase, no accents or punctuation, letters split from
+ * digits. "Hoäeb, T2210/2008" → "hoaeb t 2210 2008". Shared by edrms search and land-records.
+ */
+export function normalizeSearch(s) {
+    return String(s ?? '')
+        .normalize('NFD').replace(/\p{M}+/gu, '')
+        .toLowerCase()
+        .replace(/([a-z])(\d)/g, '$1 $2').replace(/(\d)([a-z])/g, '$1 $2')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}

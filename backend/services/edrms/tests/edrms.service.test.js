@@ -202,13 +202,13 @@ describe('EdrmsService', () => {
             await service.fileDocument({ meta: sgMeta(), file: pdfFile() });
             await service.fileDocument({ meta: deedMeta({ sourceId: 'z', batchId: 'WDH-B015', fields: [{ k: 'deedNo', v: 'T 1/2011' }, { k: 'property', v: 'Erf 2001, Eros' }] }), file: pdfFile() });
 
-            expect((await service.listDocuments({})).total).to.equal(3);
-            expect((await service.listDocuments({ docType: 'sg_diagram' })).items.map(d => d.instrumentRef)).to.deep.equal(['A 412/2007']);
-            expect((await service.listDocuments({ batchId: 'WDH-B015' })).total).to.equal(1);
-            expect((await service.listDocuments({ props: { property: 'Erf 1873, Klein Windhoek' } })).total).to.equal(2);
-            expect((await service.listDocuments({ q: 'eros' })).total).to.equal(1);
-            expect((await service.listDocuments({ q: 'EDR-NA-2026-000002' })).items[0].docType).to.equal('sg_diagram');
-            await rejects(service.listDocuments({ docType: 'lease' }), 400);
+            expect((await service.searchDocuments({})).total).to.equal(3);
+            expect((await service.searchDocuments({ docType: 'sg_diagram' })).items.map(d => d.instrumentRef)).to.deep.equal(['A 412/2007']);
+            expect((await service.searchDocuments({ batchId: 'WDH-B015' })).total).to.equal(1);
+            expect((await service.searchDocuments({ props: { property: 'Erf 1873, Klein Windhoek' } })).total).to.equal(2);
+            expect((await service.searchDocuments({ q: 'eros' })).total).to.equal(1);
+            expect((await service.searchDocuments({ q: 'EDR-NA-2026-000002' })).items[0].docType).to.equal('sg_diagram');
+            await rejects(service.searchDocuments({ docType: 'lease' }), 400);
         });
 
         it('looks documents up by EDRMS number, reference or intake id', async () => {

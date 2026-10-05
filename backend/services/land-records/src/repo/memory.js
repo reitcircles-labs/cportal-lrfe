@@ -62,6 +62,23 @@ export function createMemoryRepo() {
             Object.assign(v, clone(patch));
             return clone(v);
         },
+        /**
+         * Which records pin these EDRMS documents in a live version (draft, in review or current):
+         * Map documentId → [{ recordId, recordNo, label, versionNumber, state }].
+         */
+        async findRecordsPinning(documentIds) {
+            const wanted = new Set(documentIds), out = new Map();
+            for (const v of versions.filter(x => x.state !== 'superseded')) {
+                for (const d of v.data?.documents || []) {
+                    if (!wanted.has(d.edrmsDocumentId)) continue;
+                    const r = records.get(v.recordId);
+                    const list = out.get(d.edrmsDocumentId) || [];
+                    list.push({ recordId: r.id, recordNo: r.recordNo, label: r.label, versionNumber: v.versionNumber, state: v.state });
+                    out.set(d.edrmsDocumentId, list);
+                }
+            }
+            return out;
+        },
         /** Commit a version: it becomes committed, the previous current one superseded, the record updated. */
         async commit({ recordId, versionNumber, versionPatch, recordPatch, supersede }) {
             const v = findVersion(recordId, versionNumber);
