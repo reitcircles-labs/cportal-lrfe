@@ -39,8 +39,19 @@ export interface Diff {
   owners: { added: Owner[]; removed: Owner[]; changed: { name: string; before: any; after: any }[] };
   encumbrances: { added: Encumbrance[]; removed: Encumbrance[] };
   documents: { added: any[]; removed: any[]; updated: any[] };
-  empty: boolean;
+  empty: boolean; against: 'current' | null;
 }
+export interface Review {
+  record: RecordSummary; version: Version; checks: Check[]; blocking: string[];
+  overrides: { what: string; by: string | null; reason: string | null }[];
+  diff: Diff; currentVersion: { versionNumber: number; seal: string; committedAt: string } | null;
+}
+export interface HistoryVersion {
+  versionNumber: number; state: 'committed' | 'superseded'; current: boolean;
+  submittedAt: string | null; submittedByName: string | null; approvedByName: string | null; committedAt: string; reviewComment: string | null;
+  seal: string; previousSeal: string | null; intact: boolean; linked: boolean; diff: Diff;
+}
+export interface History { recordId: string; recordNo: string; label: string; intact: boolean; flags: Flag[]; versions: HistoryVersion[]; }
 export interface LandRecord extends RecordSummary { current: Version | null; draft: Version | null; draftDiff: Diff | null; }
 export interface FoundDocument {
   edrmsDocumentId: string; edrmsNo: string; docType: string; title: string; ref: string | null; property: string | null;
@@ -66,6 +77,8 @@ export class RecordsApi {
   withdraw(id: string) { return this.api.post<LandRecord>(`/records/${id}/draft/withdraw`); }
   searchDocuments(q: string, recordId?: string) { return this.api.get<{ items: FoundDocument[]; total: number }>('/records/document-search', { q, recordId, limit: 30 }); }
   suggestions(id: string) { return this.api.get<{ items: FoundDocument[] }>(`/records/${id}/suggestions`); }
+  review(id: string) { return this.api.get<Review>(`/records/${id}/review`); }
+  history(id: string) { return this.api.get<History>(`/records/${id}/history`); }
   comments(id: string) { return this.api.get<{ items: Comment[] }>(`/records/${id}/comments`); }
   comment(id: string, body: string) { return this.api.post<Comment>(`/records/${id}/comments`, { body }); }
   contentLink(edrmsDocumentId: string, version?: number) { return this.api.get<{ url: string }>(`/documents/${edrmsDocumentId}/content`, { version }); }

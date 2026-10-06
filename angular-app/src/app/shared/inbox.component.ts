@@ -5,11 +5,16 @@ import { ToastService } from '../state/toast.service';
 import { ApiError } from '../api/api.service';
 import { fmtTime } from '../state/rbac.service';
 import { IconComponent } from './icon.component';
+import { RecordDiffComponent } from './record-diff.component';
+import { Review, RecordsApi } from '../api/records.api';
 
-/** Top-bar bell: the workflow inbox (bpm tasks), and the dialog to approve or reject a task. */
+/**
+ * Top-bar bell: the workflow inbox (bpm tasks), and the dialog to approve or reject a task: a
+ * correction to a filed document, or a land record version (with its checks and what it changes).
+ */
 @Component({
     selector: 'app-inbox',
-    imports: [IconComponent],
+    imports: [IconComponent, RecordDiffComponent],
     template: `
     <div class="wrap">
       <button class="btn btn-ghost btn-icon bell" (click)="open.set(!open()); tasks.refresh()" title="Tasks" aria-label="Tasks" [attr.aria-expanded]="open()">
@@ -37,9 +42,10 @@ import { IconComponent } from './icon.component';
         <form class="dialog" style="width:min(640px,100%)" (click)="$event.stopPropagation()" (submit)="$event.preventDefault()">
           <div class="dialog-title">{{ d.title }}</div>
           <div class="kv">
-            <span>Requested by</span><span>{{ d.input.startedBy?.name }} · {{ fmt(d.createdAt) }}</span>
+            <span>{{ isRecord(d) ? 'Submitted by' : 'Requested by' }}</span><span>{{ (d.input.submittedBy ?? d.input.startedBy)?.name }} · {{ fmt(d.createdAt) }}</span>
             @if (d.input.document; as doc) { <span>Document</span><span>{{ doc.edrmsNo }} · {{ doc.title }} · v{{ doc.currentVersion }}.0</span> }
-            <span>Reason</span><span>{{ d.input.reason }}</span>
+            @if (d.input.record; as rec) { <span>Land record</span><span>{{ rec.recordNo }} · {{ rec.label }} · version {{ rec.versionNumber }}</span> }
+            @if (d.input.reason) { <span>Reason</span><span>{{ d.input.reason }}</span> }
             @if (d.dueAt) { <span>Due</span><span [style.color]="d.overdue ? 'var(--danger)' : null">{{ fmt(d.dueAt) }}</span> }
           </div>
           @if (d.input.preview?.length) {
@@ -48,11 +54,28 @@ import { IconComponent } from './icon.component';
               <tbody>@for (c of d.input.preview; track c.k) { <tr><td class="small muted">{{ c.label }}</td><td class="strike">{{ c.from }}</td><td><b>{{ c.to }}</b></td></tr> }</tbody>
             </table>
           }
+          @if (isRecord(d)) {
+            @if (recordReview(); as rv) {
+              <div class="rv" tabindex="0" aria-label="Review of the land record">
+                <b class="small">Checks</b>
+                @for (c of rv.checks; track c.id) {
+                  <div class="rchk"><span class="check-mark" aria-hidden="true" [class.ok]="c.ok" [class.bad]="!c.ok && c.level === 'error'">{{ c.ok ? '✓' : c.level === 'error' ? '✕' : '!' }}</span><span class="small"><span class="sr-only">{{ c.ok ? 'Passed: ' : c.level === 'error' ? 'Failed: ' : 'Warning: ' }}</span>{{ c.message }}</span></div>
+                }
+                @if (rv.overrides.length) {
+                  <b class="small">Entered by hand</b>
+                  @for (o of rv.overrides; track o.what) { <span class="small">{{ o.what }}{{ o.by ? ' (' + o.by + ')' : '' }}: {{ o.reason || 'no reason given' }}</span> }
+                }
+                <b class="small">{{ rv.currentVersion ? 'Changes since version ' + rv.currentVersion.versionNumber : 'What this version contains' }}</b>
+                <app-record-diff [diff]="rv.diff" />
+              </div>
+            } @else if (!error()) { <div class="small muted">Loading the record…</div> }
+          }
           <div class="field"><label for="cm">Comment {{ outcome() === 'rejected' ? '(required to reject)' : '(optional)' }}</label>
             <textarea id="cm" class="input" rows="3" [value]="comment()" (input)="comment.set($any($event.target).value)"></textarea></div>
           @if (error()) { <div class="err" role="alert">{{ error() }}</div> }
           <div class="dialog-actions">
             @if (d.input.document) { <button type="button" class="btn btn-ghost" style="margin-right:auto" (click)="openDoc(d.input.document!.id)"><app-icon name="file" [size]="15" />Open document</button> }
+            @if (d.input.record) { <button type="button" class="btn btn-ghost" style="margin-right:auto" (click)="openRecord(d.input.record.id)"><app-icon name="layers" [size]="15" />Open record</button> }
             <button type="button" class="btn btn-secondary" (click)="close()">Later</button>
             @if (d.outcomes?.includes('rejected')) { <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="decide('rejected')">Reject</button> }
             @if (d.outcomes?.includes('approved')) { <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="decide('approved')">Approve</button> }
@@ -76,13 +99,19 @@ import { IconComponent } from './icon.component';
     .strike { text-decoration: line-through; color: var(--color-neutral-600); }
     .err { padding: 10px 12px; border-radius: 8px; background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-bd); font-size: 13.5px; }
     textarea.input { min-height: 72px; resize: vertical; font: inherit; }
+    .rv { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; padding: 12px; border: 1px solid var(--color-divider); border-radius: 10px; max-height: 42vh; overflow-y: auto; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .rchk { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; }
+    .check-mark.bad { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-bd); }
   `]
 })
 export class InboxComponent {
   tasks = inject(TasksService);
   private toast = inject(ToastService);
   private router = inject(Router);
+  private records = inject(RecordsApi);
   open = signal(false);
+  recordReview = signal<Review | null>(null);
   detail = signal<TaskDetail | null>(null);
   comment = signal('');
   outcome = signal<string | null>(null);
@@ -92,13 +121,20 @@ export class InboxComponent {
   overdue = computed(() => this.tasks.tasks().some(t => t.overdue));
 
   fmt = fmtTime;
-  label(t: TaskItem) { return t.document ? t.document.edrmsNo : t.definitionKey; }
+  label(t: TaskItem) { return t.document ? t.document.edrmsNo : t.definitionKey === 'land-record-review' ? 'Land record' : 'Task'; }
+  isRecord(t: TaskItem) { return t.definitionKey === 'land-record-review'; }
 
   async review(t: TaskItem) {
     this.open.set(false);
     try {
-      this.detail.set(await this.tasks.get(t.id));
+      const d = await this.tasks.get(t.id);
+      this.recordReview.set(null);
+      this.detail.set(d);
       this.comment.set(''); this.outcome.set(null); this.error.set('');
+      if (this.isRecord(d) && d.input['record']?.id) {
+        this.records.review(d.input['record'].id).then(r => { if (this.detail()?.id === d.id) this.recordReview.set(r); })
+          .catch(e => this.detail()?.id === d.id && this.error.set('Could not load the record: ' + (e instanceof ApiError ? e.message : String(e))));
+      }
     } catch (e) {
       this.toast.show('danger', 'Could not open the task', e instanceof ApiError ? e.message : String(e));
       this.tasks.refresh();
@@ -108,11 +144,13 @@ export class InboxComponent {
   async decide(outcome: 'approved' | 'rejected') {
     const d = this.detail()!;
     this.outcome.set(outcome);
-    if (outcome === 'rejected' && !this.comment().trim()) { this.error.set('Say why you reject the change.'); return; }
+    if (outcome === 'rejected' && !this.comment().trim()) { this.error.set(this.isRecord(d) ? 'Say what the records officer should fix.' : 'Say why you reject the change.'); return; }
     this.busy.set(true); this.error.set('');
     try {
       const inst = await this.tasks.complete(d.id, outcome, this.comment().trim() || undefined);
+      const rec = d.input['record'];
       if (inst.status === 'error') this.toast.show('warn', 'Approved, but the change could not be applied', inst.errorMessage || 'See the process for details.', 9000);
+      else if (rec) this.toast.show(outcome === 'approved' ? 'success' : 'info', outcome === 'approved' ? `${rec.label} approved: version ${rec.versionNumber} is now current` : `${rec.label} returned to the records officer`, rec.recordNo);
       else this.toast.show(outcome === 'approved' ? 'success' : 'info', outcome === 'approved' ? 'Change approved and applied' : 'Change rejected', d.input.document?.edrmsNo);
       this.detail.set(null);
     } catch (e) {
@@ -120,6 +158,7 @@ export class InboxComponent {
     } finally { this.busy.set(false); }
   }
 
+  openRecord(id: string) { this.detail.set(null); this.router.navigate(['/link'], { queryParams: { record: id } }); }
   openDoc(id: string) { this.detail.set(null); this.router.navigate(['/documents'], { queryParams: { id } }); }
   close() { this.detail.set(null); }
 

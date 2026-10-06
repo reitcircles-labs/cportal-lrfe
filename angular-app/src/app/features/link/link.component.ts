@@ -1,15 +1,16 @@
 import { Component, computed, effect, inject, signal, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiError, ApiService } from '../../api/api.service';
-import { Check, Comment, Encumbrance, FoundDocument, LandRecord, Owner, ParcelKind, PinnedDocument, RecordSummary, RecordsApi } from '../../api/records.api';
+import { Check, Comment, Encumbrance, FoundDocument, History, LandRecord, Owner, ParcelKind, PinnedDocument, RecordSummary, RecordsApi } from '../../api/records.api';
 import { ConfirmService } from '../../state/confirm.service';
 import { ToastService } from '../../state/toast.service';
 import { AuthService } from '../../state/auth.service';
 import { RbacService, fmtTime } from '../../state/rbac.service';
 import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
+import { RecordDiffComponent } from '../../shared/record-diff.component';
 
-type Tab = 'documents' | 'chain' | 'details' | 'comments';
+type Tab = 'documents' | 'chain' | 'details' | 'history' | 'comments';
 type SFilter = 'all' | 'draft' | 'in_review' | 'committed' | 'needs_review';
 
 const PARCEL_LABELS: Record<string, string> = {
@@ -27,7 +28,7 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
  */
 @Component({
     selector: 'app-link',
-    imports: [IconComponent, CanDirective],
+    imports: [IconComponent, CanDirective, RecordDiffComponent],
     template: `
     <div class="ws" [class.list-hidden]="!listOpen()">
       <!-- Land record list -->
@@ -105,6 +106,7 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                 <button role="tab" [attr.aria-selected]="tab() === 'documents'" [class.on]="tab() === 'documents'" (click)="tab.set('documents')">Documents <span>{{ docs().length }}</span></button>
                 <button role="tab" [attr.aria-selected]="tab() === 'chain'" [class.on]="tab() === 'chain'" (click)="tab.set('chain')">Chain of title</button>
                 <button role="tab" [attr.aria-selected]="tab() === 'details'" [class.on]="tab() === 'details'" (click)="tab.set('details')">Details</button>
+                <button role="tab" [attr.aria-selected]="tab() === 'history'" [class.on]="tab() === 'history'" (click)="tab.set('history'); loadHistory()">History</button>
                 <button role="tab" [attr.aria-selected]="tab() === 'comments'" [class.on]="tab() === 'comments'" (click)="tab.set('comments'); loadComments()">Comments <span>{{ comments().length }}</span></button>
               </nav>
 
@@ -257,6 +259,27 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                     }
                   </div>
                 </form>
+              }
+
+              @if (tab() === 'history') {
+                <div class="panel">
+                  <div class="panel-head"><h4>Committed versions</h4>
+                    @if (history(); as h) { @if (h.versions.length) { <span class="tag" [class]="'tag ' + (h.intact ? 'tag-accent' : 'tag-danger')">{{ h.intact ? 'Seal chain intact' : 'Seal chain broken' }}</span> } }</div>
+                  <div class="panel-body stack" style="gap:18px">
+                    @for (v of history()?.versions || []; track v.versionNumber) {
+                      <div class="hv">
+                        <div class="row" style="justify-content:space-between;gap:8px">
+                          <b>Version {{ v.versionNumber }}{{ v.current ? ' · current' : '' }}</b>
+                          <span class="tag" [class]="'tag ' + (v.intact && v.linked ? 'tag-accent' : 'tag-danger')" [title]="'seal ' + v.seal">{{ v.intact && v.linked ? 'Seal verified' : v.intact ? 'Seal chain broken here' : 'Seal does not match' }}</span>
+                        </div>
+                        <div class="small muted">Committed {{ fmt(v.committedAt) }} · submitted by {{ v.submittedByName || '—' }} · approved by {{ v.approvedByName || '—' }}</div>
+                        @if (v.reviewComment) { <div class="small">Reviewer: {{ v.reviewComment }}</div> }
+                        <div class="small mono muted">seal {{ v.seal.slice(0, 16) }}…</div>
+                        <app-record-diff [diff]="v.diff" />
+                      </div>
+                    } @empty { <div class="small muted" style="text-align:center;padding:12px">{{ history() ? 'No committed version yet.' : historyFailed() ? 'The history could not be loaded.' : 'Loading…' }}</div> }
+                  </div>
+                </div>
               }
 
               @if (tab() === 'comments') {
@@ -446,6 +469,8 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
     .evc { padding: 10px 0 18px; }
     .kv { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 6px 14px; font-size: 14px; }
     .kv span:nth-child(odd) { color: var(--color-neutral-600); }
+    .hv { display: flex; flex-direction: column; gap: 6px; padding-bottom: 16px; border-bottom: 1px solid var(--color-divider); }
+    .hv:last-child { border-bottom: 0; padding-bottom: 0; }
     .thread { list-style: none; margin: 0; padding: 6px 18px; }
     .thread li { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-divider); }
     .composer { display: flex; gap: 12px; padding: 16px 18px; background: var(--color-surface-2); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
@@ -498,6 +523,8 @@ export class LinkComponent {
   finding = signal(false);
   // comments
   comments = signal<Comment[]>([]);
+  history = signal<History | null>(null);
+  historyFailed = signal(false);
   draftText = signal('');
   // details form
   df = signal<{ tenure: string; extent: string; unit: string; reason: string; encumbrances: Encumbrance[]; attributes: { k: string; v: string; orig?: any }[] }>({ tenure: '', extent: '', unit: 'm2', reason: '', encumbrances: [], attributes: [] });
@@ -612,7 +639,7 @@ export class LinkComponent {
 
   async select(id: string) {
     this.selId.set(id);
-    this.tab.set('documents'); this.dq.set(''); this.draftText.set(''); this.comments.set([]);
+    this.tab.set('documents'); this.dq.set(''); this.draftText.set(''); this.comments.set([]); this.history.set(null);
     try {
       const r = await this.records$.get(id);
       if (this.selId() !== id) return;             // another record was picked meanwhile
@@ -743,6 +770,15 @@ export class LinkComponent {
   }
   async change() {
     if (await this.act(r => this.records$.openDraft(r.id), 'A new draft is open; the committed version stays current until the change is approved')) { this.addOpen.set(true); this.loadFound(); }
+  }
+
+  // ---------------------------------------------------------------- history
+
+  async loadHistory() {
+    const id = this.selId(); if (!id) return;
+    this.historyFailed.set(false);
+    try { const h = await this.records$.history(id); if (this.selId() === id) this.history.set(h); }
+    catch (e) { if (this.selId() === id) this.historyFailed.set(true); this.fail('Could not load the history', e); }
   }
 
   // ---------------------------------------------------------------- comments

@@ -10,10 +10,12 @@ export function diffVersions(before, after) {
     const fields = [];
     const strip = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([k]) => k !== 'source')) : v);
     const walk = (path, x, y) => {
-        if (JSON.stringify(x) === JSON.stringify(y)) return;
+        if (JSON.stringify(x) === JSON.stringify(y) || (x == null && y == null)) return;
         const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
-        if (isObj(x) && isObj(y)) {
-            for (const k of [...new Set([...Object.keys(x), ...Object.keys(y)])].sort()) walk(`${path}.${k}`, x[k], y[k]);
+        // an object on one side only (a field set for the first time, or removed): list its fields
+        if ((isObj(x) || x == null) && (isObj(y) || y == null) && (isObj(x) || isObj(y))) {
+            const a = x || {}, b = y || {};
+            for (const k of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) if (path !== 'parcel' || k !== 'kind') walk(`${path}.${k}`, a[k], b[k]);
             return;
         }
         fields.push({ path, before: x ?? null, after: y ?? null });

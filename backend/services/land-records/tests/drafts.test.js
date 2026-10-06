@@ -248,3 +248,17 @@ describe('editing a draft (API-646)', () => {
         });
     });
 });
+
+describe('the difference between versions (diff.js)', () => {
+    it('lists the fields of an object set for the first time, and nothing for fields empty on both sides', async () => {
+        const { diffVersions } = await import('../src/diff.js');
+        const first = diffVersions(null, { parcel: { kind: 'erf', number: '1873', township: 'Klein Windhoek', portion: null }, extent: { value: 1214, unit: 'm2', source: { from: 'document' } }, tenure: 'freehold' });
+        assert.deepEqual(first.fields.map(f => [f.path, f.before, f.after]), [
+            ['parcel.number', null, '1873'], ['parcel.township', null, 'Klein Windhoek'], ['extent.unit', null, 'm2'], ['extent.value', null, 1214], ['tenure', null, 'freehold']
+        ]);
+        assert.equal(first.against, null);
+        const removed = diffVersions({ parcel: { kind: 'erf', number: '1' }, attributes: { zoning: 'R' } }, { parcel: { kind: 'erf', number: '1' } });
+        assert.deepEqual(removed.fields, [{ path: 'attributes.zoning', before: 'R', after: null }]);
+        assert.equal(removed.against, 'current');
+    });
+});

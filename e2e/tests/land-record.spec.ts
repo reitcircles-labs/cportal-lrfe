@@ -6,11 +6,13 @@
  * reads as T 2210/2008 apart from its number (taken from the file name), so the reviewer types in
  * the values of T 4521/2019 (the estate transfer) while verifying it, as a reviewer would correct
  * a misreading. The SG diagram and T 2210/2008 are filed as read.
+ *
+ * The first two tests run in order: the registrar reviews the record the officer submitted (API-650).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
-import { userByRole } from '../support/catalogue';
+import { expect, test, type Browser, type Page } from '@playwright/test';
+import { ENROLLED_USERS, userByRole } from '../support/catalogue';
 import { signInAs } from '../support/auth';
 import { apiAs } from '../support/intake';
 import { evidence } from '../support/evidence';
@@ -55,7 +57,16 @@ const ESTATE_TRANSFER = {
     tee1: 'Ndapewa Nghishidi', tee1Id: '98030100562', tee2: 'Tomas Nghishidi', tee2Id: '01112500379', share: '¼ share each'
 };
 
-test('a records officer builds Erf 1873 from the filed sample documents and submits it for review', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {
+/** A person in their own browser window, signed in. */
+async function as(browser: Browser, email: string, path: string): Promise<Page> {
+    const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, viewport: { width: 1600, height: 1000 } });
+    const page = await context.newPage();
+    await signInAs(page, email, path);
+    return page;
+}
+
+test.describe.serial('Erf 1873 from filed documents to committed land record', () => {
+test('a records officer builds Erf 1873 from the filed sample documents and submits it for review', { tag: ['@API-649', '@API-650'] }, async ({ page, playwright, baseURL }) => {
     test.slow();
     const sg = await fileSample(playwright, baseURL!, '03-SG-A-412-2007-diagram.pdf');
     const t2008 = await fileSample(playwright, baseURL!, '04-T-2210-2008-deed-of-transfer.pdf');
@@ -149,6 +160,132 @@ test('a records officer builds Erf 1873 from the filed sample documents and subm
     const tasks = (await (await sup.api.get('/api/tasks', { headers: sup.headers })).json()).tasks;
     expect(tasks.map((t: { title: string }) => t.title)).toContainEqual(expect.stringMatching(/^Approve land record LR-NA-\d{4}-\d{6} \(Erf 1873, Klein Windhoek\) version 1$/));
     await sup.dispose();
+});
+
+test('the registrar reviews it: a reject returns it with the comment, an approval makes it current, and the history shows each version', { tag: ['@API-650'] }, async ({ browser, playwright, baseURL }) => {
+    test.slow();
+    const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+    const { items } = await (await rec.api.get('/api/records?q=1873', { headers: rec.headers })).json();
+    const id = items.find((r: { label: string }) => r.label === 'Erf 1873, Klein Windhoek').id;
+    await rec.dispose();
+
+    const officer = await as(browser, userByRole('rec').email, `/link?record=${id}`);
+    const registrar = await as(browser, userByRole('sup').email, '/');
+    const head = officer.locator('header.panel.head');
+    const toast = (page: Page, text: string) => page.locator('.toast', { hasText: text }).last();
+    const dialog = registrar.locator('form.dialog');
+
+    /** The registrar opens the land record task from the bell. */
+    async function openTask(version: number) {
+        await registrar.getByRole('button', { name: 'Tasks' }).click();
+        await registrar.locator('.menu .item', { hasText: `(Erf 1873, Klein Windhoek) version ${version}` }).click();
+        await expect(dialog).toContainText('Land record');
+        await expect(dialog.locator('.rv')).toBeVisible();
+    }
+    /** The officer submits the open draft. */
+    async function submit() {
+        await head.getByRole('button', { name: 'Submit for review' }).click();
+        await officer.getByRole('alertdialog').getByRole('button', { name: 'Submit for review' }).click();
+        await expect(toast(officer, 'submitted for review')).toBeVisible();
+    }
+
+    // 1: the review shows the submitter, the checks and what the version contains
+    await openTask(1);
+    await expect(dialog).toContainText(`Submitted by${userByRole('rec').name}`);
+    await expect(dialog.locator('.rv')).toContainText('Shares add up to 1');
+    await expect(dialog.locator('.rv')).toContainText('What this version contains');
+    await expect(dialog.locator('.rv')).toContainText('Owner Maria Nghishidi 1/2');
+    await expect(dialog.locator('.rv')).toContainText('Document T 4521/2019');
+    // the officer who submitted it has no such task
+    await expect(officer.getByRole('button', { name: 'Tasks' }).locator('.count')).toHaveCount(0);
+
+    // 2: reject: a comment is required
+    await dialog.getByRole('button', { name: 'Reject' }).click();
+    await expect(dialog).toContainText('Say what the records officer should fix.');
+    await dialog.getByLabel(/Comment/).fill('Add the zoning from the town planning scheme.');
+    await evidence(registrar, 'API-650', 'Review: the registrar sees the checks and the contents, and returns it with a comment');
+    await dialog.getByRole('button', { name: 'Reject' }).click();
+    await expect(toast(registrar, 'Erf 1873, Klein Windhoek returned to the records officer')).toBeVisible();
+
+    // 3: the officer sees the comment, fixes it and submits again
+    await officer.reload();
+    await expect(officer.locator('.note', { hasText: 'Returned by the reviewer' })).toContainText('Add the zoning from the town planning scheme.');
+    await expect(head.locator('.tag')).toHaveText('Draft');
+    await officer.getByRole('tab', { name: 'Details' }).click();
+    await officer.getByRole('button', { name: '+ Add attribute' }).click();
+    await officer.getByLabel('Attribute name').fill('zoning');
+    await officer.getByLabel('Attribute value').fill('Residential');
+    await officer.getByRole('button', { name: 'Save details' }).click();
+    await expect(toast(officer, 'Details saved')).toBeVisible();
+    await submit();
+
+    // 4: approve: version 1 becomes current
+    await openTask(1);
+    await dialog.getByRole('button', { name: 'Approve' }).click();
+    await expect(toast(registrar, 'Erf 1873, Klein Windhoek approved: version 1 is now current')).toBeVisible();
+    await officer.reload();
+    await expect(head.locator('.tag')).toHaveText('Committed');
+    await expect(head).toContainText('Version 1');
+
+    // 5: a change: version 2, with the difference shown to the reviewer
+    await head.getByRole('button', { name: 'Change record' }).click();
+    await expect(head).toContainText('Draft version 2 · current is version 1');
+    await officer.getByRole('tab', { name: 'Details' }).click();
+    await officer.getByLabel('Attribute value').fill('General Residential 1');
+    await officer.getByRole('button', { name: 'Save details' }).click();
+    await expect(toast(officer, 'Details saved')).toBeVisible();
+    await submit();
+    await openTask(2);
+    await expect(dialog.locator('.rv')).toContainText('Changes since version 1');
+    await expect(dialog.locator('.rv tr', { hasText: 'zoning' })).toContainText('Residential');
+    await expect(dialog.locator('.rv tr', { hasText: 'zoning' })).toContainText('General Residential 1');
+    await evidence(registrar, 'API-650', 'Review of version 2: the difference from the current version');
+    await dialog.getByRole('button', { name: 'Approve' }).click();
+    await expect(toast(registrar, 'version 2 is now current')).toBeVisible();
+
+    // 6: the history: both versions, who and when, seals verified
+    await officer.reload();
+    await officer.getByRole('tab', { name: 'History' }).click();
+    const versions = officer.locator('.hv');
+    await expect(versions).toHaveCount(2);
+    await expect(versions.nth(0)).toContainText('Version 2 · current');
+    await expect(versions.nth(0)).toContainText(`approved by ${userByRole('sup').name}`);
+    await expect(versions.nth(0)).toContainText('General Residential 1');
+    await expect(versions.nth(1)).toContainText('Version 1');
+    await expect(versions.nth(1)).toContainText(`submitted by ${userByRole('rec').name}`);
+    await expect(versions.nth(0).locator('.tag')).toHaveText('Seal verified');
+    await expect(versions.nth(1).locator('.tag')).toHaveText('Seal verified');
+    await expect(officer.locator('.panel-head', { hasText: 'Committed versions' })).toContainText('Seal chain intact');
+    await evidence(officer, 'API-650', 'History: both committed versions with submitter, approver and verified seals');
+
+    // 7: a correction to a linked document in the EDRMS (requested by a reviewer, approved by another)
+    // flags the record; the committed version is unchanged
+    const reader = await apiAs(playwright, baseURL!, userByRole('sup').email);
+    const record = await (await reader.api.get(`/api/records/${id}`, { headers: reader.headers })).json();
+    await reader.dispose();
+    const t2019 = record.current.data.documents.find((d: { ref: string }) => d.ref === 'T 4521/2019');
+    const reviewer = userByRole('rev');
+    const second = ENROLLED_USERS.find(u => u.roles.length === 1 && u.roles[0] === 'rev' && u.email !== reviewer.email)!;
+    const rev = await apiAs(playwright, baseURL!, reviewer.email);
+    const started = await rev.api.post('/api/processes/document-amendment/instances', { headers: rev.headers, data: { variables: {
+        documentId: t2019.edrmsDocumentId, expectedVersion: 1, reason: 'Transferee 2 ID corrected from the original deed', changes: [{ k: 'tee2Id', v: '01112500380' }]
+    } } });
+    expect(started.status(), await started.text()).toBe(201);
+    await rev.dispose();
+    const approver = await apiAs(playwright, baseURL!, second.email);
+    const { tasks } = await (await approver.api.get('/api/tasks', { headers: approver.headers })).json();
+    const task = tasks.find((t: { document?: { id: string } }) => t.document?.id === t2019.edrmsDocumentId);
+    expect((await approver.api.post(`/api/tasks/${task.id}/complete`, { headers: approver.headers, data: { output: { outcome: 'approved' } } })).status()).toBe(200);
+    await approver.dispose();
+
+    const banner = officer.locator('.note', { hasText: 'Document updated' });
+    await expect.poll(async () => { await officer.reload(); return banner.count(); }, { timeout: 15_000 }).toBe(1);
+    await expect(banner).toContainText(`Document updated: ${t2019.edrmsNo} v1 → v2. Review needed.`);
+    await expect(banner).toContainText('Transferee 2 ID corrected from the original deed');
+    await expect(head.locator('.tag')).toHaveText('Needs review');
+    await expect(officer.locator('table.table tbody tr', { hasText: 'T 4521/2019' })).toContainText('v2.0 in EDRMS');
+    await evidence(officer, 'API-650', 'A corrected document in the EDRMS flags the record: review needed');
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {
