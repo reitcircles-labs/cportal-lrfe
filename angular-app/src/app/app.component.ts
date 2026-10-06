@@ -8,7 +8,6 @@ import { IconComponent } from './shared/icon.component';
 import { AuthService } from './state/auth.service';
 import { RbacService } from './state/rbac.service';
 import { ThemeService } from './state/theme.service';
-import { RegistryStore } from './state/registry.store';
 import { IntakeApi } from './api/intake.api';
 
 @Component({
@@ -141,7 +140,6 @@ export class AppComponent {
   auth = inject(AuthService);
   rbac = inject(RbacService);
   theme = inject(ThemeService);
-  store = inject(RegistryStore);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private intake = inject(IntakeApi);
@@ -154,13 +152,12 @@ export class AppComponent {
 
   nav = computed(() => {
     const role = this.auth.roleId();
-    const sugg = this.store.openSuggestions().length;
     return [
       { path: '/', label: 'Dashboard', icon: 'home', badge: 0, mine: false, perm: 'dashboard.view' },
       { path: '/capture', label: 'Capture', icon: 'scan', badge: 0, mine: role === 'scan', perm: 'capture.view' },
       { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: this.inReview(), mine: role === 'rev', perm: 'verify.view' },
       { path: '/documents', label: 'Documents (EDRMS)', icon: 'file', badge: 0, mine: false, perm: ['capture.view', 'verify.view', 'record.view', 'audit.view'] },
-      { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: sugg, mine: role === 'rec', perm: 'record.view' },
+      { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: 0, mine: role === 'rec', perm: 'record.view' },
       { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud', perm: 'audit.view' }
     ].filter(n => this.rbac.canAny(Array.isArray(n.perm) ? n.perm : [n.perm]));
   });

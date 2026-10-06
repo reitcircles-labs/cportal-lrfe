@@ -1,11 +1,11 @@
 /**
- * The Land record screen still shows demo data, except for one bridge to the live system (API-617):
- * Erf 1873's documents count as filed once documents with the same references are filed in the
- * EDRMS. This follows the tester guide: file the sample deeds, then link them into Erf 1873 and
- * finalize the record.
+ * The Land record screen on the land-records service (API-649): a records officer builds Erf 1873
+ * from the filed sample documents and submits it for review, in the browser.
  *
- * The samples are the tester documents in angular-app/docs/samples/. With the canned AI the deed
- * number comes from the file name, so T 2210/2008 and T 4521/2019 are filed under their own numbers.
+ * The samples are the tester documents in angular-app/docs/samples/. With the canned AI every deed
+ * reads as T 2210/2008 apart from its number (taken from the file name), so the reviewer types in
+ * the values of T 4521/2019 (the estate transfer) while verifying it, as a reviewer would correct
+ * a misreading. The SG diagram and T 2210/2008 are filed as read.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -34,7 +34,8 @@ async function fileSample(playwright: Parameters<typeof apiAs>[0], baseURL: stri
     const h = { headers: rev.headers };
     await expect.poll(async () => (await rev.api.post(`/api/intake/documents/${id}/claim`, h)).status(), { timeout: 20_000 }).toBe(200);
     for (const [k, value] of Object.entries(corrections)) {
-        expect((await rev.api.put(`/api/intake/documents/${id}/fields/${k}`, { ...h, data: { value } })).status()).toBe(200);
+        const res = await rev.api.put(`/api/intake/documents/${id}/fields/${k}`, { ...h, data: { value } });
+        expect(res.status(), `${k}: ${await res.text()}`).toBe(200);
     }
     await rev.api.post(`/api/intake/documents/${id}/accept-clean`, h);
     const detail = await (await rev.api.get(`/api/intake/documents/${id}`, h)).json();
@@ -48,12 +49,17 @@ async function fileSample(playwright: Parameters<typeof apiAs>[0], baseURL: stri
     return edrmsNo;
 }
 
-test('the records officer finalizes Erf 1873 with the filed sample documents, as the tester guide describes', { tag: ['@API-617'] }, async ({ page, playwright, baseURL }) => {
+/** T 4521/2019 as the deed reads: the late Petrus Nghishidi's half passes to his two children. */
+const ESTATE_TRANSFER = {
+    regDate: '12 July 2019', priorTitle: 'T 2210/2008', transferor: 'Estate of the late Petrus Nghishidi',
+    tee1: 'Ndapewa Nghishidi', tee1Id: '98030100562', tee2: 'Tomas Nghishidi', tee2Id: '01112500379', share: '¼ share each'
+};
+
+test('a records officer builds Erf 1873 from the filed sample documents and submits it for review', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {
     test.slow();
     const sg = await fileSample(playwright, baseURL!, '03-SG-A-412-2007-diagram.pdf');
     const t2008 = await fileSample(playwright, baseURL!, '04-T-2210-2008-deed-of-transfer.pdf');
-    // the reviewer corrects Tomas Nghishidi's ID from the margin note, as the guide says
-    const t2019 = await fileSample(playwright, baseURL!, '05-T-4521-2019-deed-of-transfer-estate.pdf', { tee2Id: '01112500379' });
+    const t2019 = await fileSample(playwright, baseURL!, '05-T-4521-2019-deed-of-transfer-estate.pdf', ESTATE_TRANSFER);
 
     await page.setViewportSize({ width: 1600, height: 1000 });
     await signInAs(page, userByRole('rec').email, '/link');
@@ -61,56 +67,110 @@ test('the records officer finalizes Erf 1873 with the filed sample documents, as
     const linked = page.locator('table.table tbody');
     const owners = page.locator('aside.side .panel', { hasText: 'Registered owners' });
     const checks = page.locator('aside.side .panel', { hasText: 'Record checks' });
-    const finalize = head.getByRole('button', { name: 'Finalize record' });
+    const toast = (text: string) => page.locator('.toast', { hasText: text }).last();
+    /** Close the notifications, so a screenshot shows the panels under them. */
+    const clearToasts = async () => {
+        for (const b of await page.locator('.toast button').all()) await b.click({ timeout: 1000 }).catch(() => {});
+        await expect(page.locator('.toast')).toHaveCount(0, { timeout: 10_000 });
+    };
 
-    // 1: the demo state, with the grant and the first transfer
+    // 1: a new record from the filed T 2210/2008: the parcel is read from it
+    await page.getByRole('button', { name: 'New record' }).click();
+    const dialog = page.locator('form.dialog');
+    await dialog.getByLabel('Find a filed document').fill('T 2210/2008');
+    await dialog.locator('label.res', { hasText: 'T 2210/2008' }).first().click();
+    await dialog.getByRole('button', { name: 'Create record' }).click();
+    await expect(toast('Erf 1873, Klein Windhoek created')).toBeVisible();
     await expect(head).toContainText('Erf 1873, Klein Windhoek');
-    await expect(linked).toContainText('G 88/1978');
-    await expect(linked).toContainText('T 1502/1996');
-    await expect(owners).toContainText('Johannes Shikongo');
-    await expect(owners).toContainText('1/1');
-    await expect(finalize).toBeDisabled();
+    await expect(head).toContainText('Draft version 1');
+    await expect(head).toContainText(/LR-NA-\d{4}-\d{6}/);
+    await expect(linked).toContainText(t2008);
 
-    // 2: the filed samples are offered as matches
-    await head.getByRole('button', { name: 'Add documents' }).click();
+    // 2: the documents matching this parcel are offered, with the reason
     const results = page.locator('.results');
-    // the row whose own reference is `ref` (another row may cite it as prior title)
     const row = (ref: string) => results.locator('.res', { has: page.locator(`b.num:text-is("${ref}")`) });
-    await expect(row('T 2210/2008')).toContainText('98%');
-    await expect(row('SG A 412/2007')).toContainText('%');
-    await expect(row('T 4521/2019')).toContainText('94%');
-    console.log('SG score:', (await row('SG A 412/2007').locator('.score').textContent())?.trim());
-    await evidence(page, 'API-617', 'Land record: the filed sample documents are offered for Erf 1873');
+    await expect(row('A 412/2007')).toContainText('SG diagram cited by T 2210/2008');
+    await expect(row('T 4521/2019')).toContainText('Cites T 2210/2008 as prior title');
+    await clearToasts();
+    await evidence(page, 'API-649', 'Land record: Erf 1873 created from T 2210/2008; matching documents offered with the reason');
 
-    // 3-5: link them; the owners follow the chain of title
-    await row('T 2210/2008').getByRole('button', { name: '+ Add' }).click();
-    await expect(page.locator('.toast', { hasText: 'T 2210/2008 added to Erf 1873' }).last()).toBeVisible();
-    await expect(owners).toContainText('Petrus Nghishidi');
-    await expect(owners).toContainText('Maria Nghishidi');
-    await row('SG A 412/2007').getByRole('button', { name: '+ Add' }).click();
+    // 3: link them
+    await row('A 412/2007').getByRole('button', { name: '+ Add' }).click();
+    await expect(toast('A 412/2007 added')).toBeVisible();
     await row('T 4521/2019').getByRole('button', { name: '+ Add' }).click();
+    await expect(toast('T 4521/2019 added')).toBeVisible();
     for (const no of [sg, t2008, t2019]) await expect(linked).toContainText(no);
-    for (const name of ['Maria Nghishidi', 'Ndapewa Nghishidi', 'Tomas Nghishidi']) await expect(owners).toContainText(name);
+
+    // 4: the owners the documents suggest, taken over by the officer
+    await expect(owners).toContainText('From the documents: Maria Nghishidi 1/2, Ndapewa Nghishidi 1/4, Tomas Nghishidi 1/4');
+    await owners.getByRole('button', { name: 'Use these owners' }).click();
+    await expect(toast('Owners taken from the documents')).toBeVisible();
+    for (const [name, share] of [['Maria Nghishidi', '1/2'], ['Ndapewa Nghishidi', '1/4'], ['Tomas Nghishidi', '1/4']]) {
+        await expect(owners.locator('.owner', { hasText: name })).toContainText(share);
+    }
     await expect(owners).toContainText('01112500379');
 
-    // 6: chain of title
+    // 5: extent from the SG diagram, tenure set by hand
+    await page.getByRole('tab', { name: 'Details' }).click();
+    await page.getByRole('button', { name: /^Use 1.214 m² from the documents$/ }).click();
+    await expect(toast('Extent taken from the documents')).toBeVisible();
+    await page.getByLabel('Tenure').selectOption('freehold');
+    await page.getByRole('button', { name: 'Save details' }).click();
+    await expect(toast('Details saved')).toBeVisible();
+    await expect(head).toContainText('Freehold');
+
+    // 6: chain of title and checks
     await page.getByRole('tab', { name: 'Chain of title' }).click();
-    for (const y of ['1978', '1996', '2008', '2019']) await expect(page.locator('.ev', { hasText: y })).toHaveCount(1);
-    await page.getByRole('tab', { name: /Documents/ }).click();
-
-    // 7: every check passes
-    console.log('CHECKS:', (await checks.innerText()).replace(/\s+/g, ' '));
+    const event = (ref: string) => page.locator('.ev', { has: page.locator(`span.num:text-is("${ref}")`) });
+    await expect(event('T 2210/2008')).toContainText('Johannes Shikongo → Petrus Nghishidi, Maria Nghishidi');
+    await expect(event('T 4521/2019')).toContainText('Estate of the late Petrus Nghishidi → Ndapewa Nghishidi, Tomas Nghishidi');
+    await expect(checks).toContainText('5 / 5 required');
     await expect(checks.locator('.check-mark:not(.ok)')).toHaveCount(0);
-    await expect(finalize).toBeEnabled();
+    await clearToasts();
+    await evidence(page, 'API-649', 'Land record: owners, chain of title and all checks passing for Erf 1873');
 
-    // 8-9: finalize
-    await finalize.click();
+    // 7: submit for review
+    await page.getByRole('tab', { name: /Documents/ }).click();
+    await head.getByRole('button', { name: 'Submit for review' }).click();
     const confirm = page.getByRole('alertdialog');
-    await expect(confirm).toContainText('Finalize Erf 1873, Klein Windhoek?');
-    await expect(confirm).toContainText('Registered owners: Maria Nghishidi ½, Ndapewa Nghishidi ¼, Tomas Nghishidi ¼');
-    await confirm.getByRole('button', { name: 'Finalize record' }).click();
-    await expect(page.locator('.toast', { hasText: 'Erf 1873 record v3 committed' }).last()).toContainText('Record is ready for tokenization.');
-    await expect(head).toContainText('Finalized');
-    await expect(head).toContainText('version 3');
-    await evidence(page, 'API-617', 'Land record: Erf 1873 finalized with the filed sample documents');
+    await expect(confirm).toContainText('Submit Erf 1873, Klein Windhoek for review?');
+    await expect(confirm).toContainText('Owners: Maria Nghishidi 1/2, Ndapewa Nghishidi 1/4, Tomas Nghishidi 1/4');
+    await confirm.getByRole('button', { name: 'Submit for review' }).click();
+    await expect(toast('Erf 1873, Klein Windhoek submitted for review')).toBeVisible();
+    await expect(head.locator('.tag')).toHaveText('In review');
+    await expect(head).toContainText('Waiting for approval by a second person');
+    await expect(head.getByRole('button', { name: 'Withdraw from review' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '+ Add' })).toHaveCount(0);
+    await clearToasts();
+    await evidence(page, 'API-649', 'Land record: Erf 1873 submitted for review');
+
+    // the approval task waits for the registrar, not for the officer who submitted
+    const sup = await apiAs(playwright, baseURL!, userByRole('sup').email);
+    const tasks = (await (await sup.api.get('/api/tasks', { headers: sup.headers })).json()).tasks;
+    expect(tasks.map((t: { title: string }) => t.title)).toContainEqual(expect.stringMatching(/^Approve land record LR-NA-\d{4}-\d{6} \(Erf 1873, Klein Windhoek\) version 1$/));
+    await sup.dispose();
+});
+
+test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {
+    // a record of its own, created through the API
+    const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+    const number = String(20_000 + Math.floor(Math.random() * 9_999));
+    const created = await rec.api.post('/api/records', { headers: rec.headers, data: { parcel: { kind: 'erf', number, township: 'Olympia', regDiv: 'K' } } });
+    expect(created.status(), await created.text()).toBe(201);
+    const { id } = await created.json();
+    await rec.dispose();
+
+    await signInAs(page, userByRole('sup').email, `/link?record=${id}`);
+    const head = page.locator('header.panel.head');
+    await expect(head).toContainText(`Erf ${number}, Olympia`);
+    // record.link is not the registrar's: the buttons say so and do nothing
+    const add = head.getByRole('button', { name: 'Add documents' });
+    await expect(add).toHaveAttribute('aria-disabled', 'true');
+    await expect(add).toHaveAttribute('title', /Requires/);
+    await expect(page.getByRole('button', { name: 'New record' })).toHaveAttribute('aria-disabled', 'true');
+
+    await page.getByRole('tab', { name: /Comments/ }).click();
+    await page.getByLabel('Comment').fill('Please link the SG diagram first.');
+    await page.getByRole('button', { name: 'Post comment' }).click();
+    await expect(page.locator('.thread li', { hasText: 'Please link the SG diagram first.' })).toContainText(userByRole('sup').name);
 });

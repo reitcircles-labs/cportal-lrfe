@@ -9,8 +9,8 @@
  *   second reviewer approves it from the task inbox; the record becomes version 2.0
  *   auditor         checks the new version's integrity
  *
- * Land records (#/link) and Audit (#/audit) still show demo data, so linking the document into a
- * land record and the auditor's sign-off are not part of this test until those services exist.
+ * Linking filed documents into a land record is covered by land-record.spec.ts. Audit (#/audit)
+ * still shows demo data, so the auditor's sign-off is not part of this test.
  */
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { userByRole, ENROLLED_USERS } from '../support/catalogue';
