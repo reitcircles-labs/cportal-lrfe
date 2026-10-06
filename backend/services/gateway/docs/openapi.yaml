@@ -2991,6 +2991,60 @@ paths:
         anyOf:
           - record.create
           - record.link
+    post:
+      tags:
+        - land-records · Records
+      summary: Open a new draft to change a committed record
+      description: >-
+        The draft vN+1 is a copy of the current version, which stays current until the new one is approved. One open draft per record (409).
+        The record then carries `draftDiff`: what the draft changes against the current version.
+
+
+        **Access:** Signed-in user with any of `record.create`, `record.link`.
+      operationId: land-records_postRecordsIdDraft
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - record.create
+          - record.link
   /api/records/{id}/draft/documents:
     post:
       tags:
@@ -3126,6 +3180,79 @@ paths:
       x-access:
         allOf:
           - record.unlink
+  /api/records/{id}/draft/documents/{edrmsDocumentId}/refresh:
+    post:
+      tags:
+        - land-records · Records
+      summary: Adopt a document's newer EDRMS version
+      description: >-
+        `{ revision }`. After a correction in edrms: the pinned version, seal and fields are updated in the draft, suggestions and checks
+        recomputed. Goes through review like any change.
+
+
+        **Access:** Signed-in user with permission `record.link`.
+      operationId: land-records_postRecordsIdDraftDocumentsEdrmsDocumentIdRefresh
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: edrmsDocumentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - revision
+              properties:
+                revision:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.link
   /api/records/{id}/draft/submit:
     post:
       tags:
@@ -3245,6 +3372,60 @@ paths:
       x-access:
         allOf:
           - record.link
+  /api/records/{id}/history:
+    get:
+      tags:
+        - land-records · Records
+      summary: "History: every committed version"
+      description: >-
+        `{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, and `diff`
+        against the version before.
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: land-records_getRecordsIdHistory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
   /api/records/{id}/review:
     get:
       tags:

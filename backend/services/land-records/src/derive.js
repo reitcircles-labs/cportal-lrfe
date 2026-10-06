@@ -183,7 +183,8 @@ export function checksFor(data, { flags = [], suggested = suggestFromDocuments(d
     // values entered by hand, or differing from what the documents say
     const manual = [...owners.filter(o => o.source?.from === 'manual').map(o => `owner ${o.name}`), ...(data.extent?.source?.from === 'manual' ? ['extent'] : [])];
     const differ = [];
-    if (suggested.owners && owners.length && JSON.stringify(suggested.owners.map(o => [normalizeSearch(o.name), o.share]).sort()) !== JSON.stringify(owners.map(o => [normalizeSearch(o.name), o.share]).sort())) differ.push('owners differ from the title deeds');
+    const ownerKey = (list) => JSON.stringify(list.map(o => [normalizeSearch(o.name), o.share, o.idNo ?? null]).sort());
+    if (suggested.owners && owners.length && ownerKey(suggested.owners) !== ownerKey(owners)) differ.push('owners differ from the title deeds');
     if (suggested.extent && data.extent && toM2(suggested.extent) !== toM2(data.extent)) differ.push('extent differs from the documents');
     out.push(check('overrides', 'warning', !manual.length && !differ.length,
         manual.length || differ.length ? [manual.length ? `Entered by hand: ${manual.join(', ')}` : null, ...differ].filter(Boolean).join('; ') : 'All values come from the documents'));

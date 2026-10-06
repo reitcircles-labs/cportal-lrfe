@@ -31,6 +31,9 @@ const edrms = createEdrmsClient({ baseUrl: env('EDRMS_URL', 'http://localhost:35
 const bpm = createBpmClient({ baseUrl: env('BPM_URL', 'http://localhost:3503'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'land-records' }) });
 const service = new RecordsService({ repo, events, edrms, bpm, config: { country: env('RECORDS_COUNTRY_CODE', 'NA') } });
 
+// a correction filed in edrms flags every record that pins an older version of the document
+events.subscribe('edrms.document.amended', (event) => service.onDocumentAmended(event.data));
+
 const app = await buildApp({
     service,
     jwtSecret,

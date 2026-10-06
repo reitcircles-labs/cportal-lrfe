@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { actor, makeWithEdrms, makeWithReview, openDraft, users } from './helpers.js';
+import { actor, makeWithEdrms, makeWithReview, users } from './helpers.js';
 
 const rec = actor(users.rec);
 const sup = actor(users.sup);
@@ -118,8 +118,7 @@ describe('review and commit (API-647)', () => {
         await ctx.decide(users.sup, (await ctx.inbox(users.sup))[0].id, { outcome: 'approved' });
 
         // a new draft is a copy of v1: nothing differs yet
-        await openDraft(ctx, r.id);
-        r = await ctx.service.getRecord(r.id);
+        r = await ctx.service.openDraft(r.id, rec);
         let review = await ctx.service.review(r.id);
         assert.equal(review.diff.empty, true);
 

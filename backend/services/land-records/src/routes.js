@@ -90,6 +90,18 @@ export async function recordsRoutes(app, { service }) {
         }
     }, async (req) => service.removeDocument(req.params.id, req.params.edrmsDocumentId, req.query, actorOf(req)));
 
+    // ------------------------------------------------ changes after a commit (API-648)
+
+    app.post('/records/:id/draft', { onRequest: app.requireAnyPerm('record.create', 'record.link'), schema: idParams() },
+        async (req, reply) => reply.code(201).send(await service.openDraft(req.params.id, actorOf(req))));
+
+    app.post('/records/:id/draft/documents/:edrmsDocumentId/refresh', {
+        onRequest: app.requirePerm('record.link'),
+        schema: { ...idParams({ edrmsDocumentId: uuid }), body: { type: 'object', additionalProperties: false, required: ['revision'], properties: { revision } } }
+    }, async (req) => service.refreshDocument(req.params.id, req.params.edrmsDocumentId, req.body, actorOf(req)));
+
+    app.get('/records/:id/history', { onRequest: canView, schema: idParams() }, async (req) => service.history(req.params.id));
+
     app.get('/records/:id/comments', { onRequest: canView, schema: idParams() }, async (req) => service.listComments(req.params.id));
     app.post('/records/:id/comments', {
         onRequest: app.requirePerm('record.comment'),

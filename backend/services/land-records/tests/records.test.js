@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { formatRecordNo, parcelKey, parcelLabel, validateVersion, schemaFor, PARCEL_KINDS } from '../src/catalogue.js';
 import { sealOf } from '../src/seal.js';
-import { makeService, makeHttp, actor, users, erf1873, erf1873Data, commitVersion, openDraft, seal64 } from './helpers.js';
+import { makeService, makeHttp, actor, users, erf1873, erf1873Data, commitVersion, seal64 } from './helpers.js';
 
 async function rejects(promise, statusCode, messagePart) {
     const err = await promise.then(() => null, e => e);
@@ -124,7 +124,7 @@ describe('reading and searching records', () => {
 
     it('a record with its current version and open draft; its versions; one version', async () => {
         const ctx = await threeRecords();
-        await openDraft(ctx, ctx.a.id);
+        await ctx.service.openDraft(ctx.a.id, actor(users.rec));
         const r = await ctx.service.getRecord(ctx.a.id);
         expect(r).to.include({ status: 'committed', currentVersion: 1, draftVersion: 2 });
         expect(r.current).to.include({ versionNumber: 1, state: 'committed', approvedByName: 'Elina Shivute' });
@@ -143,7 +143,7 @@ describe('seals and the version chain', () => {
         const ctx = makeService();
         const r = await ctx.service.createRecord({ parcel: erf1873() }, actor(users.rec));
         await commitVersion(ctx, r.id, 1, erf1873Data());
-        await openDraft(ctx, r.id);
+        await ctx.service.openDraft(r.id, actor(users.rec));
         const v2 = erf1873Data({ encumbrances: [{ type: 'bond', ref: 'B 1234/2020', inFavourOf: 'Bank Windhoek' }] });
         await commitVersion(ctx, r.id, 2, v2, { submitter: users.rec, approver: users.sup });
         return { ...ctx, id: r.id };
@@ -195,7 +195,7 @@ describe('seals and the version chain', () => {
         const ctx = makeService();
         const r = await ctx.service.createRecord({ parcel: erf1873() }, actor(users.rec));
         await commitVersion(ctx, r.id, 1, erf1873Data());
-        await openDraft(ctx, r.id);
+        await ctx.service.openDraft(r.id, actor(users.rec));
         await ctx.repo.updateVersion(r.id, 2, { data: erf1873Data({ tenure: 'leasehold' }) });
         expect((await ctx.service.getRecord(r.id)).current.data.tenure).to.equal('freehold');
     });

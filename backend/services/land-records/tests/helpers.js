@@ -74,16 +74,6 @@ export async function commitVersion({ repo, clock }, recordId, versionNumber, da
     });
 }
 
-/** Open a new draft (a copy of the current version), as a change will (API-648). */
-export async function openDraft({ repo, clock }, recordId) {
-    const record = await repo.getRecord(recordId);
-    const current = await repo.getVersion(recordId, record.currentVersion);
-    const n = current.versionNumber + 1;
-    await repo.addVersion({ ...current, id: `00000000-0000-4000-8000-00000000000${n}`, versionNumber: n, state: 'draft', revision: 1, seal: null, previousSeal: null, committedAt: null, approvedById: null, approvedByName: null, submittedAt: null, submittedById: null, submittedByName: null, createdAt: clock(), updatedAt: clock() });
-    await repo.updateRecord(recordId, { draftVersion: n, draftState: 'draft' });
-    return n;
-}
-
 export async function makeHttp() {
     const ctx = makeService();
     const app = await buildApp({ service: ctx.service, jwtSecret: SECRET });

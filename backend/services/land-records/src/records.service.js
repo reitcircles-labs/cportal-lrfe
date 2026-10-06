@@ -28,7 +28,8 @@ export function searchTextOf(record, ...datas) {
 /**
  * Land records (README.md): creating a record with its first draft, editing the draft (core fields,
  * pinned documents, suggestions and checks, comments), and reading records, versions and the seal
- * chain; review and commit through bpm (API-647). Changes after a commit follow in API-648.
+ * chain; review and commit through bpm (API-647); changes after a commit, flags when edrms corrects
+ * a linked document, and the history (API-648).
  */
 export class RecordsService {
     constructor({ repo, events, edrms = null, bpm = null, clock = () => new Date(), config = {} }) {
@@ -204,6 +205,59 @@ export class RecordsService {
         }, actor);
     }
 
+    /**
+     * Change a committed record: a new draft vN+1, a copy of the current version. The current
+     * version stays current until the new one is approved. One open draft per record.
+     */
+    async openDraft(recordId, actor = SYSTEM) {
+        const record = await this.requireRecord(recordId);
+        if (record.draftVersion) throw new ConflictError(`The record already has an open draft (version ${record.draftVersion})`, { versionNumber: record.draftVersion });
+        if (!record.currentVersion) throw new ConflictError('The record has no committed version yet');
+        const current = await this.repo.getVersion(recordId, record.currentVersion);
+        const n = Math.max(...(await this.repo.listVersions(recordId)).map(v => v.versionNumber)) + 1;
+        const now = this.clock();
+        const data = structuredClone(current.data);
+        const derived = suggestFromDocuments(data.documents);
+        const change = this.entry(actor, { action: 'open', from: current.versionNumber });
+        await this.repo.addVersion({
+            id: randomUUID(), recordId, versionNumber: n, state: 'draft', revision: 1, schemaVersion: current.schemaVersion, data,
+            derived, checks: checksFor(data, { flags: record.flags, suggested: derived }), changes: [change],
+            createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
+        }).catch((err) => {                                    // a concurrent open fails here (unique version number)
+            throw err instanceof ConflictError ? new ConflictError('The record already has an open draft') : err;
+        });
+        await this.repo.updateRecord(recordId, { draftVersion: n, draftState: 'draft', updatedAt: now });
+        await this.events?.publish('records.draft.changed', { recordId, recordNo: record.recordNo, versionNumber: n, revision: 1, change }, { actor });
+        return this.getRecord(recordId);
+    }
+
+    /** The document's current version in edrms, as it is pinned into a version. */
+    pinOf(doc, actor) {
+        const v = (doc.versions || []).find(x => x.versionNumber === doc.currentVersion);
+        if (!v?.seal) throw new ConflictError(`${doc.edrmsNo} has no sealed current version`);
+        const fields = Object.fromEntries(Object.entries(doc.props || {}).filter(([, val]) => val !== null && val !== undefined && val !== '').map(([k, val]) => [k, String(val)]));
+        return {
+            edrmsDocumentId: doc.id, edrmsNo: doc.edrmsNo, version: v.versionNumber, seal: v.seal, docType: doc.docType, ref: doc.instrumentRef ?? null,
+            addedBy: actor.id, addedAt: this.clock().toISOString(), fields
+        };
+    }
+
+    /**
+     * Adopt a document's newer EDRMS version (after a correction): its pinned version, seal and
+     * fields are updated in the draft; suggestions and checks follow, and the change is reviewed.
+     */
+    async refreshDocument(recordId, edrmsDocumentId, { revision }, actor = SYSTEM) {
+        const draft = await this.requireDraft(recordId);
+        const data = structuredClone(draft.version.data);
+        const i = (data.documents || []).findIndex(d => d.edrmsDocumentId === edrmsDocumentId);
+        if (i < 0) throw new NotFoundError('The document is not in this record');
+        const old = data.documents[i];
+        const doc = await this.requireDocument(edrmsDocumentId);
+        if (doc.currentVersion === old.version) throw new ConflictError(`${old.edrmsNo} is already at its current version (${old.version})`);
+        data.documents[i] = this.pinOf(doc, actor);
+        return this.saveDraft(draft, revision, data, { action: 'update', edrmsNo: old.edrmsNo, ref: data.documents[i].ref, fromVersion: old.version, toVersion: doc.currentVersion }, actor);
+    }
+
     /** Pin a filed document into the draft, at its current EDRMS version and seal. */
     async addDocument(recordId, { revision, edrmsDocumentId }, actor = SYSTEM) {
         const draft = await this.requireDraft(recordId);
@@ -211,14 +265,9 @@ export class RecordsService {
         data.documents = data.documents || [];
         if (data.documents.some(d => d.edrmsDocumentId === edrmsDocumentId)) throw new ConflictError('The document is already in this record');
         const doc = await this.requireDocument(edrmsDocumentId);
-        const v = (doc.versions || []).find(x => x.versionNumber === doc.currentVersion);
-        if (!v?.seal) throw new ConflictError(`${doc.edrmsNo} has no sealed current version`);
-        const fields = Object.fromEntries(Object.entries(doc.props || {}).filter(([, val]) => val !== null && val !== undefined && val !== '').map(([k, val]) => [k, String(val)]));
-        data.documents.push({
-            edrmsDocumentId: doc.id, edrmsNo: doc.edrmsNo, version: v.versionNumber, seal: v.seal, docType: doc.docType, ref: doc.instrumentRef ?? null,
-            addedBy: actor.id, addedAt: this.clock().toISOString(), fields
-        });
-        return this.saveDraft(draft, revision, data, { action: 'link', edrmsNo: doc.edrmsNo, ref: doc.instrumentRef ?? null, version: v.versionNumber }, actor);
+        const pin = this.pinOf(doc, actor);
+        data.documents.push(pin);
+        return this.saveDraft(draft, revision, data, { action: 'link', edrmsNo: doc.edrmsNo, ref: pin.ref, version: pin.version }, actor);
     }
 
     /** Remove a document from the draft. */
@@ -304,6 +353,7 @@ export class RecordsService {
         const now = this.clock();
         const saved = await this.repo.updateVersion(record.id, version.versionNumber, {
             state: 'draft', revision: version.revision + 1, reviewInstanceId: null,
+            checks: checksFor(version.data, { flags: (await this.repo.getRecord(record.id)).flags }),
             changes: [...(version.changes || []), change], updatedAt: now, ...patch
         }, { expectedRevision: version.revision });
         if (!saved) throw new ConflictError('The version was changed at the same time: try again');
@@ -334,6 +384,10 @@ export class RecordsService {
         const sealed = { ...version, approvedById: by.id, approvedByName: by.name ?? null, committedAt, previousSeal: previous?.seal ?? null };
         const seal = sealOf(record, sealed);
         const actor = { id: by.id, name: by.name };
+        // flags this version settles; read again just before the commit so a flag raised meanwhile is kept
+        const flagsNow = (await this.repo.getRecord(recordId)).flags || [];
+        const remaining = openFlags(flagsNow, version.data);
+        const settledFlags = remaining.length !== flagsNow.length ? { flags: remaining } : {};
         await this.repo.commit({
             recordId, versionNumber,
             versionPatch: {
@@ -343,7 +397,7 @@ export class RecordsService {
             },
             recordPatch: {
                 status: 'committed', currentVersion: versionNumber, draftVersion: null, draftState: null, updatedAt: committedAt,
-                searchText: searchTextOf(record, version.data)
+                searchText: searchTextOf(record, version.data), ...settledFlags
             },
             supersede: previous?.versionNumber
         });
@@ -385,6 +439,62 @@ export class RecordsService {
             diff: diffVersions(current?.data ?? null, version.data),
             currentVersion: current ? { versionNumber: current.versionNumber, seal: current.seal, committedAt: current.committedAt } : null
         };
+    }
+
+    // ---------------------------------------------------------------- edrms corrections (API-648)
+
+    /**
+     * edrms filed a new version of a document (`edrms.document.amended`). Every record whose
+     * current version or open draft pins an older version is flagged "needs review"; nothing in
+     * the record changes by itself. Repeated or late events only move the flag forward.
+     */
+    async onDocumentAmended({ documentId, edrmsNo, version, reason }) {
+        if (!documentId || !version) return [];
+        const pinning = (await this.repo.findRecordsPinning([documentId])).get(documentId) || [];
+        const flagged = [];
+        for (const recordId of new Set(pinning.map(p => p.recordId))) {
+            const record = await this.repo.getRecord(recordId);
+            const live = [record.currentVersion, record.draftVersion].filter(Boolean);
+            const versions = await Promise.all(live.map(n => this.repo.getVersion(recordId, n)));
+            const pinned = versions.flatMap(v => (v.data.documents || []).filter(d => d.edrmsDocumentId === documentId));
+            const from = Math.min(...pinned.map(d => d.version));
+            if (!pinned.length || from >= version) continue;
+            const existing = (record.flags || []).find(f => f.type === 'document_updated' && f.edrmsDocumentId === documentId);
+            if (existing && existing.to >= version) continue;
+            const flag = {
+                type: 'document_updated', edrmsDocumentId: documentId, edrmsNo: edrmsNo ?? pinned[0].edrmsNo, ref: pinned[0].ref ?? null,
+                from, to: version, ...(reason ? { reason } : {}), at: this.clock().toISOString(),
+                message: `Document updated: ${edrmsNo ?? pinned[0].edrmsNo} v${from} → v${version}. Review needed.`
+            };
+            const flags = [...(record.flags || []).filter(f => f !== existing), flag];
+            await this.repo.updateRecord(recordId, { flags });
+            // the open draft's checks show it at once (documents_current); its data is unchanged
+            const draft = versions.find(v => v.versionNumber === record.draftVersion && v.state === 'draft');
+            if (draft) await this.repo.updateVersion(recordId, draft.versionNumber, { checks: checksFor(draft.data, { flags }) });
+            await this.events?.publish('records.record.flagged', { recordId, recordNo: record.recordNo, flag });
+            flagged.push(recordId);
+        }
+        return flagged;
+    }
+
+    // ---------------------------------------------------------------- history (API-648)
+
+    /**
+     * Every committed version, newest first: who submitted and approved it, when, what it changed
+     * against the version before, and whether its seal and chain verify.
+     */
+    async history(recordId) {
+        const record = await this.requireRecord(recordId);
+        const committed = (await this.repo.listVersions(recordId)).filter(v => ['committed', 'superseded'].includes(v.state));
+        const seals = verifyChain(record, committed);
+        const versions = committed.map((v, i) => ({
+            versionNumber: v.versionNumber, state: v.state, current: v.versionNumber === record.currentVersion,
+            submittedAt: v.submittedAt ?? null, submittedById: v.submittedById ?? null, submittedByName: v.submittedByName ?? null,
+            approvedById: v.approvedById ?? null, approvedByName: v.approvedByName ?? null, committedAt: v.committedAt, reviewComment: v.reviewComment ?? null,
+            seal: v.seal, previousSeal: v.previousSeal ?? null, intact: seals[i].intact, linked: seals[i].linked,
+            diff: diffVersions(i ? committed[i - 1].data : null, v.data)
+        }));
+        return { recordId, recordNo: record.recordNo, label: record.label, intact: seals.every(x => x.intact && x.linked), flags: record.flags || [], versions: versions.reverse() };
     }
 
     // ---------------------------------------------------------------- comments
@@ -495,7 +605,8 @@ export class RecordsService {
         const r = await this.requireRecord(id);
         const current = r.currentVersion ? await this.repo.getVersion(id, r.currentVersion) : null;
         const draft = r.draftVersion ? await this.repo.getVersion(id, r.draftVersion) : null;
-        return { ...this.summary(r), current, draft };
+        // a change in progress: what it changes against the current committed version
+        return { ...this.summary(r), current, draft, draftDiff: draft && current ? diffVersions(current.data, draft.data) : null };
     }
 
     async listVersions(id) {
@@ -523,6 +634,15 @@ export class RecordsService {
         const versions = verifyChain(r, committed);
         return { recordId: id, recordNo: r.recordNo, intact: versions.every(v => v.intact && v.linked), versions, checkedAt: this.clock() };
     }
+}
+
+/**
+ * The flags still open once `data` is committed: a "document updated" flag stays while that
+ * document is in the record at an older version than the corrected one.
+ */
+function openFlags(flags = [], data) {
+    return flags.filter(f => f.type !== 'document_updated'
+        || (data.documents || []).some(d => d.edrmsDocumentId === f.edrmsDocumentId && d.version < f.to));
 }
 
 /** The words that identify a parcel in a document's text (for a first, broad search). */

@@ -163,19 +163,26 @@ The seal of a committed version is SHA-256 over the canonical JSON (sorted keys,
 ```
 
 Each seal includes the previous version's seal, so the versions form a chain: changing any earlier
-version breaks every later seal. A verify endpoint recomputes the chain and, optionally, checks that
-each pinned document's seal still matches edrms. The history shows every committed version with
-submitter, approver, date and the difference from the one before.
+version breaks every later seal. `GET /records/:id/verify` recomputes the chain.
+`GET /records/:id/history` lists every committed version (newest first) with submitter, approver,
+date, review comment, its seal (`intact`, `linked`) and what it changed against the version before.
+An open draft carries `draftDiff`: what it changes against the current version.
 
 ## 8. When edrms corrects a document
 
 edrms publishes `edrms.document.amended` (over NATS) when a filed document gets a new version.
-land-records finds every record whose current version or draft pins an older version of that
-document and marks it **needs review** ("document updated: EDR-NA-… v1 → v2"). The current version
-does **not** change by itself. Adopting the newer version is a draft change like any other: the
-pinned version, seal and field snapshot are updated, the owners and checks recomputed, and the
-change goes through review. The flag clears when a committed version pins the current document
-version.
+land-records finds every record whose current version or open draft pins an older version of that
+document and flags it **needs review** (`flags: [{ type: "document_updated", edrmsNo, from, to,
+reason, message: "Document updated: EDR-NA-… v1 → v2. Review needed." }]`, `records.record.flagged`).
+The current version does **not** change by itself; an open draft's `documents_current` check shows
+the newer version at once. A repeated or late event only moves the flag forward.
+
+Adopting the newer version is a draft change like any other: open a draft (`POST /records/:id/draft`)
+and refresh the document (`POST /records/:id/draft/documents/:edrmsDocumentId/refresh`). The pinned
+version, seal and field snapshot are updated and suggestions and checks recomputed (e.g. a corrected
+ID number shows as a new suggestion and an `overrides` warning until accepted), and the change goes
+through review. The flag clears when a committed version pins the corrected document version (or no
+longer holds the document); a committed change that leaves the older version keeps the flag.
 
 ## 9. Finding documents
 
@@ -190,7 +197,6 @@ PostgreSQL full-text and trigram search behind one search function; a dedicated 
 All under `/api/records` through the gateway; every service checks the token and permission itself.
 Every draft change needs the draft's current `revision` (409 otherwise), recomputes suggestions and
 checks, is logged in the version's `changes` (who, what, when) and published as `records.draft.changed`.
-Opening a new draft follows in API-648.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
@@ -201,7 +207,9 @@ Opening a new draft follows in API-648.
 | `PATCH /records/:id/draft {revision, changes, accept, reason}` | `record.create` or `record.link` | edit core fields and attributes; `accept` suggested owners, extent, encumbrances; `reason` for values entered by hand |
 | `POST /records/:id/draft/documents {edrmsDocumentId}` | `record.link` | pin a document (its current version) |
 | `DELETE /records/:id/draft/documents/:edrmsDocumentId?revision=` | `record.unlink` | remove a document |
-| `POST /records/:id/draft` | `record.create` or `record.link` | open a new draft from the current version |
+| `POST /records/:id/draft` | `record.create` or `record.link` | open a new draft from the current version (one per record) |
+| `POST /records/:id/draft/documents/:edrmsDocumentId/refresh {revision}` | `record.link` | adopt a document's newer EDRMS version |
+| `GET /records/:id/history` | `record.view` | committed versions with who, when, changes and seal check |
 | `POST /records/:id/draft/submit {revision}` · `…/withdraw` | `record.link` | submit for review · withdraw (submitter only) |
 | `GET /records/:id/review` | `record.view` | what the reviewer sees: version, checks, overrides, difference from the current version |
 | `GET /records/:id/comments` · `POST` | `record.view` · `record.comment` | discussion |
