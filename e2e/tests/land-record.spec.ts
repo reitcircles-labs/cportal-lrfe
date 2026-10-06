@@ -53,7 +53,7 @@ async function fileSample(playwright: Parameters<typeof apiAs>[0], baseURL: stri
 
 /** T 4521/2019 as the deed reads: the late Petrus Nghishidi's half passes to his two children. */
 const ESTATE_TRANSFER = {
-    regDate: '12 July 2019', priorTitle: 'T 2210/2008', transferor: 'Estate of the late Petrus Nghishidi',
+    regDate: '9 July 2019', priorTitle: 'T 2210/2008', transferor: 'Estate of the late Petrus Nghishidi',
     tee1: 'Ndapewa Nghishidi', tee1Id: '98030100562', tee2: 'Tomas Nghishidi', tee2Id: '01112500379', share: '¼ share each'
 };
 

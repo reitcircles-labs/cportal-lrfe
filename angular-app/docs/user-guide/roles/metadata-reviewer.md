@@ -75,8 +75,9 @@ with 10 digits (0111250379), and a hand-written note in the margin gives the cor
 | 3 | Type **01112500379** and press **Enter** | The field shows **· corrected**, "AI read '0111250379'", and the check disappears. (If the AI already read 01112500379 from the note, accept it.) |
 | 4 | Accept the remaining fields, then **Approve & file to EDRMS** | "Filed as EDR-NA-…" |
 
-> If you file the wrong number, the records officer cannot finalize Erf 1873 later: its owners would
-> include an invalid ID number. That is intended.
+> If you file the wrong number, the records officer cannot submit Erf 1873 for review later: its
+> owners would include an invalid ID number. That is intended. A correction you file later (with a
+> second reviewer's approval) flags every land record that uses the document as **Needs review**.
 
 ## Reject a document
 

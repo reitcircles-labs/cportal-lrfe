@@ -1,7 +1,7 @@
 # cportal-lrfe backend
 
 Backend services for the Namibia land-records app in `../angular-app`: EDRMS intake (capture →
-extract → verify) and the ERP land-records register (link → finalize → audit).
+extract → verify) and the ERP land-records register (link → review → commit → audit).
 
 ESM throughout (`"type": "module"`), Node ≥ 20, npm workspaces. Same open-source stack as
 `cportal-be` — Fastify, Sequelize + Postgres, JWT, dotenv, mocha/chai/sinon — on current major
@@ -31,9 +31,14 @@ Stored files are to be encrypted with keys protected by OpenBao. Settings per se
 [`scripts/README.md`](scripts/README.md#openbao-installation-rules); storage research in
 [`docs/storage_integrations.md`](docs/storage_integrations.md).
 
-Planned next: connect the frontend's Capture and Verify screens to intake; **land-records**
-(records built from filed documents, reviewed and versioned: design in
-[`services/land-records/README.md`](services/land-records/README.md), epic API-642); **audit** (hash-chained trail, sign-off, evidence export); **search**.
+**land-records** (epic API-642): a parcel's record built from filed edrms documents (each pinned to
+its version and seal), owners and extent suggested from the deeds, checks, review by a second person
+through the bpm process `land-record-review`, sealed and chained versions, flags when edrms corrects
+a linked document (`edrms.document.amended` over NATS). Design and API in
+[`services/land-records/README.md`](services/land-records/README.md); the frontend's Land record
+screen (`#/link`) and the review in the task inbox use it.
+
+Planned next: **audit** (hash-chained trail, sign-off, evidence export); **search**.
 
 ## Running
 
@@ -42,7 +47,7 @@ npm install
 cp .env_example services/identity/.env     # edit; see the comments in the file
 cp .env_example services/gateway/.env
 
-# All six services + the API docs (http://localhost:3510) in one terminal
+# All seven services + the API docs (http://localhost:3510) in one terminal
 # (watch mode, each reads its own .env; Ctrl+C stops all)
 npm run dev
 npm run dev -- identity gateway            # only some of them (add `docs` for the API docs)
@@ -55,6 +60,7 @@ IDENTITY_STORE=memory SEED_DEMO_PASSWORD='demo-password-2026' npm run dev:identi
 EDRMS_STORE=memory EDRMS_STORAGE=local npm run dev:edrms
 BPM_STORE=memory npm run dev:bpm
 INTAKE_STORE=memory npm run dev:intake     # extraction uses the mock model unless EXTRACTION_PROVIDER=gemini
+RECORDS_STORE=memory npm run dev:land-records
 npm run dev:gateway
 
 # With Postgres from docker compose (published on localhost:5433;
@@ -65,7 +71,7 @@ npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password: se
 npm run dev:identity
 ```
 
-Everything in containers (Postgres + all six services, one image built from `Dockerfile`):
+Everything in containers (Postgres + all seven services, one image built from `Dockerfile`):
 
 ```bash
 JWT_SECRET=… SEED_DEMO_PASSWORD='demo-password-2026' docker compose up -d --build

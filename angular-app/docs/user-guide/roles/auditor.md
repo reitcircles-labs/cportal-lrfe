@@ -1,6 +1,6 @@
 # Auditor · read-only
 
-*For testers and the Office of the Auditor-General. Last checked against the app on 3 October 2026.*
+*For testers and the Office of the Auditor-General. Last checked against the app on 6 October 2026.*
 *New to testing the portal? Read [Testing the portal: start here](../testing-the-portal.md) first.*
 
 The auditor checks that the land records can be trusted: that each filed document is exactly what
@@ -38,6 +38,16 @@ is wrong, report it so that a reviewer requests a correction.
 
 A failed check would show **Integrity check FAILED**, and say whether the content no longer matches
 its fingerprint or the seal is broken. That must never happen; report it at once.
+
+## Look at a land record
+
+**Land record** is view-only for you: **New record** and the buttons on a record (**Add documents**
+on a draft, **Change record** on a committed record) are faded ("Requires …").
+
+| Do | You should see |
+|---|---|
+| Open **Land record**, pick **Erf 1873, Klein Windhoek** | Its documents (each with the EDRMS number and version it was linked at), owners, chain of title and checks |
+| **History** tab | Every approved version: who submitted it, who approved it (always a different person), when, the reviewer's comment, what it changed, and **Seal verified**; above them "Seal chain intact". A version whose content no longer matches its seal would show "Seal does not match", and the panel "Seal chain broken": report that at once |
 
 ## Audit a land record (demo)
 

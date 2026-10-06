@@ -66,7 +66,7 @@ Some boxes are locked so that the portal always keeps an administrator.
 | Allow sign-in with national eID | On | Not connected yet |
 | Restrict to government network | Off | Not enforced yet |
 | Idle session timeout | 30 min | Users are signed out after this long without activity |
-| Four-eyes finalization | On | The officer who finalizes a land record must differ from the reviewer who filed its documents |
+| Four-eyes finalization | On | The officer who finalizes a land record must differ from the reviewer who filed its documents. Today the app enforces that the person who submits a land record cannot approve it; excluding the reviewers who filed its documents is not enforced yet |
 | Segregation of duties | 3 of 4 rules on | Pairs of permissions no one should hold together; each shows how many users are affected |
 
 Change a policy, then **Save policies** and confirm: "Security policies saved". Enabling a duty rule
