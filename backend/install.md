@@ -1,7 +1,8 @@
 # Installing the backend on a server
 
 How to set up the six backend services on one server whose PostgreSQL accepts **local
-connections only**, with every service reachable only from the server itself. This is how the
+connections only**, with every service reachable only from the server itself, and stored files
+encrypted with keys from OpenBao. This is how the
 development/test server is set up (checked on 9 October 2026). The browser reaches the app through
 nginx and the gateway; testers on a laptop use the SSH tunnel.
 
@@ -41,7 +42,7 @@ Needs: Node ≥ 20 and PostgreSQL 15 on the same machine.
    ```
 
    For example: `sudo -u postgres psql -d testdb -c "CREATE SCHEMA records AUTHORIZATION ladmin;"`.
-   Each service creates its own tables in its schema on first start (step 4).
+   Each service creates its own tables in its schema on first start (step 5).
 
 Without its schema a service stops at start with *Schema "…" does not exist and this database user
 may not create it*.
@@ -96,12 +97,58 @@ for f in .env services/*/.env; do grep '^JWT_SECRET=' "$f" | sha256sum | cut -c1
 Changing the secret later works the same way. Restart the services afterwards; everyone then has
 to sign in again.
 
-## 4. First start
+## 4. Stored files encrypted with OpenBao (on by default)
+
+edrms (filed documents) and intake (scans) encrypt the files they store with keys protected by
+OpenBao (design: [`packages/storage/README.md`](packages/storage/README.md)). The other services
+store no files.
+
+1. **Set up the development vault once:**
+
+   ```bash
+   cd backend
+   npm run bao -- --dev
+   ```
+
+   The first run downloads OpenBao into `backend/.tools/`, starts it on `127.0.0.1:8200`, creates
+   the keys (`edrms-files`, `intake-files`), their policies and a login (AppRole) per service, and
+   prints the settings for the two services. Its data, unseal key and the services' secret IDs live
+   in `~/data/cportal-lrfe/openbao/`, outside git, readable by this user only. Stop it with Ctrl+C:
+   `npm run dev` starts it from now on. (Production is set up differently: see
+   [OpenBao production rules](scripts/README.md#production-rules).)
+
+2. **Put the printed settings into the two `.env` files**, with encryption on:
+
+   ```bash
+   # services/edrms/.env
+   EDRMS_ENCRYPTION=bao
+   BAO_ADDR=http://127.0.0.1:8200
+   BAO_ROLE_ID=…                 # as printed for edrms
+   BAO_SECRET_ID_FILE=/home/<user>/data/cportal-lrfe/openbao/approle/edrms-secret-id
+   BAO_KEY_NAME=edrms-files
+
+   # services/intake/.env
+   INTAKE_ENCRYPTION=bao
+   BAO_ADDR=http://127.0.0.1:8200
+   BAO_ROLE_ID=…                 # as printed for intake
+   BAO_SECRET_ID_FILE=/home/<user>/data/cportal-lrfe/openbao/approle/intake-secret-id
+   BAO_KEY_NAME=intake-files
+   ```
+
+   Running `npm run bao -- --dev` again prints the same settings; it never replaces working ones.
+
+With either service on `bao`, `npm run dev` starts OpenBao first (prefixed `bao │`), and the
+service logs in and requests a data key before it starts. Files stored before encryption was
+switched on stay readable as they are; only files stored afterwards are encrypted. To switch it
+off, set `EDRMS_ENCRYPTION=off` / `INTAKE_ENCRYPTION=off`. `.env_example` keeps encryption off,
+because a service set to `bao` does not start without its login settings.
+
+## 5. First start
 
 ```bash
 cd backend
 npm install
-npm run dev          # all services + NATS (+ OpenBao if a service is set to use it); Ctrl+C stops
+npm run dev          # all services + NATS + OpenBao (edrms and intake encrypt with it); Ctrl+C stops
 ```
 
 On the first start each service creates its tables, and identity creates the roles and the
@@ -111,7 +158,7 @@ With `EXTRACTION_PROVIDER=gemini` and `INTAKE_RUN_WORKER=true`, intake starts re
 scans with the AI at once, which costs money. Set `INTAKE_RUN_WORKER=false` for a start that should
 not do that.
 
-## 5. Check it
+## 6. Check it
 
 ```bash
 # every service answers
@@ -120,6 +167,9 @@ for p in 3500 3501 3502 3503 3504 3505; do curl -s http://127.0.0.1:$p/health; e
 # every service listens on 127.0.0.1 only (no 0.0.0.0 or public address)
 ss -ltn | grep -E ':350[0-5]\b'
 
+# OpenBao only on localhost (while npm run dev runs)
+ss -ltn | grep 8200
+
 # PostgreSQL only on localhost, and each schema has its tables
 ss -ltn | grep 5432
 psql "postgres://ladmin:…@localhost:5432/testdb" -c '\dt identity.*' -c '\dt records.*'
@@ -127,13 +177,13 @@ psql "postgres://ladmin:…@localhost:5432/testdb" -c '\dt identity.*' -c '\dt r
 
 Then sign in to the app as the bootstrap administrator.
 
-## 6. Reaching the app
+## 7. Reaching the app
 
 - **Browser:** nginx serves the app over HTTPS and passes `/api` to the gateway on `127.0.0.1:3500`.
   See [Serving the app over HTTPS](services/identity/README.md#serving-the-app-over-https-nginx).
 - **Testers' laptops:** the SSH tunnel forwards the ports to `127.0.0.1` on the server. See
   [remoteConnect.sh](scripts/README.md#remoteconnectsh-test-the-app-from-your-laptop).
-- **Stored files encrypted with OpenBao** (optional): see [OpenBao](scripts/README.md#openbao-installation-rules).
+- **OpenBao** (installation rules, backups, production): see [OpenBao](scripts/README.md#openbao-installation-rules).
 
 ## When something does not work
 
@@ -144,4 +194,6 @@ Then sign in to the app as the bootstrap administrator.
 | *password authentication failed for user …* | Wrong user or password in that `DB_CONNECTION_STRING` |
 | *connect ECONNREFUSED 127.0.0.1:5432* | PostgreSQL is not running, or not listening on localhost |
 | Signed-in users get 401 everywhere | The services do not share the same `JWT_SECRET` (check in step 3), or it was just changed: sign in again |
+| edrms or intake exits with *OpenBao at … is sealed or unreachable* | The vault is not running: start the services with `npm run dev` (which starts it), or run `npm run bao -- --dev` |
+| edrms or intake exits with *startup check failed* | Wrong `BAO_ROLE_ID` or secret ID file: copy the settings again from `npm run bao -- --dev` (step 4) |
 | A port shows `0.0.0.0` in `ss -ltn` | That service's `.env` still has `HOST=0.0.0.0`: set `127.0.0.1` and restart it |
