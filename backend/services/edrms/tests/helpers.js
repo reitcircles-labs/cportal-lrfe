@@ -69,3 +69,29 @@ export async function makeApp(options = {}) {
     const bearer = (t) => ({ authorization: `Bearer ${t}` });
     return { ...ctx, app, userToken, serviceToken, bearer };
 }
+
+/** The testers' sample documents for Erf 1873 (angular-app/docs/samples), plus one other parcel. */
+export async function fileSamples(service) {
+    const f = (k, v) => ({ k, label: k, v });
+    const file = (meta) => service.fileDocument({ meta, file: pdfFile(Buffer.from(`%PDF-1.7 ${meta.sourceId}`)) });
+    const out = {};
+    out.grant = (await file(deedMeta({ sourceId: 's1', docType: 'deed_of_grant', title: 'Deed of Grant', fields: [
+        f('deedNo', 'G 88/1978'), f('regDate', '2 May 1978'), f('property', 'Erf 1873, Klein Windhoek'), f('regDiv', 'K'),
+        f('grantor', 'the State'), f('tee1', 'Municipality of Windhoek')] }))).document;
+    out.t1996 = (await file(deedMeta({ sourceId: 's2', fields: [
+        f('deedNo', 'T 1502/1996'), f('property', 'Erf 1873, Klein Windhoek'), f('priorTitle', 'G 88/1978'),
+        f('transferor', 'Municipality of Windhoek'), f('tee1', 'Johannes Shikongo'), f('tee1Id', '61042500187')] }))).document;
+    out.sg = (await file(sgMeta({ sourceId: 's3', fields: [
+        f('sgNo', 'A 412/2007'), f('property', 'Erf 1873, Klein Windhoek'), f('extent', '1 214 square metres')] }))).document;
+    out.t2008 = (await file(deedMeta({ sourceId: 's4', fields: [
+        f('deedNo', 'T 2210/2008'), f('property', 'Erf 1873, Klein Windhoek'), f('sgRef', 'A 412/2007'), f('priorTitle', 'T 1502/1996'),
+        f('transferor', 'Johannes Shikongo'), f('transferorId', '61042500187'),
+        f('tee1', 'Petrus Nghishidi'), f('tee1Id', '72110800345'), f('tee2', 'Maria Nghishidi'), f('tee2Id', '75060200418')] }))).document;
+    out.t2019 = (await file(deedMeta({ sourceId: 's5', fields: [
+        f('deedNo', 'T 4521/2019'), f('property', 'Erf 1873, Klein Windhoek'), f('priorTitle', 'T 2210/2008'),
+        f('transferor', 'Estate of the late Petrus Nghishidi'),
+        f('tee1', 'Ndapewa Nghishidi'), f('tee1Id', '98030100562'), f('tee2', 'Tomas Nghishidi'), f('tee2Id', '01112500379')] }))).document;
+    out.olympia = (await file(deedMeta({ sourceId: 's6', fields: [
+        f('deedNo', 'T 3329/2011'), f('property', 'Erf 3329, Olympia'), f('tee1', 'Frieda Hoäeb'), f('tee1Id', '80010100123'), f('tee2', 'Hilma !Naruseb')] }))).document;
+    return out;
+}

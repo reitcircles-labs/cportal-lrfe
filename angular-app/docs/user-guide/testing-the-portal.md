@@ -1,18 +1,18 @@
 # Testing the portal: start here
 
-*For testers. Last checked against the app on 3 October 2026.*
+*For testers. Last checked against the app on 6 October 2026.*
 
 This guide gets you ready to test the Deeds Registry portal and explains how the roles hand work to
 each other. Each role then has its own guide with step-by-step tasks; follow them in the order of
-[the whole flow](#the-whole-flow) below to take a parcel's deeds from the scanner to a finalized land
+[the whole flow](#the-whole-flow) below to take a parcel's deeds from the scanner to an approved land
 record.
 
 | Role guide | The job |
 |---|---|
 | [Scan operator](roles/scan-operator.md) | Upload scanned deeds into batches |
 | [Metadata reviewer](roles/metadata-reviewer.md) | Check what the AI read, correct it, file documents to the EDRMS, reject what does not belong; approve corrections |
-| [Records officer](roles/records-officer.md) | Build the land record of a parcel from its filed documents and finalize it |
-| [Registrar (supervisor)](roles/registrar.md) | Oversee the work, finalize land records, invite users |
+| [Records officer](roles/records-officer.md) | Build the land record of a parcel from its filed documents and submit it for review |
+| [Registrar (supervisor)](roles/registrar.md) | Oversee the work, approve or return land records, invite users |
 | [Auditor · read-only](roles/auditor.md) | Verify the integrity of filed documents, audit land records, export evidence |
 | [System administrator](roles/system-administrator.md) | Offices, users, roles, security policies, access log |
 
@@ -25,9 +25,9 @@ record.
 - **One account per role you test** (see [Test accounts](#test-accounts)).
 - **The sample documents** in [`docs/samples/`](../samples/README.md): fictitious deeds for one
   parcel, Erf 1873, Klein Windhoek. Download them to your computer.
-- **Two browser windows** when two people must act in turn (for example a reviewer and a second
-  reviewer who approves): a normal window and a **private / incognito** window. Signing in as
-  someone else in the same window signs the first person out.
+- **Two browser windows** when two people must act in turn (for example a records officer who
+  submits a land record and the registrar who approves it): a normal window and a **private /
+  incognito** window. Signing in as someone else in the same window signs the first person out.
 
 ## Test accounts
 
@@ -56,8 +56,9 @@ Ask the system administrator for an account for each role you will test. Two way
   enable demo users on a shared database.
 
 Some steps need **two different people**: a correction to a filed document must be approved by
-another reviewer, and the app keeps some duties apart (for example, whoever can file documents
-should not sign off their audit). Use the second reviewer account for those steps.
+another reviewer, a land record must be approved by someone other than the person who submitted it,
+and the app keeps some duties apart (for example, whoever can file documents should not sign off
+their audit). Use the second reviewer account and the registrar account for those steps.
 
 ## Signing in
 
@@ -79,18 +80,19 @@ and deed references) until their services are built; a line at the bottom of eve
 |---|---|
 | Sign-in, Administration (users, offices, roles, policies, access log), Tasks | **Live** |
 | Capture, Verify metadata, Documents (EDRMS) | **Live**: uploads, AI reading, review, filing, corrections, integrity checks |
-| Land record | **Demo data, with one live link**: the documents of **Erf 1873, Klein Windhoek** count as filed once you have filed the sample documents through Verify. Everything you do on this screen (new records, linking, comments, finalizing) is kept only until you reload the page or sign out |
+| Land record | **Live**: records built from filed documents, checks, review and approval through the bell, versions and history, comments |
 | Audit | **Demo data**: sign-offs and findings are kept only until you reload; the document trail shows demo entries |
 | Dashboard, Process & schema | **Demo data** |
 
-So the land-record and audit steps can be practised, but their results are not saved yet. Do them in
-one sitting, without reloading.
+So the audit steps can be practised, but their results are not saved yet. Do them in one sitting,
+without reloading.
 
 ## The whole flow
 
-The parcel is Erf 1873, Klein Windhoek. In the demo its record already holds the deed of grant
-(G 88/1978) and the first transfer (T 1502/1996); the samples add the survey diagram and the two
-later transfers, which change the owners.
+The parcel is Erf 1873, Klein Windhoek. Its land record is built from the filed samples: the survey
+diagram and the transfers of 2008 and 2019, which give the current owners. Samples 01 and 02 (the
+1978 grant and the 1996 transfer) are optional; filed too, they lengthen the chain of title (with the
+real AI only: skip them on a system with the canned AI, see the samples README).
 
 | # | Who | Guide section | Samples |
 |---|---|---|---|
@@ -98,14 +100,16 @@ later transfers, which change the owners.
 | 2 | Metadata reviewer | [Review and file each document](roles/metadata-reviewer.md#review-and-file-a-document) | 03, 04, then 05 with its correction |
 | 3 | Metadata reviewer | [Reject a document](roles/metadata-reviewer.md#reject-a-document) | 06 |
 | 4 | Scan operator | [See what happened to your uploads](roles/scan-operator.md#follow-your-documents) | |
-| 5 | Records officer | [Link the documents into Erf 1873 and finalize it](roles/records-officer.md#finalize-erf-1873-with-the-sample-documents) | |
-| 6 | Auditor | [Check the filed documents' integrity](roles/auditor.md#check-a-documents-integrity) and [audit the record](roles/auditor.md#audit-a-land-record-demo) | |
-| 7 | Metadata reviewer + second reviewer | [Correct a filed document](roles/metadata-reviewer.md#correct-a-filed-document) | any filed sample |
-| 8 | Registrar | [Oversee and finalize](roles/registrar.md) | |
-| 9 | System administrator | [Check the access log](roles/system-administrator.md#check-the-access-log) | |
+| 5 | Records officer | [Build Erf 1873 and submit it for review](roles/records-officer.md#build-erf-1873-from-the-sample-documents) | |
+| 6 | Registrar | [Return it with a comment](roles/registrar.md#approve-or-return-a-land-record) | |
+| 7 | Records officer | [Fix it and submit again](roles/records-officer.md#after-the-review) | |
+| 7a | Registrar | [Approve it](roles/registrar.md#approve-or-return-a-land-record) (version 1); optionally the records officer then [changes it](roles/records-officer.md#change-a-committed-record) for a version 2 | |
+| 8 | Auditor | [Check the filed documents' integrity](roles/auditor.md#check-a-documents-integrity), [look at the record's history](roles/auditor.md#look-at-a-land-record) and [audit it](roles/auditor.md#audit-a-land-record-demo) | |
+| 9 | Metadata reviewer + second reviewer | [Correct a filed document](roles/metadata-reviewer.md#correct-a-filed-document) | a sample linked into Erf 1873, e.g. T 4521/2019 |
+| 10 | Records officer, then registrar | [Take the correction over](roles/records-officer.md#when-a-linked-document-is-corrected-in-the-edrms) and approve it | |
+| 11 | System administrator | [Check the access log](roles/system-administrator.md#check-the-access-log) | |
 
-Steps 1 to 6 take about 45 minutes. Steps 5 and 6 must be done in one sitting (they are demo
-screens).
+Steps 1 to 6 take about 45 minutes. Only the audit step must be done in one sitting (a demo screen).
 
 ## If something goes wrong
 

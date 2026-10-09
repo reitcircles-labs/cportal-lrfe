@@ -26,7 +26,7 @@ export default {
 
         'GET /instances': { tag: 'Instances', summary: 'List instances', description: '`{ items, total }`. `mine=true`: only those you started.' },
         'GET /instances/{id}': { tag: 'Instances', summary: 'One instance with its variables, tasks and history' },
-        'POST /instances/{id}/cancel': { tag: 'Instances', summary: 'Cancel an active instance', description: 'Optional `{ reason }`. Allowed for whoever started it, and for holders of the definition\'s manage permission (verify.file for document-amendment). Only active or failed instances.' },
+        'POST /instances/{id}/cancel': { tag: 'Instances', summary: 'Cancel an active instance', description: 'Optional `{ reason }`. Allowed for whoever started it (a user, or the service that started it: land-records withdrawing a land-record-review), and for holders of the definition\'s manage permission (verify.file for document-amendment, record.finalize for land-record-review). Only active or failed instances.' },
         'POST /instances/{id}/retry': { tag: 'Instances', summary: 'Retry an instance that stopped with an error', description: 'Resumes from the step that failed.' },
 
         'GET /tasks': { tag: 'Tasks', summary: 'My inbox', description: '`{ tasks }`: open tasks you may do and tasks you have claimed, with `overdue` and the related `document`.' },
@@ -35,7 +35,7 @@ export default {
         'POST /tasks/{id}/release': { tag: 'Tasks', summary: 'Give a claimed task back' },
         'POST /tasks/{id}/complete': {
             tag: 'Tasks', summary: 'Complete a task',
-            description: 'Body `{ output }`. For the document-amendment approval: `{ output: { outcome: "approved" | "rejected", comment } }`, comment required when rejecting. Four-eyes: the person who requested a change cannot approve it. Returns `{ task, instance }`.'
+            description: 'Body `{ output }`. For the document-amendment approval: `{ output: { outcome: "approved" | "rejected", comment } }`, comment required when rejecting. For the land-record-review approval: the same outcomes; approving commits the version in land-records. Four-eyes: the person who requested a change (or submitted the version) cannot approve it. Returns `{ task, instance }`.'
         }
     }
 };

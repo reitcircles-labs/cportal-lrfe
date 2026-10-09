@@ -31,6 +31,12 @@ export class ApiService {
   put<T>(path: string, body: any) {
     return this.send<T>(this.http.put<T>(this.base + path, body));
   }
+  patch<T>(path: string, body: any) {
+    return this.send<T>(this.http.patch<T>(this.base + path, body));
+  }
+  delete<T>(path: string, params?: Record<string, string | number | boolean | undefined | null>) {
+    return this.send<T>(this.http.delete<T>(this.base + path, { params: toParams(params) }));
+  }
 
   private async send<T>(obs: import('rxjs').Observable<T>): Promise<T> {
     try {

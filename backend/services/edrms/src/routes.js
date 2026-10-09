@@ -92,7 +92,7 @@ export async function edrmsRoutes(app, { service, contentUrl }) {
     }, async (req) => {
         const { q, docType, batchId, limit, offset, ...rest } = req.query;
         const props = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k.slice('field.'.length), v]));
-        return service.listDocuments({ q, docType, batchId, props, limit, offset });
+        return service.searchDocuments({ q, docType, batchId, props, limit, offset });
     });
 
     app.get('/documents/lookup', {

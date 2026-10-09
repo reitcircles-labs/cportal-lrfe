@@ -29,7 +29,7 @@ step-by-step recording of the page, the network and the console:
 `npx playwright show-trace test-results/<test>/trace.zip` (or open it from the report).
 
 **Ports.** The test stack uses 3600 (gateway), 3601–3604 (identity, edrms, bpm, intake), 3605
-(NATS) and 4300 (the web app), so it runs next to `npm run dev` (3500–3504, 4200). If a test port is busy the run
+(NATS), 3609 (land-records) and 4300 (the web app), so it runs next to `npm run dev` (3500–3505, 4200). If a test port is busy the run
 stops instead of testing whatever is there. Other ports: `E2E_API_PORT=3700 E2E_WEB_PORT=4400 npm test`.
 
 **Keeping the stack up** between runs (faster while writing tests):
@@ -126,11 +126,11 @@ so it does **not** read your `backend/services/<name>/.env`. Playwright also sta
 | `tests/deed-workflow.spec.ts` | One deed from scan to sealed record, passed between people: the scan operator uploads it, a reviewer corrects a field, accepts the rest and files it, the records officer sees it (without audit or correction rights), the auditor checks its integrity, a reviewer requests a correction, a second reviewer approves it from the task inbox (the requester does not get the task), and the auditor checks version 2.0 |
 | `tests/administration.spec.ts` | As the system administrator: add, edit, suspend and reactivate an office; invite a user who activates the account from the email (read from `.stack/mail/`) and signs in for the first time; role changes decide what the user can open; a duty conflict is flagged before and after saving; a suspended user is signed out and refused until reactivated; policies and the permission matrix are saved, take effect and are put back. Each checked in the access log. |
 | `tests/edge-cases.spec.ts` | The less travelled paths: a reviewer rejects a document (the scan operator sees why); two reviewers on one document (the second can look, not change, until the first leaves); a correction rejected by the approver (reason required, record unchanged) or withdrawn by the requester; a TIFF refused at capture; the same scan captured twice; a deed already in the EDRMS flagged and refused; the service refusing to file an unreviewed document |
-| `tests/land-record.spec.ts` | The tester guide's records-officer steps: the sample documents in `angular-app/docs/samples/` are filed, then linked into Erf 1873 on the Land record screen, which is finalized with the right owners (the screen is demo data except for this link to the live EDRMS) |
+| `tests/land-record.spec.ts` | The land-record flow, in order on one record: the sample documents in `angular-app/docs/samples/` are filed (the reviewer types in T 4521/2019's values, as the canned AI reads every deed as T 2210/2008); the records officer creates Erf 1873 from T 2210/2008, adds the matching documents, takes the suggested owners and extent, sees the chain of title and 5/5 checks and submits it; the registrar returns it from the task inbox with a comment; the officer fixes and resubmits; the registrar approves it (version 1); the officer changes it, the registrar sees the difference and approves version 2; the history shows both versions with verified seals; a correction to T 4521/2019 (requested and approved by two reviewers) flags the record. Also: the registrar can read and comment but not edit |
+| `tests/encryption.spec.ts` | Only with `E2E_BAO`: see "With stored files encrypted" |
 
-Land records (`#/link`) and Audit (`#/audit`) still show demo data, so the workflow stops at the
-EDRMS: linking the document into a land record and the auditor's sign-off follow when those
-services exist.
+Audit (`#/audit`) still shows demo data, so the auditor's sign-off follows when the audit service
+exists.
 
 **Sample scan.** `support/deed.ts` draws a fictitious deed of transfer as a one-page PDF in the
 browser, so no binary file is kept in the repository. Its wording matches the intake service's canned

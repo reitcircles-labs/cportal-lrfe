@@ -241,11 +241,12 @@ paths:
         - Instances
       summary: Cancel an active instance
       description: >-
-        Optional `{ reason }`. Allowed for whoever started it, and for holders of the definition's manage permission (verify.file for
-        document-amendment). Only active or failed instances.
+        Optional `{ reason }`. Allowed for whoever started it (a user, or the service that started it: land-records withdrawing a
+        land-record-review), and for holders of the definition's manage permission (verify.file for document-amendment, record.finalize for
+        land-record-review). Only active or failed instances.
 
 
-        **Access:** Any signed-in user.
+        **Access:** Signed-in user, or a service token.
       operationId: postInstancesIdCancel
       parameters:
         - name: id
@@ -280,6 +281,7 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-gateway-path: /api/process-instances/{id}/cancel
   /instances/{id}/retry:
     post:
@@ -480,7 +482,8 @@ paths:
       summary: Complete a task
       description: >-
         Body `{ output }`. For the document-amendment approval: `{ output: { outcome: "approved" | "rejected", comment } }`, comment
-        required when rejecting. Four-eyes: the person who requested a change cannot approve it. Returns `{ task, instance }`.
+        required when rejecting. For the land-record-review approval: the same outcomes; approving commits the version in land-records.
+        Four-eyes: the person who requested a change (or submitted the version) cannot approve it. Returns `{ task, instance }`.
 
 
         **Access:** Any signed-in user.

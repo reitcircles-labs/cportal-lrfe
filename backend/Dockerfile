@@ -15,6 +15,7 @@ COPY services/identity/package.json services/identity/
 COPY services/edrms/package.json services/edrms/
 COPY services/bpm/package.json services/bpm/
 COPY services/intake/package.json services/intake/
+COPY services/land-records/package.json services/land-records/
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY packages ./packages

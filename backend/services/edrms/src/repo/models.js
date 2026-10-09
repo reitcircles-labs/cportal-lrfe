@@ -19,6 +19,9 @@ export function defineModels(sequelize) {
         fields: { type: DataTypes.JSONB, allowNull: false },
         // fields flattened to { key: value } for filtering (props @> {...}); GIN-indexed
         props: { type: DataTypes.JSONB, allowNull: false },
+        // normalised text the document is found by (src/search.js); a tsvector column generated from
+        // it and trigram/full-text indexes are added by repo.sync()
+        searchText: { type: DataTypes.TEXT, allowNull: false, defaultValue: '' },
         recordMetadata: { type: DataTypes.JSONB, allowNull: false },
         currentVersion: { type: DataTypes.INTEGER, allowNull: false },
         filedAt: { type: DataTypes.DATE, allowNull: false },

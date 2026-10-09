@@ -7,3 +7,4 @@ export { authPlugin, actorOf, describeGuard, signServiceToken, createServiceToke
 export { createEventBus } from './events.js';
 export { createRevocationList, SESSION_REVOKED } from './revocations.js';
 export { createBaseApp, startService } from './app.js';
+export { canonicalJson, sha256Hex, normalizeSearch } from './canonical.js';

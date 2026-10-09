@@ -29,7 +29,7 @@ const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 
 const engine = new BpmEngine({ repo, events });
 const app = await buildApp({ engine, jwtSecret: env('JWT_SECRET'), revocations: createRevocationList({ events }), logger: { level: env('LOG_LEVEL', 'info') } });
 engine.connectors = createConnectors({
-    urls: { edrms: env('EDRMS_URL', 'http://localhost:3502') },
+    urls: { edrms: env('EDRMS_URL', 'http://localhost:3502'), records: env('RECORDS_URL', 'http://localhost:3505') },
     serviceToken: () => signServiceToken(app, 'bpm')
 });
 checks.push(() => deployAll(engine, { log: (m) => app.log.info(m) }));

@@ -19,6 +19,7 @@
     "dev:edrms": "npm run dev -w @lrfe/edrms",
     "dev:bpm": "npm run dev -w @lrfe/bpm",
     "dev:intake": "npm run dev -w @lrfe/intake",
+    "dev:land-records": "npm run dev -w @lrfe/land-records",
     "seed:identity": "npm run seed -w @lrfe/identity",
     "reset-password": "npm run reset-password -w @lrfe/identity --",
     "docs": "node scripts/openapi.js",

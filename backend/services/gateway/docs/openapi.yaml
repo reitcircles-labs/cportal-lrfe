@@ -49,6 +49,12 @@ tags:
     description: >-
       Field review (verify.edit) and filing or rejecting (verify.file). Changes claim the document for 30 minutes so two reviewers do not
       collide.
+  - name: land-records · Service
+    description: Health and metadata.
+  - name: land-records · Records
+    description: Land records, their versions and seal chain.
+  - name: land-records · Documents
+    description: Filed EDRMS documents, found for land records.
   - name: gateway
     description: The gateway itself.
 paths:
@@ -2437,11 +2443,12 @@ paths:
         - bpm · Instances
       summary: Cancel an active instance
       description: >-
-        Optional `{ reason }`. Allowed for whoever started it, and for holders of the definition's manage permission (verify.file for
-        document-amendment). Only active or failed instances.
+        Optional `{ reason }`. Allowed for whoever started it (a user, or the service that started it: land-records withdrawing a
+        land-record-review), and for holders of the definition's manage permission (verify.file for document-amendment, record.finalize for
+        land-record-review). Only active or failed instances.
 
 
-        **Access:** Any signed-in user.
+        **Access:** Signed-in user, or a service token.
       operationId: bpm_postInstancesIdCancel
       parameters:
         - name: id
@@ -2476,6 +2483,7 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
   /api/process-instances/{id}/retry:
     post:
       tags:
@@ -2601,6 +2609,1348 @@ paths:
       security:
         - bearerAuth: []
         - serviceToken: []
+  /api/records:
+    get:
+      tags:
+        - land-records · Records
+      summary: List and search land records
+      description: >-
+        `{ items, total }`. `q` searches the record number, the parcel, owners' names and ID numbers, and document references. `status`:
+        `draft` (never committed), `committed`, `in_review` (a version waits for approval), `needs_review` (a linked document was
+        corrected).
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: land-records_getRecords
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - draft
+              - committed
+              - in_review
+              - needs_review
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+    post:
+      tags:
+        - land-records · Records
+      summary: Create a land record (draft v1)
+      description: >-
+        `{ parcel }`, or `{ edrmsDocumentId }` to read the parcel from a filed document's property field and link that document. One record
+        per parcel: 409 with `recordId` when the parcel already has one.
+
+
+        **Access:** Signed-in user with permission `record.create`.
+      operationId: land-records_postRecords
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                parcel:
+                  type: object
+                attributes:
+                  type: object
+                edrmsDocumentId:
+                  type: string
+                  format: uuid
+              anyOf:
+                - required:
+                    - parcel
+                - required:
+                    - edrmsDocumentId
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.create
+  /api/records/{id}:
+    get:
+      tags:
+        - land-records · Records
+      summary: One land record with its current version and open draft
+      description: "**Access:** Signed-in user with permission `record.view`."
+      operationId: land-records_getRecordsId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+  /api/records/{id}/comments:
+    get:
+      tags:
+        - land-records · Records
+      summary: Comments on a record
+      description: "**Access:** Signed-in user with permission `record.view`."
+      operationId: land-records_getRecordsIdComments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+    post:
+      tags:
+        - land-records · Records
+      summary: Comment on a record
+      description: |-
+        `{ body }`. Kept with the version open at the time.
+
+        **Access:** Signed-in user with permission `record.comment`.
+      operationId: land-records_postRecordsIdComments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.comment
+  /api/records/{id}/draft:
+    patch:
+      tags:
+        - land-records · Records
+      summary: "Edit the draft: core fields, attributes, suggestions"
+      description: >-
+        `{ revision, changes, accept, reason }`. `changes`: parcel (same kind), extent, tenure, owners, encumbrances, attributes (null
+        removes). `accept`: take over the documents' suggested owners, extent or encumbrances. Owners or an extent that differ from the
+        suggestions are marked as entered by hand and need a `reason`. Suggestions (`derived`) and checks are recomputed. 409 when
+        `revision` is not the draft's current revision.
+
+
+        **Access:** Signed-in user with any of `record.create`, `record.link`.
+      operationId: land-records_patchRecordsIdDraft
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - revision
+              properties:
+                revision:
+                  type: integer
+                  minimum: 1
+                changes:
+                  type: object
+                accept:
+                  type: array
+                  uniqueItems: true
+                  items:
+                    type: string
+                    enum:
+                      - owners
+                      - extent
+                      - encumbrances
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - record.create
+          - record.link
+    post:
+      tags:
+        - land-records · Records
+      summary: Open a new draft to change a committed record
+      description: >-
+        The draft vN+1 is a copy of the current version, which stays current until the new one is approved. One open draft per record (409).
+        The record then carries `draftDiff`: what the draft changes against the current version.
+
+
+        **Access:** Signed-in user with any of `record.create`, `record.link`.
+      operationId: land-records_postRecordsIdDraft
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - record.create
+          - record.link
+  /api/records/{id}/draft/documents:
+    post:
+      tags:
+        - land-records · Records
+      summary: Link a filed document to the draft
+      description: >-
+        `{ revision, edrmsDocumentId }`. The document is pinned at its current EDRMS version, with its seal and a snapshot of its verified
+        fields.
+
+
+        **Access:** Signed-in user with permission `record.link`.
+      operationId: land-records_postRecordsIdDraftDocuments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - revision
+                - edrmsDocumentId
+              properties:
+                revision:
+                  type: integer
+                  minimum: 1
+                edrmsDocumentId:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.link
+  /api/records/{id}/draft/documents/{edrmsDocumentId}:
+    delete:
+      tags:
+        - land-records · Records
+      summary: Remove a document from the draft
+      description: |-
+        `?revision=` the draft's current revision.
+
+        **Access:** Signed-in user with permission `record.unlink`.
+      operationId: land-records_deleteRecordsIdDraftDocumentsEdrmsDocumentId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: edrmsDocumentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: revision
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.unlink
+  /api/records/{id}/draft/documents/{edrmsDocumentId}/refresh:
+    post:
+      tags:
+        - land-records · Records
+      summary: Adopt a document's newer EDRMS version
+      description: >-
+        `{ revision }`. After a correction in edrms: the pinned version, seal and fields are updated in the draft, suggestions and checks
+        recomputed. Goes through review like any change.
+
+
+        **Access:** Signed-in user with permission `record.link`.
+      operationId: land-records_postRecordsIdDraftDocumentsEdrmsDocumentIdRefresh
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: edrmsDocumentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - revision
+              properties:
+                revision:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.link
+  /api/records/{id}/draft/submit:
+    post:
+      tags:
+        - land-records · Records
+      summary: Submit the draft for review
+      description: >-
+        `{ revision }`. Refused (400) while the data is incomplete (`problems`) or an error check fails (`failing`). The draft is frozen and
+        the bpm process `land-record-review` starts: an approval task for `record.finalize`, never the submitter.
+
+
+        **Access:** Signed-in user with permission `record.link`.
+      operationId: land-records_postRecordsIdDraftSubmit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - revision
+              properties:
+                revision:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.link
+  /api/records/{id}/draft/withdraw:
+    post:
+      tags:
+        - land-records · Records
+      summary: Withdraw a version from review
+      description: |-
+        Only the submitter, before a decision. The review task disappears and the draft is editable again.
+
+        **Access:** Signed-in user with permission `record.link`.
+      operationId: land-records_postRecordsIdDraftWithdraw
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.link
+  /api/records/{id}/history:
+    get:
+      tags:
+        - land-records · Records
+      summary: "History: every committed version"
+      description: >-
+        `{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, and `diff`
+        against the version before.
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: land-records_getRecordsIdHistory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+  /api/records/{id}/review:
+    get:
+      tags:
+        - land-records · Records
+      summary: What the reviewer sees
+      description: >-
+        `{ record, version, checks, blocking, overrides, diff, currentVersion }`. `diff` against the current committed version: `fields`
+        (path, before, after), `owners` (added, removed, changed), `encumbrances`, `documents` (added, removed, updated to a newer EDRMS
+        version).
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: land-records_getRecordsIdReview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+  /api/records/{id}/suggestions:
+    get:
+      tags:
+        - land-records · Documents
+      summary: Documents that match this parcel, with the reasons
+      description: >-
+        `{ parcel, items }`. Each item: the document, `reasons` (property is this parcel; SG diagram cited by, prior title of, or citing a
+        document already in the record), `inThisRecord`, `linkedTo`.
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: land-records_getRecordsIdSuggestions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+  /api/records/{id}/verify:
+    get:
+      tags:
+        - land-records · Records
+      summary: Recompute the seal chain of the committed versions
+      description: >-
+        `{ intact, versions: [{ versionNumber, seal, intact, linked }] }`. `intact`: the seal matches the version; `linked`: it includes the
+        previous version's seal.
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: land-records_getRecordsIdVerify
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+  /api/records/{id}/versions:
+    get:
+      tags:
+        - land-records · Records
+      summary: "All versions of a record: state, who submitted and approved, seal, changes"
+      description: "**Access:** Signed-in user with permission `record.view`."
+      operationId: land-records_getRecordsIdVersions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+  /api/records/{id}/versions/{n}:
+    get:
+      tags:
+        - land-records · Records
+      summary: One version, with its data (core, attributes, pinned documents)
+      description: "**Access:** Signed-in user with permission `record.view`."
+      operationId: land-records_getRecordsIdVersionsN
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
+  /api/records/{id}/versions/{n}/commit:
+    post:
+      tags:
+        - land-records · Records
+      summary: Commit an approved version (bpm only)
+      description: >-
+        `{ by, comment }`. Seals the version, chains it to the previous one (superseded) and makes it current. `by` must not be the
+        submitter. Repeating it is harmless.
+
+
+        **Access:** Service token only, from: `bpm`. Browsers cannot call this.
+      operationId: land-records_postRecordsIdVersionsNCommit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - by
+              properties:
+                by:
+                  type: object
+                  required:
+                    - id
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                    name:
+                      type: string
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - bpm
+  /api/records/{id}/versions/{n}/reject:
+    post:
+      tags:
+        - land-records · Records
+      summary: Return a rejected version to the submitter (bpm only)
+      description: |-
+        `{ by, comment }`. The version becomes a draft again with the comment.
+
+        **Access:** Service token only, from: `bpm`. Browsers cannot call this.
+      operationId: land-records_postRecordsIdVersionsNReject
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - by
+              properties:
+                by:
+                  type: object
+                  required:
+                    - id
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                    name:
+                      type: string
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - bpm
+  /api/records/catalogue:
+    get:
+      tags:
+        - land-records · Service
+      summary: Parcel kinds and their JSON Schemas
+      description: >-
+        `{ parcelKinds: [{ id, label, schemaVersion, schema, draftSchema }] }`. A draft is validated against `draftSchema` (types only), a
+        version submitted for review against `schema`.
+
+
+        **Access:** Any signed-in user.
+      operationId: land-records_getRecordsCatalogue
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+  /api/records/document-search:
+    get:
+      tags:
+        - land-records · Documents
+      summary: Search filed documents to add to a land record
+      description: >-
+        `{ items, total }`. The edrms search (words, word starts, spelling variants of names, `docType`, `field.<key>=<value>` filters),
+        each document with `linkedTo` (other records that hold it) and, with `recordId`, `inThisRecord`.
+
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: land-records_getRecordsDocumentSearch
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: docType
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+        - name: recordId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
   /api/roles:
     get:
       tags:
@@ -2788,7 +4138,8 @@ paths:
       summary: Complete a task
       description: >-
         Body `{ output }`. For the document-amendment approval: `{ output: { outcome: "approved" | "rejected", comment } }`, comment
-        required when rejecting. Four-eyes: the person who requested a change cannot approve it. Returns `{ task, instance }`.
+        required when rejecting. For the land-record-review approval: the same outcomes; approving commits the version in land-records.
+        Four-eyes: the person who requested a change (or submitted the version) cannot approve it. Returns `{ task, instance }`.
 
 
         **Access:** Any signed-in user.

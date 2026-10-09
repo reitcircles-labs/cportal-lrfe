@@ -66,8 +66,11 @@ export async function bpmRoutes(app, { engine }) {
         return { ...instance, tasks: tasks.map(({ input, ...t }) => t), history };
     });
 
-    app.post('/instances/:id/cancel', { onRequest: app.authenticate, schema: uuidParams },
-        async (req) => summary(await engine.cancelInstance({ id: req.params.id, user: userOf(req), reason: reasonOf(req) })));
+    // A service may withdraw an instance it started (land-records, when the officer withdraws).
+    app.post('/instances/:id/cancel', { onRequest: userOrService, schema: uuidParams }, async (req) => {
+        const user = req.user.typ === 'service' ? { id: `service:${req.user.sub}`, name: req.user.sub, perms: [] } : userOf(req);
+        return summary(await engine.cancelInstance({ id: req.params.id, user, reason: reasonOf(req) }));
+    });
 
     app.post('/instances/:id/retry', { onRequest: app.authenticate, schema: uuidParams },
         async (req) => summary(await engine.retryInstance({ id: req.params.id, user: userOf(req) })));

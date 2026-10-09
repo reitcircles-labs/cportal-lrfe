@@ -21,8 +21,9 @@ export const ROUTES = [
     { prefix: '/api/processes', service: 'bpm', rewritePrefix: '/processes' },
     { prefix: '/api/process-instances', service: 'bpm', rewritePrefix: '/instances' },
     { prefix: '/api/tasks', service: 'bpm', rewritePrefix: '/tasks' },
-    { prefix: '/api/intake', service: 'intake', rewritePrefix: '' }
-    // Next: land-records (/api/records), audit (/api/audit), search (/api/search).
+    { prefix: '/api/intake', service: 'intake', rewritePrefix: '' },
+    { prefix: '/api/records', service: 'land-records', rewritePrefix: '/records' }
+    // Next: audit (/api/audit), search (/api/search).
 ];
 
 /**

@@ -141,6 +141,8 @@ services:
       PORT: "3503"
       BPM_STORE: postgres
       EDRMS_URL: http://edrms:3502
+      # called only when a land record review is decided (no start-up dependency)
+      RECORDS_URL: http://land-records:3505
     ports:
       - "127.0.0.1:3503:3503"
     healthcheck: *healthcheck
@@ -177,6 +179,24 @@ services:
       postgres: { condition: service_healthy }
       edrms: { condition: service_healthy }
 
+  land-records:
+    <<: *service
+    working_dir: /app/services/land-records
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3505"
+      RECORDS_STORE: postgres
+      RECORDS_COUNTRY_CODE: NA
+      EDRMS_URL: http://edrms:3502
+      BPM_URL: http://bpm:3503
+    ports:
+      - "127.0.0.1:3505:3505"
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      edrms: { condition: service_healthy }
+
   gateway:
     <<: *service
     working_dir: /app/services/gateway
@@ -189,6 +209,7 @@ services:
       EDRMS_URL: http://edrms:3502
       BPM_URL: http://bpm:3503
       INTAKE_URL: http://intake:3504
+      RECORDS_URL: http://land-records:3505
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
     ports:
       - "127.0.0.1:3500:3500"
@@ -198,6 +219,7 @@ services:
       edrms: { condition: service_healthy }
       bpm: { condition: service_healthy }
       intake: { condition: service_healthy }
+      land-records: { condition: service_healthy }
 
 volumes:
   pgdata:
