@@ -38,7 +38,12 @@ a linked document (`edrms.document.amended` over NATS). Design and API in
 [`services/land-records/README.md`](services/land-records/README.md); the frontend's Land record
 screen (`#/link`) and the review in the task inbox use it.
 
-Planned next: **audit** (hash-chained trail, sign-off, evidence export); **search**.
+**audit** (epic API-652, being built): a hash-chained audit trail from the durable events, a growing
+Merkle tree over every land record version, document version and trail checkpoint, its root
+anchored on Cardano hourly, proofs anyone can check, sign-off, findings and evidence packs. Design in
+[`services/audit/README.md`](services/audit/README.md).
+
+Planned next: **search**.
 
 ## Running
 
