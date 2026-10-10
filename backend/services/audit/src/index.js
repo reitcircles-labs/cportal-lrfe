@@ -1,4 +1,4 @@
-import { createEventBus, createRevocationList, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { TrailService } from './trail.service.js';
 import { TreeService } from './tree.service.js';
@@ -6,12 +6,13 @@ import { cardanoFromEnv } from './cardano/adapter.js';
 import { AnchorService, parsePeriod } from './anchor.service.js';
 import { BackfillService, createSealSources } from './backfill.service.js';
 import { createVerifySources, ProofService } from './proof.service.js';
+import { createSignoffClients, SignoffService } from './signoff.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
 
 const checks = [];
-let repo, sequelize;
+let repo, sequelize, outbox;
 
 if (envOneOf('AUDIT_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
     // Dev only: lost on restart.
@@ -19,14 +20,16 @@ if (envOneOf('AUDIT_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
 } else {
     sequelize = createSequelize();
     repo = createSequelizeRepo(sequelize);
+    // sign-offs and findings are published in the transaction that stores them (API-613, API-659)
+    outbox = createSequelizeOutbox(sequelize, SCHEMA);
     checks.push(() => healthCheck(sequelize));
     if (envBool('DB_SYNC', false)) {
         // Dev/UAT convenience only. Replace with real migrations before production.
-        checks.push(async () => { await ensureSchema(sequelize, SCHEMA); await repo.sync(); });
+        checks.push(async () => { await ensureSchema(sequelize, SCHEMA); await repo.sync(); await outbox.sync(); });
     }
 }
 
-const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'audit' });
+const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'audit', outbox });
 const service = new TrailService({ repo });
 // the app's logger, for what is made before the app (used only once it runs)
 const log = { info: (...a) => app.log.info(...a), warn: (...a) => app.log.warn(...a), error: (...a) => app.log.error(...a) };
@@ -38,10 +41,13 @@ const recordsUrl = env('RECORDS_URL', 'http://localhost:3505');
 const edrmsUrl = env('EDRMS_URL', 'http://localhost:3502');
 // proofs and verification (README.md section 4): the owning services recompute the seals
 const proofs = new ProofService({ repo, tree, cardano, logger: log, sources: createVerifySources({ recordsUrl, edrmsUrl, serviceToken }) });
+// sign-off and findings (README.md section 5): versions read from land-records and edrms, findings sent to bpm
+const signoffs = new SignoffService({ repo, events, logger: log, ...createSignoffClients({ recordsUrl, edrmsUrl, bpmUrl: env('BPM_URL', 'http://localhost:3503'), serviceToken }) });
 
 const app = await buildApp({
     service,
     proofs,
+    signoffs,
     jwtSecret: env('JWT_SECRET'),
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }
@@ -53,9 +59,11 @@ await startService(app, { port: envInt('PORT', 3506), checks, onClose: async () 
 // committed land record version or a filed document version also a leaf of the tree (section 2).
 // Acknowledged once both are written, so an event published while the audit service is down is
 // recorded when it is back; both steps skip what they already have. Started once the tables exist.
+// A newer reviewed version also resolves the open findings on older ones (section 5).
 events.consume('>', async (event) => {
     await service.record(event);
     await tree.fromEvent(event);
+    await signoffs.onEvent(event);
 }, { durable: 'audit-trail' });
 
 // events the stream dropped while the audit service was down too long: at start and every hour

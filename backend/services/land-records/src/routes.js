@@ -10,8 +10,9 @@ const actorOf = (req) => ({ id: req.user.sub, name: req.user.name });
 
 export async function recordsRoutes(app, { service }) {
     const canView = app.requirePerm('record.view');
-    // the seal check: users who may view records, and the audit service verifying a proof (API-658)
-    async function canVerify(req, reply) {
+    // users who may view records, and the audit service: verifying a proof (API-658), and reading a
+    // version's approver and documents for a sign-off or finding (API-659)
+    async function canViewOrAudit(req, reply) {
         try { await req.jwtVerify(); } catch { throw new UnauthorizedError('Invalid or expired token'); }
         if (req.user.typ === 'service') {
             if (req.user.sub !== 'audit') throw new ForbiddenError('Not permitted', { service: req.user.sub });
@@ -19,7 +20,7 @@ export async function recordsRoutes(app, { service }) {
         }
         return canView(req, reply);
     }
-    describeGuard(canVerify, { kind: 'user-or-service', allOf: ['record.view'], services: ['audit'] });
+    describeGuard(canViewOrAudit, { kind: 'user-or-service', allOf: ['record.view'], services: ['audit'] });
 
     app.get('/records/catalogue', { onRequest: app.authenticate }, async () => service.catalogue());
 
@@ -167,9 +168,9 @@ export async function recordsRoutes(app, { service }) {
         return { items, next: items.length === req.query.limit ? Buffer.from(JSON.stringify({ at: last.at, id: last.recordId, version: last.version })).toString('base64url') : null };
     });
 
-    app.get('/records/:id', { onRequest: canView, schema: idParams() }, async (req) => service.getRecord(req.params.id));
+    app.get('/records/:id', { onRequest: canViewOrAudit, schema: idParams() }, async (req) => service.getRecord(req.params.id));
     app.get('/records/:id/suggestions', { onRequest: canView, schema: idParams() }, async (req) => service.suggestions(req.params.id));
     app.get('/records/:id/versions', { onRequest: canView, schema: idParams() }, async (req) => service.listVersions(req.params.id));
-    app.get('/records/:id/versions/:n', { onRequest: canView, schema: idParams(versionParam) }, async (req) => service.getVersion(req.params.id, req.params.n));
-    app.get('/records/:id/verify', { onRequest: canVerify, schema: idParams() }, async (req) => service.verify(req.params.id));
+    app.get('/records/:id/versions/:n', { onRequest: canViewOrAudit, schema: idParams(versionParam) }, async (req) => service.getVersion(req.params.id, req.params.n));
+    app.get('/records/:id/verify', { onRequest: canViewOrAudit, schema: idParams() }, async (req) => service.verify(req.params.id));
 }

@@ -13,7 +13,7 @@ const leafOf = (row) => (row ? { ...row.get({ plain: true }), leafIndex: Number(
 
 /** Postgres audit repository. Same interface as ./memory.js. */
 export function createSequelizeRepo(sequelize) {
-    const { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease } = defineModels(sequelize);
+    const { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease, Signoff, Finding } = defineModels(sequelize);
     const num = (v) => (v === null || v === undefined ? null : Number(v));
     const anchorOf = (row) => (row ? { ...row.get({ plain: true }), size: Number(row.size), checkpointSeq: num(row.checkpointSeq), ttl: num(row.ttl), fee: row.fee === null ? null : String(row.fee) } : null);
 
@@ -69,6 +69,9 @@ export function createSequelizeRepo(sequelize) {
             for (const [col, type] of [['ttl', 'BIGINT'], ['lastSentAt', 'TIMESTAMPTZ'], ['inputTxHash', 'VARCHAR(64)'], ['inputIndex', 'INTEGER'], ['expiredSeenHeight', 'INTEGER'], ['spentSeenHeight', 'INTEGER']]) {
                 await sequelize.query(`ALTER TABLE "${SCHEMA}"."anchor" ADD COLUMN IF NOT EXISTS "${col}" ${type}`);
             }
+            // one sign-off per auditor and item, also for two requests at the same moment (API-659)
+            await sequelize.query(`CREATE UNIQUE INDEX IF NOT EXISTS "signoff_once" ON "${SCHEMA}"."signoff"
+                ("signedById", "recordId", "recordVersion", COALESCE("documentId", '00000000-0000-0000-0000-000000000000'::uuid))`);
         },
 
         async append(eventId, build) {
@@ -131,6 +134,25 @@ export function createSequelizeRepo(sequelize) {
                 { replacements: { name, holder, ms } }
             );
             return rows.length === 1;
+        },
+
+        async createSignoff(row) {
+            try { return (await Signoff.create(row)).get({ plain: true }); } catch (err) {
+                if (err instanceof UniqueConstraintError) return null;          // signed off already (signoff_once)
+                throw err;
+            }
+        },
+        async listSignoffs({ recordId, documentId } = {}) {
+            return (await Signoff.findAll({ where: { ...(recordId ? { recordId } : {}), ...(documentId ? { documentId } : {}) }, order: [['signedAt', 'ASC']] })).map(r => r.get({ plain: true }));
+        },
+        async createFinding(row) { return (await Finding.create(row)).get({ plain: true }); },
+        async getFinding(id) { return (await Finding.findByPk(id))?.get({ plain: true }) ?? null; },
+        async listFindings({ recordId, documentId, status } = {}) {
+            return (await Finding.findAll({ where: { ...(recordId ? { recordId } : {}), ...(documentId ? { documentId } : {}), ...(status ? { status } : {}) }, order: [['raisedAt', 'ASC']] })).map(r => r.get({ plain: true }));
+        },
+        async updateOpenFinding(id, patch) {
+            const [n] = await Finding.update(patch, { where: { id, status: 'open' } });
+            return n === 1;
         },
 
         tree: treeOps(undefined),

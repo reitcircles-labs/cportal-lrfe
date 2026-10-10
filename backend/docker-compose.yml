@@ -207,6 +207,9 @@ services:
       <<: *env
       PORT: "3506"
       AUDIT_STORE: postgres
+      RECORDS_URL: http://land-records:3505
+      EDRMS_URL: http://edrms:3502
+      BPM_URL: http://bpm:3503
     ports:
       - "127.0.0.1:3506:3506"
     healthcheck: *healthcheck

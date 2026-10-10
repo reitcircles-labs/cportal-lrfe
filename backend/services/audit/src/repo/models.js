@@ -75,5 +75,40 @@ export function defineModels(sequelize) {
         expiresAt: { type: DataTypes.DATE, allowNull: false }
     }, opts());
 
-    return { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease };
+    // Sign-offs and findings (README.md section 5, API-659): what an auditor recorded about a land record
+    // version or a document version. Each is also a durable event, so it is in the trail and anchored.
+    const item = {
+        recordId: { type: DataTypes.UUID },                                 // the land record version …
+        recordNo: { type: DataTypes.STRING },
+        recordVersion: { type: DataTypes.INTEGER },
+        documentId: { type: DataTypes.UUID },                               // … or a document version (in it)
+        edrmsNo: { type: DataTypes.STRING },
+        documentVersion: { type: DataTypes.INTEGER },
+        seal: { type: DataTypes.STRING(64) }                                // the seal of what was looked at
+    };
+    const Signoff = sequelize.define('signoff', {
+        id: { type: DataTypes.UUID, primaryKey: true },
+        ...item,
+        comment: { type: DataTypes.TEXT, allowNull: false },
+        signedById: { type: DataTypes.STRING, allowNull: false },
+        signedByName: { type: DataTypes.STRING },
+        signedAt: { type: DataTypes.DATE, allowNull: false }
+    }, opts({ indexes: [{ fields: ['recordId'] }, { fields: ['documentId'] }] }));
+    const Finding = sequelize.define('finding', {
+        id: { type: DataTypes.UUID, primaryKey: true },
+        ...item,
+        description: { type: DataTypes.TEXT, allowNull: false },
+        status: { type: DataTypes.STRING, allowNull: false },               // open → resolved (a newer version) | closed (by an auditor)
+        raisedById: { type: DataTypes.STRING, allowNull: false },
+        raisedByName: { type: DataTypes.STRING },
+        raisedAt: { type: DataTypes.DATE, allowNull: false },
+        instanceId: { type: DataTypes.UUID },                               // the bpm process that notifies the records desk
+        resolvedByVersion: { type: DataTypes.INTEGER },
+        closedById: { type: DataTypes.STRING },
+        closedByName: { type: DataTypes.STRING },
+        closeReason: { type: DataTypes.TEXT },
+        closedAt: { type: DataTypes.DATE }
+    }, opts({ indexes: [{ fields: ['recordId', 'status'] }, { fields: ['documentId', 'status'] }] }));
+
+    return { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease, Signoff, Finding };
 }

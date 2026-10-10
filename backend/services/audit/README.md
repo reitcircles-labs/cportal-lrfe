@@ -444,17 +444,60 @@ and Blockfrost.
 
 ## 5. Sign-off and findings
 
-- **Sign-off** (`audit.signoff`): mark a land record version (or a document version in it) audited,
-  with a comment. A sign-off is itself a domain event, so it is in the trail and in the next root.
-- **Finding** (`audit.signoff`): a description on a record or document version; the records officer
-  and the registrar get a task (bpm). Open until resolved by a newer reviewed version, or closed by
-  the auditor with a reason.
-- **Segregation of duties (sod2):** whoever approved a land record version cannot sign it off; the
-  service refuses ("You approved this version: another auditor must sign it off") and the screen
-  shows why. The approver is in `records.record.committed` (`approvedBy`). This per-version rule is
-  always applied. The catalogue's duty rule sod2 (`record.finalize` and `audit.signoff` held by one
-  person, Administration → Security policies) is the separate, role-level warning when roles are
-  assigned; switching that rule off does not lift the per-version refusal.
+API-659. `src/signoff.service.js`, the routes in `src/routes.js`, the bpm process
+`services/bpm/src/definitions/audit-finding.json`.
+
+**Sign-off** (`POST /audit/signoffs { recordId, version, documentId?, comment }`, `audit.signoff`):
+marks a committed land record version, or a document version pinned in it, audited, with a comment.
+The audit service reads the version from land-records (and the document from edrms) with its
+service token, and keeps the seal of what was signed off. Each auditor signs an item off once; a
+second auditor may sign it off too. `GET /audit/signoffs?recordId=&documentId=` (`audit.view`).
+
+**Segregation of duties (sod2).** Two refusals (403 with details `{ rule: "sod2" }`, so the screen can
+explain them), always applied, whatever the roles and the security policies say:
+
+- whoever **can finalize land records** (holds `record.finalize`) does not sign them off: "You can
+  finalize land records: an auditor without that permission must sign it off";
+- whoever **approved the version** does not sign it off, nor a document version in it, even after
+  losing `record.finalize`: "You approved this version: another auditor must sign it off". The
+  approver is the version's `approvedById` in land-records. Likewise whoever approved a document
+  version (an amendment) does not sign that document version off.
+
+The catalogue's duty rule sod2 (`record.finalize` and `audit.signoff` held by one person,
+Administration → Security policies) is the role-level warning when roles are assigned; switching it
+off does not lift these refusals. One sign-off per auditor and item, also for two requests at the
+same moment (a unique index).
+
+**Finding** (`POST /audit/findings { recordId, version, documentId?, description }` or
+`{ documentId, version, description }`, `audit.signoff`): a description on a land record version, a
+document version in it, or a document version on its own. The audit service first starts the bpm
+process `audit-finding`, which gives the records officers (role `rec`) and the registrars (role `sup`)
+a task each in their inbox: the finding, who raised it, the record or document, and "Acknowledge". If
+bpm cannot be reached the finding is not raised (503): nobody would be told. A finding is raised on
+the current version (an older one is already replaced by a reviewed version, or a document version
+already corrected in edrms: 409); one raised while
+a newer version is being committed is resolved at once. A finding is **open** until:
+
+- a **newer reviewed version resolves it**: a committed land record version (`records.record.committed`
+  with a higher version number) for a finding on a record version, an approved correction
+  (`edrms.document.amended` with a higher version) for a finding on a document version. The audit
+  service's consumer does this as the event arrives (status `resolved`, `resolvedByVersion`); or
+- an **auditor closes it** with a reason (`POST /audit/findings/{id}/close { reason }`, `audit.signoff`;
+  status `closed`).
+
+Either way the bpm process is withdrawn if it is still open (once both have acknowledged it has
+ended). The withdrawal is best effort: if bpm cannot be reached then, the finding is closed all the
+same and its tasks stay in the inbox until acknowledged. Acknowledging does not close a finding. `GET /audit/findings?recordId=&documentId=&status=`
+and `GET /audit/findings/{id}` are for auditors and for the records desk (`audit.view` or
+`record.view`).
+
+**In the trail and on chain.** Sign-offs and findings are stored in `audit.signoff` and
+`audit.finding` and published as durable events in the same transaction (the audit service's outbox):
+`audit.signoff.recorded`, `audit.finding.raised`, `audit.finding.closed` (`outcome` `resolved` or
+`closed`). The audit service's consumer records them like any other event, under the record's and the
+document's subjects (`recordId`, `edrmsDocumentId`) and the process (`instanceId`), so they appear in
+the record's trail and the next anchoring covers them: a trail-entry proof (§4) shows the sign-off
+existed unchanged when that root went on Cardano.
 
 ## 6. Evidence pack
 
@@ -481,6 +524,8 @@ the chain showing it.
 | `POST /audit/anchoring` | land-records, edrms (service) | the anchoring status of versions |
 | `GET /audit/anchors` | `audit.view` | anchorings, their transactions and status |
 | `POST /audit/signoffs` · `POST /audit/findings` · `…/findings/{id}/close` | `audit.signoff` | sign off, raise or close a finding |
+| `GET /audit/signoffs` | `audit.view` | sign-offs of a record or document |
+| `GET /audit/findings` · `GET /audit/findings/{id}` | `audit.view` or `record.view` | findings (also for the records desk) |
 | `GET /audit/records/{id}/evidence` | `audit.export` | evidence pack |
 
 Events, durable (in the trail): `audit.signoff.recorded`, `audit.finding.raised`,
@@ -504,4 +549,6 @@ already in the identity catalogue.
 `ANCHOR_PERIOD` (1h), `ANCHOR_CONFIRMATIONS` (10), `ANCHOR_MIN_BALANCE_ADA` (5), `CARDANO_NETWORK`
 (preview), `CARDANO_PROVIDER` (ogmios | blockfrost), `OGMIOS_URL` (http://127.0.0.1:1337),
 `BLOCKFROST_PROJECT_ID_FILE`, `ANCHOR_BAO_KEY` (audit-anchor), plus the usual `AUDIT_STORE`,
-`DB_CONNECTION_STRING`, `DB_SYNC`, `JWT_SECRET`, OpenBao AppRole settings.
+`DB_CONNECTION_STRING`, `DB_SYNC`, `JWT_SECRET`, OpenBao AppRole settings. The services it calls:
+`RECORDS_URL` (http://localhost:3505), `EDRMS_URL` (http://localhost:3502), `BPM_URL`
+(http://localhost:3503; findings).

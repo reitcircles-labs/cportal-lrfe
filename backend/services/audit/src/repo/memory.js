@@ -13,6 +13,8 @@ export function createMemoryRepo() {
     let treeQueue = Promise.resolve();
     const anchors = [];
     const leases = new Map();
+    const signoffs = [];
+    const findings = [];
     const tree = {
         async leafCount() { return leaves.length; },
         async existingKeys(keys) { return keys.filter(k => byKey.has(k)); },
@@ -101,6 +103,32 @@ export function createMemoryRepo() {
             const l = leases.get(name);
             if (l && l.holder !== holder && l.expiresAt > now) return false;
             leases.set(name, { holder, expiresAt: new Date(now.getTime() + ms) });
+            return true;
+        },
+
+        // ------------------------------------------------ sign-offs and findings (README.md section 5)
+        signoffs, findings,                            // tests read them directly
+        /** Null when this auditor already signed this item off (the unique index in PostgreSQL). */
+        async createSignoff(row) {
+            if (signoffs.some(x => x.signedById === row.signedById && x.recordId === row.recordId && x.recordVersion === row.recordVersion && (x.documentId ?? null) === (row.documentId ?? null))) return null;
+            signoffs.push({ ...row });
+            return { ...row };
+        },
+        async listSignoffs({ recordId, documentId } = {}) {
+            return signoffs.filter(x => (!recordId || x.recordId === recordId) && (!documentId || x.documentId === documentId))
+                .sort((a, b) => a.signedAt - b.signedAt).map(x => ({ ...x }));
+        },
+        async createFinding(row) { findings.push({ ...row }); return { ...row }; },
+        async getFinding(id) { const f = findings.find(x => x.id === id); return f ? { ...f } : null; },
+        async listFindings({ recordId, documentId, status } = {}) {
+            return findings.filter(x => (!recordId || x.recordId === recordId) && (!documentId || x.documentId === documentId) && (!status || x.status === status))
+                .sort((a, b) => a.raisedAt - b.raisedAt).map(x => ({ ...x }));
+        },
+        /** Change an open finding; false when it is no longer open (resolved or closed meanwhile). */
+        async updateOpenFinding(id, patch) {
+            const f = findings.find(x => x.id === id && x.status === 'open');
+            if (!f) return false;
+            Object.assign(f, patch);
             return true;
         },
 

@@ -1197,7 +1197,7 @@ paths:
       tags:
         - Records
       summary: One land record with its current version and open draft
-      description: "**Access:** Signed-in user with permission `record.view`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
       operationId: getRecordsId
       parameters:
         - name: id
@@ -1238,9 +1238,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
       x-gateway-path: /api/records/{id}
   /records/{id}/suggestions:
     get:
@@ -1352,7 +1355,7 @@ paths:
       tags:
         - Records
       summary: One version, with its data (core, attributes, pinned documents)
-      description: "**Access:** Signed-in user with permission `record.view`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
       operationId: getRecordsIdVersionsN
       parameters:
         - name: id
@@ -1399,9 +1402,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
       x-gateway-path: /api/records/{id}/versions/{n}
   /records/{id}/verify:
     get:

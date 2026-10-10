@@ -42,7 +42,8 @@ import { Review, RecordsApi } from '../api/records.api';
         <form class="dialog" style="width:min(640px,100%)" (click)="$event.stopPropagation()" (submit)="$event.preventDefault()">
           <div class="dialog-title">{{ d.title }}</div>
           <div class="kv">
-            <span>{{ isRecord(d) ? 'Submitted by' : 'Requested by' }}</span><span>{{ (d.input.submittedBy ?? d.input.startedBy)?.name }} · {{ fmt(d.createdAt) }}</span>
+            <span>{{ isRecord(d) ? 'Submitted by' : isFinding(d) ? 'Raised by' : 'Requested by' }}</span><span>{{ (isFinding(d) ? d.input.raisedBy : (d.input.submittedBy ?? d.input.startedBy))?.name }} · {{ fmt(d.createdAt) }}</span>
+            @if (d.input.finding; as f) { <span>Finding</span><span style="white-space:pre-wrap">{{ f.description }}</span> }
             @if (d.input.document; as doc) { <span>Document</span><span>{{ doc.edrmsNo }} · {{ doc.title }} · v{{ doc.currentVersion }}.0</span> }
             @if (d.input.record; as rec) { <span>Land record</span><span>{{ rec.recordNo }} · {{ rec.label }} · version {{ rec.versionNumber }}</span> }
             @if (d.input.reason) { <span>Reason</span><span>{{ d.input.reason }}</span> }
@@ -70,6 +71,7 @@ import { Review, RecordsApi } from '../api/records.api';
               </div>
             } @else if (!error()) { <div class="small muted">Loading the record…</div> }
           }
+          @if (isFinding(d)) { <div class="small muted" style="margin:0 0 10px">The finding stays open until a newer reviewed version resolves it, or the auditor closes it. Acknowledge it to show you have seen it.</div> }
           <div class="field"><label for="cm">Comment {{ outcome() === 'rejected' ? '(required to reject)' : '(optional)' }}</label>
             <textarea id="cm" class="input" rows="3" [value]="comment()" (input)="comment.set($any($event.target).value)"></textarea></div>
           @if (error()) { <div class="err" role="alert">{{ error() }}</div> }
@@ -79,6 +81,7 @@ import { Review, RecordsApi } from '../api/records.api';
             <button type="button" class="btn btn-secondary" (click)="close()">Later</button>
             @if (d.outcomes?.includes('rejected')) { <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="decide('rejected')">Reject</button> }
             @if (d.outcomes?.includes('approved')) { <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="decide('approved')">Approve</button> }
+            @if (d.outcomes?.includes('acknowledged')) { <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="decide('acknowledged')">Acknowledge</button> }
           </div>
         </form>
       </div>
@@ -121,8 +124,9 @@ export class InboxComponent {
   overdue = computed(() => this.tasks.tasks().some(t => t.overdue));
 
   fmt = fmtTime;
-  label(t: TaskItem) { return t.document ? t.document.edrmsNo : t.definitionKey === 'land-record-review' ? 'Land record' : 'Task'; }
+  label(t: TaskItem) { return this.isFinding(t) ? 'Audit finding' : t.document ? t.document.edrmsNo : t.definitionKey === 'land-record-review' ? 'Land record' : 'Task'; }
   isRecord(t: TaskItem) { return t.definitionKey === 'land-record-review'; }
+  isFinding(t: TaskItem) { return t.definitionKey === 'audit-finding'; }
 
   async review(t: TaskItem) {
     this.open.set(false);
@@ -141,7 +145,7 @@ export class InboxComponent {
     }
   }
 
-  async decide(outcome: 'approved' | 'rejected') {
+  async decide(outcome: 'approved' | 'rejected' | 'acknowledged') {
     const d = this.detail()!;
     this.outcome.set(outcome);
     if (outcome === 'rejected' && !this.comment().trim()) { this.error.set(this.isRecord(d) ? 'Say what the records officer should fix.' : 'Say why you reject the change.'); return; }
@@ -149,7 +153,8 @@ export class InboxComponent {
     try {
       const inst = await this.tasks.complete(d.id, outcome, this.comment().trim() || undefined);
       const rec = d.input['record'];
-      if (inst.status === 'error') this.toast.show('warn', 'Approved, but the change could not be applied', inst.errorMessage || 'See the process for details.', 9000);
+      if (outcome === 'acknowledged') this.toast.show('info', 'Finding acknowledged', 'It stays open until it is resolved or closed.');
+      else if (inst.status === 'error') this.toast.show('warn', 'Approved, but the change could not be applied', inst.errorMessage || 'See the process for details.', 9000);
       else if (rec) this.toast.show(outcome === 'approved' ? 'success' : 'info', outcome === 'approved' ? `${rec.label} approved: version ${rec.versionNumber} is now current` : `${rec.label} returned to the records officer`, rec.recordNo);
       else this.toast.show(outcome === 'approved' ? 'success' : 'info', outcome === 'approved' ? 'Change approved and applied' : 'Change rejected', d.input.document?.edrmsNo);
       this.detail.set(null);

@@ -1,6 +1,6 @@
 import { KINDS } from './proof.service.js';
 
-export async function auditRoutes(app, { service, proofs }) {
+export async function auditRoutes(app, { service, proofs, signoffs }) {
     const canView = app.requirePerm('audit.view');
 
     // trail entries: of a land record (with its documents' steps), a document, a user, a process
@@ -55,4 +55,43 @@ export async function auditRoutes(app, { service, proofs }) {
             }
         }
     }, async (req) => ({ items: await proofs.statusOf(req.body.keys) }));
+
+    // ------------------------------------------------ sign-off and findings (README.md section 5)
+    const canSignOff = app.requirePerm('audit.signoff');
+    const actorOf = (req) => ({ id: req.user.sub, name: req.user.name, perms: req.user.perms || [] });
+    const uuid = { type: 'string', format: 'uuid' };
+    const target = { recordId: uuid, version: { type: 'integer', minimum: 1 }, documentId: uuid };
+    const filter = { type: 'object', additionalProperties: false, properties: { recordId: uuid, documentId: uuid } };
+
+    // mark a committed land record version, or a document version in it, audited
+    app.post('/audit/signoffs', {
+        onRequest: canSignOff,
+        schema: { body: { type: 'object', required: ['recordId', 'version', 'comment'], additionalProperties: false, properties: { ...target, comment: { type: 'string', maxLength: 4000 } } } }
+    }, async (req, reply) => reply.status(201).send(await signoffs.signOff(req.body, actorOf(req))));
+
+    app.get('/audit/signoffs', { onRequest: canView, schema: { querystring: filter } }, async (req) => ({ items: await signoffs.listSignoffs(req.query) }));
+
+    // a finding on a land record version or a document version: the records desk is notified
+    app.post('/audit/findings', {
+        onRequest: canSignOff,
+        schema: { body: { type: 'object', required: ['version', 'description'], additionalProperties: false, properties: { ...target, description: { type: 'string', maxLength: 4000 } } } }
+    }, async (req, reply) => reply.status(201).send(await signoffs.raiseFinding(req.body, actorOf(req))));
+
+    // findings are seen by auditors and by the records desk (records officers, registrars)
+    const canSeeFindings = app.requireAnyPerm('audit.view', 'record.view');
+    app.get('/audit/findings', {
+        onRequest: canSeeFindings,
+        schema: { querystring: { ...filter, properties: { ...filter.properties, status: { type: 'string', enum: ['open', 'resolved', 'closed'] } } } }
+    }, async (req) => ({ items: await signoffs.listFindings(req.query) }));
+
+    app.get('/audit/findings/:id', { onRequest: canSeeFindings, schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } } },
+        async (req) => signoffs.getFinding(req.params.id));
+
+    app.post('/audit/findings/:id/close', {
+        onRequest: canSignOff,
+        schema: {
+            params: { type: 'object', required: ['id'], properties: { id: uuid } },
+            body: { type: 'object', required: ['reason'], additionalProperties: false, properties: { reason: { type: 'string', maxLength: 2000 } } }
+        }
+    }, async (req) => signoffs.closeFinding(req.params.id, req.body, actorOf(req)));
 }

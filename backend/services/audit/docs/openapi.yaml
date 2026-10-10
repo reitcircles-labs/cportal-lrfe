@@ -19,6 +19,8 @@ tags:
     description: The audit trail and its hash chain.
   - name: Proofs
     description: Proofs that an item is in a root anchored on Cardano, and checking them.
+  - name: Sign-off
+    description: Auditors' sign-offs and findings, with segregation of duties (sod2).
   - name: Service
     description: Health and metadata.
 paths:
@@ -359,6 +361,381 @@ paths:
           - land-records
           - edrms
       x-gateway-path: /api/audit/anchoring
+  /audit/signoffs:
+    post:
+      tags:
+        - Sign-off
+      summary: Sign off a land record version, or a document version in it
+      description: >-
+        Body `{ recordId, version, documentId?, comment }`. The version must be committed; `documentId` must be pinned in it. 201 with the
+        sign-off (`id`, the record and document numbers and versions, the `seal` of what was signed off, `comment`, `signedById`,
+        `signedByName`, `signedAt`). 403 `{ details: { rule: "sod2" } }` for whoever holds `record.finalize` ("You can finalize land
+        records: an auditor without that permission must sign it off") or approved the version or document version ("You approved this
+        version: another auditor must sign it off"). 409 when this auditor already signed it off. Also a trail entry
+        (`audit.signoff.recorded`), anchored with the next root.
+
+
+        **Access:** Signed-in user with permission `audit.signoff`.
+      operationId: postAuditSignoffs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recordId
+                - version
+                - comment
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                version:
+                  type: integer
+                  minimum: 1
+                documentId:
+                  type: string
+                  format: uuid
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.signoff
+      x-gateway-path: /api/audit/signoffs
+    get:
+      tags:
+        - Sign-off
+      summary: Sign-offs of a land record or document
+      description: |-
+        `{ items }`, oldest first; `recordId` and/or `documentId`.
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: getAuditSignoffs
+      parameters:
+        - name: recordId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: documentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+      x-gateway-path: /api/audit/signoffs
+  /audit/findings:
+    post:
+      tags:
+        - Sign-off
+      summary: Raise a finding
+      description: >-
+        Body `{ recordId, version, documentId?, description }` (a land record version, or a document version in it) or `{ documentId,
+        version, description }` (a document version). On the current version (409 for a replaced one). The records officers and the
+        registrars get a task in their inbox (bpm process `audit-finding`); 503 when bpm cannot be reached (the finding is not raised). 201
+        with the finding (`status: "open"`, `instanceId`). A trail entry (`audit.finding.raised`).
+
+
+        **Access:** Signed-in user with permission `audit.signoff`.
+      operationId: postAuditFindings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - description
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                version:
+                  type: integer
+                  minimum: 1
+                documentId:
+                  type: string
+                  format: uuid
+                description:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.signoff
+      x-gateway-path: /api/audit/findings
+    get:
+      tags:
+        - Sign-off
+      summary: Findings of a land record or document
+      description: >-
+        `{ items }`, oldest first; filter by `recordId`, `documentId`, `status` (`open`, `resolved`, `closed`). For auditors and the records
+        desk.
+
+
+        **Access:** Signed-in user with any of `audit.view`, `record.view`.
+      operationId: getAuditFindings
+      parameters:
+        - name: recordId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: documentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+              - resolved
+              - closed
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - audit.view
+          - record.view
+      x-gateway-path: /api/audit/findings
+  /audit/findings/{id}:
+    get:
+      tags:
+        - Sign-off
+      summary: One finding
+      description: |-
+        With `status`, and `resolvedByVersion` (a newer reviewed version resolved it) or `closedByName`, `closeReason`, `closedAt`.
+
+        **Access:** Signed-in user with any of `audit.view`, `record.view`.
+      operationId: getAuditFindingsId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - audit.view
+          - record.view
+      x-gateway-path: /api/audit/findings/{id}
+  /audit/findings/{id}/close:
+    post:
+      tags:
+        - Sign-off
+      summary: Close a finding with a reason
+      description: >-
+        Body `{ reason }`. 409 when it is no longer open. Its inbox tasks are withdrawn if still open. A trail entry
+        (`audit.finding.closed`, `outcome: "closed"`); a newer reviewed version closes it the same way with `outcome: "resolved"`.
+
+
+        **Access:** Signed-in user with permission `audit.signoff`.
+      operationId: postAuditFindingsIdClose
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  maxLength: 2000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.signoff
+      x-gateway-path: /api/audit/findings/{id}/close
 components:
   securitySchemes:
     bearerAuth:

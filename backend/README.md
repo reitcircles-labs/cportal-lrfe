@@ -268,6 +268,17 @@ the version they started on.
    approver. If the record changed meanwhile, edrms answers 409, the instance goes to `error`,
    and it can be cancelled (or retried once resolved).
 
+### Process: `audit-finding` — an auditor's finding (API-659)
+
+1. Started by the audit service when an auditor raises a finding on a land record version or a
+   document version (`POST /api/audit/findings`).
+2. Two tasks at once, outcome `acknowledged`: one for the records officers (role `rec`) and one for
+   the registrars (role `sup`), each showing the finding, who raised it and the record or document;
+   due in 5 days. When both have acknowledged, the process ends.
+3. The finding itself stays open in the audit service until a newer reviewed version resolves it or
+   an auditor closes it with a reason; then the audit service withdraws this process if it is still
+   open. Design: [`services/audit/README.md`](services/audit/README.md) §5.
+
 ### Engine additions over cportal-be
 
 Assignment by permission (role permissions are editable), `exclude` rules (four-eyes),

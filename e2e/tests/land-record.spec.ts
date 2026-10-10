@@ -288,6 +288,35 @@ test('the registrar reviews it: a reject returns it with the comment, an approva
     await expect(officer.locator('table.table tbody tr', { hasText: 'T 4521/2019' })).toContainText('v2.0 in EDRMS');
     await evidence(officer, 'API-650', 'A corrected document in the EDRMS flags the record: review needed');
 });
+
+test('an auditor\'s finding on Erf 1873 reaches the records officer\'s inbox, with who raised it, and is acknowledged', { tag: ['@API-659'] }, async ({ browser, playwright, baseURL }) => {
+    const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+    const { items } = await (await rec.api.get('/api/records?q=1873', { headers: rec.headers })).json();
+    const record = await (await rec.api.get(`/api/records/${items.find((r: { label: string }) => r.label === 'Erf 1873, Klein Windhoek').id}`, { headers: rec.headers })).json();
+    await rec.dispose();
+    const auditor = userByRole('aud');
+    const aud = await apiAs(playwright, baseURL!, auditor.email);
+    const raised = await aud.api.post('/api/audit/findings', { headers: aud.headers, data: { recordId: record.id, version: record.currentVersion, description: 'Extent on the record differs from SG diagram A 412/2007' } });
+    expect(raised.status(), await raised.text()).toBe(201);
+    const finding = await raised.json();
+
+    const officer = await as(browser, userByRole('rec').email, `/link?record=${record.id}`);
+    await officer.getByRole('button', { name: 'Tasks' }).click();
+    await officer.locator('.menu .item', { hasText: `Audit finding on ${record.recordNo}` }).click();
+    const dialog = officer.locator('form.dialog');
+    await expect(dialog).toContainText(`Raised by${auditor.name}`);
+    await expect(dialog).toContainText('FindingExtent on the record differs from SG diagram A 412/2007');
+    await expect(dialog).toContainText(`Land record${record.recordNo}`);
+    await evidence(officer, 'API-659', 'An audit finding in the records officer\'s inbox: who raised it and what');
+    await dialog.getByRole('button', { name: 'Acknowledge' }).click();
+    await expect(officer.locator('.toast', { hasText: 'Finding acknowledged' }).last()).toBeVisible();
+
+    // still open until resolved or closed; the auditor closes it (the registrar's task is withdrawn)
+    expect((await (await aud.api.get(`/api/audit/findings/${finding.id}`, { headers: aud.headers })).json()).status).toBe('open');
+    const closed = await aud.api.post(`/api/audit/findings/${finding.id}/close`, { headers: aud.headers, data: { reason: 'Checked against the original diagram: the record is right' } });
+    expect(closed.status(), await closed.text()).toBe(200);
+    await aud.dispose();
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {
