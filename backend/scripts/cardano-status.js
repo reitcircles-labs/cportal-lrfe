@@ -11,11 +11,12 @@
  * ledger, and only then opens its socket and Ogmios starts (API-670): until then the status shows
  * that phase, its progress and the time left, not "not running".
  *
- * Reads only: it never starts or stops anything. Same settings as cardano.js (CARDANO_NETWORK,
+ * Also shows the background supervisor (API-677): since when it runs and how often it restarted
+ * the node or Ogmios. Reads only: it never starts or stops anything. Same settings as cardano.js (CARDANO_NETWORK,
  * CARDANO_DATA_DIR, OGMIOS_PORT).
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -121,6 +122,25 @@ function nodeRunning() {
     // the program itself, not a shell whose command line mentions it; the path as literal text
     const configDir = join(dataDir, 'config').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     try { execFileSync('pgrep', ['-f', `^\\S*/cardano-node run --config ${configDir}/`], { stdio: 'ignore' }); return true; } catch { return false; }
+}
+
+/** The background supervisor (scripts/cardano.js, API-677): its state, or null when none runs. */
+function supervisor() {
+    try {
+        const state = JSON.parse(readFileSync(join(dataDir, 'supervisor.json'), 'utf8'));
+        process.kill(state.pid, 0);
+        const cmd = readFileSync(`/proc/${state.pid}/cmdline`, 'utf8');
+        if (!cmd.includes('cardano.js') || !/--supervise|--foreground/.test(cmd)) return null;
+        return state;
+    } catch { return null; }
+}
+const sup = supervisor();
+if (sup) {
+    const r = sup.restarts || {};
+    const last = sup.lastRestart ? `; last: ${sup.lastRestart.what === 'node' ? 'cardano-node' : 'Ogmios'} ${sup.lastRestart.why} at ${sup.lastRestart.at.slice(0, 19).replace('T', ' ')}` : '';
+    console.log(`  Supervisor running ${sup.detached ? 'in the background' : 'in a terminal (--foreground)'} (pid ${sup.pid}, since ${sup.startedAt.slice(0, 19).replace('T', ' ')} UTC), restarts: node ${r.node ?? 0}, Ogmios ${r.ogmios ?? 0}${last}`);
+} else {
+    console.log('  Supervisor not running (start it in the background: npm run cardano -- --dev)');
 }
 
 const h = await health();

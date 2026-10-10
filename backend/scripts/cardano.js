@@ -4,7 +4,10 @@
  * the portal's own user, like OpenBao:
  *
  *   npm run cardano                  asks: development or production system?
- *   npm run cardano -- --dev         development: install (first run), start the node, then Ogmios
+ *   npm run cardano -- --dev         development: install (first run), then start the node and Ogmios in
+ *                                    the background, supervised (API-677), and return
+ *   npm run cardano -- --dev --foreground   the same in this terminal (Ctrl+C stops), for debugging
+ *   npm run cardano -- --stop        stop the background node and Ogmios cleanly
  *   npm run cardano -- --prod        production: refuses, see scripts/README.md "Cardano node: installation rules"
  *   npm run cardano -- --dev --install   only download them
  *
@@ -17,14 +20,14 @@
  * this user: the chain database, the node's socket, the network's configuration (copied once from
  * the release) and the logs. Nothing listens on a public address: the node runs as a client only
  * (DiffusionMode InitiatorOnly: it connects out to its peers and accepts no connections), and Ogmios
- * listens on 127.0.0.1 (OGMIOS_PORT, default 1337). Sync progress is printed every 30 seconds.
- * Ctrl+C stops both.
+ * listens on 127.0.0.1 (OGMIOS_PORT, default 1337). Sync progress is written every 30 seconds to
+ * <data>/supervisor.log (to the terminal with --foreground).
  *
  * If Ogmios already answers on its port (a node started separately), that one is used.
  */
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, homedir, platform } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -41,6 +44,31 @@ const network = (process.env.CARDANO_NETWORK || 'preview').toLowerCase();
 const ogmiosPort = Number(process.env.OGMIOS_PORT || 1337);
 const dataDir = process.env.CARDANO_DATA_DIR || join(homedir(), 'data', 'cportal-lrfe', 'cardano', network);
 const args = process.argv.slice(2);
+
+const stateFile = join(dataDir, 'supervisor.json');
+const supervisorLog = join(dataDir, 'supervisor.log');
+
+/** The running supervisor's state, or null (none, or a stale file from one that died). */
+function supervisor() {
+    try {
+        const state = JSON.parse(readFileSync(stateFile, 'utf8'));
+        process.kill(state.pid, 0);
+        // the pid is still this script, not a process that got the number since
+        const cmd = readFileSync(`/proc/${state.pid}/cmdline`, 'utf8');
+        if (!cmd.includes('cardano.js') || !/--supervise|--foreground/.test(cmd)) return null;
+        return state;
+    } catch { return null; }
+}
+
+if (args.includes('--stop')) {
+    const s = supervisor();
+    if (!s) { console.log('The Cardano node is not running under the supervisor.'); process.exit(0); }
+    console.log(`Stopping the Cardano node (supervisor pid ${s.pid}); the node shuts down cleanly, this can take a minute…`);
+    process.kill(s.pid, 'SIGTERM');
+    for (let i = 0; i < 180 && supervisor(); i++) await new Promise(r => setTimeout(r, 1000));
+    console.log(supervisor() ? `Still stopping; see ${supervisorLog}` : 'Stopped.');
+    process.exit(0);
+}
 
 // ---------------------------------------------------------------- development or production?
 
@@ -145,13 +173,46 @@ const health = async () => {
     } catch { return null; }
 };
 
-if (await health()) {
+// ---------------------------------------------------------------- supervisor (API-677)
+//
+// By default the node and Ogmios run under a supervisor detached from the terminal (like nohup and
+// setsid): closing the terminal or stopping `npm run dev` leaves them running, so the next start
+// needs no check of the stored chain. The supervisor restarts the node when it exits by itself
+// (waits growing from 5 s to 5 min) or has had no new block for CARDANO_STALL_MINUTES (10), and
+// Ogmios when it exits or stays disconnected from the node for 3 minutes.
+// Its state is in <data>/supervisor.json, its output in <data>/supervisor.log.
+
+const running = supervisor();
+if (running && !args.includes('--supervise')) {
+    console.log(`The Cardano node already runs ${running.detached ? 'in the background' : 'in a terminal (--foreground)'} (supervisor pid ${running.pid}, since ${running.startedAt}).`);
+    console.log('  Status: npm run cardano:status · Stop: npm run cardano -- --stop');
+    process.exit(0);
+}
+if (!args.includes('--supervise') && await health()) {
     console.log(`Ogmios already answers on 127.0.0.1:${ogmiosPort} (a node started separately): the services will use that one.`);
     process.exit(0);
 }
 
 mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 chmodSync(dataDir, 0o700);
+
+if (!args.includes('--foreground') && !args.includes('--supervise')) {
+    // start the supervisor detached: its own session, no terminal, output to its log file
+    const out = openSync(supervisorLog, 'a');
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args, '--supervise'], { detached: true, stdio: ['ignore', out, out], env: process.env });
+    child.unref();
+    for (let i = 0; i < 50 && supervisor()?.pid !== child.pid; i++) await new Promise(r => setTimeout(r, 100));
+    const now = supervisor();
+    if (now && now.pid !== child.pid) { console.log(`The Cardano node already runs in the background (supervisor pid ${now.pid}): started at the same moment elsewhere.`); process.exit(0); }
+    if (!now) { console.error(`The supervisor did not start; see ${supervisorLog}`); process.exit(1); }
+    console.log([
+        `Cardano ${network}: node and Ogmios started in the background (supervisor pid ${child.pid}); they keep running when this terminal closes.`,
+        `  Progress: npm run cardano:status (-- --follow) · Log: ${supervisorLog}`,
+        '  Stop:     npm run cardano -- --stop'
+    ].join('\n'));
+    process.exit(0);
+}
+
 const configDir = join(dataDir, 'config');
 if (!existsSync(join(configDir, 'config.json'))) {
     // copied once: a later node upgrade does not silently change this network's configuration
@@ -166,59 +227,151 @@ const backends = root?.backends?.filter(b => !/^(EKGBackend|PrometheusSimple)/.t
 const patched = { ...config, DiffusionMode: 'InitiatorOnly', ...(root && { TraceOptions: { ...config.TraceOptions, '': { ...root, backends } } }) };
 if (JSON.stringify(patched) !== JSON.stringify(config)) writeFileSync(configFile, JSON.stringify(patched, null, 2));
 const socket = join(dataDir, 'node.socket');
-const children = [];
-let stopping = false;
-let failed = false;          // one of them stopped by itself (not Ctrl+C)
-function stop(signal = 'SIGINT') {
-    if (stopping) return;
-    stopping = true;
-    for (const c of children) c.kill(signal);
-    setTimeout(() => { for (const c of children) c.kill('SIGKILL'); process.exit(0); }, 15_000).unref();
-}
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => stop(sig));
 
-function start(name, bin, argv, log) {
-    const out = createWriteStream(join(dataDir, log), { flags: 'a' });
-    const child = spawn(bin, argv, { stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.pipe(out);
-    child.stderr.pipe(out);
+const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
+const say = (msg) => console.log(`${stamp()} ${msg}`);
+const state = { pid: process.pid, startedAt: new Date().toISOString(), network, detached: args.includes('--supervise'), restarts: { node: 0, ogmios: 0 }, lastRestart: null };
+// best effort: a full disk must not take the supervisor down (the node keeps running without it)
+const saveState = () => { try { writeFileSync(stateFile, JSON.stringify(state, null, 2), { mode: 0o600 }); } catch (err) { say(`could not write ${stateFile}: ${err.message}`); } };
+// one supervisor per data directory, also when two starts race: the state file is the lock
+try { writeFileSync(stateFile, JSON.stringify(state, null, 2), { mode: 0o600, flag: 'wx' }); } catch (err) {
+    const other = supervisor();
+    if (err.code === 'EEXIST' && other && other.pid !== process.pid) { say(`another supervisor runs already (pid ${other.pid}); this one stops`); process.exit(0); }
+    saveState();                                         // a stale file from one that died
+}
+
+const procs = { node: null, ogmios: null };
+const backoff = { node: 0, ogmios: 0 };
+let stopping = false;
+let restarting = null;                                   // the node being restarted (stalled): asked once, not every round
+const wait = (name) => Math.min(300_000, 5000 * 2 ** backoff[name]);
+
+function launch(name, bin, argv, log, onExit) {
+    // straight into its log file, and in its own process group: it does not depend on the supervisor's
+    // pipes, and a Ctrl+C in the terminal (--foreground) reaches only the supervisor, which stops it once
+    const fd = openSync(join(dataDir, log), 'a');
+    const child = spawn(bin, argv, { stdio: ['ignore', fd, fd], detached: true });
+    closeSync(fd);
+    child.on('error', (err) => say(`${name} could not be started: ${err.message}`));
+    const started = Date.now();
     child.on('exit', (code, signal) => {
-        if (!stopping) {
-            failed = true;
-            console.error(`${name} stopped (${signal || `exit ${code}`}); see ${join(dataDir, log)}`);
-        }
-        stop();
-        if (children.every(c => c.exitCode !== null || c.signalCode)) process.exit(failed ? 1 : 0);
+        procs[name] = null;
+        if (stopping) return finish();
+        // a run of 10 minutes or more counts as healthy: the next restart waits the shortest time again
+        if (Date.now() - started >= 600_000) backoff[name] = 0;
+        onExit(code, signal);
     });
-    children.push(child);
+    procs[name] = child;
     return child;
 }
 
-console.log(`Cardano ${network}: node ${NODE_VERSION} (client only, no listening port), data in ${dataDir}`);
-rmSync(socket, { force: true });
-start('cardano-node', nodeBin, [
-    'run', '--config', join(configDir, 'config.json'), '--topology', join(configDir, 'topology.json'),
-    '--database-path', join(dataDir, 'db'), '--socket-path', socket
-], 'node.log');
-
-for (let i = 0; !existsSync(socket); i++) {
-    if (stopping) await new Promise(() => {});      // the node's exit handler ends the process
-    if (i === 300) { console.error(`The node did not open its socket within 10 minutes; see ${join(dataDir, 'node.log')}`); stop(); }
-    await new Promise(r => setTimeout(r, 2000));
+function restart(name, why, fn) {
+    const ms = wait(name);
+    backoff[name]++;
+    state.restarts[name]++;
+    state.lastRestart = { what: name, why, at: new Date().toISOString() };
+    saveState();
+    say(`${name === 'node' ? 'cardano-node' : 'Ogmios'} ${why}; starting it again in ${Math.round(ms / 1000)} s (restart ${state.restarts[name]}; see ${join(dataDir, name === 'node' ? 'node.log' : 'ogmios.log')})`);
+    setTimeout(() => { if (!stopping) fn(); }, ms).unref?.();
 }
-console.log(`Ogmios ${OGMIOS_VERSION} on http://127.0.0.1:${ogmiosPort}`);
-start('ogmios', ogmiosBin, [
-    '--node-socket', socket, '--node-config', join(configDir, 'config.json'), '--host', '127.0.0.1', '--port', String(ogmiosPort)
-], 'ogmios.log');
+
+function startNode() {
+    say(`Cardano ${network}: node ${NODE_VERSION} (client only, no listening port), data in ${dataDir}`);
+    rmSync(socket, { force: true });
+    launch('node', nodeBin, [
+        'run', '--config', join(configDir, 'config.json'), '--topology', join(configDir, 'topology.json'),
+        '--database-path', join(dataDir, 'db'), '--socket-path', socket
+    ], 'node.log', (code, signal) => {
+        procs.ogmios?.kill('SIGTERM');                  // it needs the node; started again with it
+        restart('node', `stopped (${signal || `exit ${code}`})`, startNode);
+    });
+    waitForSocket();
+}
+
+async function waitForSocket() {
+    const node = procs.node;
+    // after an unclean stop the node checks its stored chain first (API-670): this can take half an hour
+    for (let i = 0; !existsSync(socket); i++) {
+        if (stopping || procs.node !== node) return;
+        if (i % 150 === 149) say('waiting for the node to open its socket (npm run cardano:status shows what it is doing)');
+        await new Promise(r => setTimeout(r, 2000));
+    }
+    startOgmios();
+}
+
+let disconnectedSince = null;
+function startOgmios() {
+    if (stopping || !procs.node || procs.ogmios) return;
+    say(`Ogmios ${OGMIOS_VERSION} on http://127.0.0.1:${ogmiosPort}`);
+    disconnectedSince = null;
+    launch('ogmios', ogmiosBin, [
+        '--node-socket', socket, '--node-config', join(configDir, 'config.json'), '--host', '127.0.0.1', '--port', String(ogmiosPort)
+    ], 'ogmios.log', (code, signal) => {
+        if (procs.node) restart('ogmios', `stopped (${signal || `exit ${code}`})`, startOgmios);
+    });
+}
+
+function finish() {
+    if (procs.node || procs.ogmios) return;
+    try { if (JSON.parse(readFileSync(stateFile, 'utf8')).pid === process.pid) rmSync(stateFile, { force: true }); } catch { /* gone */ }
+    say('stopped');
+    process.exit(0);
+}
+
+function stop(signal) {
+    if (stopping) return;
+    stopping = true;
+    say(`stopping (${signal}): the node shuts down cleanly, so the next start needs no check of its stored chain`);
+    procs.ogmios?.kill('SIGTERM');
+    if (restarting !== procs.node) procs.node?.kill('SIGINT');   // already asked: a second SIGINT would stop it uncleanly
+    // only if the node hangs: a forced stop means the chain is checked at the next start
+    setTimeout(() => { for (const c of Object.values(procs)) c?.kill('SIGKILL'); }, 120_000).unref();
+    finish();
+}
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => stop(sig));
+if (args.includes('--supervise')) process.on('SIGHUP', () => {});   // no terminal to hang up on
+
+startNode();
+
+// no new block for this long while Ogmios is connected: the node hangs or has lost all its peers
+const stallMs = Number(process.env.CARDANO_STALL_MINUTES || 10) * 60_000;
+function restartNode(why) {
+    const node = procs.node;
+    if (!node || restarting === node) return;
+    restarting = node;
+    say(`cardano-node ${why}; restarting it (stopped by force if it does not stop within 2 minutes)`);
+    node.kill('SIGINT');                                 // a clean stop first: no check of the chain next time
+    setTimeout(() => { if (procs.node === node) node.kill('SIGKILL'); }, 120_000).unref();
+}
 
 let synced = false;
-const report = async () => {
+const watch = async () => {
+    if (stopping) return;
     const h = await health();
+    if (procs.node && h?.connectionStatus === 'connected' && h.lastTipUpdate && Date.now() - Date.parse(h.lastTipUpdate) >= stallMs
+        && h.startTime && Date.now() - Date.parse(h.startTime) >= stallMs) {
+        const minutes = Math.round((Date.now() - Date.parse(h.lastTipUpdate)) / 60_000);
+        restartNode(`has had no new block for ${minutes} minute${minutes === 1 ? '' : 's'}`);
+        return;
+    }
+    // Ogmios up but not connected to the node (or not answering) for 3 minutes: restart it
+    if (procs.ogmios) {
+        const connected = h && h.connectionStatus === 'connected';
+        if (connected) disconnectedSince = null;
+        else if (!disconnectedSince) disconnectedSince = Date.now();
+        else if (Date.now() - disconnectedSince >= 180_000) {
+            disconnectedSince = null;
+            say(`Ogmios ${h ? 'has been disconnected from the node' : 'has not answered'} for 3 minutes; restarting it`);
+            const ogmios = procs.ogmios;
+            ogmios.kill('SIGTERM');
+            setTimeout(() => { if (procs.ogmios === ogmios) ogmios.kill('SIGKILL'); }, 30_000).unref();
+        }
+    }
     if (!h) return;
     const pct = Math.floor((h.networkSynchronization ?? 0) * 10000) / 100;
     const tip = h.lastKnownTip?.slot ?? '?';
-    if (pct >= 100 && !synced) { synced = true; console.log(`Cardano ${network}: in sync (slot ${tip}, era ${h.currentEra})`); }
-    else if (!synced) console.log(`Cardano ${network}: syncing ${pct}% (slot ${tip}, era ${h.currentEra ?? '?'})`);
+    if (pct >= 100 && !synced) { synced = true; say(`Cardano ${network}: in sync (slot ${tip}, era ${h.currentEra})`); }
+    else if (pct < 99.9 && synced) { synced = false; }
+    if (!synced) say(`Cardano ${network}: syncing ${pct}% (slot ${tip}, era ${h.currentEra ?? '?'})`);
 };
-setTimeout(report, 10_000);
-setInterval(report, 30_000).unref?.();
+setInterval(watch, 30_000);

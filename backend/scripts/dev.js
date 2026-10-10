@@ -20,7 +20,9 @@
  *
  * The Cardano node and Ogmios (scripts/cardano.js --dev, Ogmios on port 1337, API-662) are started
  * when the audit service anchors through them (CARDANO_PROVIDER=ogmios in its .env or this shell), or
- * when `cardano` is named. If Ogmios already answers on its port, that one is used.
+ * when `cardano` is named. If Ogmios already answers on its port, that one is used. They run in the
+ * background under their supervisor (API-677), so Ctrl+C here leaves them running; stop them with
+ * `npm run cardano -- --stop`.
  *
  * Each service starts in its own directory, so it reads its own .env exactly as
  * `npm run dev:<name>` does. Output lines are prefixed with the service name. Ctrl+C stops all
@@ -153,7 +155,9 @@ for (const name of names) {
     pipe(child.stderr, process.stderr, label(name), name);
     child.on('exit', (code, signal) => {
         children.delete(name);
-        if (!stopping && optional) {
+        if (!stopping && name === 'cardano' && code === 0) {
+            // started (or found) in the background, supervised: it outlives npm run dev (API-677)
+        } else if (!stopping && optional) {
             console.error(`${label(name)}exited (${signal || `code ${code}`}); the services keep running`);
         } else if (!stopping) {
             console.error(`${label(name)}exited (${signal || `code ${code}`}); stopping the other services`);
