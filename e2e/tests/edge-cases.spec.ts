@@ -4,8 +4,8 @@
  * take, and the service refusing what the screens would never send.
  *
  * Documents are prepared through the API (support/intake.ts) so each test starts at its own step.
- * Rescans and unlinking documents from land records are not here: rescans have no screen yet, and
- * land records still show demo data (API-615).
+ * Rescans are not here: they have no screen yet. Land records have their own tests in
+ * land-record.spec.ts.
  */
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { ENROLLED_USERS, userByRole } from '../support/catalogue';
@@ -19,6 +19,14 @@ import { evidence } from '../support/evidence';
 const SCAN = userByRole('scan');
 const REVIEWER = userByRole('rev');
 const SECOND = ENROLLED_USERS.find(u => u.roles.length === 1 && u.roles[0] === 'rev' && u.email !== REVIEWER.email)!;
+/**
+ * The reviewer who holds a document in the Verify tests. Opening Verify without a document opens
+ * the first one in the queue and claims it, and the newest document (this test's) is first. Other
+ * tests do exactly that, in parallel, as the reviewer accounts of the role matrix and the sign-in
+ * tests (REVIEWER, rev+aud, scan+rev): they could take this test's document, or, as the same
+ * account, open it and release it on leaving (API-664). SECOND is never one of those.
+ */
+const HOLDER = SECOND;
 const tag = { tag: '@API-608' };
 // Each test prepares its documents through the API and works with two or three people.
 test.describe.configure({ timeout: 90_000 });
@@ -26,6 +34,20 @@ test.describe.configure({ timeout: 90_000 });
 // Each test's windows are closed after it, so a failure's screenshots show only that test's screens.
 const opened: BrowserContext[] = [];
 test.afterEach(async () => { await Promise.all(opened.splice(0).map(c => c.close())); });
+
+/**
+ * The reviewer `email` claims the document for review through the API, waiting for any other
+ * session that opened it in passing to move on (its claim is released when it leaves the document).
+ */
+async function holdForReview(playwright: Parameters<typeof apiAs>[0], baseURL: string, email: string, documentId: string) {
+    const api = await apiAs(playwright, baseURL, email);
+    try {
+        await expect.poll(async () => (await api.api.post(`/api/intake/documents/${documentId}/claim`, { headers: api.headers })).status(),
+            { message: `claim ${documentId} as ${email}`, timeout: 30_000 }).toBe(200);
+    } finally {
+        await api.dispose();
+    }
+}
 
 async function as(browser: Browser, email: string, path: string): Promise<Page> {
     const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, viewport: { width: 1600, height: 1000 } });
@@ -60,7 +82,8 @@ async function requestCorrection(page: Page, edrmsNo: string) {
 
 test('a reviewer rejects a document with a reason; the scan operator sees why', tag, async ({ browser, playwright, baseURL }) => {
     const doc = await readyDocument(playwright, baseURL!, browser);
-    const page = await as(browser, REVIEWER.email, `/verify?doc=${doc.id}`);
+    await holdForReview(playwright, baseURL!, HOLDER.email, doc.id);
+    const page = await as(browser, HOLDER.email, `/verify?doc=${doc.id}`);
     await expect(page.locator('.doc-head')).toContainText(doc.deedNo);
 
     await page.locator('.doc-head').getByRole('button', { name: 'Reject' }).click();
@@ -81,7 +104,7 @@ test('a reviewer rejects a document with a reason; the scan operator sees why', 
     await evidence(scan, 'API-608', 'Reject: the scan operator sees the document rejected, and why');
 
     // Nothing reached the EDRMS, and the document cannot be filed any more.
-    const rev = await apiAs(playwright, baseURL!, REVIEWER.email);
+    const rev = await apiAs(playwright, baseURL!, HOLDER.email);
     const filed = await rev.api.post(`/api/intake/documents/${doc.id}/file`, { headers: rev.headers });
     expect(filed.status()).toBe(409);
     expect((await filed.json()).message).toContain('rejected');
@@ -90,20 +113,21 @@ test('a reviewer rejects a document with a reason; the scan operator sees why', 
 
 test('two reviewers on one document: the second can look but not change it until the first leaves', tag, async ({ browser, playwright, baseURL }) => {
     const doc = await readyDocument(playwright, baseURL!, browser);
-    const first = await as(browser, REVIEWER.email, `/verify?doc=${doc.id}`);
+    await holdForReview(playwright, baseURL!, HOLDER.email, doc.id);
+    const first = await as(browser, HOLDER.email, `/verify?doc=${doc.id}`);
     await expect(first.locator('#f-conveyancer')).toBeEditable();
 
-    const second = await as(browser, SECOND.email, `/verify?doc=${doc.id}`);
-    await expect(second.locator('.banner', { hasText: `${REVIEWER.name} is reviewing this document. You can look, but not change it.` })).toBeVisible();
+    const second = await as(browser, REVIEWER.email, `/verify?doc=${doc.id}`);
+    await expect(second.locator('.banner', { hasText: `${HOLDER.name} is reviewing this document. You can look, but not change it.` })).toBeVisible();
     await expect(second.locator('#f-conveyancer')).not.toBeEditable();
     await expect(second.getByRole('button', { name: 'Approve & file to EDRMS' })).toBeDisabled();
     await evidence(second, 'API-608', 'Two reviewers: the second sees who holds the document and cannot edit');
 
     // The service refuses the second reviewer too, not only the screen.
-    const api = await apiAs(playwright, baseURL!, SECOND.email);
+    const api = await apiAs(playwright, baseURL!, REVIEWER.email);
     const edit = await api.api.put(`/api/intake/documents/${doc.id}/fields/conveyancer`, { headers: api.headers, data: { value: 'Someone Else' } });
     expect(edit.status()).toBe(409);
-    expect((await edit.json()).message).toBe(`${REVIEWER.name} is reviewing this document`);
+    expect((await edit.json()).message).toBe(`${HOLDER.name} is reviewing this document`);
     await api.dispose();
 
     // The first reviewer moves on; the claim is released and the second can work.
@@ -215,7 +239,8 @@ test('a deed already in the EDRMS cannot be filed a second time', tag, async ({ 
     const first = await filedDocument(playwright, baseURL!, browser, deed);
     // a second scan of the same deed (other bytes, same deed number)
     const again = await readyDocument(playwright, baseURL!, browser, { ...deed, fileName: deed.fileName.replace('.pdf', '-rescan.pdf') });
-    const page = await as(browser, REVIEWER.email, `/verify?doc=${again.id}`);
+    await holdForReview(playwright, baseURL!, HOLDER.email, again.id);
+    const page = await as(browser, HOLDER.email, `/verify?doc=${again.id}`);
     await expect(page.locator('.doc-head')).toContainText(deed.deedNo);
     // The review screen already flags it: the deed number conflicts with the filed record.
     const deedNo = page.locator('.frow', { has: page.locator('#f-deedNo') });
@@ -230,7 +255,7 @@ test('a deed already in the EDRMS cannot be filed a second time', tag, async ({ 
     await evidence(page, 'API-608', 'Verify: a deed already filed is flagged and cannot be filed again');
 
     // The service refuses it too, naming the record it would duplicate.
-    const rev = await apiAs(playwright, baseURL!, REVIEWER.email);
+    const rev = await apiAs(playwright, baseURL!, HOLDER.email);
     const filed = await rev.api.post(`/api/intake/documents/${again.id}/file`, { headers: rev.headers });
     expect(filed.status()).toBe(409);
     expect(JSON.stringify(await filed.json())).toContain(`${deed.deedNo} is already filed as ${first.edrmsNo}`);

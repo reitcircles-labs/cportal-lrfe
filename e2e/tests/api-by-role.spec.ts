@@ -49,7 +49,8 @@ for (const user of MATRIX_USERS) {
             const rule = op.allOf ? `needs ${op.allOf.join(' + ')}` : `needs one of ${op.anyOf!.join(', ')}`;
             if (!allowed(user, op)) {
                 const res = await send(request, op.method, op.path, token);
-                expect.soft(res.status(), `${op.method} ${op.path} (${rule}) must be refused`).toBe(403);
+                // the answer's body in the message, so an unexpected status says where it came from (API-664)
+                expect.soft(res.status(), `${op.method} ${op.path} (${rule}) must be refused; got: ${res.status() === 403 ? '' : (await res.text()).slice(0, 300)}`).toBe(403);
             } else if (op.method === 'GET') {
                 const res = await send(request, op.method, op.path, token);
                 expect.soft([401, 403], `${op.method} ${op.path} (${rule}) must be allowed, got ${res.status()}`).not.toContain(res.status());
