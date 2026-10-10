@@ -4,7 +4,12 @@
  *
  *   npm run cardano:status                  sync, tip, speed, time left, disk, recent warnings
  *   npm run cardano:status -- --log [n]     also the node's last n log lines (default 30)
- *   npm run cardano:status -- --follow      the node's log as it is written (Notice and above; Ctrl+C ends)
+ *   npm run cardano:status -- --follow      the node's log as it is written (Notice and above, and startup
+ *                                           progress once per whole percent; Ctrl+C ends)
+ *
+ * After an unclean stop the node first checks every chunk of its stored chain, then may replay the
+ * ledger, and only then opens its socket and Ogmios starts (API-670): until then the status shows
+ * that phase, its progress and the time left, not "not running".
  *
  * Reads only: it never starts or stops anything. Same settings as cardano.js (CARDANO_NETWORK,
  * CARDANO_DATA_DIR, OGMIOS_PORT).
@@ -55,6 +60,18 @@ const NORMAL_WHILE_SYNCING = {
 
 const short = (s, n = 160) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const hms = (date) => date.toISOString().slice(11, 19);
+/**
+ * A startup phase from a log line: { phase, pct } for the node checking its stored chain or replaying
+ * the ledger ("… Progress: 39.34%"), or null.
+ */
+function startupStep(e) {
+    const pct = /Progress: ([\d.]+)%/.exec(e?.message || '')?.[1];
+    if (!pct) return null;
+    const phase = e.namespace.includes('ChunkValidation') ? 'checking its stored chain'
+        : /Replay/.test(e.namespace) ? 'replaying the ledger' : 'starting';
+    return { phase, pct: Number(pct), time: e.time };
+}
+
 function duration(seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) return '?';
     const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60);
@@ -65,15 +82,19 @@ function duration(seconds) {
 
 if (args.includes('--follow')) {
     if (!existsSync(nodeLog)) { console.error(`No log yet: ${nodeLog}`); process.exit(1); }
-    console.log(`Following ${nodeLog} (Notice and above). Ctrl+C ends.`);
+    console.log(`Following ${nodeLog} (Notice and above, startup progress once per percent). Ctrl+C ends.`);
     const tail = spawn('tail', ['-n', '0', '-F', nodeLog], { stdio: ['ignore', 'pipe', 'inherit'] });
-    let rest = '';
+    let rest = '', shown = '';
     tail.stdout.on('data', (chunk) => {
         const lines = (rest + chunk).split('\n');
         rest = lines.pop();
         for (const raw of lines) {
             const e = parse(raw);
             if (e && atLeast(e.severity, 'Notice')) console.log(`${hms(e.time)} ${e.severity.padEnd(7)} ${short(e.message)}`);
+            // startup progress is logged at Info for every chunk: once per whole percent here
+            const step = startupStep(e);
+            const key = step && `${step.phase} ${Math.floor(step.pct)}`;
+            if (step && key !== shown) { shown = key; console.log(`${hms(e.time)} Startup ${step.phase}: ${Math.floor(step.pct)}%`); }
         }
     });
     process.on('SIGINT', () => { tail.kill(); process.exit(0); });
@@ -95,9 +116,31 @@ if (!existsSync(dataDir)) {
     process.exit(1);
 }
 
+/** Whether a cardano-node runs on this data directory (pgrep never matches itself). */
+function nodeRunning() {
+    // the program itself, not a shell whose command line mentions it; the path as literal text
+    const configDir = join(dataDir, 'config').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    try { execFileSync('pgrep', ['-f', `^\\S*/cardano-node run --config ${configDir}/`], { stdio: 'ignore' }); return true; } catch { return false; }
+}
+
 const h = await health();
-if (!h) {
+if (!h && !nodeRunning()) {
     console.log(`  Ogmios does not answer on 127.0.0.1:${ogmiosPort}: the node is not running (npm run cardano -- --dev).`);
+} else if (!h) {
+    // running, but not serving yet: checking the stored chain or replaying the ledger after a restart
+    const steps = tailLines(nodeLog).map(parse).map(startupStep).filter(Boolean);
+    const last = steps.at(-1);
+    const fresh = last && Date.now() - last.time < 2 * 60_000;
+    if (!fresh) {
+        console.log(`  Starting   the node runs; Ogmios does not answer on 127.0.0.1:${ogmiosPort} yet (it starts once the node opens its socket)`);
+    } else {
+        const same = steps.filter(x => x.phase === last.phase);
+        const first = same.find(x => last.time - x.time <= 5 * 60_000);
+        const rate = first && last.time > first.time ? (last.pct - first.pct) / ((last.time - first.time) / 1000) : 0;
+        const left = rate > 0 ? `, about ${duration((100 - last.pct) / rate)} left` : '';
+        console.log(`  Starting   the node is ${last.phase}: ${last.pct}%${left}`);
+        console.log(`             normal after an unclean stop; Ogmios starts and syncing resumes when it is done`);
+    }
 } else {
     const sync = h.networkSynchronization ?? 0;
     const pct = Math.floor(sync * 10000) / 100;
@@ -120,7 +163,7 @@ if (!h) {
 }
 
 try {
-    const du = (p) => execFileSync('du', ['-sh', p]).toString().split('\t')[0];
+    const du = (p) => execFileSync('du', ['-sh', p], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().split('\t')[0];
     console.log(`  Disk       chain ${du(join(dataDir, 'db'))}, logs ${du(nodeLog)} + ${du(ogmiosLog)}`);
 } catch { /* not created yet */ }
 

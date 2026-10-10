@@ -261,6 +261,7 @@ and needs no node. This section is about the own node.
 | Ogmios | http://127.0.0.1:1337 (`OGMIOS_PORT`), reachable from this server only |
 | Data | `~/data/cportal-lrfe/cardano/preview` (`CARDANO_DATA_DIR`), folder `0700`: `db/` (the chain), `node.socket`, `config/` (the network's configuration, copied once from the release), `node.log`, `ogmios.log` |
 | Sync | From the start of the chain; progress is printed every 30 seconds ("syncing 42.13% (slot …)", then "in sync"). `npm run cardano:status` shows the sync, speed, time left, disk and recent warnings at any time; `-- --log 50` adds the node's last log lines, `-- --follow` follows its log |
+| Restart after an unclean stop | When the node was killed (its terminal or session closed) rather than stopped with Ctrl+C, it first checks every chunk of its stored chain (preview: about 26,000 chunks, growing; it can take half an hour), may then replay the ledger, and only then opens its socket; Ogmios starts and syncing resumes from where it was. Nothing new appears in the `npm run cardano` terminal meanwhile. `npm run cardano:status` shows the phase, its progress and the time left ("the node is checking its stored chain: 48%, about 5 min left"), and `-- --follow` prints it once per percent. Stop the node with Ctrl+C to avoid the check |
 
 The first sync downloads the whole preview chain. On this server (8 cores, 31 GB of RAM) it took
 the time and disk shown in API-662's results; later starts continue where it stopped. Ctrl+C stops
