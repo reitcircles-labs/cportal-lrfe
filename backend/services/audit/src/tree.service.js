@@ -30,9 +30,10 @@ export class TreeService {
         return this.repo.withTreeLock(async (tree) => {
             const existing = new Set(await tree.existingKeys(items.map(i => i.key)));
             // a key comes back with another seal: the first one stays; this must not pass unnoticed
-            for (const it of items.filter(i => existing.has(i.key))) {
-                const stored = await tree.leafByKey(it.key);
-                if (stored && stored.item !== it.item) this.logger.warn?.({ key: it.key, stored: stored.item, offered: it.item, eventId: it.eventId }, 'audit tree: a recorded item came again with a different seal; the first one is kept');
+            const repeats = items.filter(i => existing.has(i.key));
+            const recorded = repeats.length ? await tree.itemsByKeys(repeats.map(i => i.key)) : new Map();
+            for (const it of repeats) {
+                if (recorded.has(it.key) && recorded.get(it.key) !== it.item) this.logger.warn?.({ key: it.key, stored: recorded.get(it.key), offered: it.item, eventId: it.eventId }, 'audit tree: a recorded item came again with a different seal; the first one is kept');
             }
             const fresh = items.filter(i => !existing.has(i.key) && existing.add(i.key));
             if (!fresh.length) return [];

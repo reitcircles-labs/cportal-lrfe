@@ -33,6 +33,14 @@ export function createSequelizeRepo(sequelize) {
             return new Map(rows.map(r => [Number(r.pos), r.hash]));
         },
         async leafByKey(key) { return leafOf(await TreeLeaf.findOne({ where: { key }, transaction })); },
+        /** key → item for the keys that are in the tree, a chunk per query. */
+        async itemsByKeys(keys) {
+            const out = new Map();
+            for (let i = 0; i < keys.length; i += CHUNK) {
+                for (const r of await TreeLeaf.findAll({ where: { key: keys.slice(i, i + CHUNK) }, attributes: ['key', 'item'], transaction })) out.set(r.key, r.item);
+            }
+            return out;
+        },
         async insert(leaves, nodes) {
             for (let i = 0; i < nodes.length; i += CHUNK) await TreeNode.bulkCreate(nodes.slice(i, i + CHUNK), { transaction });
             for (let i = 0; i < leaves.length; i += CHUNK) await TreeLeaf.bulkCreate(leaves.slice(i, i + CHUNK), { transaction });

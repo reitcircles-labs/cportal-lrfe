@@ -50,6 +50,10 @@ export default {
         'GET /records/{id}/history': { tag: 'Records', summary: 'History: every committed version', description: '`{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, and `diff` against the version before.' },
         'GET /records/{id}/comments': { tag: 'Records', summary: 'Comments on a record' },
         'POST /records/{id}/comments': { tag: 'Records', summary: 'Comment on a record', description: '`{ body }`. Kept with the version open at the time.' },
+        'GET /records/seals': {
+            tag: 'Records', summary: 'Every committed version\'s seal, oldest first (audit service only)',
+            description: '`{ items: [{ recordId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. Superseded versions included. For the audit service\'s one-time backfill of its tree (API-669).'
+        },
         'GET /records/{id}': { tag: 'Records', summary: 'One land record with its current version and open draft' },
         'GET /records/{id}/versions': { tag: 'Records', summary: 'All versions of a record: state, who submitted and approved, seal, changes' },
         'GET /records/{id}/versions/{n}': { tag: 'Records', summary: 'One version, with its data (core, attributes, pinned documents)' },

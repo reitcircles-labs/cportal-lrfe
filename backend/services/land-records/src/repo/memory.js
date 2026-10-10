@@ -48,6 +48,14 @@ export function createMemoryRepo() {
         },
 
         async getVersion(recordId, n) { return clone(findVersion(recordId, n)) ?? null; },
+        /** Every committed version's seal (superseded ones too), oldest first, after the cursor `after` (API-669). */
+        async listSeals({ after = null, limit = 500 } = {}) {
+            const key = (v) => [new Date(v.committedAt).getTime(), v.recordId, v.versionNumber];
+            const cmp = (a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) || a[2] - b[2];
+            const from = after && [new Date(after.at).getTime(), after.id, after.version];
+            return versions.filter(v => v.seal).sort((a, b) => cmp(key(a), key(b))).filter(v => !from || cmp(key(v), from) > 0).slice(0, limit)
+                .map(v => ({ recordId: v.recordId, version: v.versionNumber, seal: v.seal, at: v.committedAt }));
+        },
         async listVersions(recordId) {
             return versions.filter(v => v.recordId === recordId).sort((a, b) => a.versionNumber - b.versionNumber).map(clone);
         },

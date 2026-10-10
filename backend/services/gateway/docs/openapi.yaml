@@ -1083,6 +1083,62 @@ paths:
           - audit
           - search
           - bpm
+  /api/documents/seals:
+    get:
+      tags:
+        - edrms · Documents
+      summary: Every document version's seal, oldest first (audit service only)
+      description: >-
+        `{ items: [{ documentId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. For the audit
+        service's one-time backfill of its tree (API-669).
+
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: edrms_getDocumentsSeals
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
   /api/intake/batches:
     get:
       tags:
@@ -4073,6 +4129,62 @@ paths:
       x-access:
         allOf:
           - record.view
+  /api/records/seals:
+    get:
+      tags:
+        - land-records · Records
+      summary: Every committed version's seal, oldest first (audit service only)
+      description: >-
+        `{ items: [{ recordId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. Superseded versions
+        included. For the audit service's one-time backfill of its tree (API-669).
+
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: land-records_getRecordsSeals
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
   /api/roles:
     get:
       tags:

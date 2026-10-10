@@ -24,6 +24,10 @@ export default {
             tag: 'Documents', summary: 'Find one document by a reference',
             description: 'By `edrmsNo`, `instrumentRef` (e.g. T 2210/2008) or `sourceId` (the intake document id). 404 when there is none.'
         },
+        'GET /documents/seals': {
+            tag: 'Documents', summary: 'Every document version\'s seal, oldest first (audit service only)',
+            description: '`{ items: [{ documentId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. For the audit service\'s one-time backfill of its tree (API-669).'
+        },
         'GET /documents/{id}': { tag: 'Documents', summary: 'One document with its fields, record metadata and version history' },
         'GET /documents/{id}/versions/{n}': { tag: 'Documents', summary: 'One version of a document' },
         'GET /documents/{id}/content': {

@@ -27,6 +27,8 @@ export function createSequelizeRepo(sequelize) {
             await sequelize.sync();
             // columns added after the table was first created
             await sequelize.query(`ALTER TABLE "${SCHEMA}"."record_version" ADD COLUMN IF NOT EXISTS "reviewInstanceId" UUID`);
+            // the audit service's backfill reads committed seals in this order (API-669)
+            await sequelize.query(`CREATE INDEX IF NOT EXISTS "record_version_seal_order" ON "${SCHEMA}"."record_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`);
         },
 
         async createRecord({ year, build }) {
@@ -61,6 +63,18 @@ export function createSequelizeRepo(sequelize) {
         },
 
         async getVersion(recordId, versionNumber) { return plain(await m.Version.findOne({ where: { recordId, versionNumber } })); },
+        /** Every committed version's seal (superseded ones too), oldest first, after the cursor `after` (API-669). */
+        async listSeals({ after = null, limit = 500 } = {}) {
+            const sealed = { seal: { [Op.ne]: null } };
+            const where = after
+                ? { [Op.and]: [sealed, sequelize.literal(`("committedAt", "recordId", "versionNumber") > (${sequelize.escape(new Date(after.at))}, ${sequelize.escape(after.id)}::uuid, ${Number(after.version)})`)] }
+                : sealed;
+            const rows = await m.Version.findAll({
+                where, attributes: ['recordId', 'versionNumber', 'seal', 'committedAt'],
+                order: [['committedAt', 'ASC'], ['recordId', 'ASC'], ['versionNumber', 'ASC']], limit
+            });
+            return rows.map(r => ({ recordId: r.recordId, version: r.versionNumber, seal: r.seal, at: r.committedAt }));
+        },
         async listVersions(recordId) {
             return (await m.Version.findAll({ where: { recordId }, order: [['versionNumber', 'ASC']] })).map(plain);
         },

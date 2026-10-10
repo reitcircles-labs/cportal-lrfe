@@ -52,6 +52,17 @@ export function createMemoryRepo() {
                 .map(x => x.d);
             return { items: all.slice(offset, offset + limit).map(clone), total: all.length };
         },
+        /**
+         * Every version's seal, oldest first (the audit service's backfill, API-669), `limit` at a
+         * time after the cursor `after` ({ at, id, version } of the last one read).
+         */
+        async listSeals({ after = null, limit = 500 } = {}) {
+            const key = (v) => [new Date(v.createdAt).getTime(), v.documentId, v.versionNumber];
+            const cmp = (a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) || a[2] - b[2];
+            const from = after && [new Date(after.at).getTime(), after.id, after.version];
+            return [...versions].sort((a, b) => cmp(key(a), key(b))).filter(v => !from || cmp(key(v), from) > 0).slice(0, limit)
+                .map(v => ({ documentId: v.documentId, version: v.versionNumber, seal: v.seal, at: v.createdAt }));
+        },
         async listVersions(documentId) {
             return versions.filter(v => v.documentId === documentId).sort((a, b) => a.versionNumber - b.versionNumber).map(clone);
         },

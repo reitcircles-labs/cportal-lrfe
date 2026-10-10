@@ -16,6 +16,7 @@ export function createMemoryRepo() {
         async existingKeys(keys) { return keys.filter(k => byKey.has(k)); },
         async getNodes(positions) { return new Map(positions.map(p => [p, nodes[p]])); },
         async leafByKey(key) { const l = byKey.get(key); return l ? { ...l } : null; },
+        async itemsByKeys(keys) { return new Map(keys.filter(k => byKey.has(k)).map(k => [k, byKey.get(k).item])); },
         async insert(newLeaves, newNodes) {
             for (const n of newNodes) { if (n.pos !== nodes.length) throw new Error(`tree: node ${n.pos} out of order`); nodes.push(n.hash); }
             for (const l of newLeaves) { const copy = { ...l }; leaves.push(copy); byKey.set(copy.key, copy); }

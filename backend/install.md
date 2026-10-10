@@ -188,6 +188,19 @@ npm run anchor:test -w @lrfe/audit -- --submit    # anchors a random root, follo
 With `ogmios` the node must be in sync first (`npm run cardano:status`); until then anchoring
 waits and says so.
 
+**Earlier records into the audit tree.** On a new installation the audit service puts the seals of
+records and documents that already exist into its tree by itself before its first anchoring. Where
+its tree already has entries (it ran before anchoring was switched on), run it once by hand, with
+land-records and edrms running: `npm run audit:backfill`. Running it again adds nothing.
+
+On a large existing database, create the two indexes the backfill reads by beforehand, without
+blocking writes (the services otherwise create them at start, which locks the table while it builds):
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_version_seal_order" ON edrms.document_version ("createdAt", "documentId", "versionNumber");
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "record_version_seal_order" ON records.record_version ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL;
+```
+
 Once `CARDANO_PROVIDER` is set, the audit service anchors by itself: every hour in which something
 was recorded (`ANCHOR_PERIOD=1h`), followed until it is `ANCHOR_CONFIRMATIONS=10` blocks deep. Its
 log says `root anchored` and `anchoring confirmed`; each anchoring is a row in `audit.anchor`.

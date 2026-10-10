@@ -630,6 +630,9 @@ export class RecordsService {
         return { items: items.map(r => this.summary(r)), total: status && !base ? items.length : res.total };
     }
 
+    /** Every committed version's seal, oldest first, a page at a time: the audit service's backfill (API-669). */
+    listSeals({ after = null, limit = 500 } = {}) { return this.repo.listSeals({ after, limit }); }
+
     async getRecord(id) {
         const r = await this.requireRecord(id);
         const current = r.currentVersion ? await this.repo.getVersion(id, r.currentVersion) : null;

@@ -39,9 +39,21 @@ the range, so it is never written twice), not consumed from the stream; the broa
 name only tells listeners.
 
 **Before deployment.** The consumer starts with events published after it is created. A one-time
-backfill (API-669, before the first anchoring) reads the seals of every land record version and EDRMS document version that
-already exists (from land-records and edrms, with a service token) and adds them as leaves, oldest
-first, before the first anchoring; the trail records the backfill as one entry with the counts.
+**backfill** (API-669) reads the seals of every committed land record version and every EDRMS
+document version that already exists, from land-records (`GET /records/seals`) and edrms
+(`GET /documents/seals`): service-only endpoints for the audit service's service token, oldest
+first, paged with a cursor (the position of the last seal read) over an index in each service, so
+the last page of 13 million is as quick as the first. It merges the two lists by time and adds them as leaves with the same keys live events
+give them (`record-version:<id>:<n>`, `document-version:<id>:<n>`), so nothing is added twice: not
+when it runs again, nor for seals whose events also arrived. Each run that adds leaves is one trail
+entry (`audit.backfill.completed`, with the counts and the leaf range). It runs **by itself before
+the first anchoring** when the tree is empty and anchoring is on (retried every minute while
+land-records or edrms cannot be reached; anchoring waits for it), and by hand with
+`npm run audit:backfill`, which is safe to repeat (for an installation whose tree already has
+leaves, such as one where the audit service started after other data existed). Seals whose events
+arrive during a backfill are added as they come, so they sit between the backfilled ones: the
+tree's order is then the order in which the audit service learned of each seal, which proofs do not
+depend on.
 
 **Entry** (table `audit.trail_entry`): `seq` (gap-free, 1, 2, 3 …), `eventId` (unique), `type`,
 `source` (service), `time` (the event's, as text exactly as published), `actor` (id, name),

@@ -1,9 +1,10 @@
-import { createEventBus, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEventBus, createRevocationList, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { TrailService } from './trail.service.js';
 import { TreeService } from './tree.service.js';
 import { cardanoFromEnv } from './cardano/adapter.js';
 import { AnchorService, parsePeriod } from './anchor.service.js';
+import { BackfillService, createSealSources } from './backfill.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -61,7 +62,26 @@ if (cardano) {
         repo, tree, cardano, events, logger: app.log,
         config: { periodMs: parsePeriod(process.env.ANCHOR_PERIOD), confirmations: envInt('ANCHOR_CONFIRMATIONS', 10) }
     });
-    anchoring.start();
+    // a new installation (decided once, at start): the seals from before the audit service go into the
+    // tree before the first anchoring (README.md section 1). Retried every minute until it has gone
+    // through both lists completely, also after a partial run; anchoring starts only then.
+    const backfill = new BackfillService({
+        trail: service, tree, logger: app.log,
+        sources: createSealSources({ recordsUrl: env('RECORDS_URL', 'http://localhost:3505'), edrmsUrl: env('EDRMS_URL', 'http://localhost:3502'), serviceToken: createServiceTokenSigner({ secret: env('JWT_SECRET'), service: 'audit' }) })
+    });
+    const startAnchoring = async () => {
+        let empty;
+        try { empty = (await tree.size()) === 0; } catch (err) {
+            app.log.warn({ err: err.message }, 'audit: could not read the tree; anchoring starts in a minute');
+            setTimeout(() => startAnchoring().catch(() => {}), 60_000).unref();
+            return;
+        }
+        if (empty) {
+            await backfill.untilDone({ onRetry: (err) => app.log.warn({ err: err.message }, 'audit: backfill of earlier seals not finished; anchoring waits, trying again in a minute') });
+        }
+        anchoring.start();
+    };
+    startAnchoring().catch(err => app.log.error({ err: err.message }, 'audit: anchoring could not start'));
     cardano.address()
         .then(async (address) => app.log.info({ network: cardano.network, provider: cardano.provider, address, ...(await cardano.balance()) }, 'audit: anchoring wallet'))
         .catch(err => app.log.warn({ err: err.message, code: err.code }, 'audit: the anchoring wallet could not be read yet'));

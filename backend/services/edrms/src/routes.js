@@ -100,6 +100,23 @@ export async function edrmsRoutes(app, { service, contentUrl }) {
         schema: { querystring: { type: 'object', additionalProperties: false, properties: { edrmsNo: { type: 'string' }, instrumentRef: { type: 'string' }, sourceId: { type: 'string' } } } }
     }, async (req) => service.findByReference(req.query));
 
+    // every document version's seal, oldest first, for the audit service's backfill (API-669)
+    app.get('/documents/seals', {
+        onRequest: app.requireService('audit'),
+        schema: { querystring: { type: 'object', additionalProperties: false, properties: { after: { type: 'string', maxLength: 300 }, limit: { type: 'integer', minimum: 1, maximum: 1000, default: 500 } } } }
+    }, async (req) => {
+        // `after`/`next`: an opaque cursor, the position of the last seal read (base64url JSON)
+        let after = null;
+        if (req.query.after) {
+            try { after = JSON.parse(Buffer.from(req.query.after, 'base64url').toString()); } catch { after = null; }
+            const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!after || Number.isNaN(Date.parse(after.at)) || !uuid.test(after.id ?? '') || !Number.isInteger(after.version)) throw new BadRequestError('Not a cursor from this list');
+        }
+        const items = await service.listSeals({ after, limit: req.query.limit });
+        const last = items.at(-1);
+        return { items, next: items.length === req.query.limit ? Buffer.from(JSON.stringify({ at: last.at, id: last.documentId, version: last.version })).toString('base64url') : null };
+    });
+
     app.get('/documents/:id', { onRequest: canRead, schema: idParams() }, async (req) => service.getDocument(req.params.id));
 
     app.get('/documents/:id/versions/:n', { onRequest: canRead, schema: idParams(versionParam) },

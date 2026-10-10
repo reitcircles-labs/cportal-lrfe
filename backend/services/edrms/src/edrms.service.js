@@ -286,6 +286,9 @@ export class EdrmsService {
         return rest;
     }
 
+    /** Every version's seal, oldest first, a page at a time: the audit service's backfill (API-669). */
+    listSeals({ after = null, limit = 500 } = {}) { return this.repo.listSeals({ after, limit }); }
+
     async getDocument(id) {
         const doc = await this.requireDocument(id);
         const versions = await this.repo.listVersions(id);

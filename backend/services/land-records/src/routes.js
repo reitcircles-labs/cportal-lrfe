@@ -1,3 +1,5 @@
+import { BadRequestError } from '@lrfe/common';
+
 const idParams = (extra = {}) => ({
     params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' }, ...extra } }
 });
@@ -137,6 +139,23 @@ export async function recordsRoutes(app, { service }) {
         async (req) => service.rejectFromReview(req.params.id, req.params.n, req.body, req.user.sub));
 
     // ------------------------------------------------ reading
+
+    // every committed version's seal, oldest first, for the audit service's backfill (API-669)
+    app.get('/records/seals', {
+        onRequest: app.requireService('audit'),
+        schema: { querystring: { type: 'object', additionalProperties: false, properties: { after: { type: 'string', maxLength: 300 }, limit: { type: 'integer', minimum: 1, maximum: 1000, default: 500 } } } }
+    }, async (req) => {
+        // `after`/`next`: an opaque cursor, the position of the last seal read (base64url JSON)
+        let after = null;
+        if (req.query.after) {
+            try { after = JSON.parse(Buffer.from(req.query.after, 'base64url').toString()); } catch { after = null; }
+            const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!after || Number.isNaN(Date.parse(after.at)) || !uuid.test(after.id ?? '') || !Number.isInteger(after.version)) throw new BadRequestError('Not a cursor from this list');
+        }
+        const items = await service.listSeals({ after, limit: req.query.limit });
+        const last = items.at(-1);
+        return { items, next: items.length === req.query.limit ? Buffer.from(JSON.stringify({ at: last.at, id: last.recordId, version: last.version })).toString('base64url') : null };
+    });
 
     app.get('/records/:id', { onRequest: canView, schema: idParams() }, async (req) => service.getRecord(req.params.id));
     app.get('/records/:id/suggestions', { onRequest: canView, schema: idParams() }, async (req) => service.suggestions(req.params.id));
