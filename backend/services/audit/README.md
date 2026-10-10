@@ -43,12 +43,13 @@ already exists (from land-records and edrms, with a service token) and adds them
 first, before the first anchoring; the trail records the backfill as one entry with the counts.
 
 **Entry** (table `audit.trail_entry`): `seq` (gap-free, 1, 2, 3 …), `eventId` (unique), `type`,
-`source` (service), `time` (the event's), `actor` (id, name), `subject` (what it is about: a
-document, record, user, process; read from the event's data), the event's `data`, `prevHash`,
-`hash`.
+`source` (service), `time` (the event's, as text exactly as published), `actor` (id, name),
+`subjects` (what it is about, read from the event: `record:<id>`, `document:<id>`, `edrmsNo:<no>`,
+`intake:<id>`, `process:<id>`, `user:<id>`; `src/subjects.js`), the event's `data`, `prevHash`,
+`contentHash`, `hash`, and `recordedAt` (when the audit service wrote it; not hashed).
 
 ```
-contentHash(entry n) = SHA-256( canonicalJson({ seq, eventId, type, source, time, actor, subject, data }) )
+contentHash(entry n) = SHA-256( canonicalJson({ seq, eventId, type, source, time, actor, subjects, data }) )
 hash(entry n)        = SHA-256( prevHash || contentHash )        (both 32 bytes)
 prevHash(entry n)    = hash(entry n-1);  prevHash(entry 1) = 32 zero bytes
 ```
@@ -57,7 +58,22 @@ Splitting the content's hash from the chain lets a proof carry later entries as 
 it never has to include other records' data.
 
 Changing, removing or reordering any entry breaks every hash after it; `GET /audit/trail/verify`
-recomputes the chain. The order is the order the consumer receives events in (JetStream stream
+recomputes the chain and names the first entry that is changed, missing or out of place. Two things
+the chain alone cannot show, and the anchoring (§3) does: removing the *newest* entries, and
+rewriting every entry and hash from some point on. Once a checkpoint covering them is on chain,
+neither goes unnoticed.
+
+**Reading a trail.** `GET /audit/trail?subject=record:<id>` returns the record's own entries plus
+the steps of what it is made of: its documents' capture, extraction and filing in intake, their
+filing and amendments in edrms, and its review processes in bpm. The service follows the links
+between subjects (record → document number → document → intake document, process), but never into
+another record or a user, so a document shared by two records does not bring in the other record's
+steps. `subject=document:<id>` works the same way and shows every record that used the document.
+`subject=user:<id>` returns what the user did, and the events that name them by id (an invitation,
+a version they submitted). Administrators' changes to a user (suspended, roles changed) name the
+user only by name in identity's events today, so they appear under the administrator.
+
+The order is the order the consumer receives events in (JetStream stream
 order), which is the order they were published, not exactly the order of the database commits in
 different services; each entry keeps the event's own `time`.
 

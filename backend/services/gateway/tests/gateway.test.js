@@ -11,7 +11,7 @@ describe('gateway', () => {
         upstream.all('/*', async (req) => ({ path: req.url, auth: req.headers.authorization ?? null, method: req.method, expect: req.headers.expect ?? null }));
         await upstream.listen({ port: 0, host: '127.0.0.1' });
         const url = `http://127.0.0.1:${upstream.server.address().port}`;
-        gateway = await buildApp({ upstreams: { identity: url, edrms: url, bpm: url, intake: url, 'land-records': url }, corsOrigins: ['http://localhost:4200'] });
+        gateway = await buildApp({ upstreams: { identity: url, edrms: url, bpm: url, intake: url, 'land-records': url, audit: url }, corsOrigins: ['http://localhost:4200'] });
         await gateway.ready();
     });
 
@@ -23,6 +23,10 @@ describe('gateway', () => {
     it('proxies /api/auth/* to identity /auth/* with headers intact', async () => {
         const res = await gateway.inject({ method: 'POST', url: '/api/auth/login', headers: { authorization: 'Bearer abc' }, payload: {} });
         expect(res.json()).to.deep.equal({ path: '/auth/login', auth: 'Bearer abc', method: 'POST', expect: null });
+    });
+
+    it('proxies /api/audit/* to audit /audit/*', async () => {
+        expect((await gateway.inject({ url: '/api/audit/trail?subject=record:r1' })).json().path).to.equal('/audit/trail?subject=record:r1');
     });
 
     it('proxies /api/records/* to land-records /records/*', async () => {

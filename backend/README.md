@@ -19,7 +19,8 @@ backend/
     ├── edrms/              :3502  sealed, versioned documents of record (S3 / local / memory storage)
     ├── bpm/                :3503  workflow engine: processes, task inbox, four-eyes approvals
     ├── intake/             :3504  capture, AI extraction (Gemini), field review, filing into edrms
-    └── land-records/       :3505  land records: filed documents per parcel, reviewed versions, seals
+    ├── land-records/       :3505  land records: filed documents per parcel, reviewed versions, seals
+    └── audit/              :3506  tamper-evident trail of every domain event (proofs on Cardano: design)
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 ```
 

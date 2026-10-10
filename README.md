@@ -40,7 +40,7 @@ After pulling changes, run `npm install` again in both folders if `package-lock.
 
 ### Start
 
-Two processes: the backend (five services and the API docs) and the frontend. With tmux:
+Two processes: the backend (six services and the API docs) and the frontend. With tmux:
 
 ```bash
 tmux new -s lr                          # a session named "lr"

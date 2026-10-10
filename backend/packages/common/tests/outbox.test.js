@@ -155,6 +155,29 @@ async function until(check, ms = 8000) {
         expect(got.filter(n => n === 1)).to.have.length(1);
     });
 
+    it('consume(">") gets every durable event of every service, also those published while it was down (API-654)', async () => {
+        const got = [];
+        const audit = bus({ source: 'audit' });
+        audit.consume('>', e => { got.push(e.type); }, { durable: 'test-all' });
+        const edrms = bus({ source: 'edrms', outbox: createMemoryOutbox() });
+        const identity = bus({ source: 'identity', outbox: createMemoryOutbox() });
+        await Promise.all([audit.ready(), edrms.ready(), identity.ready()]);
+        await sleep(300);
+        await edrms.publish('edrms.document.filed', { documentId: 'd1' });
+        await identity.publish('identity.session.revoked', { userId: 'u1' }, { durable: false });
+        expect(await until(() => got.length === 1)).to.equal(true);
+
+        await audit.close();                                // the audit service is down
+        await identity.publish('identity.user.invited', { userId: 'u2' });
+        await identity.flush();
+        const again = bus({ source: 'audit' });
+        again.consume('>', e => { got.push(e.type); }, { durable: 'test-all' });
+        await again.ready();
+        expect(await until(() => got.length === 2), 'missed event delivered').to.equal(true);
+        await sleep(300);
+        expect(got).to.deep.equal(['edrms.document.filed', 'identity.user.invited']);
+    });
+
     it('broadcast-only events reach listeners but are never stored', async () => {
         const identity = bus({ source: 'identity', outbox: createMemoryOutbox() });
         const edrms = bus({ source: 'edrms' });

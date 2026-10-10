@@ -19,7 +19,8 @@ import { currentTransaction } from './db.js';
  * disk) with its id as message id, so a retried publish is not stored twice. It survives a NATS
  * outage and a restart of the service. `consume(type, handler, { durable })` reads the stream with a
  * durable consumer: an event is acknowledged after the handler succeeds and redelivered if it fails
- * or the service was down, so handlers must be idempotent.
+ * or the service was down, so handlers must be idempotent. `consume('>', …)` reads every durable
+ * event (the audit trail, API-654).
  *
  * **Broadcast-only events** (`publish(…, { durable: false })`, e.g. a revoked session) are never
  * stored: they go to `lrfe-live.<type>` (outside the stream) and reach whoever listens at that
@@ -36,6 +37,7 @@ export function createEventBus({
     if (!['log', 'memory', 'nats'].includes(driver)) throw new Error(`Unknown event bus driver "${driver}"`);
     const handlers = new Map();
     const consumers = [];
+    const live = new WeakSet();            // broadcast-only events delivered in this process (memory, log)
 
     function envelope(type, data, actor) {
         return { id: randomUUID(), type, source, time: new Date().toISOString(), actor: actor || { id: null, name: 'System' }, data };
@@ -57,6 +59,7 @@ export function createEventBus({
         outbox,
         async publish(type, data = {}, { actor, durable: keep = true } = {}) {
             const event = envelope(type, data, actor);
+            if (!keep) live.add(event);
             if (driver === 'memory') await deliver(event);
             else if (driver === 'log') {
                 logger.info({ event }, 'event published');
@@ -85,7 +88,11 @@ export function createEventBus({
          * idempotent: an event whose handling fails is delivered again.
          */
         consume(type, handler, { durable: name } = {}) {
-            if (driver !== 'nats') return this.subscribe(type, handler);
+            if (driver !== 'nats') {
+                // '>' is every durable event (the stream's lrfe.>): here every event but broadcast-only ones
+                if (type === '>') return this.subscribe('*', (event) => (live.has(event) ? undefined : handler(event)));
+                return this.subscribe(type, handler);
+            }
             if (!name) throw new Error('consume: a durable consumer name is required');
             const consumer = { type, handler, name };
             consumers.push(consumer);

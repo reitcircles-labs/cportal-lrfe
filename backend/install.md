@@ -14,6 +14,7 @@ nginx and the gateway; testers on a laptop use the SSH tunnel.
 | bpm | 3503 | `bpm` |
 | intake | 3504 | `intake` |
 | land-records | 3505 | `records` |
+| audit | 3506 | `audit` |
 
 Needs: Node ≥ 20 and PostgreSQL 15 on the same machine.
 
@@ -39,6 +40,7 @@ Needs: Node ≥ 20 and PostgreSQL 15 on the same machine.
    CREATE SCHEMA bpm      AUTHORIZATION ladmin;
    CREATE SCHEMA intake   AUTHORIZATION ladmin;
    CREATE SCHEMA records  AUTHORIZATION ladmin;
+   CREATE SCHEMA audit    AUTHORIZATION ladmin;
    ```
 
    For example: `sudo -u postgres psql -d testdb -c "CREATE SCHEMA records AUTHORIZATION ladmin;"`.
@@ -50,11 +52,11 @@ may not create it*.
 ## 2. One `.env` per service
 
 Each service reads the `.env` in its own folder (`services/<name>/.env`), also under `npm run dev`.
-A service without one does not start. Create all six from the template:
+A service without one does not start. Create all seven from the template:
 
 ```bash
 cd backend
-for s in gateway identity edrms bpm intake land-records; do cp -n .env_example services/$s/.env; done
+for s in gateway identity edrms bpm intake land-records audit; do cp -n .env_example services/$s/.env; done
 chmod 600 services/*/.env
 ```
 
@@ -67,12 +69,13 @@ are in `.gitignore` and must never be committed. In each file set:
 | `PORT` | the service's port (table above) | |
 | `JWT_SECRET` | the same new random value in every file (see step 3) | |
 | `DB_CONNECTION_STRING` | `postgres://ladmin:…@localhost:5432/testdb` | All services except the gateway; they share the database, each in its own schema |
-| `<SERVICE>_STORE` | `postgres` | `IDENTITY_STORE`, `EDRMS_STORE`, `BPM_STORE`, `INTAKE_STORE`, `RECORDS_STORE` |
+| `<SERVICE>_STORE` | `postgres` | `IDENTITY_STORE`, `EDRMS_STORE`, `BPM_STORE`, `INTAKE_STORE`, `RECORDS_STORE`, `AUDIT_STORE` |
 | `DB_SYNC` | `true` | Creates the service's tables on start (development and test; real migrations before production) |
 
 Service-specific settings (storage folders, mail, the AI provider, …) are described in the
 template's comments and in each service's README. For land-records, besides the shared ones:
 `RECORDS_COUNTRY_CODE=NA`, `EDRMS_URL=http://localhost:3502`, `BPM_URL=http://localhost:3503`.
+The audit service needs `EVENT_BUS_DRIVER=nats` (it reads every service's events), and the gateway `AUDIT_URL=http://localhost:3506`.
 
 ## 3. The JWT secret: one random value in every service
 
@@ -182,7 +185,7 @@ not do that.
 
 ```bash
 # every service answers
-for p in 3500 3501 3502 3503 3504 3505; do curl -s http://127.0.0.1:$p/health; echo; done
+for p in 3500 3501 3502 3503 3504 3505 3506; do curl -s http://127.0.0.1:$p/health; echo; done
 
 # every service listens on 127.0.0.1 only (no 0.0.0.0 or public address)
 ss -ltn | grep -E ':350[0-5]\b'
@@ -192,7 +195,7 @@ ss -ltn | grep 8200
 
 # PostgreSQL only on localhost, and each schema has its tables
 ss -ltn | grep 5432
-psql "postgres://ladmin:…@localhost:5432/testdb" -c '\dt identity.*' -c '\dt records.*'
+psql "postgres://ladmin:…@localhost:5432/testdb" -c '\dt identity.*' -c '\dt records.*' -c '\dt audit.*'
 ```
 
 Then sign in to the app as the bootstrap administrator.

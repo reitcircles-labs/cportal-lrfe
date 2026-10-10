@@ -55,6 +55,8 @@ tags:
     description: Land records, their versions and seal chain.
   - name: land-records · Documents
     description: Filed EDRMS documents, found for land records.
+  - name: audit · Trail
+    description: The audit trail and its hash chain.
   - name: gateway
     description: The gateway itself.
 paths:
@@ -125,6 +127,126 @@ paths:
       x-access:
         allOf:
           - admin.users
+  /api/audit/trail:
+    get:
+      tags:
+        - audit · Trail
+      summary: Trail entries, oldest first
+      description: >-
+        `{ total, subjects, entries }`. Each entry has `seq`, `eventId`, `type`, `source`, `time`, `actor`, `subjects`, `data`, `prevHash`,
+        `contentHash` and `hash`. `subject` is `record:<id>`, `document:<id>`, `edrmsNo:<number>`, `intake:<id>`, `process:<id>` or
+        `user:<id>`. A land record or document also brings in the steps of what it is made of: its documents' capture, filing and
+        amendments, and its review processes. Other records' steps are left out; `subjects` lists what was included. `type` is an event
+        type, or a prefix ending in a dot (`intake.`). `from` and `to` are dates on the event's time (`to` is exclusive).
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditTrail
+      parameters:
+        - name: subject
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+  /api/audit/trail/verify:
+    get:
+      tags:
+        - audit · Trail
+      summary: Recompute the trail's hash chain
+      description: >-
+        `{ intact: true, entries, head: { seq, hash, time } }`, or `{ intact: false, entries, brokenAt, problem }`, where `problem` is
+        `changed`, `missing`, `out of order` or `does not follow the entry before it`. `entries` is how many entries were checked before the
+        break.
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditTrailVerify
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
   /api/auth/login:
     post:
       tags:

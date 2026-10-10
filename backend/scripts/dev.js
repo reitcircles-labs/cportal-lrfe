@@ -47,12 +47,13 @@ const PROCESSES = {
     bpm: { cwd: join(ROOT, 'services', 'bpm'), args: ['--watch', 'src/index.js'] },
     intake: { cwd: join(ROOT, 'services', 'intake'), args: ['--watch', 'src/index.js'] },
     'land-records': { cwd: join(ROOT, 'services', 'land-records'), args: ['--watch', 'src/index.js'] },
+    audit: { cwd: join(ROOT, 'services', 'audit'), args: ['--watch', 'src/index.js'] },
     gateway: { cwd: join(ROOT, 'services', 'gateway'), args: ['--watch', 'src/index.js'] },
     // reads docs/openapi.yaml on every request: `npm run docs` updates it without a restart
     docs: { cwd: ROOT, args: ['scripts/docs-server.js'], optional: true }
 };
 const SERVICES = Object.keys(PROCESSES);
-const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 34, 90];
+const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 34, 96, 90];
 
 const wanted = process.argv.slice(2);
 const unknown = wanted.filter(s => !SERVICES.includes(s));

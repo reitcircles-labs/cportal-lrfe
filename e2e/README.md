@@ -29,7 +29,7 @@ step-by-step recording of the page, the network and the console:
 `npx playwright show-trace test-results/<test>/trace.zip` (or open it from the report).
 
 **Ports.** The test stack uses 3600 (gateway), 3601–3604 (identity, edrms, bpm, intake), 3605
-(NATS), 3609 (land-records) and 4300 (the web app), so it runs next to `npm run dev` (3500–3505, 4200). If a test port is busy the run
+(NATS), 3609 (land-records), 3610 (audit) and 4300 (the web app), so it runs next to `npm run dev` (3500–3506, 4200). If a test port is busy the run
 stops instead of testing whatever is there. Other ports: `E2E_API_PORT=3700 E2E_WEB_PORT=4400 npm test`.
 
 **Keeping the stack up** between runs (faster while writing tests):
@@ -108,7 +108,7 @@ PostgreSQL. A failed run keeps the HTML report and the screenshots, videos and t
 
 ## What the stack is
 
-`stack/start-backend.mjs` starts the five services with in-memory stores, the AI replaced by its
+`stack/start-backend.mjs` starts the six services with in-memory stores, the AI replaced by its
 canned answer (`EXTRACTION_PROVIDER=mock`), emails written to `.stack/mail/` and the 14 fictitious
 demo users seeded (identity's `DEMO_USERS`), and a NATS server of its own as the event bus between
 the services (`backend/scripts/nats.js`; the first run downloads it into `backend/.tools/`). Each service runs in an empty folder under `.stack/`,
