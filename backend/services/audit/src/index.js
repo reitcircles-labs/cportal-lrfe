@@ -1,6 +1,7 @@
 import { createEventBus, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { TrailService } from './trail.service.js';
+import { TreeService } from './tree.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -31,9 +32,15 @@ const app = await buildApp({
     logger: { level: env('LOG_LEVEL', 'info') }
 });
 
+const tree = new TreeService({ repo, logger: app.log });
+
 await startService(app, { port: envInt('PORT', 3506), checks, onClose: async () => { await events.close(); await sequelize?.close(); } });
 
-// every durable event of every service becomes one trail entry (README.md section 1); acknowledged
-// once written, so an event published while the audit service is down is recorded when it is back.
-// Started once the table exists (the checks above).
-events.consume('>', (event) => service.record(event), { durable: 'audit-trail' });
+// every durable event of every service becomes one trail entry (README.md section 1), and a
+// committed land record version or a filed document version also a leaf of the tree (section 2).
+// Acknowledged once both are written, so an event published while the audit service is down is
+// recorded when it is back; both steps skip what they already have. Started once the tables exist.
+events.consume('>', async (event) => {
+    await service.record(event);
+    await tree.fromEvent(event);
+}, { durable: 'audit-trail' });

@@ -1,7 +1,8 @@
 # audit service (design)
 
 *Design for the audit epic (API-652), written in API-653 (10 October 2026). The service itself is
-built in API-654 to API-661; this document is what they build.*
+built in API-654 to API-661; this document is what they build. The trail (§1) is built in API-654,
+the tree (§2) in API-655.*
 
 Auditors must be able to prove, **without trusting the portal**, that every land record version,
 every filed document version and the audit trail itself are exactly as they were when recorded,
@@ -38,7 +39,7 @@ the range, so it is never written twice), not consumed from the stream; the broa
 name only tells listeners.
 
 **Before deployment.** The consumer starts with events published after it is created. A one-time
-backfill (API-655) reads the seals of every land record version and EDRMS document version that
+backfill (API-657, before the first anchoring) reads the seals of every land record version and EDRMS document version that
 already exists (from land-records and edrms, with a service token) and adds them as leaves, oldest
 first, before the first anchoring; the trail records the backfill as one entry with the counts.
 
@@ -124,10 +125,23 @@ Including `size` in the root fixes how many leaves it covers.
   the hashes that turn them into the peaks of size n. Shows that nothing anchored before was
   changed or dropped.
 
-**Storage** (schema `audit`): every node by position (leaves and inner nodes; about 2 per leaf).
-13 million leaves ≈ 26 million rows of about 70 bytes each in PostgreSQL (position, 32-byte hash,
-row overhead): about 2 GB of table and 0.5 GB of index. A proof is a handful of point lookups;
-nothing is held in memory.
+**Storage** (schema `audit`): `tree_node`, every node by position (leaves and inner nodes; about 2
+per leaf), and `tree_leaf`, one row per leaf with its `key` (`record-version:<id>:<n>`,
+`document-version:<id>:<n>`, `trail-checkpoint:<seq>`), type, item and the event it came from. A key
+is added once, so a redelivered event adds nothing. One writer at a time (an advisory lock); an
+append reads only the current peaks. A proof is a handful of point lookups; nothing is held in memory.
+
+Measured with 1,000,000 leaves (`npm run bench -w @lrfe/audit`, API-655, PostgreSQL 15 on the
+development server, batches of 10,000):
+
+| | PostgreSQL | memory |
+|---|---|---|
+| Build | 128 s (7,800 leaves/s) | 18 s |
+| Inclusion proof, made and checked | 2.7 ms, 19 hashes | 0.13 ms |
+| Consistency proof 333,333 → 1,000,000 | 2.4 ms, 81 hashes | |
+| Storage | 451 MB: `tree_node` 146 MB + 43 MB index, `tree_leaf` 166 MB + 95 MB index (472 bytes per leaf) | 1 GB heap |
+
+For 13 million leaves that is about 6 GB, and a first backfill of that size about half an hour.
 
 ## 3. Anchoring on Cardano
 

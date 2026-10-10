@@ -4,7 +4,21 @@
  */
 export function createMemoryRepo() {
     const entries = [];
+    const leaves = [];                                 // the tree's leaves by index (README.md section 2)
+    const nodes = [];                                  // the tree's nodes by position: Buffers
+    const byKey = new Map();                           // leaf key → leaf
     let queue = Promise.resolve();
+    let treeQueue = Promise.resolve();
+    const tree = {
+        async leafCount() { return leaves.length; },
+        async existingKeys(keys) { return keys.filter(k => byKey.has(k)); },
+        async getNodes(positions) { return new Map(positions.map(p => [p, nodes[p]])); },
+        async leafByKey(key) { const l = byKey.get(key); return l ? { ...l } : null; },
+        async insert(newLeaves, newNodes) {
+            for (const n of newNodes) { if (n.pos !== nodes.length) throw new Error(`tree: node ${n.pos} out of order`); nodes.push(n.hash); }
+            for (const l of newLeaves) { const copy = { ...l }; leaves.push(copy); byKey.set(copy.key, copy); }
+        }
+    };
 
     const copy = (e) => structuredClone(e);
     const matches = (e, { subjects, type, from, to, exceptRecord }) =>
@@ -16,6 +30,7 @@ export function createMemoryRepo() {
 
     return {
         entries,                                       // tests change and remove entries directly
+        leaves, nodes,                                 // tests change them directly
         async sync() {},
 
         /**
@@ -48,6 +63,15 @@ export function createMemoryRepo() {
         /** Entries in order, from seq `after` + 1, at most `limit`. */
         async page(after, limit) {
             return entries.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq).slice(0, limit).map(copy);
+        },
+
+        /** The tree, read without the lock (positions never change once written). */
+        tree,
+        /** `fn(tree)` with the tree to itself: one writer at a time. */
+        withTreeLock(fn) {
+            const run = treeQueue.then(() => fn(tree));
+            treeQueue = run.catch(() => {});
+            return run;
         }
     };
 }
