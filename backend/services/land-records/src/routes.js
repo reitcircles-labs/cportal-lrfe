@@ -1,4 +1,4 @@
-import { BadRequestError } from '@lrfe/common';
+import { BadRequestError, ForbiddenError, UnauthorizedError, describeGuard } from '@lrfe/common';
 
 const idParams = (extra = {}) => ({
     params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' }, ...extra } }
@@ -10,6 +10,16 @@ const actorOf = (req) => ({ id: req.user.sub, name: req.user.name });
 
 export async function recordsRoutes(app, { service }) {
     const canView = app.requirePerm('record.view');
+    // the seal check: users who may view records, and the audit service verifying a proof (API-658)
+    async function canVerify(req, reply) {
+        try { await req.jwtVerify(); } catch { throw new UnauthorizedError('Invalid or expired token'); }
+        if (req.user.typ === 'service') {
+            if (req.user.sub !== 'audit') throw new ForbiddenError('Not permitted', { service: req.user.sub });
+            return;
+        }
+        return canView(req, reply);
+    }
+    describeGuard(canVerify, { kind: 'user-or-service', allOf: ['record.view'], services: ['audit'] });
 
     app.get('/records/catalogue', { onRequest: app.authenticate }, async () => service.catalogue());
 
@@ -161,5 +171,5 @@ export async function recordsRoutes(app, { service }) {
     app.get('/records/:id/suggestions', { onRequest: canView, schema: idParams() }, async (req) => service.suggestions(req.params.id));
     app.get('/records/:id/versions', { onRequest: canView, schema: idParams() }, async (req) => service.listVersions(req.params.id));
     app.get('/records/:id/versions/:n', { onRequest: canView, schema: idParams(versionParam) }, async (req) => service.getVersion(req.params.id, req.params.n));
-    app.get('/records/:id/verify', { onRequest: canView, schema: idParams() }, async (req) => service.verify(req.params.id));
+    app.get('/records/:id/verify', { onRequest: canVerify, schema: idParams() }, async (req) => service.verify(req.params.id));
 }

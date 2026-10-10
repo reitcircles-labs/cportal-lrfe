@@ -32,11 +32,12 @@ export function searchTextOf(record, ...datas) {
  * a linked document, and the history (API-648).
  */
 export class RecordsService {
-    constructor({ repo, events, edrms = null, bpm = null, clock = () => new Date(), config = {} }) {
+    constructor({ repo, events, edrms = null, bpm = null, anchoring = null, clock = () => new Date(), config = {} }) {
         this.repo = repo;
         this.events = events;
         this.edrms = edrms;
         this.bpm = bpm;
+        this.anchoring = anchoring;      // the audit service: is a version anchored on chain yet (API-658)
         this.clock = clock;
         this.config = { country: 'NA', ...config };
     }
@@ -510,18 +511,22 @@ export class RecordsService {
 
     /**
      * Every committed version, newest first: who submitted and approved it, when, what it changed
-     * against the version before, and whether its seal and chain verify.
+     * against the version before, whether its seal and chain verify, and its anchoring status
+     * (`waiting` for the next anchoring, `anchored`, `confirmed`; null when the audit service cannot say).
      */
     async history(recordId) {
         const record = await this.requireRecord(recordId);
         const committed = (await this.repo.listVersions(recordId)).filter(v => ['committed', 'superseded'].includes(v.state));
         const seals = verifyChain(record, committed);
+        const key = (v) => `record-version:${recordId}:${v.versionNumber}`;
+        const anchoring = this.anchoring ? await this.anchoring.statusOf(committed.map(key)) : {};
         const versions = committed.map((v, i) => ({
             versionNumber: v.versionNumber, state: v.state, current: v.versionNumber === record.currentVersion,
             submittedAt: v.submittedAt ?? null, submittedById: v.submittedById ?? null, submittedByName: v.submittedByName ?? null,
             approvedById: v.approvedById ?? null, approvedByName: v.approvedByName ?? null, committedAt: v.committedAt, reviewComment: v.reviewComment ?? null,
             seal: v.seal, previousSeal: v.previousSeal ?? null, intact: seals[i].intact, linked: seals[i].linked,
-            diff: diffVersions(i ? committed[i - 1].data : null, v.data)
+            diff: diffVersions(i ? committed[i - 1].data : null, v.data),
+            anchoring: anchoring[key(v)] ?? null
         }));
         return { recordId, recordNo: record.recordNo, label: record.label, intact: seals.every(x => x.intact && x.linked), flags: record.flags || [], versions: versions.reverse() };
     }

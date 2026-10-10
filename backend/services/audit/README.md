@@ -331,30 +331,116 @@ No higher-level framework: both drivers need only the four operations above.
 
 ## 4. Proofs and verification
 
-**A proof** (JSON, `GET /audit/proofs/{kind}/{id}`) for a land record version, a document version or
-a trail entry:
+API-658. `src/proof.service.js`, the routes in `src/routes.js`, the offline verifier in
+`verifier/lrfe-verify.mjs`.
+
+**A proof** (`GET /audit/proofs/{kind}/{id}`, `audit.view`) shows that an item is a leaf of the tree
+whose root went on Cardano in one transaction. `kind` is `record-version` or `document-version` (`id`
+the land record or document id, `?version=` the version) or `trail-entry` (`id` its `seq`):
 
 ```json
-{ "item": { "kind": "record-version", "recordNo": "LR-NA-2026-000001", "version": 2, "seal": "…" },
-  "leaf": { "type": 1, "position": 41237, "hash": "…" },
+{ "format": "lrfe-audit-proof/1",
+  "status": "confirmed",
+  "item": { "kind": "record-version", "recordId": "…", "version": 2, "seal": "…" },
+  "leaf": { "key": "record-version:…:2", "type": 1, "item": "…", "index": 41237, "hash": "…" },
   "tree": { "size": 41300, "path": ["…"], "peaks": ["…"], "root": "…" },
-  "anchor": { "network": "preview", "label": 8890, "tx": "…", "block": 1234567, "blockIs": "included | firstSeen", "confirmations": 42, "status": "confirmed" } }
+  "anchor": { "network": "preview", "label": 8890, "batch": 812, "tx": "…", "root": "…", "size": 41300,
+              "address": "addr_test1…", "block": 4744555, "blockIs": "included", "confirmations": 42,
+              "status": "confirmed", "confirmedAt": "…" } }
 ```
 
-A trail entry's proof adds the chain from it to the next checkpoint: the entry itself, and for each
-later entry up to the checkpoint only its `contentHash` (§1), so the checker can recompute the
-chain to the checkpoint leaf without seeing other records' data. "The entry itself" includes its
-`prevHash`, which starts the recomputation.
+- **Which anchoring.** The first one sent (submitted, on chain or confirmed; never a given-up one)
+  whose tree covers the leaf (`size > index`), and the path is taken in the tree of that size, so the
+  root in the proof is the root in that transaction. Later anchorings contain it too (consistency, §2);
+  the first is the one that proves the item existed from then on.
+- **`status`**: `waiting` while no anchoring covers the item (the proof is then against the tree as it
+  is now, `anchor` is null, and it cannot be checked on chain yet), `anchored` while its anchoring is
+  on its way (`anchor.status` `submitted` or `onChain`), `confirmed` once it is `ANCHOR_CONFIRMATIONS`
+  deep.
+- **`address`**: the anchoring wallet, which pays for every anchoring. Anyone can write a root into
+  a transaction; only the portal can spend from its wallet, so the verifier checks the transaction was
+  paid from it. The installation publishes the address (it is in the log at start, `audit: anchoring
+  wallet`); a checker compares it, or pins it with `--address`.
+- **`block` and `blockIs`.** With Blockfrost the block that holds the transaction (`included`); with
+  the own node the height at which the job first saw it on chain (`firstSeen`: Ogmios does not say
+  which block holds a transaction). `confirmations` is counted when the proof is made, from the chain's
+  current height; left out (null) when the chain cannot be reached then.
+- **A trail entry** is covered by the first trail checkpoint at or after it that went on chain (the
+  anchoring's `checkpointSeq`). The proof adds `trail: { entry, later, checkpoint }`: the entry with all
+  its hashed fields, `prevHash`, `contentHash` and `hash`; for each later entry up to the checkpoint
+  only its `contentHash` (§1), so no other record's data is in the proof; and the checkpoint
+  `{ seq, hash }`, which is the leaf's item. The checker recomputes the entry's hashes from its content,
+  then `hash = SHA-256(prevHash || contentHash)` entry by entry up to the checkpoint. An entry recorded
+  after the last anchored checkpoint is `waiting`, with no leaf or tree, until the next anchoring.
 
-**Verify** (`POST /audit/verify`): recompute the item's seal from the current data (land-records,
-edrms), check the leaf, the path to the root, and that the root is in that transaction's metadata.
+**Verify** (`POST /audit/verify { kind, id, version }`, `audit.view`) makes the proof and checks it
+now, three checks, each with `ok` and, when it fails, a `problem`:
 
-**The offline verifier** (`npx @lrfe/verify proof.json`, or one standalone file): checks a proof
-without the portal, reading the transaction's metadata from any public source (Blockfrost, Koios'
-free API, or an explorer). An evidence pack (§6) contains everything it needs.
+1. **`item`**: the seal recomputed from the current data by the service that owns it, which must be
+   intact and equal to the seal in the tree. Land records: `GET /records/:id/verify` (the version's
+   seal from its data and the seal chain). Documents: `GET /documents/:id/versions/:n/verify` (edrms
+   reads the stored file again, hashes it and recomputes the seal from it and the metadata). Both
+   routes accept the audit service's service token. A trail entry: its hashes recomputed from the
+   stored entry, then the chain to the checkpoint.
+2. **`path`**: the leaf hash recomputed from the type and item, and the path from it to the root.
+3. **`chain`**: the root and size in the transaction's metadata (label 8890). With Blockfrost they
+   are read from the chain (`source: "blockfrost"`): the transaction must be there and carry this
+   root. The own node keeps no index of past transactions (§3), so with Ogmios the check is made on
+   the signed transaction as it was sent and stored in `audit.anchor` (`source: "stored"`): its id is
+   the hash of its body, the body holds the hash of its metadata, so that transaction id can only
+   carry that root, and its signature must verify with the anchoring wallet's key (so a row rewritten
+   in the database would need the key in OpenBao); that it is on chain is the anchoring job's record
+   of it. The offline verifier
+   checks the chain itself on a public source.
 
-Until its batch is anchored, an item's proof status is *waiting for the next anchoring*; the land
-record's History tab and the Audit screen show it.
+`valid` is true only when all three hold; an item that is still `waiting` is never valid. When the
+owning service or the chain cannot be reached, that check's `ok` is null and `valid` false, and its
+`problem` says why; verify is a check, not a cached result.
+
+**The offline verifier** (`verifier/lrfe-verify.mjs`) checks a proof file with no access to the
+portal: one file, Node 18 or later, nothing to install. It recomputes the leaf (for a trail entry,
+the entry's hashes and the chain to the checkpoint), the path to the root, and reads the
+transaction from a public source:
+
+```bash
+node lrfe-verify.mjs proof.json --address addr_test1…  # Koios: the public Cardano API, no key
+node lrfe-verify.mjs proof.json --source blockfrost   # Blockfrost: key in BLOCKFROST_PROJECT_ID or --key-file
+node lrfe-verify.mjs proof.json --json                # the result as JSON
+npm run verify -w @lrfe/audit -- proof.json           # the same, from backend/
+```
+
+Last, it checks the transaction was **paid by the anchoring wallet** named in the proof (Koios
+`tx_info` inputs, Blockfrost `/txs/{tx}/utxos`): without it, anyone could put a made-up tree's root
+on chain from their own wallet. `--address <the installation's published address>` also requires
+the proof's wallet to be that one; without it the verifier prints the wallet to compare. Always pass
+it: a proof that names someone else's wallet is otherwise only caught by that comparison. The proof
+names the wallet as it is now; if the `audit-anchor` key were ever replaced, proofs of earlier
+anchorings would name the new wallet (the address would then have to be kept per anchoring).
+
+It prints each check and VALID or NOT VALID; exit code 0 valid, 1 not valid, 2 could not be checked
+(no proof file, the source unreachable). It also accepts the answer of `POST /audit/verify`, which
+holds the proof. For a land record or document version it takes the seal, and the record or document
+id and version it belongs to, from the proof and says so: recomputing the seal needs the version's
+data, which the evidence pack (§6) adds. For a trail entry everything is recomputed, and the chain
+must be exactly as long as from the entry to the checkpoint.
+
+**The anchoring status next to each version.** land-records' History (`GET /records/:id/history`)
+and edrms' documents (`GET /documents/:id`, for users) show each version's status: `waiting` for the
+next anchoring, `anchored`, `confirmed` (with the batch and the transaction). They ask the audit
+service (`POST /audit/anchoring { keys }`, for their service tokens only) with a 2-second limit; when
+it is down or not installed the status is null and nothing else is held up (`AUDIT_URL` in their
+settings). The land record's History tab and the document's version history show it as a tag.
+
+**Tested** (`tests/proof.test.js`): valid proofs of a land record version, a document version and a
+trail entry from the register of Erf 1873 committed through the review; a changed version, document
+or trail entry, a wrong path, another tree's root, a transaction that is not on chain and a root put
+on chain from another wallet all fail, in the service and in the offline verifier; the own-node check
+on the stored transaction (a transaction signed by another key fails); the statuses from `waiting` to
+`confirmed`; a prepared or refused anchoring is never used, its replacement is; the verifier's tree
+arithmetic against the service's for every leaf of trees up to 70 leaves. Checked by hand for
+API-658 (results in Jira): on PostgreSQL the proofs equal the memory store's, through a refused
+anchoring and its replacement; on preview the offline verifier confirmed real proofs through Koios
+and Blockfrost.
 
 ## 5. Sign-off and findings
 
@@ -390,8 +476,9 @@ the chain showing it.
 |---|---|---|
 | `GET /audit/trail?subject=&type=&from=&to=` | `audit.view` | trail entries |
 | `GET /audit/trail/verify` | `audit.view` | recompute the trail's chain |
-| `GET /audit/proofs/{kind}/{id}` | `audit.view` | the proof of an item |
+| `GET /audit/proofs/{kind}/{id}?version=` | `audit.view` | the proof of an item |
 | `POST /audit/verify` | `audit.view` | verify an item against the chain |
+| `POST /audit/anchoring` | land-records, edrms (service) | the anchoring status of versions |
 | `GET /audit/anchors` | `audit.view` | anchorings, their transactions and status |
 | `POST /audit/signoffs` · `POST /audit/findings` · `…/findings/{id}/close` | `audit.signoff` | sign off, raise or close a finding |
 | `GET /audit/records/{id}/evidence` | `audit.export` | evidence pack |

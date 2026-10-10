@@ -201,11 +201,11 @@ content hash plus the fields and record metadata that version asserts. Correctio
 | `POST /api/documents` (multipart: `meta` JSON **first**, then `file`) | intake service token | file a reviewed document → `EDR-NA-<year>-<nnnnnn>`, v1.0. Idempotent on `meta.sourceId` (201 new / 200 existing) |
 | `GET /api/documents?q=&docType=&batchId=&field.<key>=<value>&limit=&offset=` | read* | list/filter, e.g. `field.property=Erf 1873, Klein Windhoek` |
 | `GET /api/documents/lookup?edrmsNo=` / `instrumentRef=` / `sourceId=` | read* | find one document |
-| `GET /api/documents/:id` | read* | document, current fields and version history |
+| `GET /api/documents/:id` | read* | document, current fields and version history (for a user, each version's anchoring status from the audit service) |
 | `GET /api/documents/:id/versions/:n` | read* | one version's fields, metadata, hash, seal |
 | `GET /api/documents/:id/content?version=` | read* | short-lived viewer URL (S3 presigned, or a signed `/api/document-content/...` link) |
 | `POST /api/documents/:id/amendments` | **bpm service only** | apply an approved change `{reason, expectedVersion, changes: [{k, v}], recordMetadata?, actor, approvedBy}`; users request changes through bpm (below) |
-| `GET /api/documents/:id/versions/:n/verify` | `audit.view` | re-hash stored content and recompute the seal: `{intact, contentIntact, sealIntact}` |
+| `GET /api/documents/:id/versions/:n/verify` | `audit.view` (or the audit service) | re-hash stored content and recompute the seal: `{intact, contentIntact, sealIntact}` |
 | `GET /api/document-catalogue` | signed in | document types and the ISO 23081 record-metadata fields |
 
 \* read = a user with any of `capture.view`, `verify.view`, `record.view`, `audit.view`, or the

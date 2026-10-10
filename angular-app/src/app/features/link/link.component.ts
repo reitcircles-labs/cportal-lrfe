@@ -9,6 +9,7 @@ import { RbacService, fmtTime } from '../../state/rbac.service';
 import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
 import { RecordDiffComponent } from '../../shared/record-diff.component';
+import { anchoringLabel, anchoringTag, anchoringTitle } from '../../shared/anchoring';
 
 type Tab = 'documents' | 'chain' | 'details' | 'history' | 'comments';
 type SFilter = 'all' | 'draft' | 'in_review' | 'committed' | 'needs_review';
@@ -274,7 +275,8 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                         </div>
                         <div class="small muted">Committed {{ fmt(v.committedAt) }} · submitted by {{ v.submittedByName || '—' }} · approved by {{ v.approvedByName || '—' }}</div>
                         @if (v.reviewComment) { <div class="small">Reviewer: {{ v.reviewComment }}</div> }
-                        <div class="small mono muted">seal {{ v.seal.slice(0, 16) }}…</div>
+                        <div class="row small" style="gap:8px;align-items:center"><span class="mono muted">seal {{ v.seal.slice(0, 16) }}…</span>
+                          @if (v.anchoring; as a) { <span [class]="anchoringTag(a)" [title]="anchoringTitle(a)">{{ anchoringLabel(a) }}</span> }</div>
                         <app-record-diff [diff]="v.diff" />
                       </div>
                     } @empty { <div class="small muted" style="text-align:center;padding:12px">{{ history() ? 'No committed version yet.' : historyFailed() ? 'The history could not be loaded.' : 'Loading…' }}</div> }
@@ -546,6 +548,9 @@ export class LinkComponent {
   readonly units = [{ id: 'm2', label: 'm²' }, { id: 'ha', label: 'ha' }];
   readonly encumbranceTypes = [{ id: 'bond', label: 'Bond' }, { id: 'servitude', label: 'Servitude' }, { id: 'other', label: 'Other' }];
   fmt = fmtTime;
+  anchoringLabel = anchoringLabel;
+  anchoringTag = anchoringTag;
+  anchoringTitle = anchoringTitle;
 
   constructor() {
     this.route.queryParamMap.subscribe(p => { const r = p.get('record'); if (r && r !== this.selId()) this.select(r); });

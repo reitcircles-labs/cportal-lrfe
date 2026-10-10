@@ -1,4 +1,4 @@
-import { createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createAnchoringClient, createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { EdrmsService } from './edrms.service.js';
 import { createMemoryRepo } from './repo/memory.js';
@@ -34,6 +34,8 @@ const service = new EdrmsService({
     repo,
     store,
     events,
+    // each version's anchoring status, from the audit service (API-658; best effort)
+    anchoring: createAnchoringClient({ baseUrl: env('AUDIT_URL', 'http://localhost:3506'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'edrms' }) }),
     config: {
         country: env('EDRMS_COUNTRY_CODE', 'NA'),
         registry: env('EDRMS_REGISTRY_CODE', 'WDH'),

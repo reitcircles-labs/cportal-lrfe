@@ -117,7 +117,7 @@ export async function edrmsRoutes(app, { service, contentUrl }) {
         return { items, next: items.length === req.query.limit ? Buffer.from(JSON.stringify({ at: last.at, id: last.documentId, version: last.version })).toString('base64url') : null };
     });
 
-    app.get('/documents/:id', { onRequest: canRead, schema: idParams() }, async (req) => service.getDocument(req.params.id));
+    app.get('/documents/:id', { onRequest: canRead, schema: idParams() }, async (req) => service.getDocument(req.params.id, { withAnchoring: req.user.typ !== 'service' }));
 
     app.get('/documents/:id/versions/:n', { onRequest: canRead, schema: idParams(versionParam) },
         async (req) => service.publicVersion(await service.getVersion(req.params.id, req.params.n)));
@@ -152,7 +152,18 @@ export async function edrmsRoutes(app, { service, contentUrl }) {
         return reply.send(content.stream);
     });
 
-    app.get('/documents/:id/versions/:n/verify', { onRequest: app.requirePerm('audit.view'), schema: idParams(versionParam) },
+    // the integrity check: auditors, and the audit service verifying a proof (API-658)
+    async function canVerify(req, reply) {
+        try { await req.jwtVerify(); } catch { throw new UnauthorizedError('Invalid or expired token'); }
+        if (req.user.typ === 'service') {
+            if (req.user.sub !== 'audit') throw new ForbiddenError('Not permitted', { service: req.user.sub });
+            return;
+        }
+        return app.requirePerm('audit.view')(req, reply);
+    }
+    describeGuard(canVerify, { kind: 'user-or-service', allOf: ['audit.view'], services: ['audit'] });
+
+    app.get('/documents/:id/versions/:n/verify', { onRequest: canVerify, schema: idParams(versionParam) },
         async (req) => service.verifyVersion(req.params.id, req.params.n));
 
     // ------------------------------------------------------------------ amendments

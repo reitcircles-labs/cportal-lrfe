@@ -8,12 +8,14 @@ import { ConfirmService } from '../../state/confirm.service';
 import { TasksService } from '../../state/tasks.service';
 import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
+import { Anchoring, anchoringLabel, anchoringTag, anchoringTitle } from '../../shared/anchoring';
 
 interface DocRow { id: string; edrmsNo: string; docType: string; title: string; instrumentRef: string | null; batchId: string | null; currentVersion: number; filedAt: string; props: Record<string, string>; }
 interface Field { k: string; label: string; v: string; c?: number; edited?: boolean; }
 interface Version {
   versionNumber: number; label: string; kind: 'filed' | 'amendment'; reason: string | null; changes: { k: string; from: string; to: string }[];
   sha256: string; seal: string; size: number; mimeType: string; createdAt: string; createdByName: string | null; approvedByName: string | null;
+  anchoring?: Anchoring | null;
 }
 interface DocDetail extends DocRow { registry: string; pages: number; fields: Field[]; recordMetadata: Record<string, any>; filedByName: string | null; versions: Version[]; }
 interface OpenChange { id: string; status: 'active' | 'error'; startedById: string; startedByName: string; startedAt: string; errorMessage: string | null; }
@@ -104,6 +106,7 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
                       @if (v.reason) { <div class="small muted">“{{ v.reason }}”</div> }
                       @for (c of v.changes; track c.k) { <div class="small"><span class="muted">{{ c.k }}:</span> <span class="strike">{{ c.from }}</span> → <b>{{ c.to }}</b></div> }
                       <div class="small mono muted" [title]="'content SHA-256 ' + v.sha256 + ' · seal ' + v.seal">sha256 {{ v.sha256.slice(0, 12) }}… · seal {{ v.seal.slice(0, 12) }}…</div>
+                      @if (v.anchoring; as a) { <div><span [class]="anchoringTag(a)" [title]="anchoringTitle(a)">{{ anchoringLabel(a) }}</span></div> }
                     </div>
                   }
                 </div>
@@ -197,6 +200,9 @@ export class DocumentsComponent {
   private searchTimer: any;
 
   fmt = fmtTime;
+  anchoringLabel = anchoringLabel;
+  anchoringTag = anchoringTag;
+  anchoringTitle = anchoringTitle;
   versionsDesc = computed(() => [...(this.sel()?.versions || [])].reverse());
   recordMeta = computed(() => {
     const m = this.sel()?.recordMetadata || {};

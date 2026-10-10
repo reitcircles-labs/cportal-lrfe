@@ -14,6 +14,7 @@ import { createTransitSigner } from './signer.js';
  *   submit(cbor)                     send it; sending the same transaction again is harmless
  *   anchor({ root, size, batch, prev })  both: { txHash, fee, bytes, metadata, submittedAt }
  *   status(txHash)                   { onChain, blockHeight, tipHeight, tipSlot, depth }
+ *   tipHeight()                      the chain's block height
  *   lookup(txHash)                   the anchoring metadata on chain (Blockfrost), or undefined (Ogmios)
  *
  * A failure is a CardanoError; `retryable` says whether trying again later can help (an outage, a
@@ -67,6 +68,8 @@ export function createCardanoAdapter({ driver, signer, network = 'preview', minB
             const [out, tipHeight, tipSlot] = await Promise.all([driver.output(txHash, 0), driver.tipHeight(), driver.tipSlot()]);
             return { ...out, tipHeight, tipSlot, depth: out.blockHeight ? tipHeight - out.blockHeight + 1 : null };
         },
+
+        async tipHeight() { return driver.tipHeight(); },
 
         async lookup(txHash) {
             if (!driver.metadata) return undefined;

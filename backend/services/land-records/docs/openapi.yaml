@@ -626,8 +626,9 @@ paths:
         - Records
       summary: "History: every committed version"
       description: >-
-        `{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, and `diff`
-        against the version before.
+        `{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff`
+        against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next
+        anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.
 
 
         **Access:** Signed-in user with permission `record.view`.
@@ -1409,10 +1410,10 @@ paths:
       summary: Recompute the seal chain of the committed versions
       description: >-
         `{ intact, versions: [{ versionNumber, seal, intact, linked }] }`. `intact`: the seal matches the version; `linked`: it includes the
-        previous version's seal.
+        previous version's seal. Also for the audit service, which checks a proof against it.
 
 
-        **Access:** Signed-in user with permission `record.view`.
+        **Access:** Signed-in user with permission `record.view`, or a service token from `audit`.
       operationId: getRecordsIdVerify
       parameters:
         - name: id
@@ -1453,9 +1454,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
       x-gateway-path: /api/records/{id}/verify
 components:
   securitySchemes:

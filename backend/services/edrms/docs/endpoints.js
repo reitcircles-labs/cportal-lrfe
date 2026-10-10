@@ -28,7 +28,7 @@ export default {
             tag: 'Documents', summary: 'Every document version\'s seal, oldest first (audit service only)',
             description: '`{ items: [{ documentId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. For the audit service\'s one-time backfill of its tree (API-669).'
         },
-        'GET /documents/{id}': { tag: 'Documents', summary: 'One document with its fields, record metadata and version history' },
+        'GET /documents/{id}': { tag: 'Documents', summary: 'One document with its fields, record metadata and version history', description: 'For a user, each version also has `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next anchoring), `anchored` or `confirmed`, or null when the audit service cannot say. Services reading the document do not get it.' },
         'GET /documents/{id}/versions/{n}': { tag: 'Documents', summary: 'One version of a document' },
         'GET /documents/{id}/content': {
             tag: 'Documents', summary: 'Short-lived link to the file',

@@ -2,6 +2,8 @@
  * In-memory audit repository: tests and `AUDIT_STORE=memory` (lost on restart). Same interface as
  * ./sequelize.js.
  */
+const SENT = ['submitted', 'onChain', 'confirmed'];
+
 export function createMemoryRepo() {
     const entries = [];
     const leaves = [];                                 // the tree's leaves by index (README.md section 2)
@@ -71,6 +73,10 @@ export function createMemoryRepo() {
         /** The last trail entry, or null. */
         async head() { return entries.length ? copy(entries.at(-1)) : null; },
 
+        async entryBySeq(seq) { const e = entries.find(x => x.seq === seq); return e ? copy(e) : null; },
+        /** The contentHash of each entry with from ≤ seq ≤ to, in order (a trail entry's proof, API-658). */
+        async contentHashes(from, to) { return entries.filter(e => e.seq >= from && e.seq <= to).sort((a, b) => a.seq - b.seq).map(e => ({ seq: e.seq, contentHash: e.contentHash })); },
+
         // ------------------------------------------------ anchorings (README.md section 3)
         async lastAnchor() { return anchors.length ? { ...anchors.at(-1) } : null; },
         async lastAnchorWhere(statuses) { const a = [...anchors].reverse().find(x => statuses.includes(x.status)); return a ? { ...a } : null; },
@@ -81,6 +87,15 @@ export function createMemoryRepo() {
         async anchorsSpending(txHash, index) { return anchors.filter(a => a.inputTxHash === txHash && a.inputIndex === index && a.status === 'failed').map(a => ({ ...a })); },
         /** The first confirmed anchoring that covers leaf `index`. */
         async anchorCovering(index) { const a = anchors.find(x => x.status === 'confirmed' && x.size > index); return a ? { ...a } : null; },
+        async anchorByBatch(batch) { const a = anchors.find(x => x.batch === batch); return a ? { ...a } : null; },
+        /** The first anchoring sent (submitted, on chain or confirmed) whose root covers leaf `index` (API-658). */
+        async anchorForLeaf(index) { const a = anchors.find(x => SENT.includes(x.status) && x.size > index); return a ? { ...a } : null; },
+        /** The first anchoring sent whose trail checkpoint is at or after entry `seq` (API-658). */
+        async anchorForEntry(seq) {
+            const a = anchors.filter(x => SENT.includes(x.status) && x.checkpointSeq !== null && x.checkpointSeq !== undefined && x.checkpointSeq >= seq)
+                .sort((x, y) => x.checkpointSeq - y.checkpointSeq || x.batch - y.batch)[0];
+            return a ? { ...a } : null;
+        },
         /** Take or renew the job for `ms`; false while another holder has it. */
         async claimLease(name, holder, ms, now = new Date()) {
             const l = leases.get(name);

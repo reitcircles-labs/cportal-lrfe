@@ -8,6 +8,7 @@ const plain = (row) => (row ? { ...row.get({ plain: true }), seq: Number(row.seq
 const TRAIL_LOCK = 6540001;
 const TREE_LOCK = 6550001;
 const CHUNK = 5000;
+const SENT = ['submitted', 'onChain', 'confirmed'];
 const leafOf = (row) => (row ? { ...row.get({ plain: true }), leafIndex: Number(row.leafIndex) } : null);
 
 /** Postgres audit repository. Same interface as ./memory.js. */
@@ -102,6 +103,11 @@ export function createSequelizeRepo(sequelize) {
         },
 
         async head() { return plain(await TrailEntry.findOne({ order: [['seq', 'DESC']] })); },
+        async entryBySeq(seq) { return plain(await TrailEntry.findOne({ where: { seq } })); },
+        async contentHashes(from, to) {
+            return (await TrailEntry.findAll({ where: { seq: { [Op.between]: [from, to] } }, attributes: ['seq', 'contentHash'], order: [['seq', 'ASC']], raw: true }))
+                .map(r => ({ seq: Number(r.seq), contentHash: r.contentHash }));
+        },
 
         async lastAnchor() { return anchorOf(await Anchor.findOne({ order: [['batch', 'DESC']] })); },
         async lastAnchorWhere(statuses) { return anchorOf(await Anchor.findOne({ where: { status: statuses }, order: [['batch', 'DESC']] })); },
@@ -111,6 +117,9 @@ export function createSequelizeRepo(sequelize) {
         /** Given-up anchorings that spent this wallet output, oldest first. */
         async anchorsSpending(txHash, index) { return (await Anchor.findAll({ where: { inputTxHash: txHash, inputIndex: index, status: 'failed' }, order: [['batch', 'ASC']] })).map(anchorOf); },
         async anchorCovering(index) { return anchorOf(await Anchor.findOne({ where: { status: 'confirmed', size: { [Op.gt]: index } }, order: [['batch', 'ASC']] })); },
+        async anchorByBatch(batch) { return anchorOf(await Anchor.findOne({ where: { batch } })); },
+        async anchorForLeaf(index) { return anchorOf(await Anchor.findOne({ where: { status: SENT, size: { [Op.gt]: index } }, order: [['batch', 'ASC']] })); },
+        async anchorForEntry(seq) { return anchorOf(await Anchor.findOne({ where: { status: SENT, checkpointSeq: { [Op.gte]: seq } }, order: [['checkpointSeq', 'ASC'], ['batch', 'ASC']] })); },
         async claimLease(name, holder, ms) {
             // insert, or take over an expired lease, or renew our own: one statement, so two instances
             // cannot both win; on the database's clock, so the instances' clocks do not matter

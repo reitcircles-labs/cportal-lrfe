@@ -11,7 +11,8 @@
     "test": "mocha 'tests/**/*.test.js' --timeout 20000",
     "bench": "node bench/tree-1m.js",
     "anchor:test": "node scripts/anchor-test.js",
-    "backfill": "node scripts/backfill.js"
+    "backfill": "node scripts/backfill.js",
+    "verify": "node verifier/lrfe-verify.mjs"
   },
   "dependencies": {
     "@emurgo/cardano-serialization-lib-nodejs": "^17.0.0",

@@ -62,10 +62,11 @@ const propsOf = (fields) => Object.fromEntries(fields.map(f => [f.k, f.v]));
  * sealed; a correction is an amendment — a new major version with a reason.
  */
 export class EdrmsService {
-    constructor({ repo, store, events, clock = () => new Date(), config = {} }) {
+    constructor({ repo, store, events, anchoring = null, clock = () => new Date(), config = {} }) {
         this.repo = repo;
         this.store = store;
         this.events = events;
+        this.anchoring = anchoring;      // the audit service: is a version anchored on chain yet (API-658)
         this.clock = clock;
         this.config = {
             country: 'NA',
@@ -289,16 +290,24 @@ export class EdrmsService {
     /** Every version's seal, oldest first, a page at a time: the audit service's backfill (API-669). */
     listSeals({ after = null, limit = 500 } = {}) { return this.repo.listSeals({ after, limit }); }
 
-    async getDocument(id) {
+    /**
+     * A document with its versions. `withAnchoring`: also each version's anchoring status (`waiting`
+     * for the next anchoring, `anchored`, `confirmed`; null when the audit service cannot say), for
+     * people looking at it; services reading documents skip that call.
+     */
+    async getDocument(id, { withAnchoring = false } = {}) {
         const doc = await this.requireDocument(id);
         const versions = await this.repo.listVersions(id);
+        const key = (v) => `document-version:${id}:${v.versionNumber}`;
+        const anchoring = withAnchoring && this.anchoring ? await this.anchoring.statusOf(versions.map(key)) : null;
         return {
             ...doc,
             versions: versions.map(v => ({
                 versionNumber: v.versionNumber, label: v.label, kind: v.kind, reason: v.reason, changes: v.changes,
                 sha256: v.sha256, seal: v.seal, size: v.size, mimeType: v.mimeType,
                 createdAt: v.createdAt, createdById: v.createdById, createdByName: v.createdByName,
-                approvedById: v.approvedById ?? null, approvedByName: v.approvedByName ?? null
+                approvedById: v.approvedById ?? null, approvedByName: v.approvedByName ?? null,
+                ...(anchoring ? { anchoring: anchoring[key(v)] ?? null } : {})
             }))
         };
     }

@@ -343,6 +343,10 @@ paths:
         - Documents
       summary: One document with its fields, record metadata and version history
       description: >-
+        For a user, each version also has `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next
+        anchoring), `anchored` or `confirmed`, or null when the audit service cannot say. Services reading the document do not get it.
+
+
         **Access:** Signed-in user with any of `capture.view`, `verify.view`, `record.view`, `audit.view`, or a service token from `intake`,
         `land-records`, `audit`, `search`, `bpm`.
       operationId: getDocumentsId
@@ -602,7 +606,7 @@ paths:
       description: |-
         Recomputes the SHA-256 of the stored file and checks the seal: `{ intact, contentIntact, sealIntact, version, checkedAt, … }`.
 
-        **Access:** Signed-in user with permission `audit.view`.
+        **Access:** Signed-in user with permission `audit.view`, or a service token from `audit`.
       operationId: getDocumentsIdVersionsNVerify
       parameters:
         - name: id
@@ -649,9 +653,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - audit.view
+        services:
+          - audit
       x-gateway-path: /api/documents/{id}/versions/{n}/verify
   /documents/{id}/amendments:
     post:

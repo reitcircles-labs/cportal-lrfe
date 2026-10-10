@@ -123,6 +123,7 @@ services:
       EDRMS_URL_TTL_SECONDS: "300"
       EDRMS_COUNTRY_CODE: NA
       EDRMS_REGISTRY_CODE: WDH
+      AUDIT_URL: http://audit:3506
       EDRMS_CONTENT_URL_BASE: /api/document-content
     volumes:
       - edrms-files:/data/edrms
@@ -190,6 +191,7 @@ services:
       RECORDS_COUNTRY_CODE: NA
       EDRMS_URL: http://edrms:3502
       BPM_URL: http://bpm:3503
+      AUDIT_URL: http://audit:3506
     ports:
       - "127.0.0.1:3505:3505"
     healthcheck: *healthcheck

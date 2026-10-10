@@ -5,8 +5,8 @@ info:
   title: audit service
   version: 0.1.0
   description: >-
-    Audit: a tamper-evident trail with one hash-chained entry per domain event of every service. Proofs anchored on Cardano, sign-off and
-    evidence packs follow. Design: services/audit/README.md.
+    Audit: a tamper-evident trail with one hash-chained entry per domain event of every service. A growing Merkle tree whose root is
+    anchored on Cardano, and proofs anyone can check; sign-off and evidence packs follow. Design: services/audit/README.md.
 
 
     Paths here are the service's own, on port 3506. Browsers call them through the gateway; each operation's `x-gateway-path` gives the
@@ -17,6 +17,8 @@ servers:
 tags:
   - name: Trail
     description: The audit trail and its hash chain.
+  - name: Proofs
+    description: Proofs that an item is in a root anchored on Cardano, and checking them.
   - name: Service
     description: Health and metadata.
 paths:
@@ -156,6 +158,207 @@ paths:
         allOf:
           - audit.view
       x-gateway-path: /api/audit/trail/verify
+  /audit/proofs/{kind}/{id}:
+    get:
+      tags:
+        - Proofs
+      summary: The proof of a land record version, a document version or a trail entry
+      description: >-
+        `kind` is `record-version` or `document-version` (`id` the land record or document id, `?version=` required) or `trail-entry` (`id`
+        its seq). `{ format: "lrfe-audit-proof/1", status, item, leaf, tree: { size, path, peaks, root }, anchor: { network, label, batch,
+        tx, root, size, address (the anchoring wallet), block, blockIs, confirmations, status, confirmedAt } }`; a trail entry adds `trail:
+        { entry, later, checkpoint }` (the entry, the contentHash of each later entry up to the anchored checkpoint). `status`: `waiting`
+        (not in an anchoring yet: `anchor` is null, and for a trail entry `leaf` and `tree` too), `anchored` or `confirmed`. Save it as a
+        file for the offline verifier (services/audit/verifier). 404 when the item is not in the tree.
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: getAuditProofsKindId
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - record-version
+              - document-version
+              - trail-entry
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+      x-gateway-path: /api/audit/proofs/{kind}/{id}
+  /audit/verify:
+    post:
+      tags:
+        - Proofs
+      summary: Check an item now
+      description: >-
+        Body `{ kind, id, version }` as for the proof. `{ valid, status, checks: { item, path, chain }, checkedAt, proof }`. `item`: the
+        seal recomputed from the current data by land-records or edrms (a trail entry: its hashes, and the chain to the checkpoint). `path`:
+        the leaf and the path to the root. `chain`: the root and size in the transaction's metadata on the chain (Blockfrost: `source` is
+        the provider), or with the own node, in the signed transaction as sent (`source: "stored"`). Each check has `ok` and, when it fails,
+        `problem`. `valid` only when all three hold; never while `waiting`.
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: postAuditVerify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - kind
+                - id
+              additionalProperties: false
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - record-version
+                    - document-version
+                    - trail-entry
+                id:
+                  type: string
+                  maxLength: 64
+                version:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+      x-gateway-path: /api/audit/verify
+  /audit/anchoring:
+    post:
+      tags:
+        - Proofs
+      summary: The anchoring status of versions (land-records, edrms)
+      description: >-
+        Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx,
+        network, confirmedAt } | null } }`; null when the version is not in the tree.
+
+
+        **Access:** Service token only, from: `land-records`, `edrms`. Browsers cannot call this.
+      operationId: postAuditAnchoring
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - keys
+              additionalProperties: false
+              properties:
+                keys:
+                  type: array
+                  maxItems: 500
+                  items:
+                    type: string
+                    pattern: ^(record|document)-version:[0-9a-fA-F-]{36}:[1-9][0-9]{0,8}$
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - land-records
+          - edrms
+      x-gateway-path: /api/audit/anchoring
 components:
   securitySchemes:
     bearerAuth:

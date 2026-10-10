@@ -253,8 +253,10 @@ test('the registrar reviews it: a reject returns it with the comment, an approva
     await expect(versions.nth(0)).toContainText('General Residential 1');
     await expect(versions.nth(1)).toContainText('Version 1');
     await expect(versions.nth(1)).toContainText(`submitted by ${userByRole('rec').name}`);
-    await expect(versions.nth(0).locator('.tag')).toHaveText('Seal verified');
-    await expect(versions.nth(1).locator('.tag')).toHaveText('Seal verified');
+    await expect(versions.nth(0).locator('.tag').first()).toHaveText('Seal verified');
+    await expect(versions.nth(1).locator('.tag').first()).toHaveText('Seal verified');
+    // the audit service has the version in its tree; no anchoring runs in the e2e stack (API-658)
+    await expect(versions.nth(1).locator('.tag').nth(1)).toHaveText('Waiting for the next anchoring');
     await expect(officer.locator('.panel-head', { hasText: 'Committed versions' })).toContainText('Seal chain intact');
     await evidence(officer, 'API-650', 'History: both committed versions with submitter, approver and verified seals');
 

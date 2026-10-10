@@ -1,3 +1,4 @@
+import type { Anchoring } from '../shared/anchoring';
 import { Injectable, inject } from '@angular/core';
 import { ApiService } from './api.service';
 
@@ -50,6 +51,7 @@ export interface HistoryVersion {
   versionNumber: number; state: 'committed' | 'superseded'; current: boolean;
   submittedAt: string | null; submittedByName: string | null; approvedByName: string | null; committedAt: string; reviewComment: string | null;
   seal: string; previousSeal: string | null; intact: boolean; linked: boolean; diff: Diff;
+  anchoring?: Anchoring | null;
 }
 export interface History { recordId: string; recordNo: string; label: string; intact: boolean; flags: Flag[]; versions: HistoryVersion[]; }
 export interface LandRecord extends RecordSummary { current: Version | null; draft: Version | null; draftDiff: Diff | null; }

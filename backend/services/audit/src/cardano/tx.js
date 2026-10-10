@@ -126,3 +126,29 @@ export function readAnchorMetadata(cbor) {
 }
 
 export const lovelaceToAda = (l) => (Number(BigInt(l)) / 1e6).toFixed(6).replace(/\.?0+$/, '');
+
+/**
+ * The anchoring metadata a stored signed transaction commits to (API-658), or null when it does
+ * not hold together: its id is the hash of its body, the body holds the hash of the metadata (so the
+ * transaction `txHash` can only carry this metadata), and it is signed by the anchoring wallet's key
+ * (`address`), so only that key can have made it. Used where the provider cannot look up a past
+ * transaction (the own node: Ogmios keeps no index of them).
+ */
+export function committedMetadata(cbor, txHash, address) {
+    try {
+        const tx = C.Transaction.from_hex(cbor);
+        const bodyHash = C.FixedTransaction.new_from_body_bytes(tx.body().to_bytes()).transaction_hash();
+        const aux = tx.auxiliary_data();
+        const declared = tx.body().auxiliary_data_hash();
+        if (bodyHash.to_hex() !== txHash || !aux || !declared || C.hash_auxiliary_data(aux).to_hex() !== declared.to_hex()) return null;
+        const wallet = C.EnterpriseAddress.from_address(C.Address.from_bech32(address))?.payment_cred().to_keyhash()?.to_hex();
+        const vkeys = tx.witness_set().vkeys();
+        let signed = false;
+        for (let i = 0; wallet && vkeys && i < vkeys.len(); i++) {
+            const w = vkeys.get(i);
+            const key = w.vkey().public_key();
+            if (key.hash().to_hex() === wallet && key.verify(bodyHash.to_bytes(), w.signature())) signed = true;
+        }
+        return signed ? readAnchorMetadata(cbor) : null;
+    } catch { return null; }
+}

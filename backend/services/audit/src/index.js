@@ -5,6 +5,7 @@ import { TreeService } from './tree.service.js';
 import { cardanoFromEnv } from './cardano/adapter.js';
 import { AnchorService, parsePeriod } from './anchor.service.js';
 import { BackfillService, createSealSources } from './backfill.service.js';
+import { createVerifySources, ProofService } from './proof.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -27,17 +28,24 @@ if (envOneOf('AUDIT_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
 
 const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'audit' });
 const service = new TrailService({ repo });
+// the app's logger, for what is made before the app (used only once it runs)
+const log = { info: (...a) => app.log.info(...a), warn: (...a) => app.log.warn(...a), error: (...a) => app.log.error(...a) };
+const tree = new TreeService({ repo, logger: log });
+// anchoring on Cardano (README.md section 3), when CARDANO_PROVIDER is set; a wrong setting stops the start
+const cardano = cardanoFromEnv(process.env, { logger: log, events });
+const serviceToken = createServiceTokenSigner({ secret: env('JWT_SECRET'), service: 'audit' });
+const recordsUrl = env('RECORDS_URL', 'http://localhost:3505');
+const edrmsUrl = env('EDRMS_URL', 'http://localhost:3502');
+// proofs and verification (README.md section 4): the owning services recompute the seals
+const proofs = new ProofService({ repo, tree, cardano, logger: log, sources: createVerifySources({ recordsUrl, edrmsUrl, serviceToken }) });
 
 const app = await buildApp({
     service,
+    proofs,
     jwtSecret: env('JWT_SECRET'),
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }
 });
-
-const tree = new TreeService({ repo, logger: app.log });
-// anchoring on Cardano (README.md section 3), when CARDANO_PROVIDER is set; a wrong setting stops the start
-const cardano = cardanoFromEnv(process.env, { logger: app.log, events });
 
 await startService(app, { port: envInt('PORT', 3506), checks, onClose: async () => { await events.close(); await sequelize?.close(); } });
 
@@ -67,7 +75,7 @@ if (cardano) {
     // through both lists completely, also after a partial run; anchoring starts only then.
     const backfill = new BackfillService({
         trail: service, tree, logger: app.log,
-        sources: createSealSources({ recordsUrl: env('RECORDS_URL', 'http://localhost:3505'), edrmsUrl: env('EDRMS_URL', 'http://localhost:3502'), serviceToken: createServiceTokenSigner({ secret: env('JWT_SECRET'), service: 'audit' }) })
+        sources: createSealSources({ recordsUrl, edrmsUrl, serviceToken })
     });
     const startAnchoring = async () => {
         let empty;
