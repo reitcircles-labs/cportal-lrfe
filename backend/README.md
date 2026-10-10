@@ -20,7 +20,7 @@ backend/
     ├── bpm/                :3503  workflow engine: processes, task inbox, four-eyes approvals
     ├── intake/             :3504  capture, AI extraction (Gemini), field review, filing into edrms
     ├── land-records/       :3505  land records: filed documents per parcel, reviewed versions, seals
-    └── audit/              :3506  tamper-evident trail of every domain event (proofs on Cardano: design)
+    └── audit/              :3506  tamper-evident trail of every domain event, Merkle tree anchored on Cardano
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 ```
 
@@ -41,8 +41,12 @@ screen (`#/link`) and the review in the task inbox use it.
 
 **audit** (epic API-652, being built): a hash-chained audit trail from the durable events, a growing
 Merkle tree over every land record version, document version and trail checkpoint, its root
-anchored on Cardano hourly, proofs anyone can check, sign-off, findings and evidence packs. Design in
-[`services/audit/README.md`](services/audit/README.md).
+anchored on Cardano hourly, proofs anyone can check, sign-off, findings and evidence packs. Done so
+far: the trail, the tree, the Cardano adapter (own node through Ogmios, or Blockfrost; the wallet key
+in OpenBao), hourly anchoring followed to confirmation, and the backfill of earlier seals. Design,
+and how anchoring and its timeouts work, in [`services/audit/README.md`](services/audit/README.md);
+setting it up (node, wallet, faucet, `npm run anchor:test`, `npm run audit:backfill`) in
+[`install.md`](install.md#4b-cardano-node-for-the-audit-service-optional).
 
 Planned next: **search**.
 
@@ -70,6 +74,7 @@ EDRMS_STORE=memory EDRMS_STORAGE=local npm run dev:edrms
 BPM_STORE=memory npm run dev:bpm
 INTAKE_STORE=memory npm run dev:intake     # extraction uses the mock model unless EXTRACTION_PROVIDER=gemini
 RECORDS_STORE=memory npm run dev:land-records
+AUDIT_STORE=memory npm run dev:audit       # sees other services' events only with EVENT_BUS_DRIVER=nats
 npm run dev:gateway
 
 # With Postgres from docker compose (published on localhost:5433;
