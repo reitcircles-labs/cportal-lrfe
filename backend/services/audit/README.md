@@ -501,10 +501,68 @@ existed unchanged when that root went on Cardano.
 
 ## 6. Evidence pack
 
-`GET /audit/records/{id}/evidence` (`audit.export`): one zip with every committed version (JSON)
-and seal, the documents it pins (files and verified metadata) and their seals, the record's trail
-entries, sign-offs and findings, a proof for each version and document, a readable summary and
-instructions for the offline verifier. Exporting is itself an event in the trail.
+API-660. `src/evidence.service.js` (with `src/zip.js`), the pack mode of `verifier/lrfe-verify.mjs`.
+
+`GET /audit/records/{id}/evidence` (`audit.export`) returns one zip with everything needed to defend
+a land record outside the portal:
+
+| In the pack | What it is |
+|---|---|
+| `README.txt` | a readable summary (versions, documents, trail, sign-offs, findings, proofs) and how to check the pack |
+| `manifest.json` | format `lrfe-evidence-pack/1`, the record, who exported it when, the anchoring network and wallet, every file's SHA-256 |
+| `record/record.json`, `record/versions/v<n>.json` | the land record, and each committed version as sealed (land-records) |
+| `documents/<edrmsNo>/v<n>.json`, `documents/<edrmsNo>/v<n>-<file>` | each document version pinned in those versions: its sealed metadata (edrms) and its file, read from the store through a service-only edrms route |
+| `trail/entries.json` | the record's audit trail, with its documents' steps (§1) |
+| `signoffs.json`, `findings.json` | sign-offs and findings (§5) |
+| `proofs/record-v<n>.json`, `proofs/<edrmsNo>-v<n>.json`, `proofs/trail-<seq>.json` | a proof (§4) for each version, document version and trail entry |
+
+The export is itself a trail entry (`audit.evidence.exported`: who, which record, how many files, and
+the SHA-256 of `manifest.json`, also in the response header `x-manifest-sha256`), and so anchored with
+the next root. A record without a committed version has nothing to export (409).
+
+**Checking a pack** without the portal: `node lrfe-verify.mjs evidence-<recordNo>-<date>.zip --address
+<published wallet>` (or the folder it was unpacked into). The verifier:
+
+1. checks every file against `manifest.json`, that nothing was added or removed, and that every JSON
+   file reads;
+2. recomputes each committed version's seal from its JSON (as land-records does) and checks the chain
+   of seals from the first version (whose previous seal is empty), so a changed, removed or inserted
+   version in between is caught; checks `record.json`'s id and current version against them;
+   requires every document version the versions pin, with the pinned seal and type, recomputes its
+   seal (as edrms does) and its file's SHA-256; a document no version pins fails;
+3. recomputes every trail entry's hashes, and compares sign-offs and findings with their trail
+   entries both ways, field by field (item, comment or description, who, close reason, resolving
+   version);
+4. requires a proof file for every version, document version and trail entry (the export writes a
+   placeholder for an item not in the audit tree), proving that very item, and checks it against the
+   chain (§4), each transaction read once. Each version is also compared with its commit entry in the
+   trail (`records.record.committed`: seal, previous seal) and each document version with its filing
+   or correction entry (seal, SHA-256); a mismatch fails, and a commit in the trail whose version is
+   not in the pack fails. An item without an anchored proof of its own is proven when an anchored item
+   pins it: an anchored trail proof (the hashes of the later entries up to its checkpoint, and the
+   entry before it), the commit or filing entry so proven, a later version (its previous seals), any
+   version that pins it (every pin of a document version must agree). "Not yet anchored" must be
+   believable: a version or document version older (by more than 10 minutes) than trail entries the
+   pack shows anchored would be in that anchoring, so without a proof it fails (changed, or missing
+   from the audit tree: run the backfill), and so does one that is neither proven nor bound to its
+   commit or filing entry in the pack's trail. Still, whoever rewrites the pack can present the newest
+   version, and what only it pins, as committed after the last anchoring (with a late date and a late,
+   unanchored commit entry): an honest pack exported right after a commit looks the same. Unproven
+   items are therefore only that: "VALID AS FAR AS ANCHORED" vouches for the anchored items; the rest is
+   settled by the portal, or by exporting again after the next anchoring. A placeholder such a pin contradicts fails; items nothing pins are listed as not yet anchored
+   ("VALID AS FAR AS ANCHORED"); exporting again after the next anchoring covers them.
+
+A forger who changes a file and rewrites the manifest is therefore caught by the content, for every
+item proven on chain (directly or through an anchored item that pins it). Not covered
+by any seal, and listed by the verifier as shown as exported: `README.txt`, the manifest's exporter,
+time and wallet, `record.json` beyond its id and current version, document titles, and the times of
+sign-offs and findings. An offline check also cannot show that nothing was left out when the newest
+version, or a trail entry, is removed together with its proof. The portal can: it recorded the export
+with the SHA-256 of the manifest (`audit.evidence.exported`), anchored with the next root.
+
+The export refuses a stored file that no longer matches the SHA-256 it was sealed with (409, naming the
+document): check its integrity on the Documents screen first. The pack is built before the export is
+recorded, so the trail never records an export that did not happen.
 
 ## 7. Privacy
 

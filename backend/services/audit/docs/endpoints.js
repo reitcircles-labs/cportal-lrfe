@@ -8,6 +8,7 @@ export default {
         Trail: 'The audit trail and its hash chain.',
         Proofs: 'Proofs that an item is in a root anchored on Cardano, and checking them.',
         'Sign-off': 'Auditors\' sign-offs and findings, with segregation of duties (sod2).',
+        Evidence: 'Evidence packs: a land record with everything needed to check it outside the portal.',
         Service: 'Health and metadata.'
     },
     routes: {
@@ -42,6 +43,10 @@ export default {
         'POST /audit/findings/{id}/close': {
             tag: 'Sign-off', summary: 'Close a finding with a reason',
             description: 'Body `{ reason }`. 409 when it is no longer open. Its inbox tasks are withdrawn if still open. A trail entry (`audit.finding.closed`, `outcome: "closed"`); a newer reviewed version closes it the same way with `outcome: "resolved"`.'
+        },
+        'GET /audit/records/{id}/evidence': {
+            tag: 'Evidence', summary: 'The evidence pack of a land record (zip)',
+            description: 'Every committed version with its seal, the pinned document versions (metadata and files), the record\'s trail, sign-offs, findings, a proof for each version, document version and trail entry, `manifest.json` (every file\'s SHA-256) and `README.txt`. Check it with the offline verifier: `node lrfe-verify.mjs <pack>.zip --address <wallet>`. The export is a trail entry (`audit.evidence.exported`, with the manifest\'s SHA-256, also in the `x-manifest-sha256` header). 409 when the record has no committed version.'
         },
         'GET /audit/trail/verify': {
             tag: 'Trail', summary: 'Recompute the trail\'s hash chain',

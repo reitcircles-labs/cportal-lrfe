@@ -135,6 +135,14 @@ export async function edrmsRoutes(app, { service, contentUrl }) {
         return link;
     });
 
+    /** A version's file for the audit service's evidence pack (API-660): the bytes, from the store. */
+    app.get('/documents/:id/versions/:n/file', { onRequest: app.requireService('audit'), schema: idParams(versionParam) }, async (req, reply) => {
+        const content = await service.openContent(req.params.id, req.params.n);
+        reply.header('content-type', content.mimeType);
+        reply.header('content-disposition', `attachment; filename="${content.fileName}"`);
+        return reply.send(content.stream);
+    });
+
     /** Content for stores without presigned URLs (local, memory). Authorised by the signature, not a token. */
     app.get('/content/:id/:n', {
         schema: {

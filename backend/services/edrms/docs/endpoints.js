@@ -38,6 +38,7 @@ export default {
             tag: 'Documents', auth: 'signed-link', summary: 'File content behind a signed link (local/memory storage)',
             description: 'Use the `url` from GET /documents/{id}/content; `exp` and `sig` authorise it. 404 when expired or tampered with.'
         },
+        'GET /documents/{id}/versions/{n}/file': { tag: 'Documents', summary: 'A version\'s file, for the audit service\'s evidence pack', description: 'The stored bytes (decrypted when the store encrypts), as filed. Audit service token only.' },
         'GET /documents/{id}/versions/{n}/verify': {
             tag: 'Documents', summary: 'Integrity check of a version',
             description: 'Recomputes the SHA-256 of the stored file and checks the seal: `{ intact, contentIntact, sealIntact, version, checkedAt, … }`.'

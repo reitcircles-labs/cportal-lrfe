@@ -543,6 +543,65 @@ paths:
           - search
           - bpm
       x-gateway-path: /api/documents/{id}/content
+  /documents/{id}/versions/{n}/file:
+    get:
+      tags:
+        - Documents
+      summary: A version's file, for the audit service's evidence pack
+      description: |-
+        The stored bytes (decrypted when the store encrypts), as filed. Audit service token only.
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: getDocumentsIdVersionsNFile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
+      x-gateway-path: /api/documents/{id}/versions/{n}/file
   /content/{id}/{n}:
     get:
       tags:

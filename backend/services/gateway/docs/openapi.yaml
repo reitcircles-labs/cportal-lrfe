@@ -61,6 +61,8 @@ tags:
     description: Proofs that an item is in a root anchored on Cardano, and checking them.
   - name: audit · Sign-off
     description: Auditors' sign-offs and findings, with segregation of duties (sod2).
+  - name: audit · Evidence
+    description: "Evidence packs: a land record with everything needed to check it outside the portal."
   - name: gateway
     description: The gateway itself.
 paths:
@@ -511,6 +513,62 @@ paths:
       x-access:
         allOf:
           - audit.view
+  /api/audit/records/{id}/evidence:
+    get:
+      tags:
+        - audit · Evidence
+      summary: The evidence pack of a land record (zip)
+      description: >-
+        Every committed version with its seal, the pinned document versions (metadata and files), the record's trail, sign-offs, findings, a
+        proof for each version, document version and trail entry, `manifest.json` (every file's SHA-256) and `README.txt`. Check it with the
+        offline verifier: `node lrfe-verify.mjs <pack>.zip --address <wallet>`. The export is a trail entry (`audit.evidence.exported`, with
+        the manifest's SHA-256, also in the `x-manifest-sha256` header). 409 when the record has no committed version.
+
+
+        **Access:** Signed-in user with permission `audit.export`.
+      operationId: audit_getAuditRecordsIdEvidence
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.export
   /api/audit/signoffs:
     post:
       tags:
@@ -1533,6 +1591,64 @@ paths:
           - audit
           - search
           - bpm
+  /api/documents/{id}/versions/{n}/file:
+    get:
+      tags:
+        - edrms · Documents
+      summary: A version's file, for the audit service's evidence pack
+      description: |-
+        The stored bytes (decrypted when the store encrypts), as filed. Audit service token only.
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: edrms_getDocumentsIdVersionsNFile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
   /api/documents/{id}/versions/{n}/verify:
     get:
       tags:
@@ -4357,7 +4473,7 @@ paths:
       tags:
         - land-records · Records
       summary: "All versions of a record: state, who submitted and approved, seal, changes"
-      description: "**Access:** Signed-in user with permission `record.view`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
       operationId: land-records_getRecordsIdVersions
       parameters:
         - name: id
@@ -4398,9 +4514,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
   /api/records/{id}/versions/{n}:
     get:
       tags:

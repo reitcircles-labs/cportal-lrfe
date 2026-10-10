@@ -43,7 +43,8 @@ screen (`#/link`) and the review in the task inbox use it.
 Merkle tree over every land record version, document version and trail checkpoint, its root
 anchored on Cardano hourly, proofs anyone can check, sign-off, findings and evidence packs. Done so
 far: the trail, the tree, the Cardano adapter (own node through Ogmios, or Blockfrost; the wallet key
-in OpenBao), hourly anchoring followed to confirmation, and the backfill of earlier seals. Design,
+in OpenBao), hourly anchoring followed to confirmation, the backfill of earlier seals, proofs with
+the offline verifier, sign-off and findings (sod2), and evidence packs. Design,
 and how anchoring and its timeouts work, in [`services/audit/README.md`](services/audit/README.md);
 setting it up (node, wallet, faucet, `npm run anchor:test`, `npm run audit:backfill`) in
 [`install.md`](install.md#4b-cardano-node-for-the-audit-service-optional).

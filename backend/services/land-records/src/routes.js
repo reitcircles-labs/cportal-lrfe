@@ -10,8 +10,8 @@ const actorOf = (req) => ({ id: req.user.sub, name: req.user.name });
 
 export async function recordsRoutes(app, { service }) {
     const canView = app.requirePerm('record.view');
-    // users who may view records, and the audit service: verifying a proof (API-658), and reading a
-    // version's approver and documents for a sign-off or finding (API-659)
+    // users who may view records, and the audit service: verifying a proof (API-658), reading a
+    // version's approver and documents for a sign-off or finding (API-659), the evidence pack (API-660)
     async function canViewOrAudit(req, reply) {
         try { await req.jwtVerify(); } catch { throw new UnauthorizedError('Invalid or expired token'); }
         if (req.user.typ === 'service') {
@@ -170,7 +170,7 @@ export async function recordsRoutes(app, { service }) {
 
     app.get('/records/:id', { onRequest: canViewOrAudit, schema: idParams() }, async (req) => service.getRecord(req.params.id));
     app.get('/records/:id/suggestions', { onRequest: canView, schema: idParams() }, async (req) => service.suggestions(req.params.id));
-    app.get('/records/:id/versions', { onRequest: canView, schema: idParams() }, async (req) => service.listVersions(req.params.id));
+    app.get('/records/:id/versions', { onRequest: canViewOrAudit, schema: idParams() }, async (req) => service.listVersions(req.params.id));
     app.get('/records/:id/versions/:n', { onRequest: canViewOrAudit, schema: idParams(versionParam) }, async (req) => service.getVersion(req.params.id, req.params.n));
     app.get('/records/:id/verify', { onRequest: canViewOrAudit, schema: idParams() }, async (req) => service.verify(req.params.id));
 }

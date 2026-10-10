@@ -1,99 +1,10 @@
 import { strict as assert } from 'node:assert';
-import { createEventBus, createServiceTokenSigner } from '@lrfe/common';
 import { AnchorService } from '../src/anchor.service.js';
-import { TrailService } from '../src/trail.service.js';
-import { TreeService } from '../src/tree.service.js';
 import { ProofService } from '../src/proof.service.js';
-import { SignoffService, createSignoffClients } from '../src/signoff.service.js';
-import { createMemoryRepo } from '../src/repo/memory.js';
 import { createCardanoAdapter } from '../src/cardano/adapter.js';
 import { createLocalSigner } from '../src/cardano/signer.js';
-import { buildApp } from '../src/app.js';
 import { fakeDriver } from './helpers.js';
-import { actor, makeWithReview, users, SECRET } from '../../land-records/tests/helpers.js';
-
-const MINUTE = 60_000;
-const quiet = { info() {}, warn() {}, error() {} };
-const rec = actor(users.rec);
-const asService = (service) => createServiceTokenSigner({ secret: SECRET, service });
-// the auditor, the registrar who approves (sup, u1) and the records officer (rec, u7), with their roles
-const people = {
-    aud: { id: 'u3', name: 'Martha Nakale', perms: ['record.view', 'audit.view', 'audit.signoff', 'audit.export'], roles: ['aud'] },
-    aud2: { id: 'u4', name: 'Second Auditor', perms: ['record.view', 'audit.view', 'audit.signoff'], roles: ['aud'] },
-    sup: { ...users.sup, perms: [...users.sup.perms, 'audit.view'], roles: ['sup'] },
-    rec: { ...users.rec, roles: ['rec'] },
-    // the registrar who approved, also given audit.signoff (the role-level rule switched off): refused
-    supAuditing: { ...users.sup, perms: [...users.sup.perms, 'audit.view', 'audit.signoff'], roles: ['sup', 'aud'] },
-    // the same person later moved to auditing (no record.finalize any more): still refused for the version they approved
-    formerRegistrar: { id: users.sup.id, name: users.sup.name, perms: ['record.view', 'audit.view', 'audit.signoff'], roles: ['aud'] },
-    // a records officer who can finalize, also given audit.signoff, who did not approve this version
-    recAuditing: { ...users.rec, perms: [...users.rec.perms, 'audit.view', 'audit.signoff'], roles: ['rec', 'aud'] }
-};
-
-/**
- * Erf 1873 committed through the review (version 1, approved by the registrar), with the audit
- * service following every event: trail, tree, sign-offs and findings over HTTP to land-records,
- * edrms and bpm, and anchoring on the fake chain.
- */
-async function audited() {
-    const repo = createMemoryRepo();
-    let now = Date.parse('2026-10-11T08:00:00Z');
-    const clock = () => new Date(now);
-    clock.advance = (ms) => { now += ms; };
-    const trail = new TrailService({ repo, clock, logger: quiet });
-    const tree = new TreeService({ repo, clock, logger: quiet });
-    const pending = [];
-    let signoffs;
-    // the audit service's consumer: every service's events, and its own
-    const consume = (event) => { pending.push(trail.record(event).then(() => tree.fromEvent(event)).then(() => signoffs?.onEvent(event))); };
-    const settle = async () => { while (pending.length) await Promise.all(pending.splice(0)); };
-    const reg = await makeWithReview({ tap: consume });
-    const events = createEventBus({ driver: 'memory', source: 'audit' });
-    events.subscribe('*', consume);
-
-    let r = await reg.service.createRecord({ edrmsDocumentId: reg.docs.grant.id }, rec);
-    for (const k of ['t1996', 'sg', 't2008', 't2019']) r = await reg.service.addDocument(r.id, { revision: r.draft.revision, edrmsDocumentId: reg.docs[k].id }, rec);
-    r = await reg.service.updateDraft(r.id, { revision: r.draft.revision, accept: ['owners', 'extent'], changes: { tenure: 'freehold', attributes: { zoning: 'Residential' } } }, rec);
-    await reg.service.submit(r.id, { revision: r.draft.revision }, rec);
-    const decideAll = async (u, outcome = 'approved') => {
-        const [task] = await reg.inbox(u);
-        assert.equal((await reg.decide(u, task.id, { outcome })).statusCode, 200);
-    };
-    await decideAll(users.sup);
-    await settle();
-
-    const { buildApp: buildEdrms } = await import('../../edrms/src/app.js');
-    const edrmsApp = await buildEdrms({ service: reg.edrmsService, jwtSecret: SECRET });
-    await edrmsApp.ready();
-    let bpmDown = false;
-    const inject = (app) => async (url, init = {}) => {
-        const u = new URL(url);
-        const res = await app.inject({ method: init.method || 'GET', url: u.pathname + u.search, headers: init.headers, payload: init.body });
-        return { ok: res.statusCode < 400, status: res.statusCode, text: async () => res.body };
-    };
-    const routed = (url, init) => {
-        if (url.startsWith('http://bpm')) { if (bpmDown) throw new Error('connect ECONNREFUSED'); return inject(reg.bpm)(url, init); }
-        return (url.startsWith('http://records') ? inject(reg.app) : inject(edrmsApp))(url, init);
-    };
-    signoffs = new SignoffService({ repo, events, clock, logger: quiet, ...createSignoffClients({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', bpmUrl: 'http://bpm', serviceToken: asService('audit'), fetchImpl: routed }) });
-    const auditApp = await buildApp({ service: trail, signoffs, jwtSecret: SECRET });
-    await auditApp.ready();
-    const as = (u) => ({ authorization: `Bearer ${auditApp.jwt.sign({ typ: 'access', sub: u.id, name: u.name, perms: u.perms, roles: u.roles })}` });
-    const api = async (u, method, url, payload) => { const res = await auditApp.inject({ method, url, headers: as(u), payload }); await settle(); return res; };
-    /** A user's bpm inbox (roles decide who gets a finding). */
-    const inbox = async (u) => (await reg.bpm.inject({ url: '/tasks', headers: as(u) })).json().tasks;
-    const record = await reg.service.getRecord(r.id);
-    return { ...reg, repo, clock, trail, tree, events, signoffs, settle, auditApp, api, as, inbox, record, edrmsApp, decideAll, setBpmDown: (v) => { bpmDown = v; } };
-}
-
-/** A second version of the record, through the review: submitted by the officer, approved by the registrar. */
-async function secondVersion(a) {
-    let r = await a.service.openDraft(a.record.id, rec);
-    r = await a.service.updateDraft(a.record.id, { revision: r.draft.revision, changes: { attributes: { zoning: 'General Residential 1' } } }, rec);
-    await a.service.submit(a.record.id, { revision: r.draft.revision }, rec);
-    await a.decideAll(users.sup);
-    await a.settle();
-}
+import { MINUTE, quiet, rec, people, audited, secondVersion } from './register.js';
 
 describe('sign-off and findings (API-659)', () => {
     it('an auditor signs off a land record version and a document version in it: kept, in the trail, and anchored', async () => {

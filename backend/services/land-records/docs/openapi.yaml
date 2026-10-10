@@ -1305,7 +1305,7 @@ paths:
       tags:
         - Records
       summary: "All versions of a record: state, who submitted and approved, seal, changes"
-      description: "**Access:** Signed-in user with permission `record.view`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
       operationId: getRecordsIdVersions
       parameters:
         - name: id
@@ -1346,9 +1346,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
       x-gateway-path: /api/records/{id}/versions
   /records/{id}/versions/{n}:
     get:

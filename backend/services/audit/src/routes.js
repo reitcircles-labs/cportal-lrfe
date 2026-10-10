@@ -1,6 +1,6 @@
 import { KINDS } from './proof.service.js';
 
-export async function auditRoutes(app, { service, proofs, signoffs }) {
+export async function auditRoutes(app, { service, proofs, signoffs, evidence }) {
     const canView = app.requirePerm('audit.view');
 
     // trail entries: of a land record (with its documents' steps), a document, a user, a process
@@ -94,4 +94,17 @@ export async function auditRoutes(app, { service, proofs, signoffs }) {
             body: { type: 'object', required: ['reason'], additionalProperties: false, properties: { reason: { type: 'string', maxLength: 2000 } } }
         }
     }, async (req) => signoffs.closeFinding(req.params.id, req.body, actorOf(req)));
+
+    // ------------------------------------------------ evidence pack (README.md section 6)
+    app.get('/audit/records/:id/evidence', {
+        onRequest: app.requirePerm('audit.export'),
+        schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } }
+    }, async (req, reply) => {
+        const pack = await evidence.build(req.params.id, actorOf(req));
+        reply.header('content-type', 'application/zip');
+        reply.header('content-disposition', `attachment; filename="${pack.fileName}"`);
+        reply.header('x-manifest-sha256', pack.manifestSha256);
+        reply.header('cache-control', 'no-store');
+        return reply.send(pack.zip);
+    });
 }

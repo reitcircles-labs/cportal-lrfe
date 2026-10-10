@@ -21,6 +21,8 @@ tags:
     description: Proofs that an item is in a root anchored on Cardano, and checking them.
   - name: Sign-off
     description: Auditors' sign-offs and findings, with segregation of duties (sod2).
+  - name: Evidence
+    description: "Evidence packs: a land record with everything needed to check it outside the portal."
   - name: Service
     description: Health and metadata.
 paths:
@@ -736,6 +738,63 @@ paths:
         allOf:
           - audit.signoff
       x-gateway-path: /api/audit/findings/{id}/close
+  /audit/records/{id}/evidence:
+    get:
+      tags:
+        - Evidence
+      summary: The evidence pack of a land record (zip)
+      description: >-
+        Every committed version with its seal, the pinned document versions (metadata and files), the record's trail, sign-offs, findings, a
+        proof for each version, document version and trail entry, `manifest.json` (every file's SHA-256) and `README.txt`. Check it with the
+        offline verifier: `node lrfe-verify.mjs <pack>.zip --address <wallet>`. The export is a trail entry (`audit.evidence.exported`, with
+        the manifest's SHA-256, also in the `x-manifest-sha256` header). 409 when the record has no committed version.
+
+
+        **Access:** Signed-in user with permission `audit.export`.
+      operationId: getAuditRecordsIdEvidence
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.export
+      x-gateway-path: /api/audit/records/{id}/evidence
 components:
   securitySchemes:
     bearerAuth:

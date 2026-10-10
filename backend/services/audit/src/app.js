@@ -1,9 +1,9 @@
 import { createBaseApp, authPlugin } from '@lrfe/common';
 import { auditRoutes } from './routes.js';
 
-export async function buildApp({ service, proofs, signoffs, jwtSecret, revocations, ...fastifyOptions }) {
+export async function buildApp({ service, proofs, signoffs, evidence, jwtSecret, revocations, ...fastifyOptions }) {
     const app = createBaseApp({ name: 'audit', trustProxy: true, ...fastifyOptions });
     await app.register(authPlugin, { secret: jwtSecret, revocations });
-    await app.register(auditRoutes, { service, proofs, signoffs });
+    await app.register(auditRoutes, { service, proofs, signoffs, evidence });
     return app;
 }

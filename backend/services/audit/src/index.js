@@ -7,6 +7,7 @@ import { AnchorService, parsePeriod } from './anchor.service.js';
 import { BackfillService, createSealSources } from './backfill.service.js';
 import { createVerifySources, ProofService } from './proof.service.js';
 import { createSignoffClients, SignoffService } from './signoff.service.js';
+import { createEvidenceSources, EvidenceService } from './evidence.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -44,10 +45,14 @@ const proofs = new ProofService({ repo, tree, cardano, logger: log, sources: cre
 // sign-off and findings (README.md section 5): versions read from land-records and edrms, findings sent to bpm
 const signoffs = new SignoffService({ repo, events, logger: log, ...createSignoffClients({ recordsUrl, edrmsUrl, bpmUrl: env('BPM_URL', 'http://localhost:3503'), serviceToken }) });
 
+// the evidence pack (README.md section 6): versions, documents and files read from land-records and edrms
+const evidence = new EvidenceService({ trail: service, proofs, signoffs, events, cardano, logger: log, sources: createEvidenceSources({ recordsUrl, edrmsUrl, serviceToken }) });
+
 const app = await buildApp({
     service,
     proofs,
     signoffs,
+    evidence,
     jwtSecret: env('JWT_SECRET'),
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }
