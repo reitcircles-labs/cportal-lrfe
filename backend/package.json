@@ -27,7 +27,8 @@
     "docs:serve": "node scripts/docs-server.js",
     "nats": "node scripts/nats.js",
     "bao": "node scripts/bao.js",
-    "cardano": "node scripts/cardano.js"
+    "cardano": "node scripts/cardano.js",
+    "cardano:status": "node scripts/cardano-status.js"
   },
   "devDependencies": {
     "js-yaml": "^4.3.2"

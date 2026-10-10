@@ -153,6 +153,7 @@ node on a development or test server:
 ```bash
 cd backend
 npm run cardano -- --dev     # first run: downloads cardano-node and Ogmios, then syncs the preview chain
+npm run cardano:status      # in another terminal: sync, time left, disk, warnings (--log 50, --follow)
 ```
 
 The node runs as a client only (it accepts no connections), Ogmios listens on `127.0.0.1:1337`,

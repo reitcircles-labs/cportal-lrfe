@@ -6,6 +6,7 @@
 | `nats.js` | `npm run nats` | Starts a local NATS server (port 4222, monitoring 8222, JetStream on); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256 |
 | `bao.js` | `npm run bao` (asks: development or production?) · `-- --dev` · `-- --prod` | Development: a local OpenBao vault on http://127.0.0.1:8200, data in `~/data/cportal-lrfe/openbao` (outside git); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256, and initialises it. Production: refuses; see [OpenBao: installation rules](#openbao-installation-rules) |
 | `cardano.js` | `npm run cardano` (asks: development or production?) · `-- --dev` · `-- --prod` | Development: a local Cardano preview node and Ogmios (http://127.0.0.1:1337) for the audit service's anchoring, data in `~/data/cportal-lrfe/cardano/preview` (outside git); the first run downloads both into `backend/.tools/`, checked against SHA-256. Production: refuses; see [Cardano node: installation rules](#cardano-node-installation-rules) |
+| `cardano-status.js` | `npm run cardano:status`: how the local Cardano node is doing (sync, time left, disk, warnings; `--log [n]`, `--follow`). Reads only |
 | `openapi.js` | `npm run docs` · `npm run docs:check` | Generates `services/<name>/docs/openapi.yaml` · checks they are up to date |
 | `docs-server.js` | `npm run docs:serve` | Swagger UI for the API docs on http://localhost:3510 |
 | `remoteConnect.sh` | `./scripts/remoteConnect.sh 4200 3510` **on your laptop** | Opens the server's ports on your laptop over SSH, to test the app remotely |
@@ -259,7 +260,7 @@ and needs no node. This section is about the own node.
 | Node | A client only (`DiffusionMode: InitiatorOnly`, set in its configuration): it connects out to its peers and runs no server, so nothing on the internet can connect to it. The script also removes the metrics servers (Prometheus, EKG) from the copied configuration's tracing, so the node opens no port at all. Binding it to 127.0.0.1 is not possible: its outgoing connections would use that address too |
 | Ogmios | http://127.0.0.1:1337 (`OGMIOS_PORT`), reachable from this server only |
 | Data | `~/data/cportal-lrfe/cardano/preview` (`CARDANO_DATA_DIR`), folder `0700`: `db/` (the chain), `node.socket`, `config/` (the network's configuration, copied once from the release), `node.log`, `ogmios.log` |
-| Sync | From the start of the chain; progress is printed every 30 seconds ("syncing 42.13% (slot …)", then "in sync") |
+| Sync | From the start of the chain; progress is printed every 30 seconds ("syncing 42.13% (slot …)", then "in sync"). `npm run cardano:status` shows the sync, speed, time left, disk and recent warnings at any time; `-- --log 50` adds the node's last log lines, `-- --follow` follows its log |
 
 The first sync downloads the whole preview chain. On this server (8 cores, 31 GB of RAM) it took
 the time and disk shown in API-662's results; later starts continue where it stopped. Ctrl+C stops
