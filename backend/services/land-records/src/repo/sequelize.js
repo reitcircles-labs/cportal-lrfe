@@ -1,5 +1,5 @@
 import { Op, UniqueConstraintError } from 'sequelize';
-import { ConflictError } from '@lrfe/common';
+import { ConflictError, inTransaction } from '@lrfe/common';
 import { defineModels, SCHEMA } from './models.js';
 
 const plain = (row) => (row ? row.get({ plain: true }) : null);
@@ -30,7 +30,7 @@ export function createSequelizeRepo(sequelize) {
         },
 
         async createRecord({ year, build }) {
-            return uniqueToConflict(() => sequelize.transaction(async (transaction) => {
+            return uniqueToConflict(() => inTransaction(sequelize, async (transaction) => {
                 // Row-locked increment: the number is only consumed if the whole insert commits.
                 const [[{ last }]] = await sequelize.query(
                     `INSERT INTO "${SCHEMA}"."counter" ("year", "last") VALUES (:year, 1)
@@ -87,7 +87,7 @@ export function createSequelizeRepo(sequelize) {
             return out;
         },
         async commit({ recordId, versionNumber, versionPatch, recordPatch, supersede }) {
-            return sequelize.transaction(async (transaction) => {
+            return inTransaction(sequelize, async (transaction) => {
                 const [n] = await m.Version.update({ ...versionPatch, state: 'committed' }, { where: { recordId, versionNumber, state: 'in_review' }, transaction });
                 if (!n) throw new ConflictError('The version is not in review');
                 if (supersede) await m.Version.update({ state: 'superseded' }, { where: { recordId, versionNumber: supersede }, transaction });

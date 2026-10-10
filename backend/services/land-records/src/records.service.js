@@ -45,6 +45,11 @@ export class RecordsService {
         return { parcelKinds: PARCEL_KINDS.map(k => ({ ...k, schema: schemaFor(k.schemaVersion), draftSchema: schemaFor(k.schemaVersion, { complete: false }) })) };
     }
 
+    /** Run `fn` so its writes and the events it publishes are committed together (API-613). */
+    atomic(fn) {
+        return this.events?.atomic ? this.events.atomic(fn) : fn();
+    }
+
     async requireRecord(id) {
         const r = await this.repo.getRecord(id);
         if (!r) throw new NotFoundError('Land record not found');
@@ -76,23 +81,26 @@ export class RecordsService {
         if (existing) throw new ConflictError(`${parcelLabel(parcel)} already has a land record (${existing.recordNo})`, { recordId: existing.id, recordNo: existing.recordNo });
 
         const id = randomUUID(), now = this.clock();
-        const record = await this.repo.createRecord({
-            year: now.getUTCFullYear(),
-            build: (seq) => {
-                const r = {
-                    id, recordNo: formatRecordNo(this.config.country, now.getUTCFullYear(), seq), parcelKey: key, kind: kind.id, label: parcelLabel(parcel),
-                    status: 'draft', currentVersion: null, draftVersion: 1, draftState: 'draft', flags: [],
-                    createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
-                };
-                r.searchText = searchTextOf(r, data);
-                const version = {
-                    id: randomUUID(), recordId: id, versionNumber: 1, state: 'draft', revision: 1, schemaVersion: kind.schemaVersion, data,
-                    derived: suggestFromDocuments([]), checks: checksFor(data), changes: [{ at: now.toISOString(), byId: actor.id, byName: actor.name ?? null, action: 'create' }], createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
-                };
-                return { record: r, version };
-            }
+        // the record, its first draft and its event are committed together (API-613)
+        await this.atomic(async () => {
+            const record = await this.repo.createRecord({
+                year: now.getUTCFullYear(),
+                build: (seq) => {
+                    const r = {
+                        id, recordNo: formatRecordNo(this.config.country, now.getUTCFullYear(), seq), parcelKey: key, kind: kind.id, label: parcelLabel(parcel),
+                        status: 'draft', currentVersion: null, draftVersion: 1, draftState: 'draft', flags: [],
+                        createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
+                    };
+                    r.searchText = searchTextOf(r, data);
+                    const version = {
+                        id: randomUUID(), recordId: id, versionNumber: 1, state: 'draft', revision: 1, schemaVersion: kind.schemaVersion, data,
+                        derived: suggestFromDocuments([]), checks: checksFor(data), changes: [{ at: now.toISOString(), byId: actor.id, byName: actor.name ?? null, action: 'create' }], createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
+                    };
+                    return { record: r, version };
+                }
+            });
+            await this.events?.publish('records.record.created', { recordId: id, recordNo: record.recordNo, parcelKey: key }, { actor });
         });
-        await this.events?.publish('records.record.created', { recordId: id, recordNo: record.recordNo, parcelKey: key }, { actor });
         if (edrmsDocumentId) return this.addDocument(id, { revision: 1, edrmsDocumentId }, actor);
         return this.getRecord(id);
     }
@@ -125,17 +133,20 @@ export class RecordsService {
         const derived = suggestFromDocuments(data.documents);
         const now = this.clock();
         const entry = { at: now.toISOString(), byId: actor.id, byName: actor.name ?? null, ...change };
-        const saved = await this.repo.updateVersion(record.id, version.versionNumber, {
-            data, derived, checks: checksFor(data, { flags: record.flags, suggested: derived }),
-            revision: revision + 1, changes: [...(version.changes || []), entry], updatedAt: now
-        }, { expectedRevision: revision });
-        if (!saved) throw conflict();
-        const current = record.currentVersion ? await this.repo.getVersion(record.id, record.currentVersion) : null;
-        const label = parcelLabel(data.parcel), key = parcelKey(data.parcel);
-        await this.repo.updateRecord(record.id, { label, parcelKey: key, updatedAt: now, searchText: searchTextOf({ ...record, label, parcelKey: key }, current?.data, data) });
-        await this.events?.publish('records.draft.changed', {
-            recordId: record.id, recordNo: record.recordNo, versionNumber: version.versionNumber, revision: revision + 1, change: entry
-        }, { actor });
+        // the draft, the record and the event are committed together (API-613)
+        await this.atomic(async () => {
+            const saved = await this.repo.updateVersion(record.id, version.versionNumber, {
+                data, derived, checks: checksFor(data, { flags: record.flags, suggested: derived }),
+                revision: revision + 1, changes: [...(version.changes || []), entry], updatedAt: now
+            }, { expectedRevision: revision });
+            if (!saved) throw conflict();
+            const current = record.currentVersion ? await this.repo.getVersion(record.id, record.currentVersion) : null;
+            const label = parcelLabel(data.parcel), key = parcelKey(data.parcel);
+            await this.repo.updateRecord(record.id, { label, parcelKey: key, updatedAt: now, searchText: searchTextOf({ ...record, label, parcelKey: key }, current?.data, data) });
+            await this.events?.publish('records.draft.changed', {
+                recordId: record.id, recordNo: record.recordNo, versionNumber: version.versionNumber, revision: revision + 1, change: entry
+            }, { actor });
+        });
         return this.getRecord(record.id);
     }
 
@@ -219,15 +230,18 @@ export class RecordsService {
         const data = structuredClone(current.data);
         const derived = suggestFromDocuments(data.documents);
         const change = this.entry(actor, { action: 'open', from: current.versionNumber });
-        await this.repo.addVersion({
-            id: randomUUID(), recordId, versionNumber: n, state: 'draft', revision: 1, schemaVersion: current.schemaVersion, data,
-            derived, checks: checksFor(data, { flags: record.flags, suggested: derived }), changes: [change],
-            createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
-        }).catch((err) => {                                    // a concurrent open fails here (unique version number)
-            throw err instanceof ConflictError ? new ConflictError('The record already has an open draft') : err;
+        // the new draft, the record and the event are committed together (API-613)
+        await this.atomic(async () => {
+            await this.repo.addVersion({
+                id: randomUUID(), recordId, versionNumber: n, state: 'draft', revision: 1, schemaVersion: current.schemaVersion, data,
+                derived, checks: checksFor(data, { flags: record.flags, suggested: derived }), changes: [change],
+                createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
+            }).catch((err) => {                                    // a concurrent open fails here (unique version number)
+                throw err instanceof ConflictError ? new ConflictError('The record already has an open draft') : err;
+            });
+            await this.repo.updateRecord(recordId, { draftVersion: n, draftState: 'draft', updatedAt: now });
+            await this.events?.publish('records.draft.changed', { recordId, recordNo: record.recordNo, versionNumber: n, revision: 1, change }, { actor });
         });
-        await this.repo.updateRecord(recordId, { draftVersion: n, draftState: 'draft', updatedAt: now });
-        await this.events?.publish('records.draft.changed', { recordId, recordNo: record.recordNo, versionNumber: n, revision: 1, change }, { actor });
         return this.getRecord(recordId);
     }
 
@@ -330,10 +344,13 @@ export class RecordsService {
             await this.repo.updateRecord(recordId, { draftState: 'draft' });
             throw err;
         }
-        await this.repo.updateVersion(recordId, version.versionNumber, { reviewInstanceId: instance.id });
-        await this.events?.publish('records.draft.submitted', {
-            recordId, recordNo: record.recordNo, versionNumber: version.versionNumber, reviewInstanceId: instance.id
-        }, { actor });
+        // the review link and the event are committed together (API-613)
+        await this.atomic(async () => {
+            await this.repo.updateVersion(recordId, version.versionNumber, { reviewInstanceId: instance.id });
+            await this.events?.publish('records.draft.submitted', {
+                recordId, recordNo: record.recordNo, versionNumber: version.versionNumber, reviewInstanceId: instance.id
+            }, { actor });
+        });
         return this.getRecord(recordId);
     }
 
@@ -344,8 +361,11 @@ export class RecordsService {
         const version = await this.repo.getVersion(recordId, record.draftVersion);
         if (version.submittedById !== actor.id) throw new ForbiddenError('Only the person who submitted the version can withdraw it');
         if (version.reviewInstanceId) await this.requireBpm().cancel(version.reviewInstanceId, 'Withdrawn by the submitter');
-        await this.backToDraft(record, version, this.entry(actor, { action: 'withdraw' }));
-        await this.events?.publish('records.draft.withdrawn', { recordId, recordNo: record.recordNo, versionNumber: version.versionNumber }, { actor });
+        // back to draft and the event, committed together (API-613)
+        await this.atomic(async () => {
+            await this.backToDraft(record, version, this.entry(actor, { action: 'withdraw' }));
+            await this.events?.publish('records.draft.withdrawn', { recordId, recordNo: record.recordNo, versionNumber: version.versionNumber }, { actor });
+        });
         return this.getRecord(recordId);
     }
 
@@ -388,23 +408,26 @@ export class RecordsService {
         const flagsNow = (await this.repo.getRecord(recordId)).flags || [];
         const remaining = openFlags(flagsNow, version.data);
         const settledFlags = remaining.length !== flagsNow.length ? { flags: remaining } : {};
-        await this.repo.commit({
-            recordId, versionNumber,
-            versionPatch: {
-                approvedById: by.id, approvedByName: by.name ?? null, committedAt, previousSeal: sealed.previousSeal, seal,
-                reviewComment: comment || null, updatedAt: committedAt,
-                changes: [...(version.changes || []), this.entry(actor, { action: 'commit', via: service, ...(comment ? { comment } : {}) })]
-            },
-            recordPatch: {
-                status: 'committed', currentVersion: versionNumber, draftVersion: null, draftState: null, updatedAt: committedAt,
-                searchText: searchTextOf(record, version.data), ...settledFlags
-            },
-            supersede: previous?.versionNumber
+        // the commit and its event are committed together (API-613)
+        await this.atomic(async () => {
+            await this.repo.commit({
+                recordId, versionNumber,
+                versionPatch: {
+                    approvedById: by.id, approvedByName: by.name ?? null, committedAt, previousSeal: sealed.previousSeal, seal,
+                    reviewComment: comment || null, updatedAt: committedAt,
+                    changes: [...(version.changes || []), this.entry(actor, { action: 'commit', via: service, ...(comment ? { comment } : {}) })]
+                },
+                recordPatch: {
+                    status: 'committed', currentVersion: versionNumber, draftVersion: null, draftState: null, updatedAt: committedAt,
+                    searchText: searchTextOf(record, version.data), ...settledFlags
+                },
+                supersede: previous?.versionNumber
+            });
+            await this.events?.publish('records.record.committed', {
+                recordId, recordNo: record.recordNo, versionNumber, seal, previousSeal: sealed.previousSeal,
+                submittedBy: { id: version.submittedById, name: version.submittedByName }, approvedBy: actor
+            }, { actor });
         });
-        await this.events?.publish('records.record.committed', {
-            recordId, recordNo: record.recordNo, versionNumber, seal, previousSeal: sealed.previousSeal,
-            submittedBy: { id: version.submittedById, name: version.submittedByName }, approvedBy: actor
-        }, { actor });
         return this.getRecord(recordId);
     }
 
@@ -415,10 +438,13 @@ export class RecordsService {
         if (version.state !== 'in_review') throw new ConflictError(`Version ${versionNumber} is not in review (${version.state})`);
         if (!String(comment || '').trim()) throw new BadRequestError('A rejection needs a comment');
         const actor = { id: by.id, name: by.name };
-        await this.backToDraft(record, version, this.entry(actor, { action: 'reject', via: service, comment }), { reviewComment: comment });
-        await this.events?.publish('records.draft.rejected', {
-            recordId, recordNo: record.recordNo, versionNumber, comment, submittedBy: { id: version.submittedById, name: version.submittedByName }
-        }, { actor });
+        // back to draft and the event, committed together (API-613)
+        await this.atomic(async () => {
+            await this.backToDraft(record, version, this.entry(actor, { action: 'reject', via: service, comment }), { reviewComment: comment });
+            await this.events?.publish('records.draft.rejected', {
+                recordId, recordNo: record.recordNo, versionNumber, comment, submittedBy: { id: version.submittedById, name: version.submittedByName }
+            }, { actor });
+        });
         return this.getRecord(recordId);
     }
 
@@ -467,11 +493,14 @@ export class RecordsService {
                 message: `Document updated: ${edrmsNo ?? pinned[0].edrmsNo} v${from} → v${version}. Review needed.`
             };
             const flags = [...(record.flags || []).filter(f => f !== existing), flag];
-            await this.repo.updateRecord(recordId, { flags });
-            // the open draft's checks show it at once (documents_current); its data is unchanged
-            const draft = versions.find(v => v.versionNumber === record.draftVersion && v.state === 'draft');
-            if (draft) await this.repo.updateVersion(recordId, draft.versionNumber, { checks: checksFor(draft.data, { flags }) });
-            await this.events?.publish('records.record.flagged', { recordId, recordNo: record.recordNo, flag });
+            // the flag and its event are committed together (API-613)
+            await this.atomic(async () => {
+                await this.repo.updateRecord(recordId, { flags });
+                // the open draft's checks show it at once (documents_current); its data is unchanged
+                const draft = versions.find(v => v.versionNumber === record.draftVersion && v.state === 'draft');
+                if (draft) await this.repo.updateVersion(recordId, draft.versionNumber, { checks: checksFor(draft.data, { flags }) });
+                await this.events?.publish('records.record.flagged', { recordId, recordNo: record.recordNo, flag });
+            });
             flagged.push(recordId);
         }
         return flagged;

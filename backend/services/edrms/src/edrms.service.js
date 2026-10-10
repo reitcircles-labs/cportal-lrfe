@@ -135,36 +135,40 @@ export class EdrmsService {
             assertComplete(file, size);
 
             const reviewer = meta.reviewedBy;
-            const document = await this.repo.createDocument({
-                year: now.getUTCFullYear(),
-                build: (seq) => {
-                    const edrmsNo = formatEdrmsNo(this.config.country, now.getUTCFullYear(), seq);
-                    const version = {
-                        id: randomUUID(), documentId: id, versionNumber: 1, label: '1.0', kind: 'filed', reason: null, changes: [],
-                        fields, recordMetadata, storageKey: key, fileName: key.split('/').pop(), mimeType: file.mimeType, size, sha256,
-                        createdAt: now, createdById: reviewer.id, createdByName: reviewer.name ?? null,
-                        ...(provenance ? { provenance } : {}),
-                        ...(encryption ? { encryption } : {})
-                    };
-                    version.seal = sealOf(id, edrmsNo, version);
-                    return {
-                        version,
-                        document: {
-                            id, edrmsNo, docType: meta.docType, title: meta.title.trim(), instrumentRef,
-                            registry: meta.registry || this.config.registry, batchId: meta.batchId ?? null, sourceId: String(meta.sourceId),
-                            pages: meta.pages, fields, props: propsOf(fields), recordMetadata, currentVersion: 1,
-                            searchText: searchTextOf({ title: meta.title.trim(), instrumentRef, edrmsNo, fields }),
-                            filedAt: now, filedById: reviewer.id, filedByName: reviewer.name ?? null, updatedAt: now
-                        }
-                    };
-                }
+            // the record and its event are committed together (API-613)
+            const document = await this.events.atomic(async () => {
+                const created = await this.repo.createDocument({
+                    year: now.getUTCFullYear(),
+                    build: (seq) => {
+                        const edrmsNo = formatEdrmsNo(this.config.country, now.getUTCFullYear(), seq);
+                        const version = {
+                            id: randomUUID(), documentId: id, versionNumber: 1, label: '1.0', kind: 'filed', reason: null, changes: [],
+                            fields, recordMetadata, storageKey: key, fileName: key.split('/').pop(), mimeType: file.mimeType, size, sha256,
+                            createdAt: now, createdById: reviewer.id, createdByName: reviewer.name ?? null,
+                            ...(provenance ? { provenance } : {}),
+                            ...(encryption ? { encryption } : {})
+                        };
+                        version.seal = sealOf(id, edrmsNo, version);
+                        return {
+                            version,
+                            document: {
+                                id, edrmsNo, docType: meta.docType, title: meta.title.trim(), instrumentRef,
+                                registry: meta.registry || this.config.registry, batchId: meta.batchId ?? null, sourceId: String(meta.sourceId),
+                                pages: meta.pages, fields, props: propsOf(fields), recordMetadata, currentVersion: 1,
+                                searchText: searchTextOf({ title: meta.title.trim(), instrumentRef, edrmsNo, fields }),
+                                filedAt: now, filedById: reviewer.id, filedByName: reviewer.name ?? null, updatedAt: now
+                            }
+                        };
+                    }
+                });
+                const v1 = await this.repo.getVersion(id, 1);
+                await this.events.publish('edrms.document.filed', {
+                    documentId: id, edrmsNo: created.edrmsNo, docType: created.docType, instrumentRef, batchId: created.batchId,
+                    sourceId: created.sourceId, props: created.props, sha256, seal: v1.seal
+                }, { actor: { id: reviewer.id, name: reviewer.name } });
+                return created;
             });
             uploadedKey = null;
-            const v1 = await this.repo.getVersion(id, 1);
-            await this.events.publish('edrms.document.filed', {
-                documentId: id, edrmsNo: document.edrmsNo, docType: document.docType, instrumentRef, batchId: document.batchId,
-                sourceId: document.sourceId, props: document.props, sha256, seal: v1.seal
-            }, { actor: { id: reviewer.id, name: reviewer.name } });
             return { document, created: true };
         } catch (err) {
             await discard(file?.stream).catch(() => {});
@@ -252,16 +256,20 @@ export class EdrmsService {
                 approvedById: approvedBy?.id ?? null, approvedByName: approvedBy?.name ?? null
             };
             version.seal = sealOf(id, doc.edrmsNo, version);
-            const updated = await this.repo.addVersion(id, doc.currentVersion, version, {
-                fields, props: propsOf(fields), recordMetadata: nextMetadata,
-                instrumentRef: instrumentRefOf(doc.docType, fields), currentVersion: n, updatedAt: now,
-                searchText: searchTextOf({ title: doc.title, instrumentRef: instrumentRefOf(doc.docType, fields), edrmsNo: doc.edrmsNo, fields })
+            // the new version and its event are committed together (API-613)
+            const updated = await this.events.atomic(async () => {
+                const saved = await this.repo.addVersion(id, doc.currentVersion, version, {
+                    fields, props: propsOf(fields), recordMetadata: nextMetadata,
+                    instrumentRef: instrumentRefOf(doc.docType, fields), currentVersion: n, updatedAt: now,
+                    searchText: searchTextOf({ title: doc.title, instrumentRef: instrumentRefOf(doc.docType, fields), edrmsNo: doc.edrmsNo, fields })
+                });
+                await this.events.publish('edrms.document.amended', {
+                    documentId: id, edrmsNo: doc.edrmsNo, version: n, reason: version.reason, changes: version.changes,
+                    instrumentRef: saved.instrumentRef, props: saved.props, sha256: content.sha256, seal: version.seal
+                }, { actor });
+                return saved;
             });
             uploadedKey = null;
-            await this.events.publish('edrms.document.amended', {
-                documentId: id, edrmsNo: doc.edrmsNo, version: n, reason: version.reason, changes: version.changes,
-                instrumentRef: updated.instrumentRef, props: updated.props, sha256: content.sha256, seal: version.seal
-            }, { actor });
             return { document: updated, version: this.publicVersion(version) };
         } catch (err) {
             await discard(file?.stream).catch(() => {});

@@ -119,8 +119,19 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
   `createEventBus()`. With `EVENT_BUS_DRIVER=nats` (what `npm run dev` and docker compose use)
   they go over NATS (`NATS_URL`, subjects `lrfe.<type>`) to every service; with `log` (the default)
   they are logged and stay in the service. A service that cannot reach NATS logs a warning and keeps
-  working. Durable events for the audit service (a JetStream stream and a transactional outbox)
-  come with that service.
+  working.
+- **Durable events (API-613).** A service on PostgreSQL writes each event to its own `outbox` table
+  in the same database transaction as the change (`events.atomic(fn)`; repositories' transactions
+  join it). A relay publishes unsent rows to the JetStream stream `LRFE` (subjects `lrfe.>`, on disk,
+  kept `EVENT_STREAM_MAX_AGE_DAYS`, default 30, applied when the stream is created), with the event
+  id as message id so a retry within the stream's 2-minute de-duplication window is not stored twice. A committed change therefore always produces its event, also across a NATS outage
+  or a restart; a rolled-back change never does. `events.consume(type, handler, { durable })` reads
+  the stream with a durable consumer that catches up after downtime and redelivers what failed
+  (handlers must be idempotent). Broadcast-only events (`{ durable: false }`, the session
+  revocation) go to `lrfe-live.<type>` and are never stored. The `outbox` table is created with
+  `DB_SYNC`; memory stores publish as before. On PostgreSQL, `atomic` makes a change and its
+  history rows one transaction whatever the driver; only with `nats` are events kept in the outbox.
+  Sent outbox rows are not pruned yet (follow-up).
 - Ending a session before its access tokens expire: identity publishes `identity.session.revoked`
   (a user suspended, a session signed out) and every service refuses the matching tokens until they
   would have expired (`createRevocationList`, passed to `authPlugin`). Normal sign-in, refresh and

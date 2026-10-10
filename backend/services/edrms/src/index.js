@@ -1,4 +1,4 @@
-import { createEventBus, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { EdrmsService } from './edrms.service.js';
 import { createMemoryRepo } from './repo/memory.js';
@@ -7,7 +7,7 @@ import { SCHEMA } from './repo/models.js';
 import { createStoreFromEnv } from './storage/index.js';
 
 const checks = [];
-let repo, sequelize;
+let repo, sequelize, outbox;
 
 if (envOneOf('EDRMS_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
     // Dev only: metadata lost on restart.
@@ -15,10 +15,12 @@ if (envOneOf('EDRMS_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
 } else {
     sequelize = createSequelize();
     repo = createSequelizeRepo(sequelize);
+    // events are written in the same transaction as the change, then published (API-613)
+    outbox = createSequelizeOutbox(sequelize, SCHEMA);
     checks.push(() => healthCheck(sequelize));
     if (envBool('DB_SYNC', false)) {
         // Dev/UAT convenience only. Replace with real migrations before production.
-        checks.push(async () => { await ensureSchema(sequelize, SCHEMA); await repo.sync(); });
+        checks.push(async () => { await ensureSchema(sequelize, SCHEMA); await repo.sync(); await outbox.sync(); });
     }
 }
 
@@ -27,7 +29,7 @@ const store = createStoreFromEnv();
 if (store.keyring?.check) checks.push(() => store.keyring.check());
 
 const jwtSecret = env('JWT_SECRET');
-const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'edrms' });
+const events = createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'edrms', outbox });
 const service = new EdrmsService({
     repo,
     store,

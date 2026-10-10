@@ -123,16 +123,20 @@ export class IntakeService {
 
             const pages = await countPages(await toBuffer(await this.readFile(key, encryption)), file.mimeType);
             const now = this.clock();
-            const doc = await this.repo.createDocument({
-                id, batchId, status: 'queued', fileKey: key, fileName: key.split('/').pop(), mimeType: file.mimeType, size, sha256, pages,
-                ...(encryption ? { encryption } : {}),
-                capturedById: actor.id, capturedByName: actor.name, capturedAt: now, fields: [], notes: [], languages: [],
-                escalated: false, extractionCostUsd: 0, updatedAt: now
+            // the document, its reading job, its history entry and its event are committed together (API-613)
+            const doc = await this.events.atomic(async () => {
+                const created = await this.repo.createDocument({
+                    id, batchId, status: 'queued', fileKey: key, fileName: key.split('/').pop(), mimeType: file.mimeType, size, sha256, pages,
+                    ...(encryption ? { encryption } : {}),
+                    capturedById: actor.id, capturedByName: actor.name, capturedAt: now, fields: [], notes: [], languages: [],
+                    escalated: false, extractionCostUsd: 0, updatedAt: now
+                });
+                await this.enqueue(created.id, {});
+                await this.event(created.id, 'captured', actor, { detail: `${created.fileName} · ${pages ?? '?'} page(s) · ${size} bytes` });
+                await this.events.publish('intake.document.captured', { documentId: created.id, batchId, sha256 }, { actor });
+                return created;
             });
             key = null;
-            await this.enqueue(doc.id, {});
-            await this.event(doc.id, 'captured', actor, { detail: `${doc.fileName} · ${pages ?? '?'} page(s) · ${size} bytes` });
-            await this.events.publish('intake.document.captured', { documentId: doc.id, batchId, sha256 }, { actor });
             return this.summary(doc);
         } catch (err) {
             if (file?.stream) for await (const _ of file.stream) { /* drain */ }
@@ -178,15 +182,19 @@ export class IntakeService {
             // the reading the fields come from (the cross-check call judges it, it does not read)
             if (a.ok && a.role !== 'crosscheck') latest = extractionId;
         }
-        const updated = await this.save(d, {
-            status: 'ready', docType: answer.docType, docTypeReason: answer.docTypeReason, languages: answer.languages, handwritingPresent: answer.handwritingPresent,
-            // pages counted at capture; the transcription's count if that is larger (or the file could not be parsed)
-            pages: Math.max(d.pages || 0, answer.pages.length) || null, fields: rows, notes, latestExtractionId: latest, crosscheck, escalated: !!escalated,
-            extractionCostUsd: Math.round(cost * 1e6) / 1e6, extractionError: null, claimedById: null, claimedByName: null, claimedAt: null
+        // the result, its history entry and its event are committed together (API-613)
+        const updated = await this.events.atomic(async () => {
+            const saved = await this.save(d, {
+                status: 'ready', docType: answer.docType, docTypeReason: answer.docTypeReason, languages: answer.languages, handwritingPresent: answer.handwritingPresent,
+                // pages counted at capture; the transcription's count if that is larger (or the file could not be parsed)
+                pages: Math.max(d.pages || 0, answer.pages.length) || null, fields: rows, notes, latestExtractionId: latest, crosscheck, escalated: !!escalated,
+                extractionCostUsd: Math.round(cost * 1e6) / 1e6, extractionError: null, claimedById: null, claimedByName: null, claimedAt: null
+            });
+            const flags = this.summary(saved).flags;
+            await this.event(id, 'extracted', SYSTEM, { detail: `${answer.docType} · ${rows.length} fields · ${flags.conflict} conflict, ${flags.check + flags.missing} to check${escalated ? ' · escalated' : ''}` });
+            await this.events.publish('intake.document.extracted', { documentId: id, docType: answer.docType, flags, escalated: !!escalated });
+            return saved;
         });
-        const flags = this.summary(updated).flags;
-        await this.event(id, 'extracted', SYSTEM, { detail: `${answer.docType} · ${rows.length} fields · ${flags.conflict} conflict, ${flags.check + flags.missing} to check${escalated ? ' · escalated' : ''}` });
-        await this.events.publish('intake.document.extracted', { documentId: id, docType: answer.docType, flags, escalated: !!escalated });
         return updated;
     }
 
@@ -353,12 +361,16 @@ export class IntakeService {
                 }
             }
         });
-        d = await this.save(d, {
-            status: 'filed', filedDocumentId: result.document.id, edrmsNo: result.document.edrmsNo, filedAt: this.clock(),
-            filedById: actor.id, filedByName: actor.name, claimedById: null, claimedByName: null, claimedAt: null
+        // the filed state, its history entry and its event are committed together (API-613)
+        d = await this.events.atomic(async () => {
+            const saved = await this.save(d, {
+                status: 'filed', filedDocumentId: result.document.id, edrmsNo: result.document.edrmsNo, filedAt: this.clock(),
+                filedById: actor.id, filedByName: actor.name, claimedById: null, claimedByName: null, claimedAt: null
+            });
+            await this.event(id, 'filed', actor, { detail: result.document.edrmsNo });
+            await this.events.publish('intake.document.filed', { documentId: id, edrmsDocumentId: result.document.id, edrmsNo: result.document.edrmsNo }, { actor });
+            return saved;
         });
-        await this.event(id, 'filed', actor, { detail: result.document.edrmsNo });
-        await this.events.publish('intake.document.filed', { documentId: id, edrmsDocumentId: result.document.id, edrmsNo: result.document.edrmsNo }, { actor });
         return this.summary(d);
     }
 

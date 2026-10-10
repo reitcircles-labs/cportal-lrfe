@@ -151,7 +151,8 @@ npm install
 npm run dev          # all services + NATS + OpenBao (edrms and intake encrypt with it); Ctrl+C stops
 ```
 
-On the first start each service creates its tables, and identity creates the roles and the
+On the first start each service creates its tables (including its `outbox` of events waiting to be
+published to NATS's stored event stream), and identity creates the roles and the
 bootstrap administrator (`BOOTSTRAP_ADMIN_*`, see [identity](services/identity/README.md#first-sign-in)).
 
 With `EXTRACTION_PROVIDER=gemini` and `INTAKE_RUN_WORKER=true`, intake starts reading any queued

@@ -1,5 +1,5 @@
 import { Op, UniqueConstraintError } from 'sequelize';
-import { ConflictError } from '@lrfe/common';
+import { ConflictError, inTransaction } from '@lrfe/common';
 import { defineModels, SCHEMA } from './models.js';
 import { PREFIX_MIN, SIMILARITY, fuzzy, normalizeSearch, searchTextOf } from '../search.js';
 import { normalizeRef } from '../catalogue.js';
@@ -59,7 +59,7 @@ export function createSequelizeRepo(sequelize) {
         },
 
         async createDocument({ year, build }) {
-            return uniqueToConflict(() => sequelize.transaction(async (transaction) => {
+            return uniqueToConflict(() => inTransaction(sequelize, async (transaction) => {
                 // Row-locked increment: the number is only consumed if the whole insert commits.
                 const [[{ last }]] = await sequelize.query(
                     `INSERT INTO "${SCHEMA}"."counter" ("year", "last") VALUES (:year, 1)
@@ -113,7 +113,7 @@ export function createSequelizeRepo(sequelize) {
             return version(await m.Version.findOne({ where: { documentId, versionNumber } }));
         },
         async addVersion(documentId, expectedCurrent, v, patch) {
-            return uniqueToConflict(() => sequelize.transaction(async (transaction) => {
+            return uniqueToConflict(() => inTransaction(sequelize, async (transaction) => {
                 const [count] = await m.Document.update(patch, { where: { id: documentId, currentVersion: expectedCurrent }, transaction });
                 if (count !== 1) throw new ConflictError('The document was changed by someone else. Reload and try again.');
                 await m.Version.create(v, { transaction });

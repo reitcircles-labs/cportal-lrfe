@@ -171,6 +171,8 @@ An open draft carries `draftDiff`: what it changes against the current version.
 ## 8. When edrms corrects a document
 
 edrms publishes `edrms.document.amended` (over NATS) when a filed document gets a new version.
+land-records reads it with a durable consumer (`land-records-document-amended`, API-613), so a
+correction approved while land-records is down is handled once it is back.
 land-records finds every record whose current version or open draft pins an older version of that
 document and flags it **needs review** (`flags: [{ type: "document_updated", edrmsNo, from, to,
 reason, message: "Document updated: EDR-NA-… v1 → v2. Review needed." }]`, `records.record.flagged`).
