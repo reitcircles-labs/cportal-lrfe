@@ -9,11 +9,14 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "mocha 'tests/**/*.test.js' --timeout 20000",
-    "bench": "node bench/tree-1m.js"
+    "bench": "node bench/tree-1m.js",
+    "anchor:test": "node scripts/anchor-test.js"
   },
   "dependencies": {
+    "@emurgo/cardano-serialization-lib-nodejs": "^17.0.0",
     "@lrfe/common": "0.1.0",
-    "sequelize": "^6.37.3"
+    "sequelize": "^6.37.3",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "chai": "^5.1.1",

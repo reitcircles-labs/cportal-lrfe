@@ -165,6 +165,41 @@ while; later starts continue where it stopped, and `npm run dev` starts it when 
 set to `ogmios`. Production rules (dedicated user, mainnet resources):
 [Cardano node: installation rules](scripts/README.md#cardano-node-installation-rules).
 
+**The anchoring wallet.** Its key is created in OpenBao (`audit-anchor`, ed25519, never exportable)
+by `npm run bao -- --dev`, together with the audit service's AppRole. Copy the printed `audit`
+settings into `services/audit/.env`:
+
+```bash
+CARDANO_PROVIDER=ogmios        # or blockfrost (below)
+CARDANO_NETWORK=preview
+BAO_ADDR=http://127.0.0.1:8200
+BAO_ROLE_ID=…                  # printed by npm run bao -- --dev
+BAO_SECRET_ID_FILE=/home/<user>/data/cportal-lrfe/openbao/approle/audit-secret-id
+```
+
+Then show the wallet's address and fund it from the preview faucet
+(https://docs.cardano.org/cardano-testnets/tools/faucet, network *Preview*), and anchor one test root:
+
+```bash
+npm run anchor:test -w @lrfe/audit                # provider, address, balance
+npm run anchor:test -w @lrfe/audit -- --submit    # anchors a random root, follows it until confirmed
+```
+
+With `ogmios` the node must be in sync first (`npm run cardano:status`); until then anchoring
+waits and says so.
+
+**Blockfrost instead of the own node.** Create a project for *Cardano preview* on blockfrost.io and
+keep its key in a file only you can read (the service refuses a key file others can read):
+
+```bash
+mkdir -p -m 700 ~/data/cportal-lrfe/blockfrost
+( umask 077; read -rsp 'Blockfrost preview project key: ' k; echo; printf '%s\n' "$k" > ~/data/cportal-lrfe/blockfrost/preview-project-id )
+```
+
+and in `services/audit/.env`: `CARDANO_PROVIDER=blockfrost` and
+`BLOCKFROST_PROJECT_ID_FILE=/home/<user>/data/cportal-lrfe/blockfrost/preview-project-id`.
+No node is needed then. The key never appears on screen or in logs.
+
 ## 5. First start
 
 ```bash

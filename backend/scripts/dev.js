@@ -13,7 +13,8 @@
  * The first run downloads nats-server into backend/.tools/.
  *
  * OpenBao (scripts/bao.js --dev, port 8200) is started first when a selected service encrypts with
- * it (EDRMS_ENCRYPTION=bao or INTAKE_ENCRYPTION=bao, in its .env or this shell), or when `bao` is
+ * it (EDRMS_ENCRYPTION=bao or INTAKE_ENCRYPTION=bao, in its .env or this shell), when the audit
+ * service anchors on Cardano (CARDANO_PROVIDER set: its wallet key is in OpenBao), or when `bao` is
  * named. Those services wait for the vault at startup (up to a minute). If port 8200 is taken by an
  * OpenBao started separately, that one is used.
  *
@@ -61,14 +62,21 @@ if (unknown.length) {
     console.error(`Unknown service(s): ${unknown.join(', ')}. Choose from: ${SERVICES.join(', ')}`);
     process.exit(1);
 }
-/** The services (among `selected`) whose files are encrypted with OpenBao: their .env, or this shell. */
+/**
+ * The services (among `selected`) that use OpenBao, by their .env or this shell: edrms and intake
+ * when they encrypt with it, audit when it anchors on Cardano (its wallet key is there).
+ */
 function baoUsers(selected) {
+    const uses = {
+        edrms: (get) => (get('EDRMS_ENCRYPTION') ?? 'off').toLowerCase() === 'bao',
+        intake: (get) => (get('INTAKE_ENCRYPTION') ?? 'off').toLowerCase() === 'bao',
+        audit: (get) => ['ogmios', 'blockfrost'].includes((get('CARDANO_PROVIDER') ?? '').toLowerCase())
+    };
     return selected.filter(name => {
-        const setting = { edrms: 'EDRMS_ENCRYPTION', intake: 'INTAKE_ENCRYPTION' }[name];
-        if (!setting) return false;
+        if (!uses[name] || !PROCESSES[name]) return false;
         const file = join(PROCESSES[name].cwd, '.env');
-        const fromFile = existsSync(file) ? dotenv.parse(readFileSync(file))[setting] : undefined;
-        return (process.env[setting] ?? fromFile ?? 'off').toLowerCase() === 'bao';
+        const env = existsSync(file) ? dotenv.parse(readFileSync(file)) : {};
+        return uses[name]((key) => process.env[key] ?? env[key]);
     });
 }
 /** The services (among `selected`) that anchor through the local Cardano node (Ogmios). */
