@@ -42,6 +42,9 @@ Planned next: **audit** (hash-chained trail, sign-off, evidence export); **searc
 
 ## Running
 
+Setting up a server (PostgreSQL on localhost only, one `.env` per service, the shared JWT secret,
+checks): [`install.md`](install.md).
+
 ```bash
 npm install
 cp .env_example services/identity/.env     # edit; see the comments in the file
