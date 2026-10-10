@@ -279,8 +279,8 @@ test('security policies and the permission matrix are saved, take effect and are
     await expect(page.locator('.seg-opt', { hasText: '60 min' }).locator('input')).toBeChecked();
     await expect(rule.locator('input')).toBeChecked();
 
-    // One permission for one role: auditors may comment on records (no screen or endpoint tested
-    // elsewhere depends on it). It reaches the auditor's token at their next sign-in.
+    // One permission for one role: auditors may comment on records. It reaches the auditor's token at
+    // their next sign-in (api-by-role.spec.ts, running meanwhile, judges by the token it holds).
     await page.goto('/#/admin/roles');
     await page.getByLabel('Auditor · read-only: Comment on records').check();
     await expect(page.locator('.savebar')).toContainText('1 unsaved permission change');

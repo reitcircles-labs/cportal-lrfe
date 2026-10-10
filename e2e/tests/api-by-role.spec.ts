@@ -39,6 +39,19 @@ test('without a token, every protected endpoint answers 401', async ({ request }
 for (const user of MATRIX_USERS) {
     test(`${user.label}: each endpoint allows or refuses by permission`, async ({ request }) => {
         const token = await apiSignIn(request, user.email);
+        // judged by the permissions in this token, which is what the services check: the role's
+        // permissions can change while this runs (administration.spec.ts lets auditors comment on
+        // records for a moment), and a token keeps the ones it was signed in with (API-664)
+        const perms: string[] = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).perms;
+        expect(Array.isArray(perms), 'the access token has no perms claim').toBe(true);
+        const sorted = (list: string[]) => [...list].sort().join(', ');
+        if (sorted(perms) !== sorted(user.perms)) {
+            // only that one change is expected; any other difference is a real problem
+            const toggled = user.perms.includes('record.comment') ? user.perms.filter(p => p !== 'record.comment') : [...user.perms, 'record.comment'];
+            expect(user.roles.includes('aud') && sorted(perms) === sorted(toggled), `token permissions ${sorted(perms)} differ from the role catalogue's ${sorted(user.perms)}`).toBe(true);
+            test.info().annotations.push({ type: 'note', description: 'the Auditor role was being edited: judged by the token\'s permissions' });
+        }
+        const holder = { ...user, perms };
         for (const op of OPERATIONS) {
             if (op.kind === 'user') continue;   // any signed-in user; finer rules are checked by the service tests
             if (op.kind === 'service') {
@@ -47,7 +60,7 @@ for (const user of MATRIX_USERS) {
                 continue;
             }
             const rule = op.allOf ? `needs ${op.allOf.join(' + ')}` : `needs one of ${op.anyOf!.join(', ')}`;
-            if (!allowed(user, op)) {
+            if (!allowed(holder, op)) {
                 const res = await send(request, op.method, op.path, token);
                 // the answer's body in the message, so an unexpected status says where it came from (API-664)
                 expect.soft(res.status(), `${op.method} ${op.path} (${rule}) must be refused; got: ${res.status() === 403 ? '' : (await res.text()).slice(0, 300)}`).toBe(403);
