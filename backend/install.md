@@ -143,6 +143,24 @@ switched on stay readable as they are; only files stored afterwards are encrypte
 off, set `EDRMS_ENCRYPTION=off` / `INTAKE_ENCRYPTION=off`. `.env_example` keeps encryption off,
 because a service set to `bao` does not start without its login settings.
 
+## 4b. Cardano node for the audit service (optional)
+
+The audit service anchors its proofs on Cardano (design: [`services/audit/README.md`](services/audit/README.md)).
+It talks to the chain either through **Blockfrost** (`CARDANO_PROVIDER=blockfrost`, a project key, no
+node to run) or through the portal's **own node and Ogmios** (`CARDANO_PROVIDER=ogmios`). For the own
+node on a development or test server:
+
+```bash
+cd backend
+npm run cardano -- --dev     # first run: downloads cardano-node and Ogmios, then syncs the preview chain
+```
+
+The node runs as a client only (it accepts no connections), Ogmios listens on `127.0.0.1:1337`,
+and the chain is kept in `~/data/cportal-lrfe/cardano/preview`, outside git. The first sync takes a
+while; later starts continue where it stopped, and `npm run dev` starts it when the audit service is
+set to `ogmios`. Production rules (dedicated user, mainnet resources):
+[Cardano node: installation rules](scripts/README.md#cardano-node-installation-rules).
+
 ## 5. First start
 
 ```bash
