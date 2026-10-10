@@ -214,13 +214,13 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                   <div class="panel-body stack" style="gap:14px">
                     <div class="form-grid">
                       <div class="field"><label for="ten">Tenure</label>
-                        <select id="ten" class="input" [disabled]="!editable()" [value]="df().tenure" (change)="setDf('tenure', $any($event.target).value)">
-                          <option value="">—</option><option value="freehold">Freehold</option><option value="leasehold">Leasehold</option><option value="other">Other</option>
+                        <select id="ten" class="input" [disabled]="!editable()" (change)="setDf('tenure', $any($event.target).value)">
+                          @for (o of tenures; track o.id) { <option [value]="o.id" [selected]="o.id === df().tenure">{{ o.label }}</option> }
                         </select></div>
                       <div class="field"><label for="ext">Extent</label>
                         <div class="row" style="gap:6px;flex-wrap:nowrap">
                           <input id="ext" class="input num" inputmode="decimal" [readonly]="!editable()" [value]="df().extent" (input)="setDf('extent', $any($event.target).value)">
-                          <select class="input" style="width:90px" aria-label="Extent unit" [disabled]="!editable()" [value]="df().unit" (change)="setDf('unit', $any($event.target).value)"><option value="m2">m²</option><option value="ha">ha</option></select>
+                          <select class="input" style="width:90px" aria-label="Extent unit" [disabled]="!editable()" (change)="setDf('unit', $any($event.target).value)">@for (o of units; track o.id) { <option [value]="o.id" [selected]="o.id === df().unit">{{ o.label }}</option> }</select>
                         </div>
                         @if (shown()?.data?.extent?.source; as s) { <span class="small muted">{{ s.from === 'document' ? 'From ' + s.edrmsNo : 'Entered by hand' + (s.reason ? ': ' + s.reason : '') }}</span> }
                         @if (editable() && suggestedExtentDiffers()) {
@@ -232,7 +232,7 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                       <b style="font-size:13.5px">Encumbrances</b>
                       @for (e of df().encumbrances; track $index; let i = $index) {
                         <div class="row" style="gap:6px;flex-wrap:nowrap">
-                          <select class="input" style="width:130px" aria-label="Type" [disabled]="!editable()" [value]="e.type" (change)="setEnc(i, 'type', $any($event.target).value)"><option value="bond">Bond</option><option value="servitude">Servitude</option><option value="other">Other</option></select>
+                          <select class="input" style="width:130px" aria-label="Type" [disabled]="!editable()" (change)="setEnc(i, 'type', $any($event.target).value)">@for (o of encumbranceTypes; track o.id) { <option [value]="o.id" [selected]="o.id === e.type">{{ o.label }}</option> }</select>
                           <input class="input" placeholder="Reference" aria-label="Reference" [readonly]="!editable()" [value]="e.ref" (input)="setEnc(i, 'ref', $any($event.target).value)">
                           <input class="input" placeholder="In favour of" aria-label="In favour of" [readonly]="!editable()" [value]="e.inFavourOf || ''" (input)="setEnc(i, 'inFavourOf', $any($event.target).value)">
                           @if (editable()) { <button type="button" class="btn btn-ghost btn-icon danger" title="Remove" aria-label="Remove" (click)="removeEnc(i)"><app-icon name="x" [size]="16" /></button> }
@@ -366,8 +366,8 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
           } @else {
             <div class="form-grid">
               <div class="field" style="grid-column:1/-1"><label for="kind">Kind of parcel</label>
-                <select id="kind" class="input" [value]="ckind()" (change)="ckind.set($any($event.target).value)">
-                  @for (k of kinds(); track k.id) { <option [value]="k.id">{{ k.label }}</option> }
+                <select id="kind" class="input" (change)="ckind.set($any($event.target).value)">
+                  @for (k of kinds(); track k.id) { <option [value]="k.id" [selected]="k.id === ckind()">{{ k.label }}</option> }
                 </select></div>
               @for (f of kindFields(); track f.k) {
                 <div class="field"><label [for]="'pf-' + f.k">{{ parcelLabel(f.k) }}{{ f.required ? '' : ' (optional)' }}</label>
@@ -541,6 +541,10 @@ export class LinkComponent {
   cparcel = signal<Record<string, string>>({});
 
   private timers: Record<string, any> = {};
+  // dropdown options: each <option> is marked [selected] (API-612/614), so the shown value is the one held
+  readonly tenures = [{ id: '', label: '—' }, { id: 'freehold', label: 'Freehold' }, { id: 'leasehold', label: 'Leasehold' }, { id: 'other', label: 'Other' }];
+  readonly units = [{ id: 'm2', label: 'm²' }, { id: 'ha', label: 'ha' }];
+  readonly encumbranceTypes = [{ id: 'bond', label: 'Bond' }, { id: 'servitude', label: 'Servitude' }, { id: 'other', label: 'Other' }];
   fmt = fmtTime;
 
   constructor() {
