@@ -11,7 +11,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { ENROLLED_USERS, userByRole } from '../support/catalogue';
 import { signInAs } from '../support/auth';
 import { apiAs } from '../support/intake';
@@ -310,4 +310,41 @@ test('the Land record screen respects permissions: the registrar reads and comme
     await page.getByLabel('Comment').fill('Please link the SG diagram first.');
     await page.getByRole('button', { name: 'Post comment' }).click();
     await expect(page.locator('.thread li', { hasText: 'Please link the SG diagram first.' })).toContainText(userByRole('sup').name);
+});
+
+test('Land record dropdowns show the value the record holds, not their first option', { tag: ['@API-612', '@API-614'] }, async ({ page, playwright, baseURL }) => {
+    // values that are not the first option of their dropdown
+    const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+    const number = String(30_000 + Math.floor(Math.random() * 9_999));
+    const created = await rec.api.post('/api/records', { headers: rec.headers, data: { parcel: { kind: 'erf', number, township: 'Eros', regDiv: 'K' } } });
+    expect(created.status(), await created.text()).toBe(201);
+    const { id } = await created.json();
+    const edited = await rec.api.patch(`/api/records/${id}/draft`, { headers: rec.headers, data: {
+        revision: 1, reason: 'Dropdown test values',
+        changes: { tenure: 'leasehold', extent: { value: 2.5, unit: 'ha' }, encumbrances: [{ type: 'other', ref: 'K 77/2020' }] }
+    } });
+    expect(edited.status(), await edited.text()).toBe(200);
+    await rec.dispose();
+
+    const shown = (select: Locator) => select.evaluate((s: HTMLSelectElement) => s.options[s.selectedIndex]?.text);
+    await signInAs(page, userByRole('rec').email, `/link?record=${id}`);
+    await expect(page.locator('header.panel.head')).toContainText(`Erf ${number}, Eros`);
+    await page.getByRole('tab', { name: 'Details' }).click();
+    expect.soft(await shown(page.getByLabel('Tenure')), 'tenure').toBe('Leasehold');
+    expect.soft(await shown(page.getByLabel('Extent unit')), 'extent unit').toBe('ha');
+    expect.soft(await shown(page.getByLabel('Type', { exact: true })), 'encumbrance type').toBe('Other');
+    await evidence(page, 'API-614', 'Land record details: Tenure Leasehold, unit ha, encumbrance type Other');
+
+    // New record: the chosen kind of parcel survives closing and reopening the dialog
+    await page.getByRole('button', { name: 'New record' }).click();
+    const dialog = page.locator('form.dialog');
+    await dialog.locator('label.seg-opt', { hasText: 'For a parcel' }).click();
+    await dialog.getByLabel('Kind of parcel').selectOption({ label: 'Farm portion' });
+    await expect(dialog.getByLabel(/^Farm name/)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('button', { name: 'New record' }).click();
+    await dialog.locator('label.seg-opt', { hasText: 'For a parcel' }).click();
+    expect.soft(await shown(dialog.getByLabel('Kind of parcel')), 'kind of parcel after reopening').toBe('Farm portion');
+    await expect(dialog.getByLabel(/^Farm name/)).toBeVisible();
+    await evidence(page, 'API-614', 'New record: the Kind of parcel dropdown keeps Farm portion');
 });
