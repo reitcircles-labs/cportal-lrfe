@@ -1,6 +1,6 @@
 import { Op, UniqueConstraintError } from 'sequelize';
 import { inTransaction } from '@lrfe/common';
-import { defineModels } from './models.js';
+import { defineModels, SCHEMA } from './models.js';
 
 // pg returns BIGINT as a string
 const plain = (row) => (row ? { ...row.get({ plain: true }), seq: Number(row.seq) } : null);
@@ -12,7 +12,9 @@ const leafOf = (row) => (row ? { ...row.get({ plain: true }), leafIndex: Number(
 
 /** Postgres audit repository. Same interface as ./memory.js. */
 export function createSequelizeRepo(sequelize) {
-    const { TrailEntry, TreeLeaf, TreeNode } = defineModels(sequelize);
+    const { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease } = defineModels(sequelize);
+    const num = (v) => (v === null || v === undefined ? null : Number(v));
+    const anchorOf = (row) => (row ? { ...row.get({ plain: true }), size: Number(row.size), checkpointSeq: num(row.checkpointSeq), ttl: num(row.ttl), fee: row.fee === null ? null : String(row.fee) } : null);
 
     const treeOps = (transaction) => ({
         // the last index + 1 (an index lookup; count(*) would read the whole table)
@@ -52,7 +54,13 @@ export function createSequelizeRepo(sequelize) {
 
     return {
         models: { TrailEntry },
-        async sync() { await sequelize.sync(); },
+        async sync() {
+            await sequelize.sync();
+            // columns added after the table was first created (API-657)
+            for (const [col, type] of [['ttl', 'BIGINT'], ['lastSentAt', 'TIMESTAMPTZ'], ['inputTxHash', 'VARCHAR(64)'], ['inputIndex', 'INTEGER'], ['expiredSeenHeight', 'INTEGER'], ['spentSeenHeight', 'INTEGER']]) {
+                await sequelize.query(`ALTER TABLE "${SCHEMA}"."anchor" ADD COLUMN IF NOT EXISTS "${col}" ${type}`);
+            }
+        },
 
         async append(eventId, build) {
             try {
@@ -83,6 +91,29 @@ export function createSequelizeRepo(sequelize) {
 
         async page(after, limit) {
             return (await TrailEntry.findAll({ where: { seq: { [Op.gt]: after } }, order: [['seq', 'ASC']], limit })).map(plain);
+        },
+
+        async head() { return plain(await TrailEntry.findOne({ order: [['seq', 'DESC']] })); },
+
+        async lastAnchor() { return anchorOf(await Anchor.findOne({ order: [['batch', 'DESC']] })); },
+        async lastAnchorWhere(statuses) { return anchorOf(await Anchor.findOne({ where: { status: statuses }, order: [['batch', 'DESC']] })); },
+        async createAnchor(row) { return anchorOf(await Anchor.create(row)); },
+        async updateAnchor(batch, patch) { await Anchor.update(patch, { where: { batch } }); },
+        async listAnchors({ limit = 50 } = {}) { return (await Anchor.findAll({ order: [['batch', 'DESC']], limit })).map(anchorOf); },
+        /** Given-up anchorings that spent this wallet output, oldest first. */
+        async anchorsSpending(txHash, index) { return (await Anchor.findAll({ where: { inputTxHash: txHash, inputIndex: index, status: 'failed' }, order: [['batch', 'ASC']] })).map(anchorOf); },
+        async anchorCovering(index) { return anchorOf(await Anchor.findOne({ where: { status: 'confirmed', size: { [Op.gt]: index } }, order: [['batch', 'ASC']] })); },
+        async claimLease(name, holder, ms) {
+            // insert, or take over an expired lease, or renew our own: one statement, so two instances
+            // cannot both win; on the database's clock, so the instances' clocks do not matter
+            const [rows] = await sequelize.query(
+                `INSERT INTO "${SCHEMA}"."job_lease" ("name", "holder", "expiresAt") VALUES (:name, :holder, now() + :ms * interval '1 millisecond')
+                 ON CONFLICT ("name") DO UPDATE SET "holder" = EXCLUDED."holder", "expiresAt" = EXCLUDED."expiresAt"
+                 WHERE "job_lease"."holder" = EXCLUDED."holder" OR "job_lease"."expiresAt" < now()
+                 RETURNING "holder"`,
+                { replacements: { name, holder, ms } }
+            );
+            return rows.length === 1;
         },
 
         tree: treeOps(undefined),

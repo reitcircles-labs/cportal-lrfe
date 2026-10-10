@@ -19,7 +19,7 @@ export class CardanoError extends Error {
         super(message);
         this.name = 'CardanoError';
         this.code = code;
-        this.retryable = code === 'EUNAVAILABLE' || code === 'ESIGN';
+        this.retryable = code === 'EUNAVAILABLE' || code === 'ESIGN';         // ESPENT: an output to spend is gone
         if (details) this.details = details;
         if (cause) this.cause = cause;
     }
@@ -42,12 +42,15 @@ export function anchorMetadata({ root, size, batch, prev }) {
 }
 
 /**
- * Build the transaction and its 32-byte body hash, which the wallet's key signs. `utxos`:
+ * Build the transaction and its 32-byte body hash, which the wallet's key signs. `ttl`: the slot
+ * from which it is invalid (Cardano's invalid_hereafter: valid only in slots before it). `input`:
+ * spend exactly this output (a re-anchoring spends the input of the one it replaces, so the two can
+ * never both land); when it is gone, CardanoError ESPENT. `utxos`:
  * [{ txHash, index, lovelace, assets }] (outputs holding other tokens are not spent);
  * `params`: { minFeeA, minFeeB, coinsPerUtxoByte, maxTxSize }.
  * Returns { bodyHash, fee, change, input, sign(signature) → { cbor, txHash, bytes } }.
  */
-export function buildAnchorTx({ utxos, address, publicKey, params, metadata }) {
+export function buildAnchorTx({ utxos, address, publicKey, params, metadata, ttl, input: wanted }) {
     const addr = C.Address.from_bech32(address);
     // a fresh object each time: the library takes ownership of what it is given
     const makeAux = () => {
@@ -61,7 +64,8 @@ export function buildAnchorTx({ utxos, address, publicKey, params, metadata }) {
 
     // one input: the largest output holding ADA only (normally the change of the last anchoring)
     const spendable = utxos.filter(u => !u.assets).sort((a, b) => (BigInt(b.lovelace) > BigInt(a.lovelace) ? 1 : -1));
-    const input = spendable[0];
+    const input = wanted ? spendable.find(u => u.txHash === wanted.txHash && u.index === wanted.index) : spendable[0];
+    if (wanted && !input) throw new CardanoError(`The output ${wanted.txHash}#${wanted.index} is no longer unspent`, 'ESPENT');
     if (!input) throw new CardanoError(`The anchoring wallet ${address} has no funds`, 'EFUNDS');
     const tooLittle = () => new CardanoError(`The anchoring wallet holds ${lovelaceToAda(input.lovelace)} ADA in its largest output; that does not pay for an anchoring`, 'EFUNDS');
     if (BigInt(input.lovelace) <= BigInt(params.minFeeB)) throw tooLittle();
@@ -73,6 +77,7 @@ export function buildAnchorTx({ utxos, address, publicKey, params, metadata }) {
         outputs.add(C.TransactionOutput.new(addr, C.Value.new(C.BigNum.from_str(String(BigInt(input.lovelace) - fee)))));
         const b = C.TransactionBody.new_tx_body(inputs, outputs, C.BigNum.from_str(String(fee)));
         b.set_auxiliary_data_hash(C.AuxiliaryDataHash.from_bytes(auxHash));
+        if (ttl !== undefined) b.set_ttl(C.BigNum.from_str(String(ttl)));
         return b;
     };
     const witnessed = (b, signature) => {

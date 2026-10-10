@@ -7,35 +7,10 @@ import C from '@emurgo/cardano-serialization-lib-nodejs';
 import { createCardanoAdapter, cardanoFromEnv } from '../src/cardano/adapter.js';
 import { createBlockfrostDriver, createOgmiosDriver } from '../src/cardano/drivers.js';
 import { createLocalSigner, createTransitSigner } from '../src/cardano/signer.js';
-import { addressOf, buildAnchorTx, LABEL, readAnchorMetadata } from '../src/cardano/tx.js';
+import { addressOf, buildAnchorTx, readAnchorMetadata } from '../src/cardano/tx.js';
+import { fakeDriver, PARAMS, txid } from './helpers.js';
 
-const PARAMS = { minFeeA: 44, minFeeB: 155381, coinsPerUtxoByte: 4310, maxTxSize: 16384 };
 const root = (n = 1) => createHash('sha256').update(`root ${n}`).digest('hex');
-const txid = (n) => createHash('sha256').update(`tx ${n}`).digest('hex');
-
-/** A chain in memory: submitted transactions spend their input and add their change output. */
-function fakeDriver({ lovelace = '10000000000', synced = true } = {}) {
-    const chain = { utxos: [{ txHash: txid(0), index: 0, lovelace, assets: false }], submitted: [], height: 100, fail: null, reject: null, synced };
-    return {
-        chain,
-        name: 'fake',
-        async parameters() { if (chain.fail) throw chain.fail; return PARAMS; },
-        async utxos() { if (chain.fail) throw chain.fail; return chain.utxos; },
-        async submit(cbor) {
-            if (chain.fail) throw chain.fail;
-            if (chain.reject) throw chain.reject;
-            const tx = C.Transaction.from_hex(cbor);
-            const id = Buffer.from(C.FixedTransaction.new_from_body_bytes(tx.body().to_bytes()).transaction_hash().to_bytes()).toString('hex');
-            chain.utxos = [{ txHash: id, index: 0, lovelace: tx.body().outputs().get(0).amount().coin().to_str(), assets: false }];
-            chain.submitted.push({ id, cbor, height: chain.height });
-            return id;
-        },
-        async output(id) { const s = chain.submitted.find(x => x.id === id); return { onChain: !!s, blockHeight: s ? s.height : null }; },
-        async tipHeight() { return chain.height; },
-        async synced() { return chain.synced; },
-        async metadata(id) { const s = chain.submitted.find(x => x.id === id); return s ? { [LABEL]: readAnchorMetadata(s.cbor) } : null; }
-    };
-}
 
 function makeAdapter(opts = {}) {
     const driver = fakeDriver(opts);
@@ -128,8 +103,8 @@ describe('Cardano: outages, refusals and the wallet (API-656)', () => {
         const { adapter, driver } = makeAdapter();
         const r = await adapter.anchor({ root: root(), size: 1, batch: 1 });
         driver.chain.height = 109;
-        assert.deepEqual(await adapter.status(r.txHash), { onChain: true, blockHeight: 100, tipHeight: 109, depth: 10 });
-        assert.deepEqual(await adapter.status(txid(77)), { onChain: false, blockHeight: null, tipHeight: 109, depth: null });
+        assert.deepEqual(await adapter.status(r.txHash), { onChain: true, blockHeight: 100, tipHeight: 109, tipSlot: 2000, depth: 10 });
+        assert.deepEqual(await adapter.status(txid(77)), { onChain: false, blockHeight: null, tipHeight: 109, tipSlot: 2000, depth: null });
     });
 
     it('the balance; below the minimum a warning in the log and a broadcast-only event', async () => {
@@ -177,6 +152,7 @@ describe('Cardano: the Ogmios driver (API-656)', () => {
             'queryLedgerState/utxo': [{ transaction: { id: txid(1) }, index: 0, address: 'addr_test1…', value: { ada: { lovelace: 9000000 } } },
                 { transaction: { id: txid(2) }, index: 1, value: { ada: { lovelace: 2000000 }, abcd: { '74': 1 } } }],
             'queryNetwork/blockHeight': 635536,
+            'queryNetwork/tip': { slot: 14330226, id: 'd2a7c9f6' },
             health: { networkSynchronization: 0.04661 }
         });
         assert.deepEqual(await driver.parameters(), PARAMS);
@@ -185,6 +161,7 @@ describe('Cardano: the Ogmios driver (API-656)', () => {
         assert.deepEqual(await driver.output(txid(1), 0), { onChain: true, blockHeight: null });
         assert.deepEqual(calls.at(-1).params, { outputReferences: [{ transaction: { id: txid(1) }, index: 0 }] });
         assert.equal(await driver.tipHeight(), 635536);
+        assert.equal(await driver.tipSlot(), 14330226);
         assert.equal(await driver.synced(), false);
         assert.equal(driver.metadata, null);
     });
@@ -222,7 +199,7 @@ describe('Cardano: the Blockfrost driver (API-656)', () => {
             '/addresses/addr_test1x/utxos': [200, [{ tx_hash: txid(1), output_index: 0, amount: [{ unit: 'lovelace', quantity: '9000000' }] }]],
             [`/txs/${txid(1)}`]: [200, { hash: txid(1), block_height: 3000000 }],
             [`/txs/${txid(1)}/metadata`]: [200, [{ label: '8890', json_metadata: { v: 1, root: root() } }]],
-            '/blocks/latest': [200, { height: 3000009 }],
+            '/blocks/latest': [200, { height: 3000009, slot: 99000000 }],
             POST: [200, txid(1)]
         });
         assert.deepEqual(await driver.parameters(), PARAMS);
@@ -231,6 +208,7 @@ describe('Cardano: the Blockfrost driver (API-656)', () => {
         assert.deepEqual(await driver.output(txid(9), 0), { onChain: false, blockHeight: null });     // 404: not yet
         assert.deepEqual((await driver.metadata(txid(1)))['8890'], { v: 1, root: root() });
         assert.equal(await driver.tipHeight(), 3000009);
+        assert.equal(await driver.tipSlot(), 99000000);
         assert.equal(await driver.submit('84a3'), txid(1));
         const submit = calls.find(c => c.init.method === 'POST');
         assert.equal(submit.init.headers['Content-Type'], 'application/cbor');

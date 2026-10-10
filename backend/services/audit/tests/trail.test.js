@@ -110,6 +110,30 @@ describe('audit trail: the hash chain (API-654)', () => {
     });
 });
 
+describe('audit trail: gaps (API-657)', () => {
+    it('events the stream dropped before they were read are recorded once as a gap, loudly', async () => {
+        const errors = [];
+        const repo = createMemoryRepo();
+        const trail = new TrailService({ repo, logger: { error: (o, m) => errors.push([o, m]) } });
+        const published = [];
+        let gap = null;
+        const events = { consumerGap: async () => gap, publish: async (type, data, o) => { published.push({ type, data, o }); } };
+        assert.equal(await trail.checkGap(events), null);
+        await trail.record(event('edrms.document.filed', { documentId: 'd1' }));
+        gap = { from: 120, to: 164 };
+        const r = await trail.checkGap(events);
+        assert.deepEqual(r, { consumer: 'audit-trail', fromStreamSeq: 120, toStreamSeq: 164, missing: 45, recorded: true });
+        assert.equal((await trail.checkGap(events)).recorded, false);       // the next hour: not again
+        const gaps = (await trail.list({ type: 'audit.trail.gap' })).entries;
+        assert.equal(gaps.length, 1);
+        assert.equal(gaps[0].seq, 2);
+        assert.equal(gaps[0].source, 'audit');
+        assert.equal(errors.length, 1);
+        assert.deepEqual(published.map(p => [p.type, p.o.durable]), [['audit.trail.gap', false]]);
+        assert.equal((await trail.verify()).intact, true);
+    });
+});
+
 describe('audit trail: subjects (API-654)', () => {
     it('reads what each service\'s events are about', () => {
         const s = (type, data, extra) => subjectsOf(event(type, data, extra)).sort();

@@ -32,14 +32,14 @@ second delivery a no-op.
 **Gaps.** The stream keeps events for `EVENT_STREAM_MAX_AGE_DAYS` (30). If the audit service were
 down longer than that, the oldest missed events would be gone from the stream before it read them.
 On start, and hourly, the service compares the stream's first sequence number with the last one its
-consumer acknowledged; a gap is reported loudly (`audit.trail.gap`, log error) and recorded once as a
+consumer acknowledged (`events.consumerGap`, API-657); a gap is reported loudly (`audit.trail.gap`, log error) and recorded once as a
 trail entry stating the missing range, so the loss is visible and cannot be passed off as complete.
-That entry is written by the audit service itself (type `audit.trail.gap`, `eventId` derived from
+When the audit service is added to a system that has run for longer than the stream keeps events, the first check records the events it never saw as one gap; that is correct, and the backfill (API-669) covers the seals from that time. That entry is written by the audit service itself (type `audit.trail.gap`, `eventId` derived from
 the range, so it is never written twice), not consumed from the stream; the broadcast of the same
 name only tells listeners.
 
 **Before deployment.** The consumer starts with events published after it is created. A one-time
-backfill (API-657, before the first anchoring) reads the seals of every land record version and EDRMS document version that
+backfill (API-669, before the first anchoring) reads the seals of every land record version and EDRMS document version that
 already exists (from land-records and edrms, with a service token) and adds them as leaves, oldest
 first, before the first anchoring; the trail records the backfill as one entry with the counts.
 
@@ -156,10 +156,6 @@ its own `anchor` table, not in the trail: otherwise each anchoring would add a t
 the next one, every hour, for ever. Sign-offs, findings and exports are ordinary durable events and
 do go into the trail.
 
-One anchoring is in flight at a time, from submission until it is confirmed (the next anchoring
-spends its change output, after which "not on chain" could no longer be told apart from a
-rollback). Once confirmed, it is no longer tracked.
-
 **The transaction.** One input and one change output (the anchoring wallet's own address), no
 smart contract, with the root in the transaction metadata under label **8890** (free in the CIP-10
 registry on 10 October 2026; registering it there is optional and done before mainnet):
@@ -169,12 +165,16 @@ registry on 10 October 2026; registering it there is optional and done before ma
 ```
 
 Metadata strings are at most 64 bytes, so the root goes as 64 hex characters. `prev` links each
-anchoring to the one before, so the anchorings themselves form a chain on the chain.
+anchoring to the one before, so the anchorings themselves form a chain on the chain. `batch` numbers
+the job's anchorings, including those given up (they never reached the chain), so the numbers on
+chain can have gaps: a checker follows `prev`, not the numbering.
 
 **Measured** (built with the real library, priced with the current parameters, which are the same on
 preview and mainnet: 44 lovelace per byte + 155,381): **427 bytes, fee 174,169 lovelace
 (0.174 ADA)**; with only `root` and `size`, 330 bytes and 0.170 ADA. The fee does not depend on how
-many items the tree holds.
+many items the tree holds. On preview (API-656/657): 342 bytes and 0.170 ADA for the first anchoring,
+413 bytes and 0.174 ADA with `prev`. The validity limit added in API-657 (below) adds about 5 bytes,
+about 0.0002 ADA.
 
 | Period | Transactions a year (at most) | ADA a year | USD at $0.235/ADA |
 |---|---|---|---|
@@ -186,15 +186,109 @@ Quiet hours cost nothing, so real costs are lower. Fees are fixed in ADA: the do
 the ADA price. The wallet also keeps a small balance (the change output must hold at least about
 1 ADA); that is not spent.
 
-**Confirmation.** A submitted anchoring is *submitted*; once its output is on chain it is *on chain*,
-with the block height it was **first seen** at (with Ogmios the exact inclusion block is not
-available from a state query, so depth is counted from first seen, which can only under-count; with
-Blockfrost it is the transaction's own block); at `ANCHOR_CONFIRMATIONS` blocks deep (default 10 on
-preview, about 3–4 minutes; 30 on mainnet, about 10 minutes) it is *confirmed*, and its leaves'
-proofs say so. If the
-transaction disappears (a rollback) or is rejected, the same root is anchored again, or the next
-batch's root covers it (it contains every earlier leaf). Events `audit.root.anchored`,
-`audit.root.confirmed` (broadcast-only).
+### Following an anchoring until it is confirmed
+
+The job (`src/anchor.service.js`) runs **every minute**. Each anchoring is a row in `audit.anchor`:
+batch, root, size, previous root, the trail checkpoint it covers, the signed transaction and its id,
+the slot from which it is **no longer valid** (`ttl`), the wallet output it spends, fee, size in
+bytes, block heights, status, number of sends, the first and last send time, and the last error. Only **one anchoring is in flight** at a time: the
+next one spends this one's change output, so it waits until this one is confirmed or given up.
+Only **one instance** runs the job: a lease in `audit.job_lease` (5 minutes, renewed every round, on
+the database's clock), so a second instance of the audit service does nothing until the first stops.
+
+```
+                   send ok                 on chain                 10 blocks deep
+   prepared ───────────────▶ submitted ───────────────▶ onChain ───────────────────▶ confirmed
+      │  ▲                    │   ▲                       │
+      │  └─ send failed:      │   └─ not on chain yet:    └─ gone (rollback): sent again ─▶ submitted
+      │     sent again next   │      sent again every
+      │     round             │      5 minutes
+      │                       └─ past its limit, 10 more blocks, not on chain ─▶ failed (anchored again,
+      │                                                                                 same output)
+      └─ first send refused outright ─────────────────────────────────────▶ failed  (anchored again
+                                                                                     after 5 minutes)
+```
+
+**The rules that make a double anchoring impossible.**
+
+1. **Every anchoring transaction is valid for one hour.** It carries Cardano's validity limit
+   (`ttl`, *invalid hereafter*): the chain's current slot + 3,600, a slot being one second on preview
+   and mainnet. It is valid only in slots *before* that one; from that slot on, no node accepts it
+   and no block can include it.
+2. **The job never gives up on a transaction while it could still land.** Until the limit, it keeps
+   the anchoring in flight and keeps sending the **same signed transaction** (stored, and the send
+   recorded, *before* it goes out). Sending the same transaction twice is harmless: it has one id
+   and spends one output, so it is included at most once.
+3. **Past the limit, it waits until that is certain.** When the chain is first seen past the limit
+   without the transaction, the job notes the block height and waits until the chain is another
+   `ANCHOR_CONFIRMATIONS` blocks further (the same depth as a confirmation) before giving up. A
+   provider's backends can lag behind each other, and a short fork could still hold the transaction
+   in a block from before its limit.
+4. **The replacement spends the same wallet output.** The new anchoring of the same leaves spends
+   exactly the output the given-up one spent, even if the wallet holds larger ones (after a top-up).
+   Two transactions spending the same output can never both be on chain. If that output turns out to
+   be spent, the job checks **every** given-up anchoring that spent it (a refused replacement spent
+   it too) and follows the one that is on chain again, instead of building another. Only if none is
+   on chain, also after waiting `ANCHOR_CONFIRMATIONS` blocks, does it conclude that something else
+   spent the wallet's output, report it, and use another output.
+
+Why this matters: a provider can time out *after* the node accepted the transaction. The transaction
+then waits in the node's mempool, not yet in a block. A second send of it is refused (its input is
+already spent in the mempool), and neither Ogmios nor Blockfrost shows mempool transactions as on
+chain. Without the time limit there was no way to tell "refused because it is already waiting" from
+"refused for good", and giving up could have anchored the same leaves twice once both landed. The
+same could happen after a crash between the send and recording it, which is why the send is recorded
+first (both found in the API-657 reviews).
+
+**Timers and limits**
+
+| What | Value | Setting | Where |
+|---|---|---|---|
+| A round of the job | every minute | | `checkMs` |
+| Time between anchorings | 1 hour | `ANCHOR_PERIOD` (`1h`, `15m`, `90s`; at least a minute) | `periodMs` |
+| A transaction is valid for | 3,600 slots (1 hour) | | `ttlSlots` (adapter) |
+| Before giving up an expired one | another 10 blocks (as `ANCHOR_CONFIRMATIONS`) | | `confirmations` |
+| Sending again while not on chain | every 5 minutes | | `resendMs` |
+| Waiting after a first send refused outright | 5 minutes | | `retryMs` |
+| Confirmed at | 10 blocks deep (preview, ~3–7 minutes); 30 on mainnet (~10 minutes) | `ANCHOR_CONFIRMATIONS` | `confirmations` |
+| Calls to Ogmios or Blockfrost time out after | 10 seconds | | drivers |
+| Calls to OpenBao time out after | 5 seconds | | signer |
+| The job's lease | 5 minutes, renewed every round | | `claimLease` |
+| Low-balance warning below | 5 ADA | `ANCHOR_MIN_BALANCE_ADA` | adapter |
+
+**What happens when …**
+
+| Situation | What the job does | Result |
+|---|---|---|
+| Nothing recorded since the last anchoring | nothing | no transaction, no cost |
+| Provider or node unreachable, OpenBao unreachable, node still syncing | logs a warning, tries again next round | anchoring delayed, nothing lost |
+| The send times out (reply lost) | sends the same transaction again next round | one anchoring |
+| The repeat is refused because the node already has it | keeps it in flight (`submitted`), follows it | lands once; or expires and is anchored again |
+| Accepted, then forgotten by the mempool (node restart) | sends it again every 5 minutes | lands once |
+| On chain, then rolled back | sends the same transaction again at once | lands once |
+| Past its limit and still not on chain 10 blocks later | marks it `failed`, builds a new anchoring of the same leaves in the same round, spending the same wallet output | the new root covers everything; never both on chain |
+| A given-up one turns out to be on chain (a fork), even after its replacement was refused | follows it again; the others that spent its output are done with; the next anchoring comes a period after it | one anchoring |
+| The output a given-up one spent was spent by something else (a shared wallet) | waits 10 blocks to be sure, logs an error, then uses another output | anchored, with an error to look into |
+| Refused on its very first send (e.g. a build error) | marks it `failed`, tries a new one after 5 minutes | no error flood |
+| The wallet cannot pay | logs an error, warns about the balance (`audit.wallet.low`) | anchored once funded |
+| The audit service restarts mid-way, even right after a send | the row, the signed transaction and the send are in the database: it carries on, and a refusal of the repeat keeps it in flight | one anchoring |
+| It stops between recording a send and making it | the transaction was never sent; it is sent at the next round (or, if that fails, waits out its hour and is replaced) | one anchoring, at worst an hour late |
+
+**Depth.** Once the transaction's output is on chain, its depth is counted from its block (Blockfrost
+knows it) or from the block height at which the job **first saw** it (Ogmios: a state query does not
+give the inclusion block, so this can only under-count). At `ANCHOR_CONFIRMATIONS` blocks it is
+*confirmed*, and the leaves it covers can be proven against it. Ogmios checks "on chain" by asking
+whether the transaction's output is unspent; that is right for the one anchoring in flight, which
+nothing else spends.
+
+**One wallet per installation.** Two installations sharing a wallet compete for the same outputs:
+one side's transactions are refused, and with Ogmios one could take the other's change output for a
+rollback. Each installation (development, test, production) gets its own `audit-anchor` key, which
+`npm run bao -- --dev` creates per OpenBao.
+
+**Events** (broadcast-only): `audit.root.anchored` at the first successful send, `audit.root.confirmed`,
+`audit.wallet.low`. The log says `root anchored`, `anchoring confirmed`, and a warning or error for
+each case above.
 
 **The anchoring wallet.** One Ed25519 payment key, created and kept in **OpenBao's transit engine**
 (key `audit-anchor`, type `ed25519`, not exportable). The audit service never sees the private key:
@@ -212,6 +306,7 @@ service's AppRole may only `sign` with that key and read its public key. A low-b
 | protocol parameters | `queryLedgerState/protocolParameters` | `GET /epochs/latest/parameters` |
 | the wallet's unspent outputs | `queryLedgerState/utxo` (by address) | `GET /addresses/{address}/utxos` |
 | submit | `submitTransaction` | `POST /tx/submit` |
+| the current slot (for the validity limit) | `queryNetwork/tip` | `GET /blocks/latest` (`slot`) |
 | is the output on chain, how deep | `queryLedgerState/utxo` (by output reference) + `queryNetwork/blockHeight` | `GET /txs/{hash}` (block height) + `GET /blocks/latest` |
 
 Ogmios listens on `127.0.0.1` only (API-662). The Blockfrost project key is a secret (OpenBao or a

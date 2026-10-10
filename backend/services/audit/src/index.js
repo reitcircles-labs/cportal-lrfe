@@ -3,6 +3,7 @@ import { buildApp } from './app.js';
 import { TrailService } from './trail.service.js';
 import { TreeService } from './tree.service.js';
 import { cardanoFromEnv } from './cardano/adapter.js';
+import { AnchorService, parsePeriod } from './anchor.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -48,8 +49,19 @@ events.consume('>', async (event) => {
     await tree.fromEvent(event);
 }, { durable: 'audit-trail' });
 
-// the wallet at start: its address, and a warning when it is low (an outage is only logged)
+// events the stream dropped while the audit service was down too long: at start and every hour
+const checkGap = () => service.checkGap(events).catch(err => app.log.warn({ err: err.message }, 'audit: could not check the trail for gaps'));
+setTimeout(checkGap, 15_000).unref();
+setInterval(checkGap, 3_600_000).unref();
+
+// the wallet at start: its address, and a warning when it is low (an outage is only logged);
+// then the hourly anchoring (README.md section 3)
 if (cardano) {
+    const anchoring = new AnchorService({
+        repo, tree, cardano, events, logger: app.log,
+        config: { periodMs: parsePeriod(process.env.ANCHOR_PERIOD), confirmations: envInt('ANCHOR_CONFIRMATIONS', 10) }
+    });
+    anchoring.start();
     cardano.address()
         .then(async (address) => app.log.info({ network: cardano.network, provider: cardano.provider, address, ...(await cardano.balance()) }, 'audit: anchoring wallet'))
         .catch(err => app.log.warn({ err: err.message, code: err.code }, 'audit: the anchoring wallet could not be read yet'));

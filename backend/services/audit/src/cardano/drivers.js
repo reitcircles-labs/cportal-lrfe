@@ -9,6 +9,7 @@ import { CardanoError } from './tx.js';
  *   submit(cbor)          the transaction id
  *   output(txHash, index) { onChain, blockHeight }   (blockHeight: Blockfrost only; Ogmios answers null)
  *   tipHeight()           the chain's block height
+ *   tipSlot()             the chain's current slot (a transaction's validity ends at a slot)
  *   synced()              whether the provider is at the chain's tip
  *   metadata(txHash)      the transaction's metadata by label (Blockfrost only: Ogmios has no index of
  *                         past transactions; the offline verifier reads it from a public source)
@@ -63,6 +64,7 @@ export function createOgmiosDriver({ url = 'http://127.0.0.1:1337', fetch: fetch
             return { onChain: found.length > 0, blockHeight: null };
         },
         async tipHeight() { return rpc('queryNetwork/blockHeight'); },
+        async tipSlot() { return (await rpc('queryNetwork/tip')).slot; },
         async synced() {
             try {
                 const res = await fetchFn(`${base}/health`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -135,6 +137,7 @@ export function createBlockfrostDriver({ network = 'preview', projectId, project
             return tx ? { onChain: true, blockHeight: tx.block_height } : { onChain: false, blockHeight: null };
         },
         async tipHeight() { return (await call('/blocks/latest')).height; },
+        async tipSlot() { return (await call('/blocks/latest')).slot; },
         async synced() { return true; },
         async metadata(txHash) {
             const rows = await call(`/txs/${txHash}/metadata`, { notFound: null });

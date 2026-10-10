@@ -178,6 +178,37 @@ async function until(check, ms = 8000) {
         expect(got).to.deep.equal(['edrms.document.filed', 'identity.user.invited']);
     });
 
+    it('consumerGap: events dropped from the stream before a consumer read them are named; none otherwise (API-657)', async () => {
+        const short = { streamMaxAgeDays: 2 / 86_400 };                  // a stream that keeps events for 2 seconds
+        const edrms = bus({ source: 'edrms', outbox: createMemoryOutbox(), ...short });
+        await edrms.ready();
+        await edrms.publish('edrms.document.filed', { n: 0 });           // before the consumer exists
+        await edrms.flush();
+        const got = [];
+        const audit = bus({ source: 'audit', ...short });
+        audit.consume('>', e => { got.push(e.data.n); }, { durable: 'test-gap' });
+        await audit.ready();
+        await sleep(300);
+        expect(await audit.consumerGap('test-gap')).to.equal(null);       // a new consumer starts after what exists
+        await edrms.publish('edrms.document.filed', { n: 1 });
+        expect(await until(() => got.length === 1)).to.equal(true);
+        await sleep(200);
+        expect(await audit.consumerGap('test-gap')).to.equal(null);       // up to date
+
+        await audit.close();                                              // down …
+        for (const n of [2, 3, 4]) await edrms.publish('edrms.document.filed', { n });
+        await edrms.flush();
+        await sleep(3000);                                                // … longer than the stream keeps events
+        await edrms.publish('edrms.document.filed', { n: 5 });
+        await edrms.flush();
+
+        const back = bus({ source: 'audit', ...short });
+        await back.ready();
+        expect(await back.consumerGap('test-gap')).to.deep.equal({ from: 3, to: 5 });   // stream positions of n = 2, 3, 4
+        expect(await back.consumerGap('no-such-consumer')).to.equal(null);
+        expect(await createEventBus({ driver: 'memory', source: 'x' }).consumerGap('test-gap')).to.equal(null);
+    });
+
     it('broadcast-only events reach listeners but are never stored', async () => {
         const identity = bus({ source: 'identity', outbox: createMemoryOutbox() });
         const edrms = bus({ source: 'edrms' });

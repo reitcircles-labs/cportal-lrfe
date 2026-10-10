@@ -99,6 +99,13 @@ export function createEventBus({
             nats.startConsumer(consumer);
             return () => { consumer.stopped = true; consumer.iterator?.stop?.(); };
         },
+        /**
+         * Events the durable consumer `name` can no longer get: those after the last it acknowledged
+         * that the stream has already dropped (older than EVENT_STREAM_MAX_AGE_DAYS while it was
+         * down). { from, to } stream positions, or null: no gap, or not knowable (other drivers,
+         * not connected, consumer not created yet).
+         */
+        consumerGap: (name) => (nats ? nats.consumerGap(name) : Promise.resolve(null)),
         /** Run `fn` so its database changes and the events it publishes are committed together. */
         atomic: (fn) => (outbox ? outbox.atomic(fn) : fn()),
         /** Publish what is waiting in the outbox now (tests; the relay also runs on its own). */
@@ -186,7 +193,8 @@ function connectNats({ url, source, logger, deliver, stream, consumers }) {
             try {
                 await jsm.streams.add({
                     name: EVENT_STREAM, subjects: ['lrfe.>'], storage: StorageType.File, retention: RetentionPolicy.Limits,
-                    max_age: Math.round(stream.maxAgeDays * 86_400 * 1e9), duplicate_window: 120 * 1e9
+                    // the de-duplication window cannot be longer than the stream keeps events
+                    max_age: Math.round(stream.maxAgeDays * 86_400 * 1e9), duplicate_window: Math.min(120 * 1e9, Math.round(stream.maxAgeDays * 86_400 * 1e9))
                 });
                 logger.info({ stream: EVENT_STREAM }, 'event bus: created the event stream');
             } catch (err) {
@@ -294,6 +302,16 @@ function connectNats({ url, source, logger, deliver, stream, consumers }) {
             await js.publish(`lrfe.${event.type}`, JSON.stringify(event), { msgID: event.id, timeout: 5000 });
         },
         startConsumer(consumer) { runConsumer(consumer).catch(err => logger.error({ err }, 'event consumer stopped')); },
+        async consumerGap(name) {
+            if (!connected()) return null;
+            try {
+                if (!jsm) await ensureStream();
+                const [stream, consumer] = await Promise.all([jsm.streams.info(EVENT_STREAM), jsm.consumers.info(EVENT_STREAM, name)]);
+                const acked = consumer.ack_floor.stream_seq;
+                const first = stream.state.first_seq;
+                return first > acked + 1 ? { from: acked + 1, to: first - 1 } : null;
+            } catch { return null; }
+        },
         async close() {
             closed = true;
             if (nc && !nc.isClosed()) await nc.drain();

@@ -36,6 +36,27 @@ export class TrailService {
     }
 
     /**
+     * Events the stream dropped before the consumer read them (README.md section 1, "Gaps"): the
+     * range is recorded once as a trail entry of its own (`audit.trail.gap`, written by the audit
+     * service, its id derived from the range) and reported loudly, so the loss is visible and the
+     * trail is never passed off as complete. Run at start and every hour.
+     */
+    async checkGap(events, consumer = 'audit-trail') {
+        const gap = await events.consumerGap(consumer);
+        if (!gap) return null;
+        const data = { consumer, fromStreamSeq: gap.from, toStreamSeq: gap.to, missing: gap.to - gap.from + 1 };
+        const entry = await this.record({
+            id: `gap:${consumer}:${gap.from}-${gap.to}`, type: 'audit.trail.gap', source: 'audit',
+            time: this.clock().toISOString(), actor: { id: null, name: 'System' }, data
+        });
+        if (entry) {
+            this.logger.error?.(data, 'audit trail: events were lost before the audit service could record them; the gap is recorded in the trail');
+            try { await events.publish('audit.trail.gap', data, { durable: false }); } catch { /* the bus logs its own failures */ }
+        }
+        return { ...data, recorded: !!entry };
+    }
+
+    /**
      * Trail entries, oldest first. `subject` (`record:<id>`, `document:<id>`, `user:<id>` …): for a
      * land record or a document also the steps of what it is made of — its documents' capture,
      * filing, amendments and review processes — but not those of other records.

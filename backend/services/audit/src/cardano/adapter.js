@@ -8,14 +8,18 @@ import { createTransitSigner } from './signer.js';
  *
  *   address()                        the anchoring wallet's address
  *   balance()                        { lovelace, ada, low }; low also logs a warning and publishes audit.wallet.low
- *   anchor({ root, size, batch, prev })  build, sign, submit: { txHash, fee, bytes, metadata, submittedAt }
- *   status(txHash)                   { onChain, blockHeight, tipHeight, depth }
+ *   prepare({ root, size, batch, prev, spend })  build and sign: { txHash, cbor, fee, bytes, metadata, ttl, input }
+ *                                    (valid for `ttlSlots`, an hour: from slot `ttl` on it can never land;
+ *                                    `spend`: { txHash, index } of the output it must spend)
+ *   submit(cbor)                     send it; sending the same transaction again is harmless
+ *   anchor({ root, size, batch, prev })  both: { txHash, fee, bytes, metadata, submittedAt }
+ *   status(txHash)                   { onChain, blockHeight, tipHeight, tipSlot, depth }
  *   lookup(txHash)                   the anchoring metadata on chain (Blockfrost), or undefined (Ogmios)
  *
  * A failure is a CardanoError; `retryable` says whether trying again later can help (an outage, a
  * node still syncing, OpenBao unreachable) or not (refused, no funds, a wrong setting).
  */
-export function createCardanoAdapter({ driver, signer, network = 'preview', minBalanceAda = 5, logger = console, events = null }) {
+export function createCardanoAdapter({ driver, signer, network = 'preview', minBalanceAda = 5, ttlSlots = 3600, logger = console, events = null }) {
     let address = null;
     const self = {
         network,
@@ -37,20 +41,31 @@ export function createCardanoAdapter({ driver, signer, network = 'preview', minB
             return { lovelace: String(lovelace), ada, low };
         },
 
-        async anchor({ root, size, batch, prev }) {
+        async prepare({ root, size, batch, prev, spend }) {
             const metadata = anchorMetadata({ root, size, batch, prev });
             if (!(await driver.synced())) throw new CardanoError(`The Cardano node is still catching up with the chain: anchoring waits until it is in sync`, 'EUNAVAILABLE');
-            const [params, utxos, publicKey] = await Promise.all([driver.parameters(), driver.utxos(await self.address()), signer.publicKey()]);
-            const tx = buildAnchorTx({ utxos, address, publicKey, params, metadata });
+            const [params, utxos, publicKey, slot] = await Promise.all([driver.parameters(), driver.utxos(await self.address()), signer.publicKey(), driver.tipSlot()]);
+            const ttl = slot + ttlSlots;
+            const tx = buildAnchorTx({ utxos, address, publicKey, params, metadata, ttl, input: spend });
             const signed = tx.sign(await signer.sign(tx.bodyHash));
-            const submitted = await driver.submit(signed.cbor);
-            if (submitted && submitted !== signed.txHash) logger.warn?.({ submitted, built: signed.txHash }, 'audit: the provider reported another transaction id');
-            return { txHash: signed.txHash, fee: String(tx.fee), bytes: signed.bytes, metadata, label: LABEL, cbor: signed.cbor, submittedAt: new Date().toISOString() };
+            return { txHash: signed.txHash, cbor: signed.cbor, fee: String(tx.fee), bytes: signed.bytes, metadata, label: LABEL, ttl, input: { txHash: tx.input.txHash, index: tx.input.index } };
+        },
+
+        async submit(cbor, txHash) {
+            const submitted = await driver.submit(cbor);
+            if (txHash && submitted && submitted !== txHash) logger.warn?.({ submitted, built: txHash }, 'audit: the provider reported another transaction id');
+            return submitted;
+        },
+
+        async anchor(batch) {
+            const prepared = await self.prepare(batch);
+            await self.submit(prepared.cbor, prepared.txHash);
+            return { ...prepared, submittedAt: new Date().toISOString() };
         },
 
         async status(txHash) {
-            const [out, tipHeight] = await Promise.all([driver.output(txHash, 0), driver.tipHeight()]);
-            return { ...out, tipHeight, depth: out.blockHeight ? tipHeight - out.blockHeight + 1 : null };
+            const [out, tipHeight, tipSlot] = await Promise.all([driver.output(txHash, 0), driver.tipHeight(), driver.tipSlot()]);
+            return { ...out, tipHeight, tipSlot, depth: out.blockHeight ? tipHeight - out.blockHeight + 1 : null };
         },
 
         async lookup(txHash) {

@@ -40,5 +40,40 @@ export function defineModels(sequelize) {
         hash: { type: DataTypes.BLOB, allowNull: false }                    // 32 bytes
     }, opts());
 
-    return { TrailEntry, TreeLeaf, TreeNode };
+    // One per anchoring on Cardano (README.md section 3): the audit service's own bookkeeping, not in the trail.
+    const Anchor = sequelize.define('anchor', {
+        batch: { type: DataTypes.INTEGER, primaryKey: true },               // 1, 2, 3 …
+        root: { type: DataTypes.STRING(64), allowNull: false },
+        size: { type: DataTypes.BIGINT, allowNull: false },                 // leaves covered: 0 … size-1
+        prevRoot: { type: DataTypes.STRING(64) },
+        checkpointSeq: { type: DataTypes.BIGINT },                          // the trail head it covers
+        network: { type: DataTypes.STRING, allowNull: false },
+        // prepared → submitted → onChain → confirmed; or failed (expired or refused: a later anchoring covers it)
+        status: { type: DataTypes.STRING, allowNull: false },
+        txHash: { type: DataTypes.STRING(64) },
+        cbor: { type: DataTypes.TEXT },                                     // the signed transaction, sent again if needed
+        ttl: { type: DataTypes.BIGINT },                                    // invalid from this slot on (invalid_hereafter)
+        inputTxHash: { type: DataTypes.STRING(64) },                        // the wallet output it spends
+        inputIndex: { type: DataTypes.INTEGER },
+        expiredSeenHeight: { type: DataTypes.INTEGER },                     // block height when first seen past ttl, not on chain
+        spentSeenHeight: { type: DataTypes.INTEGER },                       // block height when its input was first found spent
+        lastSentAt: { type: DataTypes.DATE },
+        fee: { type: DataTypes.BIGINT },
+        bytes: { type: DataTypes.INTEGER },
+        firstSeenHeight: { type: DataTypes.INTEGER },                       // block height when first seen on chain
+        blockHeight: { type: DataTypes.INTEGER },                           // its own block, when the provider knows it
+        attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+        error: { type: DataTypes.TEXT },
+        createdAt: { type: DataTypes.DATE, allowNull: false },
+        submittedAt: { type: DataTypes.DATE },
+        confirmedAt: { type: DataTypes.DATE }
+    }, opts({ indexes: [{ fields: ['status'] }] }));
+    // Which instance runs the anchoring job (one at a time), until when.
+    const JobLease = sequelize.define('job_lease', {
+        name: { type: DataTypes.STRING, primaryKey: true },
+        holder: { type: DataTypes.STRING, allowNull: false },
+        expiresAt: { type: DataTypes.DATE, allowNull: false }
+    }, opts());
+
+    return { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease };
 }

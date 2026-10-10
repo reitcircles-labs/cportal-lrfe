@@ -9,6 +9,8 @@ export function createMemoryRepo() {
     const byKey = new Map();                           // leaf key → leaf
     let queue = Promise.resolve();
     let treeQueue = Promise.resolve();
+    const anchors = [];
+    const leases = new Map();
     const tree = {
         async leafCount() { return leaves.length; },
         async existingKeys(keys) { return keys.filter(k => byKey.has(k)); },
@@ -30,7 +32,7 @@ export function createMemoryRepo() {
 
     return {
         entries,                                       // tests change and remove entries directly
-        leaves, nodes,                                 // tests change them directly
+        leaves, nodes, anchors,                        // tests change them directly
         async sync() {},
 
         /**
@@ -63,6 +65,27 @@ export function createMemoryRepo() {
         /** Entries in order, from seq `after` + 1, at most `limit`. */
         async page(after, limit) {
             return entries.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq).slice(0, limit).map(copy);
+        },
+
+        /** The last trail entry, or null. */
+        async head() { return entries.length ? copy(entries.at(-1)) : null; },
+
+        // ------------------------------------------------ anchorings (README.md section 3)
+        async lastAnchor() { return anchors.length ? { ...anchors.at(-1) } : null; },
+        async lastAnchorWhere(statuses) { const a = [...anchors].reverse().find(x => statuses.includes(x.status)); return a ? { ...a } : null; },
+        async createAnchor(row) { anchors.push({ attempts: 0, ...row }); return { ...anchors.at(-1) }; },
+        async updateAnchor(batch, patch) { Object.assign(anchors.find(a => a.batch === batch), patch); },
+        async listAnchors({ limit = 50 } = {}) { return anchors.slice(-limit).reverse().map(a => ({ ...a })); },
+        /** Given-up anchorings that spent this wallet output, oldest first. */
+        async anchorsSpending(txHash, index) { return anchors.filter(a => a.inputTxHash === txHash && a.inputIndex === index && a.status === 'failed').map(a => ({ ...a })); },
+        /** The first confirmed anchoring that covers leaf `index`. */
+        async anchorCovering(index) { const a = anchors.find(x => x.status === 'confirmed' && x.size > index); return a ? { ...a } : null; },
+        /** Take or renew the job for `ms`; false while another holder has it. */
+        async claimLease(name, holder, ms, now = new Date()) {
+            const l = leases.get(name);
+            if (l && l.holder !== holder && l.expiresAt > now) return false;
+            leases.set(name, { holder, expiresAt: new Date(now.getTime() + ms) });
+            return true;
         },
 
         /** The tree, read without the lock (positions never change once written). */

@@ -188,6 +188,10 @@ npm run anchor:test -w @lrfe/audit -- --submit    # anchors a random root, follo
 With `ogmios` the node must be in sync first (`npm run cardano:status`); until then anchoring
 waits and says so.
 
+Once `CARDANO_PROVIDER` is set, the audit service anchors by itself: every hour in which something
+was recorded (`ANCHOR_PERIOD=1h`), followed until it is `ANCHOR_CONFIRMATIONS=10` blocks deep. Its
+log says `root anchored` and `anchoring confirmed`; each anchoring is a row in `audit.anchor`.
+
 **Blockfrost instead of the own node.** Create a project for *Cardano preview* on blockfrost.io and
 keep its key in a file only you can read (the service refuses a key file others can read):
 
