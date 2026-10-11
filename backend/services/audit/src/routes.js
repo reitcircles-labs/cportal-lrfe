@@ -1,8 +1,9 @@
 import { KINDS } from './proof.service.js';
 import { CLOSE_OUTCOMES } from './signoff.service.js';
 import { LIST_FILTERS } from './audit-list.service.js';
+import { ANCHOR_FILTERS } from './anchorings.service.js';
 
-export async function auditRoutes(app, { service, proofs, signoffs, evidence, auditList }) {
+export async function auditRoutes(app, { service, proofs, signoffs, evidence, auditList, anchorings }) {
     const canView = app.requirePerm('audit.view');
 
     // trail entries: of a land record (with its documents' steps), a document, a user, a process
@@ -57,6 +58,30 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
             }
         }
     }, async (req) => ({ items: await proofs.statusOf(req.body.keys) }));
+
+    // ------------------------------------------------ anchorings (API-671): every signed-in user
+    const canSeeAnchorings = app.requirePerm('anchors.view');
+
+    // every batch put on the blockchain, newest first, with the counts of each filter and the next batch
+    app.get('/audit/anchors', {
+        onRequest: canSeeAnchorings,
+        schema: {
+            querystring: {
+                type: 'object', additionalProperties: false,
+                properties: {
+                    status: { type: 'string', enum: ANCHOR_FILTERS, default: 'all' },
+                    limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+                    offset: { type: 'integer', minimum: 0, default: 0 }
+                }
+            }
+        }
+    }, async (req) => anchorings.list(req.query));
+
+    // one batch: what is on the blockchain, its steps, and for a failed one why and what replaced it
+    app.get('/audit/anchors/:batch', {
+        onRequest: canSeeAnchorings,
+        schema: { params: { type: 'object', required: ['batch'], properties: { batch: { type: 'integer', minimum: 1 } } } }
+    }, async (req) => anchorings.detail(req.params.batch));
 
     // ------------------------------------------------ sign-off and findings (README.md section 5)
     const canSignOff = app.requirePerm('audit.signoff');

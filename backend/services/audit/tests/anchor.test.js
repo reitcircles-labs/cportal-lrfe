@@ -70,6 +70,9 @@ describe('hourly anchoring (API-657)', () => {
         const [anchor] = a.repo.anchors;
         assert.equal(anchor.status, 'confirmed');
         assert.equal(anchor.firstSeenHeight, 100);
+        // for the Anchorings screens (API-671): when it reached the blockchain, and its depth
+        assert.ok(anchor.onChainAt instanceof Date && anchor.onChainAt <= anchor.confirmedAt);
+        assert.equal(anchor.confirmations, 10);
         assert.equal(a.published.at(-1).type, 'audit.root.confirmed');
         assert.equal(a.published.at(-1).data.depth, 10);
         assert.equal((await a.trail.list()).total, 3);                    // the job wrote nothing to the trail
@@ -196,6 +199,7 @@ describe('hourly anchoring (API-657)', () => {
             const r = await a.job.tick();
             assert.equal(r.action, 'rolled back, sent again');
             assert.equal(a.repo.anchors[0].status, 'submitted');
+            assert.deepEqual([a.repo.anchors[0].onChainAt, a.repo.anchors[0].confirmations], [null, null]);
             a.chain.include();
             await a.runUntil(x => x.action === 'confirmed');
             assert.equal(a.repo.anchors.length, 1, toMempool ? 'back in the mempool' : 'gone');
@@ -218,6 +222,8 @@ describe('hourly anchoring (API-657)', () => {
         const r = await a.job.tick();
         assert.deepEqual([r.after, r.action], ['expired', 'anchored']);   // given up and replaced in the same round
         assert.equal(a.repo.anchors[0].status, 'failed');
+        assert.equal(a.repo.anchors[0].reason, 'expired');
+        assert.ok(a.repo.anchors[0].failedAt instanceof Date);
         const second = a.repo.anchors[1];
         assert.equal(second.root, first.root);
         assert.deepEqual([second.inputTxHash, second.inputIndex], [first.inputTxHash, first.inputIndex]);
@@ -257,6 +263,7 @@ describe('hourly anchoring (API-657)', () => {
         const r = await a.job.tick();
         assert.equal(r.action, 'landed after all');
         assert.equal(a.repo.anchors[0].status, 'onChain');
+        assert.deepEqual([a.repo.anchors[0].reason, a.repo.anchors[0].failedAt], [null, null]);
         assert.equal(a.repo.anchors.length, 1);                           // no replacement
         await a.runUntil(x => x.action === 'confirmed');
         assert.equal(a.chain.blocks.length, 1);
@@ -346,6 +353,7 @@ describe('hourly anchoring (API-657)', () => {
         a.chain.reject = new CardanoError('The chain refused the transaction: ValueNotConservedUTxO', 'EREJECTED');
         assert.equal((await a.job.tick()).action, 'refused');
         assert.equal(a.repo.anchors[0].status, 'failed');
+        assert.equal(a.repo.anchors[0].reason, 'refused');
         a.pass(MINUTE);
         assert.equal((await a.job.tick()).action, 'waiting before anchoring again');
         a.chain.reject = null;

@@ -75,6 +75,16 @@ export function createSequelizeRepo(sequelize) {
                 await sequelize.query(`ALTER TABLE "${SCHEMA}"."${table}" ADD COLUMN IF NOT EXISTS "${col}" ${type}`);
             }
             await sequelize.query(`ALTER TABLE "${SCHEMA}"."signoff" ALTER COLUMN "comment" DROP NOT NULL`);
+            // the Anchorings screens (API-671): when it reached the blockchain or failed, why, and its depth
+            for (const [col, type] of [['reason', 'VARCHAR(255)'], ['confirmations', 'INTEGER'], ['onChainAt', 'TIMESTAMPTZ'], ['failedAt', 'TIMESTAMPTZ']]) {
+                await sequelize.query(`ALTER TABLE "${SCHEMA}"."anchor" ADD COLUMN IF NOT EXISTS "${col}" ${type}`);
+            }
+            // failed before the reason was stored: read from the error text, once
+            await sequelize.query(`UPDATE "${SCHEMA}"."anchor" SET "reason" = CASE
+                    WHEN "error" LIKE 'rolled back, and expired%' THEN 'rolledBackExpired'
+                    WHEN "error" LIKE 'expired%' THEN 'expired'
+                    ELSE 'refused' END
+                WHERE "status" = 'failed' AND "reason" IS NULL`);
             // one sign-off per auditor and item, also for two requests at the same moment (API-659)
             await sequelize.query(`DROP INDEX IF EXISTS "${SCHEMA}"."signoff_once"`);
             await sequelize.query(`CREATE UNIQUE INDEX IF NOT EXISTS "signoff_item_once" ON "${SCHEMA}"."signoff"
@@ -129,7 +139,19 @@ export function createSequelizeRepo(sequelize) {
         async lastAnchorWhere(statuses) { return anchorOf(await Anchor.findOne({ where: { status: statuses }, order: [['batch', 'DESC']] })); },
         async createAnchor(row) { return anchorOf(await Anchor.create(row)); },
         async updateAnchor(batch, patch) { await Anchor.update(patch, { where: { batch } }); },
-        async listAnchors({ limit = 50 } = {}) { return (await Anchor.findAll({ order: [['batch', 'DESC']], limit })).map(anchorOf); },
+        /** Newest first; only those with one of `statuses` when given. */
+        async listAnchors({ statuses, limit = 50, offset = 0 } = {}) {
+            return (await Anchor.findAll({ where: statuses ? { status: statuses } : {}, order: [['batch', 'DESC']], limit, offset })).map(anchorOf);
+        },
+        /** How many anchorings there are of each status. */
+        async countAnchors() {
+            const rows = await Anchor.findAll({ attributes: ['status', [sequelize.fn('COUNT', sequelize.col('batch')), 'n']], group: ['status'], raw: true });
+            return Object.fromEntries(rows.map(r => [r.status, Number(r.n)]));
+        },
+        /** The newest anchoring before `batch` with one of `statuses`, or null. */
+        async anchorBefore(batch, statuses) {
+            return anchorOf(await Anchor.findOne({ where: { batch: { [Op.lt]: batch }, status: statuses }, order: [['batch', 'DESC']] }));
+        },
         /** Given-up anchorings that spent this wallet output, oldest first. */
         async anchorsSpending(txHash, index) { return (await Anchor.findAll({ where: { inputTxHash: txHash, inputIndex: index, status: 'failed' }, order: [['batch', 'ASC']] })).map(anchorOf); },
         async anchorCovering(index) { return anchorOf(await Anchor.findOne({ where: { status: 'confirmed', size: { [Op.gt]: index } }, order: [['batch', 'ASC']] })); },

@@ -85,7 +85,21 @@ export function createMemoryRepo() {
         async lastAnchorWhere(statuses) { const a = [...anchors].reverse().find(x => statuses.includes(x.status)); return a ? { ...a } : null; },
         async createAnchor(row) { anchors.push({ attempts: 0, ...row }); return { ...anchors.at(-1) }; },
         async updateAnchor(batch, patch) { Object.assign(anchors.find(a => a.batch === batch), patch); },
-        async listAnchors({ limit = 50 } = {}) { return anchors.slice(-limit).reverse().map(a => ({ ...a })); },
+        /** Newest first; only those with one of `statuses` when given. */
+        async listAnchors({ statuses, limit = 50, offset = 0 } = {}) {
+            return anchors.filter(a => !statuses || statuses.includes(a.status)).sort((a, b) => b.batch - a.batch).slice(offset, offset + limit).map(a => ({ ...a }));
+        },
+        /** How many anchorings there are of each status. */
+        async countAnchors() {
+            const out = {};
+            for (const a of anchors) out[a.status] = (out[a.status] ?? 0) + 1;
+            return out;
+        },
+        /** The newest anchoring before `batch` with one of `statuses`, or null. */
+        async anchorBefore(batch, statuses) {
+            const a = anchors.filter(x => x.batch < batch && statuses.includes(x.status)).sort((x, y) => y.batch - x.batch)[0];
+            return a ? { ...a } : null;
+        },
         /** Given-up anchorings that spent this wallet output, oldest first. */
         async anchorsSpending(txHash, index) { return anchors.filter(a => a.inputTxHash === txHash && a.inputIndex === index && a.status === 'failed').map(a => ({ ...a })); },
         /** The first confirmed anchoring that covers leaf `index`. */

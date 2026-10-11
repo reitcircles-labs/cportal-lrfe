@@ -63,10 +63,14 @@ export function defineModels(sequelize) {
         firstSeenHeight: { type: DataTypes.INTEGER },                       // block height when first seen on chain
         blockHeight: { type: DataTypes.INTEGER },                           // its own block, when the provider knows it
         attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
-        error: { type: DataTypes.TEXT },
+        error: { type: DataTypes.TEXT },                                    // internal only: may name the provider
+        reason: { type: DataTypes.STRING },                                 // why it failed: expired, rolledBackExpired or refused
+        confirmations: { type: DataTypes.INTEGER },                         // blocks on top of it, as last counted
         createdAt: { type: DataTypes.DATE, allowNull: false },
         submittedAt: { type: DataTypes.DATE },
-        confirmedAt: { type: DataTypes.DATE }
+        onChainAt: { type: DataTypes.DATE },
+        confirmedAt: { type: DataTypes.DATE },
+        failedAt: { type: DataTypes.DATE }
     }, opts({ indexes: [{ fields: ['status'] }] }));
     // Which instance runs the anchoring job (one at a time), until when.
     const JobLease = sequelize.define('job_lease', {

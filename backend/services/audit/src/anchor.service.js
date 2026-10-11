@@ -14,6 +14,20 @@ export function parsePeriod(value, fallback = 3_600_000) {
 }
 
 /**
+ * When the job may anchor next (README.md section 3): a period after the last anchoring, or shortly
+ * after one that failed and gave way. `last`: the newest anchoring; `covered`: the newest one that did
+ * not fail. `{ at, gaveWay }`, `at` null before the first anchoring. Also shown on the Anchorings
+ * screens (API-671), so both say the same.
+ */
+export function nextAnchoring(last, covered, { periodMs, retryMs }) {
+    // gave way: the last one failed and nothing newer is on chain (a revived one counts as newer)
+    const gaveWay = !!last && last.status === 'failed' && !(covered?.confirmedAt && new Date(covered.confirmedAt) > new Date(last.createdAt));
+    const since = gaveWay ? last : (covered && last?.status === 'failed' ? covered : last);
+    if (!since) return { at: null, gaveWay };
+    return { at: new Date(new Date(since.createdAt).getTime() + (gaveWay ? retryMs : periodMs)), gaveWay };
+}
+
+/**
  * Hourly anchoring (README.md section 3). Every `checkMs` (a minute) the job:
  *
  *   1. follows the anchoring in flight, if any: sends its stored transaction (again) until it is on
@@ -80,7 +94,10 @@ export class AnchorService {
         if (s.onChain) {
             const firstSeen = a.firstSeenHeight ?? s.blockHeight ?? s.tipHeight;
             const depth = s.tipHeight - (s.blockHeight ?? firstSeen) + 1;
-            const patch = { status: 'onChain', firstSeenHeight: firstSeen, blockHeight: s.blockHeight ?? null, expiredSeenHeight: null };
+            const patch = {
+                status: 'onChain', firstSeenHeight: firstSeen, blockHeight: s.blockHeight ?? null, expiredSeenHeight: null,
+                onChainAt: a.onChainAt ?? this.clock(), confirmations: depth
+            };
             if (depth >= this.config.confirmations) {
                 await this.repo.updateAnchor(a.batch, { ...patch, status: 'confirmed', confirmedAt: this.clock() });
                 this.logger.info?.({ batch: a.batch, txHash: a.txHash, depth }, 'audit: anchoring confirmed');
@@ -99,13 +116,17 @@ export class AnchorService {
                 return { action: 'expired, making sure', batch: a.batch, inFlight: true };
             }
             if (s.tipHeight - a.expiredSeenHeight < this.config.confirmations) return { action: 'expired, making sure', batch: a.batch, inFlight: true };
-            await this.repo.updateAnchor(a.batch, { status: 'failed', error: a.status === 'onChain' ? 'rolled back, and expired before it landed again' : 'expired before it reached the chain' });
+            const rolledBack = a.status === 'onChain';
+            await this.repo.updateAnchor(a.batch, {
+                status: 'failed', failedAt: this.clock(), reason: rolledBack ? 'rolledBackExpired' : 'expired',
+                error: rolledBack ? 'rolled back, and expired before it landed again' : 'expired before it reached the chain'
+            });
             this.logger.warn?.({ batch: a.batch, txHash: a.txHash }, 'audit: an anchoring expired without reaching the chain; anchoring again');
             return { action: 'expired', batch: a.batch, inFlight: false };
         }
         if (a.status === 'onChain') {
             // it was on chain and is gone: a rollback. The same transaction is sent again (still valid).
-            await this.repo.updateAnchor(a.batch, { status: 'submitted', firstSeenHeight: null, blockHeight: null, error: 'rolled back; sent again' });
+            await this.repo.updateAnchor(a.batch, { status: 'submitted', firstSeenHeight: null, blockHeight: null, onChainAt: null, confirmations: null, error: 'rolled back; sent again' });
             this.logger.warn?.({ batch: a.batch, txHash: a.txHash }, 'audit: an anchoring was rolled back; sending it again');
             return { ...(await this.send({ ...a, status: 'submitted' })), action: 'rolled back, sent again' };
         }
@@ -143,7 +164,7 @@ export class AnchorService {
                 if (a.status === 'prepared') await this.announce(a);
                 return { action: s.onChain ? 'already on chain' : 'refused again, waiting', batch: a.batch, inFlight: true };
             }
-            await this.repo.updateAnchor(a.batch, { status: 'failed', attempts, error: err.message });
+            await this.repo.updateAnchor(a.batch, { status: 'failed', attempts, failedAt: now, reason: 'refused', error: err.message });
             this.logger.error?.({ batch: a.batch, err: err.message, code: err.code }, 'audit: the chain refused an anchoring; anchoring again shortly');
             return { action: 'refused', batch: a.batch, inFlight: false };
         }
@@ -163,11 +184,8 @@ export class AnchorService {
     async maybeAnchor() {
         const last = await this.repo.lastAnchor();
         const covered = await this.repo.lastAnchorWhere(ON_CHAIN_OR_GOING);
-        // gave way: the last one failed and nothing newer is on chain (a revived one counts as newer)
-        const gaveWay = last && last.status === 'failed' && !(covered?.confirmedAt && new Date(covered.confirmedAt) > new Date(last.createdAt));
-        const since = gaveWay ? last : (covered && last?.status === 'failed' ? covered : last);
-        const wait = gaveWay ? this.config.retryMs : this.config.periodMs;
-        if (since && this.clock() - new Date(since.createdAt) < wait) return { action: gaveWay ? 'waiting before anchoring again' : 'waiting for the period' };
+        const { at, gaveWay } = nextAnchoring(last, covered, this.config);
+        if (at && this.clock() < at) return { action: gaveWay ? 'waiting before anchoring again' : 'waiting for the period' };
         const [size, head] = await Promise.all([this.tree.size(), this.repo.head()]);
         const newLeaves = size > (covered?.size ?? 0);
         const newEntries = !!head && head.seq > (covered?.checkpointSeq ?? 0);
@@ -210,7 +228,10 @@ export class AnchorService {
             const s = await this.cardano.status(c.txHash);
             tipHeight = s.tipHeight;
             if (s.onChain) {
-                await this.repo.updateAnchor(c.batch, { status: 'onChain', firstSeenHeight: s.blockHeight ?? s.tipHeight, blockHeight: s.blockHeight ?? null, expiredSeenHeight: null, error: 'given up, then found on chain' });
+                await this.repo.updateAnchor(c.batch, {
+                    status: 'onChain', firstSeenHeight: s.blockHeight ?? s.tipHeight, blockHeight: s.blockHeight ?? null, expiredSeenHeight: null,
+                    onChainAt: this.clock(), failedAt: null, reason: null, error: 'given up, then found on chain'
+                });
                 // the others that spent the same output can never land now: nothing more to replace
                 for (const other of candidates.filter(o => o.batch !== c.batch)) await this.repo.updateAnchor(other.batch, { inputTxHash: null, inputIndex: null });
                 this.logger.warn?.({ batch: c.batch, txHash: c.txHash }, 'audit: an anchoring given up landed after all; following it');

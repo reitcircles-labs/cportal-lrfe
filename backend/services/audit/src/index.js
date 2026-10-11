@@ -9,6 +9,7 @@ import { createVerifySources, ProofService } from './proof.service.js';
 import { createSignoffClients, SignoffService } from './signoff.service.js';
 import { createEvidenceSources, EvidenceService } from './evidence.service.js';
 import { AuditListService, createListSources } from './audit-list.service.js';
+import { AnchoringsService } from './anchorings.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -53,12 +54,17 @@ const evidence = new EvidenceService({ trail: service, proofs, signoffs, events,
 // the land records list of the Audit screen (API-661)
 const auditList = new AuditListService({ repo, proofs, sources: createListSources({ recordsUrl, serviceToken }) });
 
+// the Anchorings screens (API-671): the job's settings, to say when the next batch is due
+const anchoringConfig = { periodMs: parsePeriod(process.env.ANCHOR_PERIOD), retryMs: 5 * 60_000, confirmations: envInt('ANCHOR_CONFIRMATIONS', 10) };
+const anchorings = new AnchoringsService({ repo, tree, anchoring: !!cardano, config: anchoringConfig });
+
 const app = await buildApp({
     service,
     proofs,
     signoffs,
     evidence,
     auditList,
+    anchorings,
     jwtSecret: env('JWT_SECRET'),
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }
@@ -87,7 +93,7 @@ setInterval(checkGap, 3_600_000).unref();
 if (cardano) {
     const anchoring = new AnchorService({
         repo, tree, cardano, events, logger: app.log,
-        config: { periodMs: parsePeriod(process.env.ANCHOR_PERIOD), confirmations: envInt('ANCHOR_CONFIRMATIONS', 10) }
+        config: anchoringConfig
     });
     // a new installation (decided once, at start): the seals from before the audit service go into the
     // tree before the first anchoring (README.md section 1). Retried every minute until it has gone

@@ -81,6 +81,15 @@ describe('offices', () => {
         expect(items.find(e => e.action === 'Office changed')).to.include({ target: 'Mover', detail: 'WDH → KMP' });
     });
 
+    it('anchors.view (API-671): every role holds it, and a database on catalogue version 2 grants it to each once', async () => {
+        expect(ROLES.every(r => r.perms.includes('anchors.view'))).to.equal(true);
+        const repo = createMemoryRepo();
+        for (const r of ROLES) await repo.upsertRole({ ...r, perms: r.perms.filter(p => p !== 'anchors.view') });
+        await repo.setSetting('catalogue.version', 2);
+        await seedIdentity(repo, {});
+        expect((await repo.listRoles()).every(r => r.perms.includes('anchors.view'))).to.equal(true);
+    });
+
     it('grants the new permission once to existing roles, and respects its later removal', async () => {
         const repo = createMemoryRepo();
         // a database seeded before offices existed: roles without admin.offices, no catalogue version

@@ -91,7 +91,7 @@ describe('identity HTTP API', () => {
         expect(policies.json().sod).to.have.length(4);
 
         const matrix = await app.inject({ method: 'PUT', url: '/roles/permissions', headers: h, payload: { matrix: { scan: ['dashboard.view', 'capture.view'] } } });
-        expect(matrix.json().changes).to.equal(2);
+        expect(matrix.json().changes).to.equal(3);                        // capture.scan, capture.rescan, anchors.view removed
     });
 
     it('registrar can manage users but not roles or policies', async () => {

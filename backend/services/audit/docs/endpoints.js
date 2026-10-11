@@ -9,6 +9,7 @@ export default {
         Proofs: 'Proofs that an item is in a root anchored on Cardano, and checking them.',
         'Sign-off': 'Auditors\' sign-offs and findings, with segregation of duties (sod2).',
         Evidence: 'Evidence packs: a land record with everything needed to check it outside the portal.',
+        Anchorings: 'Every batch put on the blockchain, for every signed-in user.',
         Service: 'Health and metadata.'
     },
     routes: {
@@ -32,6 +33,14 @@ export default {
         'GET /audit/records': {
             tag: 'Sign-off', summary: 'The land records list of the Audit screen',
             description: '`filter`: `changed` (a version committed since the last audit sign-off; the default), `attention` (an open finding, or an item found changed since review and not re-reviewed yet) or `all`; `q` searches as land-records does; `limit` (up to 100) and `offset`. `{ items, total, counts: { changed, attention, all } }`. Each item: `id`, `recordNo`, `label`, `currentVersion`, `changedAt`, `owners`, `proof` (the current version\'s anchoring: `waiting`, `sent`, `onChain`, `confirmed`), `needsAttention`, and `audit`: `range` (the open checkpoint, or null), `newDocuments`, `check` (`matches`, `changed`, `notOnChain`: what is known as of the last check; the record\'s own check runs it again), `openFindings`, `lastSignoff` (`toVersion`, `signedAt`, `signedByName`, and `proof`: how far its trail entry has got, `waiting`, `sent`, `onChain` or `confirmed`).'
+        },
+        'GET /audit/anchors': {
+            tag: 'Anchorings', summary: 'Every batch put on the blockchain, newest first',
+            description: '`status`: `all` (the default), `progress` (sent or in a block, not confirmed yet) or `failed`; `limit` (up to 100) and `offset`. `{ items, total, counts: { all, progress, failed }, confirmationsNeeded, next }`. Each item: `batch`, `createdAt`, `status` (`sent`, `onChain`, `confirmed`, `failed`), `covers` (the new fingerprints since the last batch before it that did not fail; null for a failed one), `txHash` and `explorerUrl` (a public blockchain explorer; null for a failed one), `block`, `confirmations`, `reason` (a failed one: `expired`, `rolledBackExpired` or `refused`), `replacedBy` (a failed one: the next batch) and `replaces` (the failed batch before it). `next`: `{ dueAt, waiting }`, when the next batch is due and how many fingerprints wait for it; null when no blockchain is configured. Every role holds `anchors.view`.'
+        },
+        'GET /audit/anchors/{batch}': {
+            tag: 'Anchorings', summary: 'One batch',
+            description: 'As in the list, with what is on the blockchain: `root`, `size`, `prev` (`{ root, batch }`: the previous batch\'s root and the batch it belongs to); `steps` (`createdAt`, `sentAt`, `sends`, `onChainAt`, `confirmedAt`, `failedAt`); for a failed one the `replacement` (`batch`, `status`, `createdAt`); `previousBatch` and `nextBatch`. 404 for an unknown batch.'
         },
         'GET /audit/records/{id}/check': {
             tag: 'Sign-off', summary: 'The open audit checkpoint of a land record',
