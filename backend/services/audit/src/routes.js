@@ -3,7 +3,7 @@ import { CLOSE_OUTCOMES } from './signoff.service.js';
 import { LIST_FILTERS } from './audit-list.service.js';
 import { ANCHOR_FILTERS } from './anchorings.service.js';
 
-export async function auditRoutes(app, { service, proofs, signoffs, evidence, auditList, anchorings }) {
+export async function auditRoutes(app, { service, proofs, signoffs, evidence, auditList, anchorings, lookup }) {
     const canView = app.requirePerm('audit.view');
 
     // trail entries: of a land record (with its documents' steps), a document, a user, a process
@@ -76,6 +76,12 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
             }
         }
     }, async (req) => anchorings.list(req.query));
+
+    // "Is it on the blockchain?": a land record or document by number, Erf or deed number, with its batches (API-697)
+    app.get('/audit/anchors/lookup', {
+        onRequest: canSeeAnchorings,
+        schema: { querystring: { type: 'object', required: ['q'], additionalProperties: false, properties: { q: { type: 'string', minLength: 1, maxLength: 100 } } } }
+    }, async (req) => lookup.search(req.query.q, req.user.sub));
 
     // one batch: what is on the blockchain, its steps, and for a failed one why and what replaced it
     app.get('/audit/anchors/:batch', {

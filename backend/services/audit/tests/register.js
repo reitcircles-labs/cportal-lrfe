@@ -14,6 +14,7 @@ import { createLocalSigner } from '../src/cardano/signer.js';
 import { buildApp } from '../src/app.js';
 import { AuditListService, createListSources } from '../src/audit-list.service.js';
 import { AnchoringsService, createCoverageSources } from '../src/anchorings.service.js';
+import { AnchorLookupService, createLookupSources } from '../src/lookup.service.js';
 import { fakeDriver } from './helpers.js';
 import { actor, makeWithReview, users, SECRET } from '../../land-records/tests/helpers.js';
 
@@ -100,7 +101,8 @@ export async function audited() {
     };
     const auditList = new AuditListService({ repo, proofs, sources: createListSources({ recordsUrl: 'http://records', serviceToken: asService('audit'), fetchImpl: routed }) });
     const anchorings = new AnchoringsService({ repo, tree, clock, sources: createCoverageSources({ recordsUrl: 'http://records', serviceToken: asService('audit'), fetchImpl: routed }) });
-    const auditApp = await buildApp({ service: trail, proofs, signoffs, evidence, auditList, anchorings, jwtSecret: SECRET });
+    const lookup = new AnchorLookupService({ repo, proofs, anchorings, clock, sources: createLookupSources({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', serviceToken: asService('audit'), fetchImpl: routed }) });
+    const auditApp = await buildApp({ service: trail, proofs, signoffs, evidence, auditList, anchorings, lookup, jwtSecret: SECRET });
     await auditApp.ready();
     const as = (u) => ({ authorization: `Bearer ${auditApp.jwt.sign({ typ: 'access', sub: u.id, name: u.name, perms: u.perms, roles: u.roles })}` });
     const api = async (u, method, url, payload) => { const res = await auditApp.inject({ method, url, headers: as(u), payload }); await settle(); return res; };
@@ -108,7 +110,7 @@ export async function audited() {
     const inbox = async (u) => (await reg.bpm.inject({ url: '/tasks', headers: as(u) })).json().tasks;
     const record = await reg.service.getRecord(r.id);
     return { ...reg, repo, clock, trail, tree, events, signoffs, settle, auditApp, api, as, inbox, record, edrmsApp, decideAll, setBpmDown: (v) => { bpmDown = v; },
-        driver, cardano, job, proofs, evidence, anchor, anchorings };
+        driver, cardano, job, proofs, evidence, anchor, anchorings, lookup };
 }
 
 /** A second version of the record, through the review: submitted by the officer, approved by the registrar. */

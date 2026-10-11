@@ -10,6 +10,7 @@ import { createSignoffClients, SignoffService } from './signoff.service.js';
 import { createEvidenceSources, EvidenceService } from './evidence.service.js';
 import { AuditListService, createListSources } from './audit-list.service.js';
 import { AnchoringsService, createCoverageSources } from './anchorings.service.js';
+import { AnchorLookupService, createLookupSources } from './lookup.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -57,6 +58,8 @@ const auditList = new AuditListService({ repo, proofs, sources: createListSource
 // the Anchorings screens (API-671): the job's settings, to say when the next batch is due
 const anchoringConfig = { periodMs: parsePeriod(process.env.ANCHOR_PERIOD), retryMs: 5 * 60_000, confirmations: envInt('ANCHOR_CONFIRMATIONS', 10) };
 const anchorings = new AnchoringsService({ repo, tree, anchoring: !!cardano, config: anchoringConfig, sources: createCoverageSources({ recordsUrl, serviceToken }) });
+// "Is it on the blockchain?" (API-697)
+const lookup = new AnchorLookupService({ repo, proofs, anchorings, sources: createLookupSources({ recordsUrl, edrmsUrl, serviceToken }) });
 
 const app = await buildApp({
     service,
@@ -65,6 +68,7 @@ const app = await buildApp({
     evidence,
     auditList,
     anchorings,
+    lookup,
     jwtSecret: env('JWT_SECRET'),
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }

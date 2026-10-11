@@ -93,6 +93,15 @@ paths:
               - committed
               - in_review
               - needs_review
+        - name: match
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - all
+              - parcel
+            default: all
         - name: limit
           in: query
           required: false
@@ -1142,12 +1151,13 @@ paths:
     post:
       tags:
         - Records
-      summary: Land record labels, and the documents committed versions are made of (audit service only)
+      summary: Land record labels, the documents committed versions are made of, and the versions that pin documents (audit service only)
       description: >-
-        Body `{ recordIds?, versions?: [{ recordId, versionNumber }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }],
-        versions: [{ recordId, versionNumber, documents: [{ id, version }] }] }`: the documents each committed version (current or
-        superseded) pins; drafts never count. `records` has every record asked for or named by the versions. For the audit service's
-        Anchorings screens: what a batch covers (API-696).
+        Body `{ recordIds?, versions?: [{ recordId, versionNumber }], pinning?: [documentId] }`, up to 1000 record ids and versions and 100
+        documents. `{ records: [{ id, recordNo, label }], versions: [{ recordId, versionNumber, documents: [{ id, version, edrmsNo, docType,
+        ref }] }], pinnedBy: [{ documentId, version, recordId, versionNumber }] }`: for committed versions (current or superseded) only;
+        drafts never count. `records` has every record asked for or named in the answer. For the audit service's Anchorings screens: what a
+        batch covers (API-696) and the search (API-697).
 
 
         **Access:** Service token only, from: `audit`. Browsers cannot call this.
@@ -1163,6 +1173,12 @@ paths:
                 recordIds:
                   type: array
                   maxItems: 1000
+                  items:
+                    type: string
+                    format: uuid
+                pinning:
+                  type: array
+                  maxItems: 100
                   items:
                     type: string
                     format: uuid

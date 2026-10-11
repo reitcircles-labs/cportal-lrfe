@@ -465,6 +465,65 @@ paths:
       x-access:
         allOf:
           - anchors.view
+  /api/audit/anchors/lookup:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: Is it on the blockchain? Find a land record or document
+      description: >-
+        `q`: a land record number (`LR-NA-2026-000001`), a document number (`EDR-NA-2026-000412`), a deed or instrument number (`T
+        2210/2008`), or words (an Erf, a township). Numbers match exactly; words match land records with a committed version, on their
+        number and parcel only (never owners). `{ query, kind }`, `kind` one of: `record` (with `record`, `answer`, `history`), `document`
+        (with `document`, `answer`, `history`), `choices` (several land records matched the words: `choices: [{ recordId, recordNo, label
+        }]`, at most 20) or `none`. `answer` is for the current version, whose seal stands for everything before it: `{ status: "yes",
+        version, batch }` (in a block or confirmed), `{ status: "sent", version, batch }`, `{ status: "waiting", version, nextDueAt }`, or
+        `{ status: "notRecorded", version }` (no fingerprint recorded: no committed version yet, or not in the audit tree). `history`,
+        newest first: each item with `at`, `status` (`waiting`, `sent`, `onChain`, `confirmed`, `notRecorded`) and `batch`; for a land
+        record `version` items (`versionNumber`), `document` items (the documents its versions are made of: `documentId`, `version`,
+        `edrmsNo`, `docType`, `ref`) and `signoff` items (`from`, `to`); for a document its `document` versions and `usedIn` items (the
+        committed land record versions made of it: `recordId`, `recordNo`, `label`, `versionNumber`, `documentVersion`). 30 searches a
+        minute per user (429 after).
+
+
+        **Access:** Signed-in user with permission `anchors.view`.
+      operationId: audit_getAuditAnchorsLookup
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - anchors.view
   /api/audit/findings:
     post:
       tags:
@@ -3994,6 +4053,15 @@ paths:
               - committed
               - in_review
               - needs_review
+        - name: match
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - all
+              - parcel
+            default: all
         - name: limit
           in: query
           required: false
@@ -5326,12 +5394,13 @@ paths:
     post:
       tags:
         - land-records · Records
-      summary: Land record labels, and the documents committed versions are made of (audit service only)
+      summary: Land record labels, the documents committed versions are made of, and the versions that pin documents (audit service only)
       description: >-
-        Body `{ recordIds?, versions?: [{ recordId, versionNumber }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }],
-        versions: [{ recordId, versionNumber, documents: [{ id, version }] }] }`: the documents each committed version (current or
-        superseded) pins; drafts never count. `records` has every record asked for or named by the versions. For the audit service's
-        Anchorings screens: what a batch covers (API-696).
+        Body `{ recordIds?, versions?: [{ recordId, versionNumber }], pinning?: [documentId] }`, up to 1000 record ids and versions and 100
+        documents. `{ records: [{ id, recordNo, label }], versions: [{ recordId, versionNumber, documents: [{ id, version, edrmsNo, docType,
+        ref }] }], pinnedBy: [{ documentId, version, recordId, versionNumber }] }`: for committed versions (current or superseded) only;
+        drafts never count. `records` has every record asked for or named in the answer. For the audit service's Anchorings screens: what a
+        batch covers (API-696) and the search (API-697).
 
 
         **Access:** Service token only, from: `audit`. Browsers cannot call this.
@@ -5347,6 +5416,12 @@ paths:
                 recordIds:
                   type: array
                   maxItems: 1000
+                  items:
+                    type: string
+                    format: uuid
+                pinning:
+                  type: array
+                  maxItems: 100
                   items:
                     type: string
                     format: uuid

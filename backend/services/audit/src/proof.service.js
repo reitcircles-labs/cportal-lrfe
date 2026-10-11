@@ -7,6 +7,12 @@ export const PROOF_FORMAT = 'lrfe-audit-proof/1';
 export const KINDS = ['record-version', 'document-version', 'trail-entry'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** How far an anchoring has got, as the screens say it: no anchoring yet is `waiting`, a submitted one `sent`. */
+function anchoringStatus(anchor) {
+    if (!anchor) return { status: 'waiting', batch: null };
+    return { status: anchor.status === 'submitted' ? 'sent' : anchor.status, batch: anchor.batch };
+}
+
 /**
  * Proofs and verification (README.md section 4; API-658). A proof shows that a land record version,
  * a document version or a trail entry is a leaf of the tree whose root was put on Cardano in one
@@ -17,6 +23,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  *   verify(kind, id, version)   the item's seal recomputed from the current data, the path to the
  *                               root, and the root in the anchoring transaction on the chain
  *   statusOf(keys)              per leaf key: waiting | anchored | confirmed (land-records, edrms)
+ *   anchoringOf(keys), batchOf(keys), entryBatch(seq)
+ *                               how far an item has got (waiting | sent | onChain | confirmed), and
+ *                               with batchOf and entryBatch the batch (the Anchorings screens)
  *
  * `sources`: { recordVersion(recordId, n), documentVersion(documentId, n) } → { seal, intact } as the
  * owning service recomputes it now (createVerifySources).
@@ -204,6 +213,16 @@ export class ProofService {
      * sign-off (API-680) counts only `onChain` and `confirmed`: a sent transaction can still fail.
      */
     async anchoringOf(keys) {
+        const batches = await this.batchOf(keys);
+        return Object.fromEntries(keys.map(key => [key, batches[key]?.status ?? null]));
+    }
+
+    /**
+     * Per leaf key: `{ status, batch, sealedAt }`, the status as in anchoringOf, the batch that put it
+     * on the blockchain (null while waiting) and when it was sealed into the tree; null when not in
+     * the tree. The Anchorings screens link each item to its batch (API-697, API-699).
+     */
+    async batchOf(keys) {
         const out = {};
         for (const key of keys) {
             const leaf = await this.repo.tree.leafByKey(key);
@@ -211,16 +230,14 @@ export class ProofService {
                 out[key] = null;
                 continue;
             }
-            const a = await this.repo.anchorForLeaf(leaf.leafIndex);
-            if (!a) {
-                out[key] = 'waiting';
-            } else if (a.status === 'submitted') {
-                out[key] = 'sent';
-            } else {
-                out[key] = a.status;                                  // onChain or confirmed
-            }
+            out[key] = { ...anchoringStatus(await this.repo.anchorForLeaf(leaf.leafIndex)), sealedAt: leaf.createdAt ?? null };
         }
         return out;
+    }
+
+    /** Trail entry `seq`, as batchOf says for a leaf: an entry is on the blockchain through the checkpoint after it. */
+    async entryBatch(seq) {
+        return anchoringStatus(await this.repo.anchorForEntry(seq));
     }
 
     /** Per leaf key: { status: waiting | anchored | confirmed, batch, tx, network } or null (not in the tree). */

@@ -624,11 +624,12 @@ export class RecordsService {
         };
     }
 
-    async listRecords({ q, status, limit, offset } = {}) {
+    /** `match: 'parcel'`: `q` against the record number and the parcel label only, never owners (the Anchorings search, API-697). */
+    async listRecords({ q, status, match, limit, offset } = {}) {
         if (status && !['draft', 'committed', 'in_review', 'needs_review'].includes(status)) throw new BadRequestError(`Unknown status "${status}"`);
         // in_review / needs_review filter in the service: small lists, simple repos
         const base = ['draft', 'committed'].includes(status) ? status : undefined;
-        const res = await this.repo.listRecords({ q, status: base, limit: status && !base ? 1000 : limit, offset: status && !base ? 0 : offset });
+        const res = await this.repo.listRecords({ q, status: base, match, limit: status && !base ? 1000 : limit, offset: status && !base ? 0 : offset });
         let items = res.items;
         if (status === 'in_review') items = items.filter(r => r.draftState === 'in_review');
         if (status === 'needs_review') items = items.filter(r => (r.flags || []).length);
@@ -639,13 +640,15 @@ export class RecordsService {
     listSeals({ after = null, limit = 500 } = {}) { return this.repo.listSeals({ after, limit }); }
 
     /**
-     * For the audit service's Anchorings screens (API-696): the documents each committed land record
-     * version is made of, and the number and label of each land record asked for or named by them.
+     * For the audit service's Anchorings screens: the documents each committed land record version is
+     * made of (API-696), the committed versions that pin the given documents (API-697), and the
+     * number and label of each land record asked for or named by them.
      */
-    async lookup({ recordIds = [], versions = [] }) {
-        const made = await this.repo.versionDocuments(versions);
-        const records = await this.repo.recordLabels([...new Set([...recordIds, ...versions.map(v => v.recordId)])]);
-        return { records, versions: made };
+    async lookup({ recordIds = [], versions = [], pinning = [] }) {
+        const [made, pins] = await Promise.all([this.repo.versionDocuments(versions), this.repo.findCommittedPinning(pinning)]);
+        const named = [...recordIds, ...versions.map(v => v.recordId), ...pins.map(p => p.recordId)];
+        const records = await this.repo.recordLabels([...new Set(named)]);
+        return { records, versions: made, pinnedBy: pins };
     }
 
     async getRecord(id) {

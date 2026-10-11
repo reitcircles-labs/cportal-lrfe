@@ -34,6 +34,7 @@ export async function recordsRoutes(app, { service }) {
                 properties: {
                     q: { type: 'string', maxLength: 200 },
                     status: { type: 'string', enum: ['draft', 'committed', 'in_review', 'needs_review'] },
+                    match: { type: 'string', enum: ['all', 'parcel'], default: 'all' },
                     limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
                     offset: { type: 'integer', minimum: 0, default: 0 }
                 }
@@ -153,8 +154,8 @@ export async function recordsRoutes(app, { service }) {
 
     // ------------------------------------------------ reading
 
-    // land record labels and the documents each committed version is made of, for the audit
-    // service's Anchorings screens: what a batch covers (API-696)
+    // land record labels, the documents each committed version is made of, and the committed versions
+    // that pin given documents, for the audit service's Anchorings screens (API-696, API-697)
     app.post('/records/lookup', {
         onRequest: app.requireService('audit'),
         schema: {
@@ -162,6 +163,7 @@ export async function recordsRoutes(app, { service }) {
                 type: 'object', additionalProperties: false,
                 properties: {
                     recordIds: { type: 'array', maxItems: 1000, items: { type: 'string', format: 'uuid' } },
+                    pinning: { type: 'array', maxItems: 100, items: { type: 'string', format: 'uuid' } },
                     versions: {
                         type: 'array', maxItems: 1000,
                         items: { type: 'object', required: ['recordId', 'versionNumber'], additionalProperties: false, properties: { recordId: { type: 'string', format: 'uuid' }, versionNumber: { type: 'integer', minimum: 1 } } }

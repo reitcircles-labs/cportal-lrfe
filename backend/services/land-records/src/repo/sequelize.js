@@ -5,8 +5,8 @@ import { defineModels, SCHEMA } from './models.js';
 const plain = (row) => (row ? row.get({ plain: true }) : null);
 
 /** Postgres land-records repository. Same interface as ./memory.js. */
-/** The document versions a land record version pins, as { id, version }. */
-const pinnedOf = (v) => (v.data?.documents || []).map(d => ({ id: d.edrmsDocumentId, version: d.version }));
+/** The document versions a land record version pins: { id, version, edrmsNo, docType, ref }. */
+const pinnedOf = (v) => (v.data?.documents || []).map(d => ({ id: d.edrmsDocumentId, version: d.version, edrmsNo: d.edrmsNo, docType: d.docType, ref: d.ref ?? null }));
 
 export function createSequelizeRepo(sequelize) {
     const m = defineModels(sequelize);
@@ -50,12 +50,14 @@ export function createSequelizeRepo(sequelize) {
         },
         async getRecord(id) { return plain(await m.Record.findByPk(id)); },
         async findRecord(where) { return plain(await m.Record.findOne({ where })); },
-        async listRecords({ q, status, limit = 50, offset = 0 } = {}) {
+        async listRecords({ q, status, match, limit = 50, offset = 0 } = {}) {
             const where = {};
             if (status) where.status = status;
             if (q) {
                 const like = `%${q.replace(/[%_\\]/g, '\\$&')}%`;
-                where[Op.or] = [{ recordNo: { [Op.iLike]: like } }, { label: { [Op.iLike]: like } }, { searchText: { [Op.iLike]: like } }];
+                // `parcel`: never the owners' names and ID numbers in searchText (API-697)
+                const fields = match === 'parcel' ? ['recordNo', 'label'] : ['recordNo', 'label', 'searchText'];
+                where[Op.or] = fields.map(f => ({ [f]: { [Op.iLike]: like } }));
             }
             const { rows, count } = await m.Record.findAndCountAll({ where, order: [['recordNo', 'DESC']], limit, offset });
             return { items: rows.map(plain), total: count };
@@ -107,6 +109,18 @@ export function createSequelizeRepo(sequelize) {
         async recordLabels(ids) {
             if (!ids.length) return [];
             return (await m.Record.findAll({ where: { id: ids }, attributes: ['id', 'recordNo', 'label'] })).map(r => ({ id: r.id, recordNo: r.recordNo, label: r.label }));
+        },
+        /** The committed versions (current or superseded) that pin any version of these documents: [{ documentId, version, recordId, versionNumber }]. */
+        async findCommittedPinning(documentIds) {
+            if (!documentIds.length) return [];
+            const [rows] = await sequelize.query(
+                `SELECT d->>'edrmsDocumentId' AS "documentId", (d->>'version')::int AS "version", v."recordId", v."versionNumber"
+                   FROM "${SCHEMA}"."record_version" v
+                   CROSS JOIN LATERAL jsonb_array_elements(COALESCE(v."data"->'documents', '[]'::jsonb)) d
+                  WHERE v."state" IN ('committed', 'superseded') AND d->>'edrmsDocumentId' IN (:ids)`,
+                { replacements: { ids: documentIds } }
+            );
+            return rows;
         },
         /** The documents each committed version (current or superseded) is made of: [{ recordId, versionNumber, documents: [{ id, version }] }]. */
         async versionDocuments(pairs) {

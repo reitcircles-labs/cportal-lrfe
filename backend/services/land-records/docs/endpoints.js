@@ -51,8 +51,8 @@ export default {
         'GET /records/{id}/comments': { tag: 'Records', summary: 'Comments on a record' },
         'POST /records/{id}/comments': { tag: 'Records', summary: 'Comment on a record', description: '`{ body }`. Kept with the version open at the time.' },
         'POST /records/lookup': {
-            tag: 'Records', summary: 'Land record labels, and the documents committed versions are made of (audit service only)',
-            description: 'Body `{ recordIds?, versions?: [{ recordId, versionNumber }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }], versions: [{ recordId, versionNumber, documents: [{ id, version }] }] }`: the documents each committed version (current or superseded) pins; drafts never count. `records` has every record asked for or named by the versions. For the audit service\'s Anchorings screens: what a batch covers (API-696).'
+            tag: 'Records', summary: 'Land record labels, the documents committed versions are made of, and the versions that pin documents (audit service only)',
+            description: 'Body `{ recordIds?, versions?: [{ recordId, versionNumber }], pinning?: [documentId] }`, up to 1000 record ids and versions and 100 documents. `{ records: [{ id, recordNo, label }], versions: [{ recordId, versionNumber, documents: [{ id, version, edrmsNo, docType, ref }] }], pinnedBy: [{ documentId, version, recordId, versionNumber }] }`: for committed versions (current or superseded) only; drafts never count. `records` has every record asked for or named in the answer. For the audit service\'s Anchorings screens: what a batch covers (API-696) and the search (API-697).'
         },
         'GET /records/seals': {
             tag: 'Records', summary: 'Every committed version\'s seal, oldest first (audit service only)',

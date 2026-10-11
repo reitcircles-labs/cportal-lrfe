@@ -1,5 +1,6 @@
-import { AppError, NotFoundError } from '@lrfe/common';
+import { NotFoundError } from '@lrfe/common';
 import { nextAnchoring } from './anchor.service.js';
+import { createServiceClient } from './service-client.js';
 
 /** The filters of the Anchorings list (API-671): every batch, those on their way, those that failed. */
 export const ANCHOR_FILTERS = ['all', 'progress', 'failed'];
@@ -307,31 +308,9 @@ export class AnchoringsService {
 }
 
 /** The land-records lookup for what a batch covers (`POST /records/lookup`, service only). */
-export function createCoverageSources({ recordsUrl, serviceToken, fetchImpl = globalThis.fetch, timeoutMs = 30_000 }) {
+export function createCoverageSources({ recordsUrl, serviceToken, fetchImpl, timeoutMs }) {
+    const request = createServiceClient({ serviceToken, fetchImpl, timeoutMs });
     return {
-        async lookup(body) {
-            let res;
-            try {
-                res = await fetchImpl(`${recordsUrl}/records/lookup`, {
-                    method: 'POST',
-                    headers: { authorization: `Bearer ${serviceToken()}`, 'content-type': 'application/json' },
-                    body: JSON.stringify(body),
-                    signal: AbortSignal.timeout(timeoutMs)
-                });
-            } catch (err) {
-                throw new AppError(503, `The land records service cannot be reached: ${err.message}`);
-            }
-            const text = await res.text();
-            let json = null;
-            try {
-                json = text ? JSON.parse(text) : null;
-            } catch {
-                // not JSON (a proxy's error page): reported by status below
-            }
-            if (res.status >= 400 || !json) {
-                throw new AppError(502, `Reading from the land records service failed (${res.status}): ${json?.message || 'no detail'}`);
-            }
-            return json;
-        }
+        lookup: (body) => request(`${recordsUrl}/records/lookup`, { name: 'land records service', method: 'POST', body })
     };
 }
