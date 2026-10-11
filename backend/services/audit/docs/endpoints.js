@@ -44,7 +44,11 @@ export default {
         },
         'GET /audit/anchors/{batch}/coverage': {
             tag: 'Anchorings', summary: 'What one batch covers',
-            description: 'The fingerprints the batch put on the blockchain for the first time (since the last batch before it that did not fail) and the audit sign-offs in the trail up to its checkpoint. `{ batch, kinds: { recordVersions, documentVersions, signoffs }, trailUpTo, documentsWithoutRecord, records, total }`. `records`: the land records it holds something of, by record number, paged (`limit` up to 100, `offset`), each with `recordId`, `recordNo`, `label`, `versions` (the version numbers), `documents` (the document versions that its committed versions pin) and `signoffs` (`[{ from, to }]`). A document version no committed version pins yet is only counted (`documentsWithoutRecord`). A failed batch covers nothing; 404 for an unknown batch.'
+            description: 'The fingerprints the batch put on the blockchain for the first time (since the last batch before it that did not fail) and the audit sign-offs in the trail up to its checkpoint. `{ batch, kinds: { recordVersions, documentVersions, signoffs }, trailUpTo, records, total }`. `records`: the land records with a version or an audit sign-off in the batch, by record number, paged (`limit` up to 100, `offset`), each with `recordId`, `recordNo`, `label`, `versions` and `signoffs` (`[{ from, to }]`). Each version comes with what its fingerprint stands for: `documents` (how many it is made of), `documentsEarlier` (how many of those reached the blockchain in earlier batches) and `versionsBefore` (chained through the previous version\'s seal). A failed batch covers nothing; 404 for an unknown batch.'
+        },
+        'GET /audit/anchors/{batch}/documents': {
+            tag: 'Anchorings', summary: 'The document versions one batch put on the blockchain',
+            description: 'In the order they were sealed, paged (`limit` up to 100, `offset`): `{ batch, items, total }`, each item `documentId`, `version`, `edrmsNo`, `docType` and `ref` (the deed or instrument number; from its filing or correction in the trail, null for a document sealed before the audit service) and `usedIn`: the land record versions in the same batch made of it (`recordId`, `versionNumber`, `recordNo`, `label`). A failed batch has none; 404 for an unknown batch.'
         },
         'GET /audit/records/{id}/check': {
             tag: 'Sign-off', summary: 'The open audit checkpoint of a land record',

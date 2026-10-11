@@ -5,6 +5,9 @@ import { defineModels, SCHEMA } from './models.js';
 const plain = (row) => (row ? row.get({ plain: true }) : null);
 
 /** Postgres land-records repository. Same interface as ./memory.js. */
+/** The document versions a land record version pins, as { id, version }. */
+const pinnedOf = (v) => (v.data?.documents || []).map(d => ({ id: d.edrmsDocumentId, version: d.version }));
+
 export function createSequelizeRepo(sequelize) {
     const m = defineModels(sequelize);
 
@@ -105,17 +108,14 @@ export function createSequelizeRepo(sequelize) {
             if (!ids.length) return [];
             return (await m.Record.findAll({ where: { id: ids }, attributes: ['id', 'recordNo', 'label'] })).map(r => ({ id: r.id, recordNo: r.recordNo, label: r.label }));
         },
-        /** The committed versions (current or superseded) that pin each of these documents, with the document version pinned. */
-        async findCommittedPinning(documentIds) {
-            if (!documentIds.length) return [];
-            const [rows] = await sequelize.query(
-                `SELECT d->>'edrmsDocumentId' AS "documentId", (d->>'version')::int AS "version", v."recordId", v."versionNumber"
-                   FROM "${SCHEMA}"."record_version" v
-                   CROSS JOIN LATERAL jsonb_array_elements(COALESCE(v."data"->'documents', '[]'::jsonb)) d
-                  WHERE v."state" IN ('committed', 'superseded') AND d->>'edrmsDocumentId' IN (:ids)`,
-                { replacements: { ids: documentIds } }
-            );
-            return rows;
+        /** The documents each committed version (current or superseded) is made of: [{ recordId, versionNumber, documents: [{ id, version }] }]. */
+        async versionDocuments(pairs) {
+            if (!pairs.length) return [];
+            const rows = await m.Version.findAll({
+                where: { state: ['committed', 'superseded'], [Op.or]: pairs.map(p => ({ recordId: p.recordId, versionNumber: p.versionNumber })) },
+                attributes: ['recordId', 'versionNumber', 'data']
+            });
+            return rows.map(v => ({ recordId: v.recordId, versionNumber: v.versionNumber, documents: pinnedOf(v) }));
         },
         async commit({ recordId, versionNumber, versionPatch, recordPatch, supersede }) {
             return inTransaction(sequelize, async (transaction) => {

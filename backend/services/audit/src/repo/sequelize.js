@@ -132,10 +132,14 @@ export function createSequelizeRepo(sequelize) {
         async entriesOfType(type, after, upTo) {
             return (await TrailEntry.findAll({ where: { type, seq: { [Op.gt]: after, [Op.lte]: upTo } }, order: [['seq', 'ASC']] })).map(plain);
         },
-        /** The keys of the leaves with from ≤ index < to, in order (what a batch covers, API-696). */
-        async leafKeys(from, to) {
-            const rows = await TreeLeaf.findAll({ where: { leafIndex: { [Op.gte]: from, [Op.lt]: to } }, attributes: ['key'], order: [['leafIndex', 'ASC']], raw: true });
-            return rows.map(r => r.key);
+        /** The key and event of each leaf with from ≤ index < to, in order (what a batch covers, API-696). */
+        async leavesInRange(from, to) {
+            return TreeLeaf.findAll({ where: { leafIndex: { [Op.gte]: from, [Op.lt]: to } }, attributes: ['key', 'eventId'], order: [['leafIndex', 'ASC']], raw: true });
+        },
+        /** The trail entries of these events. */
+        async entriesByEventIds(eventIds) {
+            if (!eventIds.length) return [];
+            return (await TrailEntry.findAll({ where: { eventId: eventIds } })).map(plain);
         },
 
         async head() { return plain(await TrailEntry.findOne({ order: [['seq', 'DESC']] })); },

@@ -153,7 +153,7 @@ export async function recordsRoutes(app, { service }) {
 
     // ------------------------------------------------ reading
 
-    // land record labels and which committed versions pin each document version, for the audit
+    // land record labels and the documents each committed version is made of, for the audit
     // service's Anchorings screens: what a batch covers (API-696)
     app.post('/records/lookup', {
         onRequest: app.requireService('audit'),
@@ -162,9 +162,9 @@ export async function recordsRoutes(app, { service }) {
                 type: 'object', additionalProperties: false,
                 properties: {
                     recordIds: { type: 'array', maxItems: 1000, items: { type: 'string', format: 'uuid' } },
-                    documents: {
+                    versions: {
                         type: 'array', maxItems: 1000,
-                        items: { type: 'object', required: ['id', 'version'], additionalProperties: false, properties: { id: { type: 'string', format: 'uuid' }, version: { type: 'integer', minimum: 1 } } }
+                        items: { type: 'object', required: ['recordId', 'versionNumber'], additionalProperties: false, properties: { recordId: { type: 'string', format: 'uuid' }, versionNumber: { type: 'integer', minimum: 1 } } }
                     }
                 }
             }

@@ -83,7 +83,7 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
         schema: { params: { type: 'object', required: ['batch'], properties: { batch: { type: 'integer', minimum: 1 } } } }
     }, async (req) => anchorings.detail(req.params.batch));
 
-    // what one batch covers: counts by kind and the land records it holds something of (API-696)
+    // what one batch covers: counts by kind, and its land record versions with what they are made of (API-696)
     app.get('/audit/anchors/:batch/coverage', {
         onRequest: canSeeAnchorings,
         schema: {
@@ -94,6 +94,18 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
             }
         }
     }, async (req) => anchorings.coverage(req.params.batch, req.query));
+
+    // the document versions one batch put on the blockchain, with the land record versions made of them (API-696)
+    app.get('/audit/anchors/:batch/documents', {
+        onRequest: canSeeAnchorings,
+        schema: {
+            params: { type: 'object', required: ['batch'], properties: { batch: { type: 'integer', minimum: 1 } } },
+            querystring: {
+                type: 'object', additionalProperties: false,
+                properties: { limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 }, offset: { type: 'integer', minimum: 0, default: 0 } }
+            }
+        }
+    }, async (req) => anchorings.documents(req.params.batch, req.query));
 
     // ------------------------------------------------ sign-off and findings (README.md section 5)
     const canSignOff = app.requirePerm('audit.signoff');

@@ -132,22 +132,46 @@ describe('the Anchorings list and detail (API-671)', () => {
 describe('what a batch covers (API-696)', () => {
     // anyone signed in may look: here the records officer, given anchors.view as every role has it
     const viewer = { ...people.rec, perms: [...people.rec.perms, 'anchors.view'] };
-    const coverage = async (a, batch, query = '') => {
-        const res = await a.api(viewer, 'GET', `/audit/anchors/${batch}/coverage${query}`);
+    const get = async (a, url) => {
+        const res = await a.api(viewer, 'GET', url);
         assert.equal(res.statusCode, 200, res.body);
         return res.json();
     };
 
-    it('counts the new fingerprints by kind and groups them by land record; a document no committed version pins is only counted', async () => {
+    it('counts the new fingerprints by kind; each land record version comes with the documents it is made of', async () => {
         const a = await audited();
         await a.anchor();
-        const c = await coverage(a, 1);
+        const c = await get(a, '/audit/anchors/1/coverage');
         // the record's first version and the six documents filed, one of them in no land record
         assert.deepEqual(c.kinds, { recordVersions: 1, documentVersions: 6, signoffs: 0 });
-        assert.equal(c.documentsWithoutRecord, 1);
         assert.ok(c.trailUpTo > 0);
         assert.equal(c.total, 1);
-        assert.deepEqual(c.records, [{ recordId: a.record.id, recordNo: a.record.recordNo, label: a.record.label, versions: [1], documents: 5, signoffs: [] }]);
+        assert.deepEqual(c.records, [{
+            recordId: a.record.id, recordNo: a.record.recordNo, label: a.record.label,
+            versions: [{ versionNumber: 1, documents: 5, documentsEarlier: 0, versionsBefore: 0 }], signoffs: []
+        }]);
+    });
+
+    it('lists the batch\'s documents with number, type and deed number, and the version in the batch made of each', async () => {
+        const a = await audited();
+        await a.anchor();
+        const d = await get(a, '/audit/anchors/1/documents');
+        assert.equal(d.total, 6);
+        const grant = d.items.find(i => i.documentId === a.docs.grant.id);
+        assert.deepEqual([grant.version, grant.edrmsNo, grant.docType], [1, a.docs.grant.edrmsNo, a.docs.grant.docType]);
+        assert.deepEqual(grant.usedIn, [{ recordId: a.record.id, versionNumber: 1, recordNo: a.record.recordNo, label: a.record.label }]);
+        const olympia = d.items.find(i => i.documentId === a.docs.olympia.id);
+        assert.deepEqual(olympia.usedIn, []);                              // in no land record version in this batch
+        assert.deepEqual([olympia.edrmsNo, olympia.docType], [a.docs.olympia.edrmsNo, a.docs.olympia.docType]);
+        assert.equal((await get(a, '/audit/anchors/1/documents?limit=2&offset=5')).items.length, 1);
+
+        // a correction names no type: it comes from the document's filing
+        const doc = a.docs.t2019;
+        a.events.publish('edrms.document.amended', { documentId: doc.id, edrmsNo: doc.edrmsNo, version: 2, instrumentRef: 'T 4521/2019', seal: 'ab'.repeat(32) });
+        await a.settle();
+        await a.anchor();
+        const [corrected] = (await get(a, '/audit/anchors/2/documents')).items;
+        assert.deepEqual([corrected.documentId, corrected.version, corrected.edrmsNo, corrected.docType, corrected.ref, corrected.usedIn], [doc.id, 2, doc.edrmsNo, doc.docType, 'T 4521/2019', []]);
     });
 
     it('an audit sign-off is covered by the batch whose checkpoint comes after it, under its land record', async () => {
@@ -155,43 +179,51 @@ describe('what a batch covers (API-696)', () => {
         await a.anchor();
         assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id })).statusCode, 201);
         await a.anchor();
-        const c = await coverage(a, 2);
+        const c = await get(a, '/audit/anchors/2/coverage');
         assert.deepEqual(c.kinds, { recordVersions: 0, documentVersions: 0, signoffs: 1 });
-        assert.deepEqual(c.records.map(r => [r.recordNo, r.versions, r.documents, r.signoffs]), [[a.record.recordNo, [], 0, [{ from: 1, to: 1 }]]]);
+        assert.deepEqual(c.records.map(r => [r.recordNo, r.versions, r.signoffs]), [[a.record.recordNo, [], [{ from: 1, to: 1 }]]]);
+        assert.deepEqual((await get(a, '/audit/anchors/2/documents')).items, []);
         // paged; an unknown batch is 404; without anchors.view it is refused
-        assert.deepEqual((await coverage(a, 2, '?offset=1')).records, []);
+        assert.deepEqual((await get(a, '/audit/anchors/2/coverage?offset=1')).records, []);
         assert.equal((await a.api(viewer, 'GET', '/audit/anchors/9/coverage')).statusCode, 404);
+        assert.equal((await a.api(viewer, 'GET', '/audit/anchors/9/documents')).statusCode, 404);
         assert.equal((await a.api(people.rec, 'GET', '/audit/anchors/1/coverage')).statusCode, 403);
+        assert.equal((await a.api(people.rec, 'GET', '/audit/anchors/1/documents')).statusCode, 403);
     });
 
-    it('a failed batch covers nothing: its replacement does', async () => {
-        const a = await audited();
-        await a.anchor();
-        a.repo.anchors[0].status = 'failed';
-        const c = await coverage(a, 1);
-        assert.deepEqual([c.kinds, c.records, c.total, c.trailUpTo], [{ recordVersions: 0, documentVersions: 0, signoffs: 0 }, [], 0, null]);
-    });
-
-    it('counts from the last batch before it that did not fail, and lists a record known only through a pin, by its label', async () => {
+    it('a later version stands for documents already on the blockchain: counted as made of them, earlier', async () => {
         const repo = createMemoryRepo();
-        const ids = { kept: 'aaaaaaaa-0000-4000-8000-000000000001', loose: 'aaaaaaaa-0000-4000-8000-000000000002', rec: 'bbbbbbbb-0000-4000-8000-000000000001' };
-        repo.leaves.push(...['document-version:x:1', `document-version:${ids.kept}:1`, `document-version:${ids.loose}:1`].map((key, leafIndex) => ({ leafIndex, key })));
+        const ids = { rec: 'bbbbbbbb-0000-4000-8000-000000000001', old: 'aaaaaaaa-0000-4000-8000-000000000001', fresh: 'aaaaaaaa-0000-4000-8000-000000000002' };
+        // batch 1: a document; batch 2 failed; batch 3: a new document and version 3, made of both
+        repo.leaves.push(...[`document-version:${ids.old}:1`, `document-version:${ids.fresh}:1`, `record-version:${ids.rec}:3`].map((key, leafIndex) => ({ leafIndex, key })));
         repo.anchors.push(
             { batch: 1, size: 1, status: 'confirmed', createdAt: at('05:00') },
             { batch: 2, size: 2, status: 'failed', createdAt: at('06:00') },
             { batch: 3, size: 3, status: 'confirmed', createdAt: at('07:05') }
         );
         const sources = {
-            async lookup({ documents = [] }) {
+            async lookup({ versions = [] }) {
                 return {
-                    records: documents.some(d => d.id === ids.kept) ? [{ id: ids.rec, recordNo: 'LR-NA-2026-000007', label: 'Erf 77, Eros' }] : [],
-                    documents: documents.map(d => ({ ...d, pinnedBy: d.id === ids.kept ? [{ recordId: ids.rec, versionNumber: 4 }] : [] }))
+                    records: versions.length ? [{ id: ids.rec, recordNo: 'LR-NA-2026-000007', label: 'Erf 77, Eros' }] : [],
+                    versions: versions.map(v => ({ ...v, documents: [{ id: ids.old, version: 1 }, { id: ids.fresh, version: 1 }] }))
                 };
             }
         };
-        const c = await new AnchoringsService({ repo, tree: { size: async () => 3 }, sources }).coverage(3);
-        assert.deepEqual([c.kinds.documentVersions, c.documentsWithoutRecord], [2, 1]);   // batch 2 failed: both its leaf and batch 3's
-        assert.deepEqual(c.records, [{ recordId: ids.rec, recordNo: 'LR-NA-2026-000007', label: 'Erf 77, Eros', versions: [], documents: 1, signoffs: [] }]);
+        const s = new AnchoringsService({ repo, tree: { size: async () => 3 }, sources });
+        const c = await s.coverage(3);
+        assert.equal(c.kinds.documentVersions, 1);                       // batch 2 failed: batch 3 counts from batch 1
+        assert.deepEqual(c.records[0].versions, [{ versionNumber: 3, documents: 2, documentsEarlier: 1, versionsBefore: 2 }]);
+        const d = await s.documents(3);
+        assert.deepEqual(d.items.map(i => [i.documentId, i.usedIn.map(u => u.versionNumber), i.edrmsNo]), [[ids.fresh, [3], null]]);   // no trail entry: sealed before the audit service
+    });
+
+    it('a failed batch covers nothing: its replacement does', async () => {
+        const a = await audited();
+        await a.anchor();
+        a.repo.anchors[0].status = 'failed';
+        const c = await get(a, '/audit/anchors/1/coverage');
+        assert.deepEqual([c.kinds, c.records, c.total, c.trailUpTo], [{ recordVersions: 0, documentVersions: 0, signoffs: 0 }, [], 0, null]);
+        assert.deepEqual(await get(a, '/audit/anchors/1/documents'), { batch: 1, items: [], total: 0 });
     });
 
     it('the land-records lookup answers only the audit service', async () => {

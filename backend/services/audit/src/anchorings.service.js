@@ -57,7 +57,7 @@ export function reasonOf(a) {
  * fingerprints. What a batch covers is counted from the last batch before it that did not fail.
  *
  * `config`: { periodMs, retryMs, confirmations } of the anchoring job; `anchoring`: false when no
- * blockchain is configured (no next batch is due then). `sources`: { lookup({ recordIds, documents }) }
+ * blockchain is configured (no next batch is due then). `sources`: { lookup({ recordIds, versions }) }
  * from land-records, for what a batch covers.
  */
 export class AnchoringsService {
@@ -138,83 +138,136 @@ export class AnchoringsService {
 
     /**
      * What batch `batch` covers (API-696): the fingerprints it put on the blockchain for the first
-     * time, counted by kind, and the land records they belong to, by record number, paged. Those are
-     * the leaves since the last batch before it that did not fail, and the audit sign-offs in the trail
-     * up to its checkpoint. A document belongs to the land records whose committed versions pin that
-     * document version; one no committed version pins yet is only counted. A failed batch covers
-     * nothing: its replacement does.
+     * time, counted by kind, and the land records with a version or an audit sign-off in it, by record
+     * number, paged. Each version comes with what its fingerprint stands for: the documents it is
+     * made of (how many of them reached the blockchain in earlier batches) and, through the previous
+     * version's seal, the versions before it. A failed batch covers nothing: its replacement does.
      */
     async coverage(batch, { limit = 25, offset = 0 } = {}) {
-        const a = await this.repo.anchorByBatch(batch);
-        if (!a) throw new NotFoundError(`There is no batch ${batch}`);
-        if (a.status === 'failed') {
-            return {
-                batch,
-                kinds: { recordVersions: 0, documentVersions: 0, signoffs: 0 },
-                trailUpTo: null,
-                documentsWithoutRecord: 0,
-                records: [],
-                total: 0
-            };
+        const c = await this.contents(batch);
+        if (!c) {
+            const kinds = { recordVersions: 0, documentVersions: 0, signoffs: 0 };
+            return { batch, kinds, trailUpTo: null, records: [], total: 0 };
         }
-        const base = await this.repo.anchorBefore(batch, NOT_FAILED);
-        const hasCheckpoint = a.checkpointSeq !== null && a.checkpointSeq !== undefined;
-        const [keys, signoffs] = await Promise.all([
-            this.repo.leafKeys(base?.size ?? 0, a.size),
-            hasCheckpoint ? this.repo.entriesOfType('audit.signoff.recorded', base?.checkpointSeq ?? 0, a.checkpointSeq) : []
-        ]);
-        const versions = [], documents = [];
-        for (const key of keys) {
-            const [kind, id, n] = key.split(':');
-            if (kind === 'record-version') versions.push({ recordId: id, versionNumber: Number(n) });
-            else if (kind === 'document-version') documents.push({ id, version: Number(n) });
-        }
-
-        const recordIds = [...new Set([...versions.map(v => v.recordId), ...signoffs.map(e => e.data.recordId)])];
-        const found = await this.lookup(recordIds, documents);
+        const inBatch = new Set(c.documents.map(d => `${d.id}:${d.version}`));
         const byRecord = new Map();
         const entryOf = (recordId) => {
-            if (!byRecord.has(recordId)) byRecord.set(recordId, { recordId, versions: [], documents: 0, signoffs: [] });
+            if (!byRecord.has(recordId)) byRecord.set(recordId, { recordId, versions: [], signoffs: [] });
             return byRecord.get(recordId);
         };
-        for (const v of versions) entryOf(v.recordId).versions.push(v.versionNumber);
-        let documentsWithoutRecord = 0;
-        for (const d of found.documents) {
-            const holders = [...new Set(d.pinnedBy.map(p => p.recordId))];
-            if (!holders.length) documentsWithoutRecord++;
-            for (const recordId of holders) entryOf(recordId).documents++;
+        for (const v of c.versions) {
+            const madeOf = c.versionDocuments.get(`${v.recordId}:${v.versionNumber}`) ?? [];
+            entryOf(v.recordId).versions.push({
+                versionNumber: v.versionNumber,
+                documents: madeOf.length,
+                documentsEarlier: madeOf.filter(d => !inBatch.has(`${d.id}:${d.version}`)).length,
+                versionsBefore: v.versionNumber - 1
+            });
         }
-        for (const e of signoffs) {
+        for (const e of c.signoffs) {
             const from = e.data.fromVersion ?? e.data.versionNumber, to = e.data.toVersion ?? e.data.versionNumber;
             entryOf(e.data.recordId).signoffs.push({ from, to });
         }
-
-        const records = [...byRecord.values()]
-            .map(r => {
-                const known = found.labels.get(r.recordId);
-                return { ...r, recordNo: known?.recordNo ?? null, label: known?.label ?? null };
-            })
-            .sort(byRecordNo);
+        const records = [...byRecord.values()].map(r => ({ ...r, ...this.labelOf(c, r.recordId) })).sort(byRecordNo);
         return {
             batch,
-            kinds: { recordVersions: versions.length, documentVersions: documents.length, signoffs: signoffs.length },
-            trailUpTo: a.checkpointSeq ?? null,
-            documentsWithoutRecord,
+            kinds: { recordVersions: c.versions.length, documentVersions: c.documents.length, signoffs: c.signoffs.length },
+            trailUpTo: c.anchor.checkpointSeq ?? null,
             records: records.slice(offset, offset + limit),
             total: records.length
         };
     }
 
-    /** Labels of the land records and which committed versions pin each document version, in chunks. */
-    async lookup(recordIds, documents) {
-        const labels = new Map(), pinned = [];
+    /**
+     * The document versions batch `batch` put on the blockchain for the first time (API-696), in the
+     * order they were sealed, paged: number, type and deed number from their filing in the trail, and
+     * the land record versions in the same batch that are made of them. A failed batch has none.
+     */
+    async documents(batch, { limit = 25, offset = 0 } = {}) {
+        const c = await this.contents(batch);
+        if (!c) return { batch, items: [], total: 0 };
+        const page = c.documents.slice(offset, offset + limit);
+        const usedIn = new Map();
+        for (const [key, madeOf] of c.versionDocuments) {
+            const [recordId, versionNumber] = key.split(':');
+            const version = { recordId, versionNumber: Number(versionNumber), ...this.labelOf(c, recordId) };
+            for (const d of madeOf) {
+                const k = `${d.id}:${d.version}`;
+                if (!usedIn.has(k)) usedIn.set(k, []);
+                usedIn.get(k).push(version);
+            }
+        }
+        const described = await this.describeDocuments(page);
+        const items = page.map((d, i) => ({
+            documentId: d.id,
+            version: d.version,
+            ...described[i],
+            usedIn: usedIn.get(`${d.id}:${d.version}`) ?? []
+        }));
+        return { batch, items, total: c.documents.length };
+    }
+
+    /**
+     * What a batch holds, read once for both views: its new leaves (versions and documents), the
+     * audit sign-offs in the trail up to its checkpoint, and from land-records the labels of the land
+     * records and the documents each version is made of. Null for a failed batch.
+     */
+    async contents(batch) {
+        const anchor = await this.repo.anchorByBatch(batch);
+        if (!anchor) throw new NotFoundError(`There is no batch ${batch}`);
+        if (anchor.status === 'failed') return null;
+        const base = await this.repo.anchorBefore(batch, NOT_FAILED);
+        const hasCheckpoint = anchor.checkpointSeq !== null && anchor.checkpointSeq !== undefined;
+        const [leaves, signoffs] = await Promise.all([
+            this.repo.leavesInRange(base?.size ?? 0, anchor.size),
+            hasCheckpoint ? this.repo.entriesOfType('audit.signoff.recorded', base?.checkpointSeq ?? 0, anchor.checkpointSeq) : []
+        ]);
+        const versions = [], documents = [];
+        for (const leaf of leaves) {
+            const [kind, id, n] = leaf.key.split(':');
+            if (kind === 'record-version') versions.push({ recordId: id, versionNumber: Number(n) });
+            else if (kind === 'document-version') documents.push({ id, version: Number(n), eventId: leaf.eventId ?? null });
+        }
+        const recordIds = [...new Set(signoffs.map(e => e.data.recordId))];
+        const { labels, versionDocuments } = await this.lookup(recordIds, versions);
+        return { anchor, versions, documents, signoffs, labels, versionDocuments };
+    }
+
+    /** From land-records, in chunks: labels of the land records, and the documents each version is made of. */
+    async lookup(recordIds, versions) {
+        const labels = new Map(), versionDocuments = new Map();
         const take = (answer) => {
             for (const r of answer.records) labels.set(r.id, r);
-            pinned.push(...answer.documents);
+            for (const v of answer.versions) versionDocuments.set(`${v.recordId}:${v.versionNumber}`, v.documents);
         };
-        for (let i = 0; i < documents.length; i += LOOKUP_CHUNK) take(await this.sources.lookup({ documents: documents.slice(i, i + LOOKUP_CHUNK) }));
+        for (let i = 0; i < versions.length; i += LOOKUP_CHUNK) take(await this.sources.lookup({ versions: versions.slice(i, i + LOOKUP_CHUNK) }));
         for (let i = 0; i < recordIds.length; i += LOOKUP_CHUNK) take(await this.sources.lookup({ recordIds: recordIds.slice(i, i + LOOKUP_CHUNK) }));
-        return { labels, documents: pinned };
+        return { labels, versionDocuments };
+    }
+
+    /** A land record's number and label, as land-records gave them (null when it no longer knows it). */
+    labelOf(contents, recordId) {
+        const known = contents.labels.get(recordId);
+        return { recordNo: known?.recordNo ?? null, label: known?.label ?? null };
+    }
+
+    /**
+     * Number, type and deed number of each document version, from its filing or correction in the
+     * trail (a correction names no type: that comes from the filing). Null fields for a document
+     * sealed before the audit service (the backfill has no trail entry for it).
+     */
+    async describeDocuments(page) {
+        const entries = await this.repo.entriesByEventIds(page.map(d => d.eventId).filter(Boolean));
+        const byEvent = new Map(entries.map(e => [e.eventId, e]));
+        return Promise.all(page.map(async (d) => {
+            const entry = byEvent.get(d.eventId);
+            let docType = entry?.data.docType ?? null;
+            if (entry && !docType) {
+                const { entries: filed } = await this.repo.list({ subjects: [`document:${d.id}`], type: 'edrms.document.filed' }, { limit: 1, offset: 0 });
+                docType = filed[0]?.data.docType ?? null;
+            }
+            return { edrmsNo: entry?.data.edrmsNo ?? null, docType, ref: entry?.data.instrumentRef ?? null };
+        }));
     }
 
     /** One batch as the list shows it. `neighbours`: batches already read, by number (filled in). */

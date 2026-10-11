@@ -639,22 +639,13 @@ export class RecordsService {
     listSeals({ after = null, limit = 500 } = {}) { return this.repo.listSeals({ after, limit }); }
 
     /**
-     * For the audit service's Anchorings screens (API-696): for each document version, the committed
-     * land record versions that pin it, and the number and label of each land record asked for or
-     * pinning one of the documents.
+     * For the audit service's Anchorings screens (API-696): the documents each committed land record
+     * version is made of, and the number and label of each land record asked for or named by them.
      */
-    async lookup({ recordIds = [], documents = [] }) {
-        const pins = await this.repo.findCommittedPinning([...new Set(documents.map(d => d.id))]);
-        const records = await this.repo.recordLabels([...new Set([...recordIds, ...pins.map(p => p.recordId)])]);
-        const byDocumentVersion = new Map();
-        for (const p of pins) {
-            const key = `${p.documentId}:${p.version}`;
-            byDocumentVersion.set(key, [...(byDocumentVersion.get(key) ?? []), { recordId: p.recordId, versionNumber: p.versionNumber }]);
-        }
-        return {
-            records,
-            documents: documents.map(d => ({ id: d.id, version: d.version, pinnedBy: byDocumentVersion.get(`${d.id}:${d.version}`) ?? [] }))
-        };
+    async lookup({ recordIds = [], versions = [] }) {
+        const made = await this.repo.versionDocuments(versions);
+        const records = await this.repo.recordLabels([...new Set([...recordIds, ...versions.map(v => v.recordId)])]);
+        return { records, versions: made };
     }
 
     async getRecord(id) {

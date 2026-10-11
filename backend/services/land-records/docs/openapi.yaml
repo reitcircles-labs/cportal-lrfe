@@ -1142,12 +1142,12 @@ paths:
     post:
       tags:
         - Records
-      summary: Land record labels, and the versions that pin document versions (audit service only)
+      summary: Land record labels, and the documents committed versions are made of (audit service only)
       description: >-
-        Body `{ recordIds?, documents?: [{ id, version }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }], documents: [{ id,
-        version, pinnedBy: [{ recordId, versionNumber }] }] }`: the committed versions (current or superseded) that pin each document
-        version; drafts never count. `records` has every record asked for and every record pinning one of the documents. For the audit
-        service's Anchorings screens: what a batch covers (API-696).
+        Body `{ recordIds?, versions?: [{ recordId, versionNumber }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }],
+        versions: [{ recordId, versionNumber, documents: [{ id, version }] }] }`: the documents each committed version (current or
+        superseded) pins; drafts never count. `records` has every record asked for or named by the versions. For the audit service's
+        Anchorings screens: what a batch covers (API-696).
 
 
         **Access:** Service token only, from: `audit`. Browsers cannot call this.
@@ -1166,20 +1166,20 @@ paths:
                   items:
                     type: string
                     format: uuid
-                documents:
+                versions:
                   type: array
                   maxItems: 1000
                   items:
                     type: object
                     required:
-                      - id
-                      - version
+                      - recordId
+                      - versionNumber
                     additionalProperties: false
                     properties:
-                      id:
+                      recordId:
                         type: string
                         format: uuid
-                      version:
+                      versionNumber:
                         type: integer
                         minimum: 1
       responses:

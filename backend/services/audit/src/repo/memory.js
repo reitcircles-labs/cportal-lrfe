@@ -77,8 +77,13 @@ export function createMemoryRepo() {
         async entriesOfType(type, after, upTo) {
             return entries.filter(e => e.type === type && e.seq > after && e.seq <= upTo).sort((a, b) => a.seq - b.seq).map(copy);
         },
-        /** The keys of the leaves with from ≤ index < to, in order (what a batch covers, API-696). */
-        async leafKeys(from, to) { return leaves.slice(from, to).map(l => l.key); },
+        /** The key and event of each leaf with from ≤ index < to, in order (what a batch covers, API-696). */
+        async leavesInRange(from, to) { return leaves.slice(from, to).map(l => ({ key: l.key, eventId: l.eventId ?? null })); },
+        /** The trail entries of these events. */
+        async entriesByEventIds(eventIds) {
+            const wanted = new Set(eventIds);
+            return entries.filter(e => wanted.has(e.eventId)).map(copy);
+        },
 
         /** The last trail entry, or null. */
         async head() { return entries.length ? copy(entries.at(-1)) : null; },

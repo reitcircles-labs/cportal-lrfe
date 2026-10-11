@@ -51,8 +51,8 @@ export default {
         'GET /records/{id}/comments': { tag: 'Records', summary: 'Comments on a record' },
         'POST /records/{id}/comments': { tag: 'Records', summary: 'Comment on a record', description: '`{ body }`. Kept with the version open at the time.' },
         'POST /records/lookup': {
-            tag: 'Records', summary: 'Land record labels, and the versions that pin document versions (audit service only)',
-            description: 'Body `{ recordIds?, documents?: [{ id, version }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }], documents: [{ id, version, pinnedBy: [{ recordId, versionNumber }] }] }`: the committed versions (current or superseded) that pin each document version; drafts never count. `records` has every record asked for and every record pinning one of the documents. For the audit service\'s Anchorings screens: what a batch covers (API-696).'
+            tag: 'Records', summary: 'Land record labels, and the documents committed versions are made of (audit service only)',
+            description: 'Body `{ recordIds?, versions?: [{ recordId, versionNumber }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }], versions: [{ recordId, versionNumber, documents: [{ id, version }] }] }`: the documents each committed version (current or superseded) pins; drafts never count. `records` has every record asked for or named by the versions. For the audit service\'s Anchorings screens: what a batch covers (API-696).'
         },
         'GET /records/seals': {
             tag: 'Records', summary: 'Every committed version\'s seal, oldest first (audit service only)',

@@ -7,6 +7,9 @@ const clone = (v) => (v === undefined ? v : structuredClone(v));
  * ./sequelize.js: unique record number and parcel key, gap-free per-year numbering, revision
  * checks on draft edits, commits that supersede the previous current version in one step.
  */
+/** The document versions a land record version pins, as { id, version }. */
+const pinnedOf = (v) => (v.data?.documents || []).map(d => ({ id: d.edrmsDocumentId, version: d.version }));
+
 export function createMemoryRepo() {
     const records = new Map();
     const versions = [];
@@ -92,15 +95,11 @@ export function createMemoryRepo() {
         async recordLabels(ids) {
             return ids.filter(id => records.has(id)).map(id => ({ id, recordNo: records.get(id).recordNo, label: records.get(id).label }));
         },
-        /** The committed versions (current or superseded) that pin each of these documents, with the document version pinned. */
-        async findCommittedPinning(documentIds) {
-            const wanted = new Set(documentIds), out = [];
-            for (const v of versions.filter(x => x.state === 'committed' || x.state === 'superseded')) {
-                for (const d of v.data?.documents || []) {
-                    if (wanted.has(d.edrmsDocumentId)) out.push({ documentId: d.edrmsDocumentId, version: d.version, recordId: v.recordId, versionNumber: v.versionNumber });
-                }
-            }
-            return out;
+        /** The documents each committed version (current or superseded) is made of: [{ recordId, versionNumber, documents: [{ id, version }] }]. */
+        async versionDocuments(pairs) {
+            const wanted = new Set(pairs.map(p => `${p.recordId}:${p.versionNumber}`));
+            return versions.filter(v => (v.state === 'committed' || v.state === 'superseded') && wanted.has(`${v.recordId}:${v.versionNumber}`))
+                .map(v => ({ recordId: v.recordId, versionNumber: v.versionNumber, documents: pinnedOf(v) }));
         },
         /** Commit a version: it becomes committed, the previous current one superseded, the record updated. */
         async commit({ recordId, versionNumber, versionPatch, recordPatch, supersede }) {
