@@ -285,7 +285,7 @@ const STALE_MS = 10 * 60_000;
  *   2. the committed versions: each seal recomputed, each following the one before (the first has no
  *      previous seal), record.json agreeing with them; every document version they pin present, with
  *      the pinned seal and type, its file matching the SHA-256 it was sealed with; no other documents;
- *   3. the trail entries' hashes; sign-offs and findings against their trail entries, both ways;
+ *   3. the trail entries' hashes; sign-offs and findings (with their answers) against their trail entries, both ways;
  *   4. a proof file for every version, document version and trail entry, proving that very item, and
  *      checked against the chain. An item without an anchored proof of its own counts as proven when an
  *      anchored item pins it: a later version (previous seals), a version (its documents' seals), an
@@ -383,16 +383,29 @@ export async function verifyPack(files, { source = 'koios', key, address, fetchI
         && same(row.documentId, e.data.edrmsDocumentId) && same(row.edrmsNo, e.data.edrmsNo) && same(row.documentVersion, e.data.documentVersion) && same(row.seal, e.data.seal);
     const signoffs = read('signoffs.json') || [], findings = read('findings.json') || [];
     const signed = byType('audit.signoff.recorded', 'signoffId');
-    const badSignoffs = signoffs.filter(s => { const e = signed.get(s.id); return !e || !itemMatches(s, e) || e.data.comment !== s.comment || !same(e.actor?.id, s.signedById) || !same(e.actor?.name, s.signedByName); });
+    // an audit checkpoint (API-680) also names its range and the findings in it
+    const sameIds = (a, b) => JSON.stringify([...(a || [])].sort()) === JSON.stringify([...(b || [])].sort());
+    const checkpointMatches = (s, e) => s.kind !== 'checkpoint'
+        || (e.data.kind === 'checkpoint' && same(s.fromVersion, e.data.fromVersion) && same(s.toVersion, e.data.toVersion) && sameIds(s.items?.findings, e.data.findings));
+    const badSignoffs = signoffs.filter(s => {
+        const e = signed.get(s.id);
+        return !e || !itemMatches(s, e) || !checkpointMatches(s, e) || !same(e.data.comment, s.comment) || !same(e.actor?.id, s.signedById) || !same(e.actor?.name, s.signedByName);
+    });
     const missingSignoffs = [...signed.keys()].filter(id => !signoffs.some(s => s.id === id));
     check('sign-offs', !badSignoffs.length && !missingSignoffs.length,
         badSignoffs.length ? `${badSignoffs.length} do not match their trail entries` : missingSignoffs.length ? `${missingSignoffs.length} in the trail are missing from signoffs.json` : `${signoffs.length} match their trail entries`);
     const raised = byType('audit.finding.raised', 'findingId'), closed = byType('audit.finding.closed', 'findingId');
+    const answeredIn = (id) => entries.filter(e => e.type === 'audit.finding.answered' && e.data?.findingId === id);
     const badFindings = findings.filter(f => {
         const r = raised.get(f.id), c = closed.get(f.id);
         if (!r || !itemMatches(f, r) || r.data.description !== f.description || !same(r.actor?.id, f.raisedById) || !same(r.actor?.name, f.raisedByName) || !same(r.data.instanceId, f.instanceId)) return true;
+        // every answer (API-680), in order, against its trail entry
+        const answers = f.answers || [], answered = answeredIn(f.id);
+        if (answers.length !== answered.length || answers.some((a, i) => a.text !== answered[i].data.answer || !same(a.byId, answered[i].actor?.id) || !same(a.byName, answered[i].actor?.name))) return true;
         if (f.status === 'open') return !!c;
-        if (!c || c.data.outcome !== f.status) return true;
+        // closed by an auditor: outcome agreed or mistake (API-680), or "closed" before it
+        const outcome = f.status === 'closed' ? (f.outcome ?? 'closed') : f.status;
+        if (!c || c.data.outcome !== outcome) return true;
         return f.status === 'closed' ? !same(c.data.reason, f.closeReason) || !same(c.actor?.id, f.closedById) || !same(c.actor?.name, f.closedByName) : !same(c.data.resolvedByVersion, f.resolvedByVersion);
     });
     const missingFindings = [...raised.keys()].filter(id => !findings.some(f => f.id === id));

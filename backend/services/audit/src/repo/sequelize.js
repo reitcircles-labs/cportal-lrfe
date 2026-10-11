@@ -13,7 +13,7 @@ const leafOf = (row) => (row ? { ...row.get({ plain: true }), leafIndex: Number(
 
 /** Postgres audit repository. Same interface as ./memory.js. */
 export function createSequelizeRepo(sequelize) {
-    const { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease, Signoff, Finding } = defineModels(sequelize);
+    const { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease, Signoff, Finding, ChangedAlert } = defineModels(sequelize);
     const num = (v) => (v === null || v === undefined ? null : Number(v));
     const anchorOf = (row) => (row ? { ...row.get({ plain: true }), size: Number(row.size), checkpointSeq: num(row.checkpointSeq), ttl: num(row.ttl), fee: row.fee === null ? null : String(row.fee) } : null);
 
@@ -69,9 +69,22 @@ export function createSequelizeRepo(sequelize) {
             for (const [col, type] of [['ttl', 'BIGINT'], ['lastSentAt', 'TIMESTAMPTZ'], ['inputTxHash', 'VARCHAR(64)'], ['inputIndex', 'INTEGER'], ['expiredSeenHeight', 'INTEGER'], ['spentSeenHeight', 'INTEGER']]) {
                 await sequelize.query(`ALTER TABLE "${SCHEMA}"."anchor" ADD COLUMN IF NOT EXISTS "${col}" ${type}`);
             }
+            // columns added for the audit checkpoint and finding answers (API-680)
+            for (const [table, col, type] of [['signoff', 'kind', "VARCHAR(255) NOT NULL DEFAULT 'item'"], ['signoff', 'fromVersion', 'INTEGER'], ['signoff', 'toVersion', 'INTEGER'],
+                ['signoff', 'items', 'JSONB'], ['finding', 'outcome', 'VARCHAR(255)'], ['finding', 'answers', "JSONB NOT NULL DEFAULT '[]'::jsonb"]]) {
+                await sequelize.query(`ALTER TABLE "${SCHEMA}"."${table}" ADD COLUMN IF NOT EXISTS "${col}" ${type}`);
+            }
+            await sequelize.query(`ALTER TABLE "${SCHEMA}"."signoff" ALTER COLUMN "comment" DROP NOT NULL`);
             // one sign-off per auditor and item, also for two requests at the same moment (API-659)
-            await sequelize.query(`CREATE UNIQUE INDEX IF NOT EXISTS "signoff_once" ON "${SCHEMA}"."signoff"
-                ("signedById", "recordId", "recordVersion", COALESCE("documentId", '00000000-0000-0000-0000-000000000000'::uuid))`);
+            await sequelize.query(`DROP INDEX IF EXISTS "${SCHEMA}"."signoff_once"`);
+            await sequelize.query(`CREATE UNIQUE INDEX IF NOT EXISTS "signoff_item_once" ON "${SCHEMA}"."signoff"
+                ("signedById", "recordId", "recordVersion", COALESCE("documentId", '00000000-0000-0000-0000-000000000000'::uuid)) WHERE "kind" = 'item'`);
+            // one audit sign-off per checkpoint, whoever signs it (API-680)
+            // and once per starting version: two checkpoints built while a version was committed cannot overlap
+            await sequelize.query(`CREATE UNIQUE INDEX IF NOT EXISTS "signoff_checkpoint_once" ON "${SCHEMA}"."signoff"
+                ("recordId", "toVersion") WHERE "kind" = 'checkpoint'`);
+            await sequelize.query(`CREATE UNIQUE INDEX IF NOT EXISTS "signoff_checkpoint_from_once" ON "${SCHEMA}"."signoff"
+                ("recordId", "fromVersion") WHERE "kind" = 'checkpoint'`);
         },
 
         async append(eventId, build) {
@@ -138,7 +151,7 @@ export function createSequelizeRepo(sequelize) {
 
         async createSignoff(row) {
             try { return (await Signoff.create(row)).get({ plain: true }); } catch (err) {
-                if (err instanceof UniqueConstraintError) return null;          // signed off already (signoff_once)
+                if (err instanceof UniqueConstraintError) return null;          // signed off already (signoff_item_once, signoff_checkpoint_once, signoff_checkpoint_from_once)
                 throw err;
             }
         },
@@ -153,6 +166,21 @@ export function createSequelizeRepo(sequelize) {
         async updateOpenFinding(id, patch) {
             const [n] = await Finding.update(patch, { where: { id, status: 'open' } });
             return n === 1;
+        },
+        /** Append in one statement, so two auditors answering at the same moment both keep their answer. */
+        async addAnswer(id, answer) {
+            const [rows] = await sequelize.query(
+                `UPDATE "${SCHEMA}"."finding" SET "answers" = "answers" || jsonb_build_array(CAST(:answer AS jsonb)) WHERE "id" = :id AND "status" = 'open' RETURNING "id"`,
+                { replacements: { id, answer: JSON.stringify(answer) } }
+            );
+            return rows.length === 1;
+        },
+        async getAlert(key) { return (await ChangedAlert.findByPk(key))?.get({ plain: true }) ?? null; },
+        async createAlert(row) {
+            try { return (await ChangedAlert.create(row)).get({ plain: true }); } catch (err) {
+                if (err instanceof UniqueConstraintError) return null;          // found by another check at the same moment
+                throw err;
+            }
         },
 
         tree: treeOps(undefined),

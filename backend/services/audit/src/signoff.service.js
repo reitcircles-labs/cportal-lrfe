@@ -1,28 +1,56 @@
 import { randomUUID } from 'node:crypto';
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@lrfe/common';
 
+/** What the screens and the re-review task say when an item no longer matches the blockchain. */
+export const CHANGED_SINCE_REVIEW = 'This land record has changed since it was last reviewed and submitted, so its documents and details can\u2019t be audited as true. It must be re-reviewed and submitted again before it can be audited.';
+/** How many items are checked against the blockchain at once (each check calls other services). */
+const VERIFY_AT_ONCE = 4;
+
+/** Run `fn` on every item, `size` at a time. */
+async function inBatches(items, size, fn) {
+    for (let i = 0; i < items.length; i += size) {
+        await Promise.all(items.slice(i, i + size).map(fn));
+    }
+}
+
+/** How an auditor may close a finding (README.md section 5). */
+export const CLOSE_OUTCOMES = ['agreed', 'mistake'];
+
 /**
- * Sign-off and findings (README.md section 5; API-659). An auditor (`audit.signoff`):
+ * Sign-off and findings (README.md section 5; API-659, API-680). An auditor (`audit.signoff`):
  *
- *   signOff(target, comment)       marks a committed land record version, or a document version pinned
- *                                  in it, audited. Refused for whoever approved that version (sod2).
+ *   checkpoint(recordId, actor)    what the next audit sign-off of a land record covers: every version
+ *                                  committed since the last audit sign-off and the documents they added,
+ *                                  each checked against the blockchain, the open findings, and whether
+ *                                  the sign-off would be accepted (and if not, why)
+ *   signOff({ recordId }, actor)   one audit sign-off for that whole checkpoint, accepted only when
+ *                                  everything is on the blockchain, matches it, and no finding is open
  *   raiseFinding(target, text)     a finding on a land record version or a document version; the records
  *                                  officers and the registrars get it in their task inbox (bpm process
  *                                  "audit-finding"). Open until a newer reviewed version resolves it
- *                                  (onEvent) or an auditor closes it with a reason (closeFinding).
+ *                                  (onEvent) or an auditor answers and closes it (closeFinding)
+ *   answerFinding(id, text)        an auditor's answer in the finding's thread
  *
  * Each is stored here and published as a durable event in the same transaction, so it becomes a trail
- * entry and, at the next anchoring, part of the root on Cardano.
+ * entry of the land record and the document it is about and, at the next anchoring, part of the root on
+ * the blockchain. Finding events carry the whole thread under the key `Findings`.
  *
- * `sources`: { record(recordId, n) → { record, version }, document(documentId) → document with versions }
- * read from land-records and edrms with the audit service's token; `bpm`: { start(variables), cancel(id, reason) }.
+ * A changed item (its data no longer matches the blockchain) is not a finding: the land record changed
+ * since it was reviewed, so the records officers and the registrars get a re-review task (bpm process
+ * "audit-rereview"), once per item.
+ *
+ * `sources`: { recordInfo(recordId), version(recordId, n), record(recordId, n) → { record, version },
+ * document(documentId) }
+ * read from land-records and edrms with the audit service's token; `bpm`: { start(variables, process),
+ * cancel(id, reason) }; `proofs`: the ProofService (anchoring status and verification).
  */
 export class SignoffService {
-    constructor({ repo, events, sources, bpm, clock = () => new Date(), logger = console }) {
+    constructor({ repo, events, sources, bpm, proofs, clock = () => new Date(), logger = console }) {
         this.repo = repo;
         this.events = events;
         this.sources = sources;
         this.bpm = bpm;
+        this.proofs = proofs;
         this.clock = clock;
         this.logger = logger;
     }
@@ -88,34 +116,247 @@ export class SignoffService {
         return rec && doc ? `${doc} in ${rec}` : rec || `${doc} (${t.document.title})`;
     }
 
-    // ------------------------------------------------ sign-off
+    // ------------------------------------------------ audit sign-off: one per checkpoint (API-680)
 
-    async signOff({ recordId, version, documentId, comment }, actor) {
-        const text = String(comment ?? '').trim();
-        if (!text) throw new BadRequestError('Say what you checked: a sign-off needs a comment');
-        const t = await this.target({ recordId, version, documentId }, { recordRequired: true });
-        // segregation of duties (sod2): whoever can finalize land records does not sign them off, and the
-        // approver of a version never signs it off, whatever the roles say
-        if ((actor.perms || []).includes('record.finalize')) {
-            throw new ForbiddenError('You can finalize land records: an auditor without that permission must sign it off', { rule: 'sod2' });
+    /**
+     * The open checkpoint of a land record, for the screen and for the sign-off itself:
+     *
+     *   range                 { from, to }: the versions committed since the last audit sign-off, or null
+     *   lastSignoff           the last audit sign-off, or null
+     *   versions, documents   each with its leaf key, `anchoring` (waiting | sent | onChain | confirmed)
+     *                         and `match` (matches | changed | notOnChain | unavailable); a changed one
+     *                         is `superseded` when a version committed after the change was found
+     *                         matches (the re-reviewed version)
+     *   openFindings          open findings on the record and on its documents
+     *   canSignOff, reason    whether `actor` may sign it off now; if not, the reason as the screen shows it
+     *
+     * Only what is on the blockchain is checked for a match: the rest is `notOnChain`. A changed item
+     * starts a re-review task the first time it is found (alertChanged).
+     */
+    async checkpoint(recordId, actor = null) {
+        const record = await this.sources.recordInfo(recordId);
+        const past = (await this.repo.listSignoffs({ recordId })).filter(s => s.kind === 'checkpoint');
+        const lastSignoff = past.at(-1) ?? null;
+        const from = lastSignoff ? lastSignoff.toVersion + 1 : 1;
+        const to = record.currentVersion ?? 0;
+        const base = { recordId, recordNo: record.recordNo, label: record.label, lastSignoff };
+        if (from > to) {
+            const reason = lastSignoff
+                ? `Nothing to audit: no version was committed since the last audit sign-off (v${lastSignoff.toVersion}).`
+                : 'Nothing to audit: the land record has no committed version yet.';
+            return { ...base, range: null, versions: [], documents: [], openFindings: [], canSignOff: false, reason, refusal: { status: 409, reason } };
         }
-        if (t.recordVersion.approvedById && t.recordVersion.approvedById === actor.id) {
-            throw new ForbiddenError('You approved this version: another auditor must sign it off', { rule: 'sod2' });
+
+        const versions = [];
+        for (let n = from; n <= to; n++) {
+            const version = await this.sources.version(recordId, n);
+            versions.push({
+                kind: 'record-version', key: `record-version:${recordId}:${n}`, label: `v${n}`,
+                versionNumber: n, seal: version.seal, approvedById: version.approvedById ?? null,
+                approvedByName: version.approvedByName ?? null, committedAt: version.committedAt, pins: version.data?.documents || []
+            });
         }
-        if (t.documentVersion?.approvedById && t.documentVersion.approvedById === actor.id) {
-            throw new ForbiddenError('You approved this document version: another auditor must sign it off', { rule: 'sod2' });
+        const documents = SignoffService.newDocuments(versions, past);
+        const items = [...versions, ...documents];
+
+        const anchoring = await this.proofs.anchoringOf(items.map(i => i.key));
+        await inBatches(items, VERIFY_AT_ONCE, async (item) => {
+            item.anchoring = anchoring[item.key] ?? 'waiting';
+            if (['onChain', 'confirmed'].includes(item.anchoring)) {
+                item.match = await this.matchOf(item, recordId);
+            } else {
+                item.match = 'notOnChain';
+            }
+        });
+        for (const item of items.filter(i => i.match === 'changed')) {
+            const alert = await this.alertChanged(record, item);
+            item.changedFoundAt = alert?.foundAt ?? null;
+            item.superseded = !!alert && versions.some(v => SignoffService.reReviews(v, item, alert));
         }
-        const item = SignoffService.itemOf(t);
-        const earlier = await this.repo.listSignoffs({ recordId: item.recordId });
-        if (earlier.some(s => s.signedById === actor.id && s.recordVersion === item.recordVersion && (s.documentId ?? null) === item.documentId)) {
-            throw new ConflictError('You have already signed this off');
+
+        const openFindings = await this.openFindings(recordId, documents);
+        const refusal = SignoffService.refusal({ versions, documents, openFindings, actor });
+        // the pinned documents and the approver's id are for the checks above, not for the screen
+        const strip = ({ pins, approvedById, ...rest }) => rest;
+        return {
+            ...base, range: { from, to },
+            versions: versions.map(strip), documents: documents.map(strip),
+            openFindings: openFindings.map(SignoffService.findingRecord),
+            canSignOff: !refusal, reason: refusal?.reason ?? null, refusal
+        };
+    }
+
+    /**
+     * Whether version `v` re-reviewed the changed `item` (README.md section 5): it was committed after
+     * the change was found (told by version number, so the services' clocks do not matter), it matches
+     * the blockchain, and a changed document version is no longer pinned in it.
+     */
+    static reReviews(v, item, alert) {
+        if (v.match !== 'matches' || v.versionNumber <= alert.currentVersion) {
+            return false;
         }
-        const row = { id: randomUUID(), ...item, comment: text, signedById: actor.id, signedByName: actor.name ?? null, signedAt: this.clock() };
+        if (item.kind !== 'document-version') {
+            return true;
+        }
+        return !v.pins.some(p => p.edrmsDocumentId === item.documentId && p.version === item.version);
+    }
+
+    /**
+     * The document versions the checkpoint covers: every one pinned in its versions that no earlier
+     * audit sign-off covered, with the version that first pinned it (`addedIn`).
+     */
+    static newDocuments(versions, past) {
+        const covered = new Set(past.flatMap(s => (s.items?.documents || []).map(d => `${d.documentId}:${d.version}`)));
+        const out = new Map();
+        for (const v of versions) {
+            for (const pin of v.pins) {
+                const id = `${pin.edrmsDocumentId}:${pin.version}`;
+                if (covered.has(id) || out.has(id)) continue;
+                out.set(id, {
+                    kind: 'document-version', key: `document-version:${pin.edrmsDocumentId}:${pin.version}`, label: pin.edrmsNo,
+                    documentId: pin.edrmsDocumentId, edrmsNo: pin.edrmsNo, version: pin.version, seal: pin.seal, addedIn: v.versionNumber
+                });
+            }
+        }
+        return [...out.values()];
+    }
+
+    /** An item on the blockchain checked now: matches, changed, or unavailable (the check could not run). */
+    async matchOf(item, recordId) {
+        const v = item.kind === 'record-version'
+            ? await this.proofs.verify('record-version', recordId, item.versionNumber)
+            : await this.proofs.verify('document-version', item.documentId, item.version);
+        if (v.valid) return 'matches';
+        const checks = [v.checks.item, v.checks.path, v.checks.chain];
+        return checks.some(c => c?.ok === false) ? 'changed' : 'unavailable';
+    }
+
+    /** Open findings on the record and on its new documents alone, oldest first. */
+    async openFindings(recordId, documents) {
+        const out = await this.repo.listFindings({ recordId, status: 'open' });
+        for (const d of documents) {
+            const onDocument = await this.repo.listFindings({ documentId: d.documentId, status: 'open' });
+            out.push(...onDocument.filter(f => !f.recordId && f.documentVersion === d.version));
+        }
+        return out.sort((x, y) => new Date(x.raisedAt) - new Date(y.raisedAt));
+    }
+
+    /**
+     * Why the checkpoint cannot be signed off now, or null. Rules the auditor cannot change come first,
+     * then the blockchain, then the findings (README.md section 5). `status` is the HTTP status.
+     */
+    static refusal({ versions, documents, openFindings, actor }) {
+        const items = [...versions, ...documents];
+        if (actor && (actor.perms || []).includes('record.finalize')) {
+            return { status: 403, rule: 'sod2', reason: 'You can commit land record versions, so you can’t sign off audits. Another auditor signs off.' };
+        }
+        const approved = actor ? versions.find(v => v.approvedById && v.approvedById === actor.id) : null;
+        if (approved) {
+            return { status: 403, rule: 'sod2', reason: `You approved ${approved.label}, which is part of this audit, so another auditor must sign it off.` };
+        }
+        const waiting = items.filter(i => i.anchoring === 'waiting');
+        if (waiting.length) {
+            return { status: 409, reason: 'Some items go to the blockchain with the next batch. You can sign off once everything is there.' };
+        }
+        const sent = items.find(i => i.anchoring === 'sent');
+        if (sent) {
+            return { status: 409, reason: `${sent.label} is on its way to the blockchain. You can sign off once it is in a block, usually within minutes.` };
+        }
+        if (items.some(i => i.match === 'changed' && !i.superseded)) {
+            return { status: 409, reason: 'The audit can’t be signed off until the land record has been re-reviewed and submitted again.' };
+        }
+        if (items.some(i => i.match === 'unavailable')) {
+            return { status: 503, reason: 'The blockchain couldn’t be reached. Try again in a few minutes.' };
+        }
+        if (openFindings.length) {
+            const f = openFindings[0];
+            return { status: 409, reason: `The finding on ${f.edrmsNo ?? `${f.recordNo} version ${f.recordVersion}`} is still open. The audit can’t be signed off until it is resolved by a corrected version, or an auditor closes it as resolved by agreement.` };
+        }
+        return null;
+    }
+
+    /**
+     * A changed item: the records officers and the registrars get a re-review task, once per item.
+     * Returns the alert (with `foundAt`), or null when bpm cannot be reached (tried again at the next
+     * check; the checkpoint stays refused either way).
+     */
+    async alertChanged(record, item) {
+        const known = await this.repo.getAlert(item.key);
+        if (known) return known;
+        const about = item.kind === 'record-version'
+            ? `${record.recordNo} (${record.label}) version ${item.versionNumber}`
+            : `${item.edrmsNo} version ${item.version} in ${record.recordNo} (${record.label})`;
+        let instance;
+        try {
+            instance = await this.bpm.start({
+                alert: { key: item.key, about, message: CHANGED_SINCE_REVIEW },
+                record: { id: record.id, recordNo: record.recordNo, label: record.label }
+            }, 'audit-rereview');
+        } catch (err) {
+            this.logger.warn?.({ key: item.key, err: err.message }, 'audit: the re-review task for a changed item could not be started; tried again at the next check');
+            return null;
+        }
+        const alert = { key: item.key, recordId: record.id, recordNo: record.recordNo, versionNumber: item.versionNumber ?? null,
+            documentId: item.documentId ?? null, edrmsNo: item.edrmsNo ?? null, documentVersion: item.version ?? null,
+            currentVersion: record.currentVersion, instanceId: instance?.id ?? null, foundAt: this.clock() };
         await this.atomic(async () => {
-            if (!(await this.repo.createSignoff(row))) throw new ConflictError('You have already signed this off');
-            await this.events.publish('audit.signoff.recorded', { signoffId: row.id, ...SignoffService.eventItem(item), comment: text }, { actor });
+            if (!(await this.repo.createAlert(alert))) return;            // found by another check at the same moment
+            await this.events.publish('audit.item.changed', {
+                recordId: record.id, recordNo: record.recordNo, versionNumber: alert.versionNumber ?? undefined,
+                edrmsDocumentId: alert.documentId ?? undefined, edrmsNo: alert.edrmsNo ?? undefined, documentVersion: alert.documentVersion ?? undefined,
+                key: item.key, message: CHANGED_SINCE_REVIEW, instanceId: alert.instanceId ?? undefined
+            }, { actor: { id: null, name: 'System' } });
+        });
+        return (await this.repo.getAlert(item.key)) ?? alert;
+    }
+
+    /**
+     * One audit sign-off for the open checkpoint of a land record. The checkpoint is checked again now;
+     * the screen's view of it is never trusted. One sign-off per checkpoint, also for two requests at
+     * the same moment.
+     */
+    async signOff({ recordId, comment }, actor) {
+        const text = comment === undefined || comment === null ? null : String(comment).trim() || null;
+        const c = await this.checkpoint(recordId, actor);
+        if (c.refusal) {
+            if (c.refusal.status === 403) throw new ForbiddenError(c.refusal.reason, { rule: c.refusal.rule });
+            if (c.refusal.status === 503) throw new AppError(503, c.refusal.reason);
+            throw new ConflictError(c.refusal.reason);
+        }
+        const top = c.versions.at(-1);
+        const row = {
+            id: randomUUID(), kind: 'checkpoint', recordId, recordNo: c.recordNo,
+            recordVersion: top.versionNumber, fromVersion: c.range.from, toVersion: c.range.to, seal: top.seal,
+            documentId: null, edrmsNo: null, documentVersion: null,
+            items: {
+                versions: c.versions.map(v => ({ version: v.versionNumber, seal: v.seal, match: v.match, ...(v.superseded ? { superseded: true } : {}) })),
+                documents: c.documents.map(d => ({ documentId: d.documentId, edrmsNo: d.edrmsNo, version: d.version, seal: d.seal, match: d.match, ...(d.superseded ? { superseded: true } : {}) })),
+                findings: await this.findingsInRange(recordId, c)
+            },
+            comment: text, signedById: actor.id, signedByName: actor.name ?? null, signedAt: this.clock()
+        };
+        await this.atomic(async () => {
+            if (!(await this.repo.createSignoff(row))) throw new ConflictError('This audit has just been signed off by someone else.');
+            await this.events.publish('audit.signoff.recorded', {
+                signoffId: row.id, kind: 'checkpoint', recordId, recordNo: row.recordNo, versionNumber: row.recordVersion,
+                fromVersion: row.fromVersion, toVersion: row.toVersion, seal: row.seal, comment: text, findings: row.items.findings
+            }, { actor });
         });
         return row;
+    }
+
+    /** The ids of the findings raised on the checkpoint's versions and documents (they live in the trail). */
+    async findingsInRange(recordId, c) {
+        const onRecord = (await this.repo.listFindings({ recordId })).filter(f => f.recordVersion >= c.range.from && f.recordVersion <= c.range.to);
+        const ids = new Set(onRecord.map(f => f.id));
+        for (const d of c.documents) {
+            for (const f of await this.repo.listFindings({ documentId: d.documentId })) {
+                if (!f.recordId && f.documentVersion === d.version) {
+                    ids.add(f.id);
+                }
+            }
+        }
+        return [...ids];
     }
 
     listSignoffs(filter) { return this.repo.listSignoffs(filter); }
@@ -146,11 +387,11 @@ export class SignoffService {
         };
         const instance = await this.bpm.start(variables);
         if (!instance?.id) throw new AppError(502, 'The records desk\'s inbox gave no answer about the finding: try again');
-        const row = { id, ...item, description: text, status: 'open', raisedById: actor.id, raisedByName: actor.name ?? null, raisedAt: this.clock(), instanceId: instance.id };
+        const row = { id, ...item, description: text, status: 'open', raisedById: actor.id, raisedByName: actor.name ?? null, raisedAt: this.clock(), instanceId: instance.id, answers: [] };
         try {
             await this.atomic(async () => {
                 await this.repo.createFinding(row);
-                await this.events.publish('audit.finding.raised', { findingId: id, ...SignoffService.eventItem(item), description: text, instanceId: instance.id }, { actor });
+                await this.events.publish('audit.finding.raised', { findingId: id, ...SignoffService.eventItem(item), description: text, instanceId: instance.id, Findings: [SignoffService.findingRecord(row)] }, { actor });
             });
         } catch (err) {
             await this.withdraw(row, 'the finding could not be recorded');
@@ -175,15 +416,58 @@ export class SignoffService {
         return f;
     }
 
-    /** An auditor closes an open finding, with a reason. */
-    async closeFinding(id, { reason }, actor) {
-        const text = String(reason ?? '').trim();
-        if (text.length < 3) throw new BadRequestError('Say why the finding is closed');
+    /**
+     * A finding as its trail entries carry it under the key `Findings`: who raised it and why, every
+     * answer, and how it ended.
+     */
+    static findingRecord(f) {
+        const at = (d) => (d instanceof Date ? d.toISOString() : d ?? null);
+        return {
+            id: f.id, status: f.status, outcome: f.outcome ?? null,
+            recordId: f.recordId ?? null, recordNo: f.recordNo ?? null, recordVersion: f.recordVersion ?? null,
+            documentId: f.documentId ?? null, edrmsNo: f.edrmsNo ?? null, documentVersion: f.documentVersion ?? null,
+            raisedBy: { id: f.raisedById, name: f.raisedByName ?? null, at: at(f.raisedAt) },
+            issue: f.description,
+            answers: (f.answers || []).map(a => ({ id: a.byId, name: a.byName ?? null, role: a.role ?? null, at: at(a.at), text: a.text })),
+            ...(f.status === 'closed' ? { closedBy: { id: f.closedById, name: f.closedByName ?? null, at: at(f.closedAt) }, answer: f.closeReason } : {}),
+            ...(f.status === 'resolved' ? { resolvedByVersion: f.resolvedByVersion, resolvedAt: at(f.closedAt) } : {})
+        };
+    }
+
+    /** An auditor answers an open finding: the answer joins its thread, with who wrote it and when. */
+    async answerFinding(id, { text }, actor) {
+        const answerText = String(text ?? '').trim();
+        if (answerText.length < 3) throw new BadRequestError('Write your answer');
         const f = await this.getFinding(id);
-        const patch = { status: 'closed', closedById: actor.id, closedByName: actor.name ?? null, closeReason: text, closedAt: this.clock() };
+        const answer = { byId: actor.id, byName: actor.name ?? null, role: 'Auditor', at: this.clock(), text: answerText };
+        await this.atomic(async () => {
+            if (!(await this.repo.addAnswer(id, answer))) throw new ConflictError(`The finding is already ${(await this.repo.getFinding(id))?.status ?? f.status}`);
+            const updated = { ...f, answers: [...(f.answers || []), answer] };
+            await this.events.publish('audit.finding.answered', { findingId: id, ...SignoffService.eventItem(f), answer: answerText, Findings: [SignoffService.findingRecord(updated)] }, { actor });
+        });
+        return this.getFinding(id);
+    }
+
+    /**
+     * An auditor closes an open finding, answering it: resolved by agreement outside the portal
+     * (`agreed`, the agreed exception) or raised by mistake (`mistake`). Today's `{ reason }` alone is
+     * read as `{ outcome: 'mistake', answer: reason }`.
+     */
+    async closeFinding(id, { outcome, answer, reason }, actor) {
+        const text = String(answer ?? reason ?? '').trim();
+        if (text.length < 3) throw new BadRequestError('Answer the finding: say why it is closed');
+        if (answer === undefined && outcome === undefined) {
+            outcome = 'mistake';                                   // API-659's { reason }: closed, no change needed
+        }
+        if (!CLOSE_OUTCOMES.includes(outcome)) throw new BadRequestError(`How was it closed? Use ${CLOSE_OUTCOMES.join(' or ')}`);
+        const f = await this.getFinding(id);
+        const patch = { status: 'closed', outcome, closedById: actor.id, closedByName: actor.name ?? null, closeReason: text, closedAt: this.clock() };
         await this.atomic(async () => {
             if (!(await this.repo.updateOpenFinding(id, patch))) throw new ConflictError(`The finding is already ${(await this.repo.getFinding(id))?.status ?? f.status}`);
-            await this.events.publish('audit.finding.closed', { findingId: id, ...SignoffService.eventItem(f), outcome: 'closed', reason: text, instanceId: f.instanceId ?? undefined }, { actor });
+            await this.events.publish('audit.finding.closed', {
+                findingId: id, ...SignoffService.eventItem(f), outcome, reason: text, instanceId: f.instanceId ?? undefined,
+                Findings: [SignoffService.findingRecord({ ...f, ...patch })]
+            }, { actor });
         });
         await this.withdraw(f, `closed by ${actor.name ?? 'an auditor'}: ${text}`);
         return { ...f, ...patch };
@@ -210,7 +494,7 @@ export class SignoffService {
             await this.atomic(async () => {
                 resolved = await this.repo.updateOpenFinding(f.id, patch);
                 if (resolved) {
-                    await this.events.publish('audit.finding.closed', { findingId: f.id, ...SignoffService.eventItem(f), outcome: 'resolved', resolvedByVersion: by, instanceId: f.instanceId ?? undefined },
+                    await this.events.publish('audit.finding.closed', { findingId: f.id, ...SignoffService.eventItem(f), outcome: 'resolved', resolvedByVersion: by, instanceId: f.instanceId ?? undefined, Findings: [SignoffService.findingRecord({ ...f, ...patch })] },
                         { actor: { id: null, name: 'System' } });
                 }
             });
@@ -270,12 +554,14 @@ export function createSignoffClients({ recordsUrl, edrmsUrl, bpmUrl, serviceToke
                 const [record, version] = await Promise.all([read(`${recordsUrl}/records/${recordId}`, 'land records service'), read(`${recordsUrl}/records/${recordId}/versions/${n}`, 'land records service')]);
                 return { record, version };
             },
+            recordInfo: (recordId) => read(`${recordsUrl}/records/${recordId}`, 'land records service'),
+            version: (recordId, n) => read(`${recordsUrl}/records/${recordId}/versions/${n}`, 'land records service'),
             document: (documentId) => read(`${edrmsUrl}/documents/${documentId}`, 'document service')
         },
         bpm: {
-            async start(variables) {
-                const { status, json } = await call(`${bpmUrl}/processes/audit-finding/instances`, 'task inbox (bpm)', { method: 'POST', body: { variables } });
-                if (status >= 400) throw new AppError(502, `The finding could not be sent to the records desk's inbox (${status}): ${json?.message || 'no detail'}`);
+            async start(variables, process = 'audit-finding') {
+                const { status, json } = await call(`${bpmUrl}/processes/${process}/instances`, 'task inbox (bpm)', { method: 'POST', body: { variables } });
+                if (status >= 400) throw new AppError(502, `The task could not be sent to the records desk's inbox (${status}): ${json?.message || 'no detail'}`);
                 return json;
             },
             async cancel(instanceId, reason) {

@@ -277,8 +277,19 @@ the version they started on.
    the registrars (role `sup`), each showing the finding, who raised it and the record or document;
    due in 5 days. When both have acknowledged, the process ends.
 3. The finding itself stays open in the audit service until a newer reviewed version resolves it or
-   an auditor closes it with a reason; then the audit service withdraws this process if it is still
-   open. Design: [`services/audit/README.md`](services/audit/README.md) §5.
+   an auditor answers and closes it (resolved by agreement, or raised by mistake); then the audit
+   service withdraws this process if it is still open. Design: [`services/audit/README.md`](services/audit/README.md) §5.
+
+### Process: `audit-rereview` — changed since review (API-680)
+
+1. Started by the audit service, once per item, when a land record version or a document version in
+   it no longer matches the blockchain: the land record changed since it was reviewed and submitted,
+   so it cannot be audited as true.
+2. Two tasks at once, outcome `acknowledged`, titled "Re-review: changed since review, …": one for the
+   records officers (role `rec`) and one for the registrars (role `sup`); due in 5 days.
+3. The records office then opens a new draft, corrects what changed and submits it for review. The
+   audit cannot be signed off until a version committed after the change was found matches.
+   Design: [`services/audit/README.md`](services/audit/README.md) §5.
 
 ### Engine additions over cportal-be
 

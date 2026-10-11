@@ -1,87 +1,197 @@
 import { strict as assert } from 'node:assert';
-import { AnchorService } from '../src/anchor.service.js';
-import { ProofService } from '../src/proof.service.js';
-import { createCardanoAdapter } from '../src/cardano/adapter.js';
-import { createLocalSigner } from '../src/cardano/signer.js';
-import { fakeDriver } from './helpers.js';
-import { MINUTE, quiet, rec, people, audited, secondVersion } from './register.js';
+import { SignoffService } from '../src/signoff.service.js';
+import { AppError } from '@lrfe/common';
+import { MINUTE, people, audited, secondVersion } from './register.js';
 
-describe('sign-off and findings (API-659)', () => {
-    it('an auditor signs off a land record version and a document version in it: kept, in the trail, and anchored', async () => {
+describe('audit sign-off as a checkpoint (API-680)', () => {
+    const check = async (a, u = people.aud) => (await a.api(u, 'GET', `/audit/records/${a.record.id}/check`)).json();
+    const signOff = (a, u = people.aud, comment) => a.api(u, 'POST', '/audit/signoffs', { recordId: a.record.id, ...(comment ? { comment } : {}) });
+
+    it('one sign-off for every version since the last one, accepted only once everything is on the blockchain and matches', async () => {
         const a = await audited();
-        const res = await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, comment: 'Deeds, SG diagram and owners reconcile with the register' });
+        // before the anchoring: the checkpoint is v1 and its five documents, waiting for the next batch
+        let c = await check(a);
+        assert.deepEqual(c.range, { from: 1, to: 1 });
+        assert.deepEqual([c.versions.length, c.documents.length, c.lastSignoff], [1, 5, null]);
+        assert.ok([...c.versions, ...c.documents].every(i => i.anchoring === 'waiting' && i.match === 'notOnChain'));
+        assert.deepEqual([c.canSignOff, c.reason], [false, 'Some items go to the blockchain with the next batch. You can sign off once everything is there.']);
+        const early = await signOff(a);
+        assert.deepEqual([early.statusCode, early.json().message], [409, c.reason]);
+
+        // on the blockchain: every item matches, and the sign-off is accepted
+        await a.anchor();
+        c = await check(a);
+        assert.ok([...c.versions, ...c.documents].every(i => i.anchoring === 'confirmed' && i.match === 'matches'), JSON.stringify(c));
+        assert.deepEqual([c.canSignOff, c.reason], [true, null]);
+        const res = await signOff(a, people.aud, 'Deeds, SG diagram and owners reconcile with the register');
         assert.equal(res.statusCode, 201, res.body);
         const s = res.json();
-        assert.deepEqual([s.recordNo, s.recordVersion, s.seal, s.signedByName, s.documentId], [a.record.recordNo, 1, a.record.current.seal, 'Martha Nakale', null]);
-        const doc = a.docs.sg;
-        const d = (await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, documentId: doc.id, comment: 'Diagram matches the extent' })).json();
-        const sealed = (await a.edrmsService.getDocument(doc.id)).versions[0];
-        assert.deepEqual([d.documentId, d.edrmsNo, d.documentVersion, d.seal], [doc.id, sealed && (await a.edrmsService.getDocument(doc.id)).edrmsNo, 1, sealed.seal]);
-        const list = (await a.api(people.aud, 'GET', `/audit/signoffs?recordId=${a.record.id}`)).json().items;
-        assert.equal(list.length, 2);
+        assert.deepEqual([s.kind, s.fromVersion, s.toVersion, s.recordVersion, s.seal, s.signedByName], ['checkpoint', 1, 1, 1, a.record.current.seal, 'Martha Nakale']);
+        assert.equal(s.items.documents.length, 5);
+        assert.ok(s.items.documents.every(d => d.match === 'matches' && d.seal));
+        const [entry] = (await a.trail.list({ subject: `record:${a.record.id}`, type: 'audit.signoff.recorded' })).entries;
+        assert.deepEqual([entry.data.kind, entry.data.fromVersion, entry.data.toVersion, entry.data.seal, entry.actor.name], ['checkpoint', 1, 1, a.record.current.seal, 'Martha Nakale']);
 
-        // both are trail entries of the record (the document one also of the document)
-        const entries = (await a.trail.list({ subject: `record:${a.record.id}`, type: 'audit.signoff.recorded' })).entries;
-        assert.equal(entries.length, 2);
-        assert.equal(entries[0].actor.name, 'Martha Nakale');
-        assert.ok(entries[1].subjects.includes(`document:${doc.id}`));
-        assert.equal(entries[1].data.comment, 'Diagram matches the extent');
+        // nothing new to audit until the next version
+        const again = await signOff(a, people.aud2);
+        assert.deepEqual([again.statusCode, again.json().message], [409, 'Nothing to audit: no version was committed since the last audit sign-off (v1).']);
+        assert.equal((await check(a)).lastSignoff.id, s.id);
 
-        // the next anchoring covers them: a trail-entry proof checks out against the root on chain
-        const driver = fakeDriver();
-        const cardano = createCardanoAdapter({ driver, signer: createLocalSigner(), network: 'preview', logger: quiet });
-        const job = new AnchorService({ repo: a.repo, tree: a.tree, cardano, logger: quiet, clock: a.clock, config: { confirmations: 10 } });
-        for (let i = 0; i < 40 && (await job.tick()).action !== 'confirmed'; i++) { a.clock.advance(MINUTE); driver.chain.height++; driver.chain.slot += 60; }
-        const proofs = new ProofService({ repo: a.repo, tree: a.tree, cardano, logger: quiet });
-        const v = await proofs.verify('trail-entry', String(entries[0].seq));
-        assert.equal(v.valid, true, JSON.stringify(v.checks));
-        assert.equal(v.proof.trail.entry.type, 'audit.signoff.recorded');
+        // version 2: the next checkpoint starts after v1; its documents were covered already
+        await secondVersion(a);
+        c = await check(a);
+        assert.deepEqual([c.range, c.documents.length, c.versions[0].anchoring], [{ from: 2, to: 2 }, 0, 'waiting']);
+        await a.anchor();
+        // two auditors at the same moment: one audit sign-off for the checkpoint
+        const both = await Promise.all([people.aud, people.aud2].map(u => signOff(a, u)));
+        assert.deepEqual(both.map(r => r.statusCode).sort(), [201, 409]);
+        // the second either finds the checkpoint signed off or loses the race at the store
+        assert.ok(['This audit has just been signed off by someone else.', 'Nothing to audit: no version was committed since the last audit sign-off (v2).'].includes(both.find(r => r.statusCode === 409).json().message));
+        assert.deepEqual(a.repo.signoffs.filter(x => x.kind === 'checkpoint').map(x => [x.fromVersion, x.toVersion]), [[1, 1], [2, 2]]);
     });
 
-    it('whoever approved the version, or can finalize land records, cannot sign it off (sod2); the screen gets the reason', async () => {
+    it('a checkpoint of two versions: both checked, the documents carried over once', async () => {
         const a = await audited();
-        const res = await a.api(people.formerRegistrar, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, comment: 'Looks right' });
-        assert.equal(res.statusCode, 403);
-        assert.equal(res.json().message, 'You approved this version: another auditor must sign it off');
-        assert.deepEqual(res.json().details, { rule: 'sod2' });
-        // also for a document version within that record version
-        assert.equal((await a.api(people.formerRegistrar, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, documentId: a.docs.sg.id, comment: 'Looks right' })).statusCode, 403);
-        // holding record.finalize is enough to be refused: the approver, and someone who did not approve it
+        await secondVersion(a);
+        await a.anchor();
+        const c = await check(a);
+        assert.deepEqual([c.range, c.versions.map(v => v.match), c.documents.length], [{ from: 1, to: 2 }, ['matches', 'matches'], 5]);
+        assert.ok(c.documents.every(d => d.addedIn === 1 && d.match === 'matches'));
+        const s = (await signOff(a)).json();
+        assert.deepEqual([s.fromVersion, s.toVersion, s.items.versions.map(v => v.version), s.items.documents.length], [1, 2, [1, 2], 5]);
+    });
+
+    it('a transaction sent but not in a block yet does not count', () => {
+        const items = { versions: [{ label: 'v3', anchoring: 'sent', match: 'notOnChain' }], documents: [], openFindings: [] };
+        assert.deepEqual(SignoffService.refusal(items), { status: 409, reason: 'v3 is on its way to the blockchain. You can sign off once it is in a block, usually within minutes.' });
+    });
+
+    it('whoever can commit land record versions, or approved a version in the range, cannot sign it off (sod2)', async () => {
+        const a = await audited();
+        // refused before anything else, also before the anchoring
+        const before = await signOff(a, people.formerRegistrar);
+        assert.deepEqual([before.statusCode, before.json().message, before.json().details], [403, 'You approved v1, which is part of this audit, so another auditor must sign it off.', { rule: 'sod2' }]);
+        await a.anchor();
         for (const u of [people.supAuditing, people.recAuditing]) {
-            const r = await a.api(u, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, comment: 'Looks right' });
-            assert.deepEqual([r.statusCode, r.json().message, r.json().details], [403, 'You can finalize land records: an auditor without that permission must sign it off', { rule: 'sod2' }], u.name);
+            const r = await signOff(a, u);
+            assert.deepEqual([r.statusCode, r.json().message, r.json().details], [403, 'You can commit land record versions, so you can’t sign off audits. Another auditor signs off.', { rule: 'sod2' }], u.name);
         }
+        assert.equal((await check(a, people.formerRegistrar)).canSignOff, false);
+        assert.equal((await signOff(a, people.sup)).statusCode, 403);                     // no audit.signoff
         assert.equal(a.repo.signoffs.length, 0);
-        assert.equal((await a.trail.list({ type: 'audit.signoff.recorded' })).total, 0);
-        // a document version's own approver (an amendment) is refused for it
-        const getDocument = a.signoffs.sources.document;
-        a.signoffs.sources.document = async (id) => { const doc = await getDocument(id); return { ...doc, versions: doc.versions.map(v => ({ ...v, approvedById: people.aud.id })) }; };
-        const docRes = await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, documentId: a.docs.sg.id, comment: 'Diagram matches' });
-        assert.deepEqual([docRes.statusCode, docRes.json().message], [403, 'You approved this document version: another auditor must sign it off']);
-        a.signoffs.sources.document = getDocument;
-        // another auditor may
-        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, comment: 'Reconciled' })).statusCode, 201);
+        assert.equal((await signOff(a, people.aud2)).statusCode, 201);                    // another auditor may
     });
 
-    it('a sign-off needs a committed version, a comment, a document that is in the version, the permission, and only once per auditor', async () => {
+    it('a changed version is "changed since review": refused, the records desk gets one re-review task, and a re-reviewed version lifts it', async () => {
         const a = await audited();
-        const base = { recordId: a.record.id, version: 1, comment: 'Reconciled' };
-        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', base)).statusCode, 201);
-        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', base)).statusCode, 409);                // already signed off
-        assert.equal((await a.api(people.aud2, 'POST', '/audit/signoffs', base)).statusCode, 201);               // a second auditor may
-        // the same auditor twice at the same moment: one sign-off
-        const twice = await Promise.all([1, 2].map(() => a.api(people.aud, 'POST', '/audit/signoffs', { ...base, documentId: a.docs.sg.id })));
-        assert.deepEqual(twice.map(r => r.statusCode).sort(), [201, 409]);
-        assert.equal(a.repo.signoffs.filter(x => x.documentId === a.docs.sg.id).length, 1);
-        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { ...base, comment: '  ' })).statusCode, 400);
-        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { ...base, version: 9 })).statusCode, 404);
-        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { ...base, documentId: a.docs.olympia.id })).statusCode, 400);   // not in version 1
-        assert.equal((await a.api(people.sup, 'POST', '/audit/signoffs', base)).statusCode, 403);               // no audit.signoff
-        // an open draft (version 2) is not committed
-        const r = await a.service.openDraft(a.record.id, rec);
-        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { ...base, version: r.draft.versionNumber })).statusCode, 409);
+        await a.anchor();
+        // the stored version 1 is changed after it was sealed and anchored
+        const v1 = await a.service.repo.getVersion(a.record.id, 1);
+        await a.service.repo.updateVersion(a.record.id, 1, { data: { ...v1.data, attributes: { ...v1.data.attributes, zoning: 'Industrial' } } });
+        let c = await check(a);
+        assert.deepEqual([c.versions[0].match, c.versions[0].superseded, c.canSignOff], ['changed', false, false]);
+        assert.equal(c.reason, 'The audit can’t be signed off until the land record has been re-reviewed and submitted again.');
+        assert.equal((await signOff(a)).statusCode, 409);
+        // one task each for the records officer and the registrar, once however often it is checked
+        await check(a);
+        const [task] = (await a.inbox(people.rec)).filter(t => t.definitionKey === 'audit-rereview');
+        assert.equal(task.title, `Re-review: changed since review, ${a.record.recordNo} (${a.record.label}) version 1`);
+        assert.equal((await a.inbox(people.rec)).filter(t => t.definitionKey === 'audit-rereview').length, 1);
+        assert.equal((await a.inbox(people.sup)).filter(t => t.definitionKey === 'audit-rereview').length, 1);
+        assert.equal(a.repo.alerts.size, 1);
+        const [changed] = (await a.trail.list({ subject: `record:${a.record.id}`, type: 'audit.item.changed' })).entries;
+        assert.match(changed.data.message, /^This land record has changed since it was last reviewed and submitted/);
+
+        // re-reviewed: version 2 committed after the change was found, and on the blockchain
+        a.clock.advance(MINUTE);
+        await secondVersion(a);
+        await a.anchor();
+        c = await check(a);
+        assert.deepEqual(c.versions.map(v => [v.versionNumber, v.match, v.superseded ?? false]), [[1, 'changed', true], [2, 'matches', false]]);
+        assert.equal(c.canSignOff, true, c.reason);
+        const s = (await signOff(a)).json();
+        assert.deepEqual(s.items.versions.map(v => [v.version, v.match, v.superseded ?? false]), [[1, 'changed', true], [2, 'matches', false]]);
     });
 
+    it('a changed document stays "changed since review" while a newer version still pins it', async () => {
+        const a = await audited();
+        await a.anchor();
+        // the stored SG diagram no longer matches its seal
+        const sg = a.docs.sg.id;
+        const recompute = a.proofs.sources.documentVersion;
+        a.proofs.sources.documentVersion = async (id, n) => ({ ...(await recompute(id, n)), ...(id === sg ? { intact: false } : {}) });
+        let c = await check(a);
+        assert.deepEqual(c.documents.filter(d => d.match === 'changed').map(d => d.documentId), [sg]);
+        // a newer version that keeps the changed document pinned does not lift it
+        a.clock.advance(MINUTE);
+        await secondVersion(a);
+        await a.anchor();
+        c = await check(a);
+        const changed = c.documents.find(d => d.documentId === sg);
+        assert.deepEqual([changed.match, changed.superseded, c.canSignOff], ['changed', false, false]);
+        assert.equal(c.reason, 'The audit can\u2019t be signed off until the land record has been re-reviewed and submitted again.');
+    });
+
+    it('when the blockchain cannot be reached the check cannot run: refused, and no re-review task', async () => {
+        const a = await audited();
+        await a.anchor();
+        // the owning services cannot recompute the seals now
+        const down = async () => { throw new AppError(503, 'The land records service cannot be reached: connect ECONNREFUSED'); };
+        a.proofs.sources = { recordVersion: down, documentVersion: down };
+        const c = await check(a);
+        assert.equal(c.versions[0].match, 'unavailable');
+        assert.deepEqual([c.canSignOff, c.reason], [false, 'The blockchain couldn’t be reached. Try again in a few minutes.']);
+        assert.equal((await signOff(a)).statusCode, 503);
+        assert.equal(a.repo.alerts.size, 0);
+    });
+
+    it('an open finding blocks the sign-off; auditors answer it, and closing it as resolved by agreement lifts it', async () => {
+        const a = await audited();
+        await a.anchor();
+        const doc = a.docs.sg;
+        const f = (await a.api(people.aud, 'POST', '/audit/findings', { recordId: a.record.id, version: 1, documentId: doc.id, description: 'The extent on the SG diagram differs from the record' })).json();
+        let c = await check(a);
+        assert.deepEqual(c.openFindings.map(x => x.id), [f.id]);
+        assert.match(c.reason, /^The finding on EDR-NA-\d{4}-\d+ is still open\. The audit can’t be signed off until it is resolved by a corrected version, or an auditor closes it as resolved by agreement\.$/);
+        assert.equal((await signOff(a)).statusCode, 409);
+
+        // any auditor answers; nobody else
+        const answered = await a.api(people.aud2, 'POST', `/audit/findings/${f.id}/answers`, { text: 'The records office is checking the diagram with the Surveyor-General' });
+        assert.equal(answered.statusCode, 201, answered.body);
+        assert.deepEqual(answered.json().answers.map(x => [x.byName, x.role, x.text]), [['Second Auditor', 'Auditor', 'The records office is checking the diagram with the Surveyor-General']]);
+        assert.equal((await a.api(people.rec, 'POST', `/audit/findings/${f.id}/answers`, { text: 'We are on it' })).statusCode, 403);
+        assert.equal((await a.api(people.sup, 'POST', `/audit/findings/${f.id}/answers`, { text: 'We are on it' })).statusCode, 403);
+        assert.equal((await a.api(people.aud, 'POST', `/audit/findings/${f.id}/answers`, { text: ' ' })).statusCode, 400);
+
+        // closing answers it: an outcome, and an answer
+        assert.equal((await a.api(people.aud, 'POST', `/audit/findings/${f.id}/close`, { outcome: 'agreed' })).statusCode, 400);
+        assert.equal((await a.api(people.aud, 'POST', `/audit/findings/${f.id}/close`, { outcome: 'dropped', answer: 'No reason' })).statusCode, 400);
+        assert.equal((await a.api(people.aud, 'POST', `/audit/findings/${f.id}/close`, { answer: 'An answer without saying how it was closed' })).statusCode, 400);
+        assert.equal((await a.api(people.rec, 'POST', `/audit/findings/${f.id}/close`, { outcome: 'agreed', answer: 'Fixed' })).statusCode, 403);
+        const closed = await a.api(people.aud, 'POST', `/audit/findings/${f.id}/close`, { outcome: 'agreed', answer: 'Meeting with the Registrar and the Surveyor-General on 14 Oct 2026: the diagram is right. Minutes RM-2026-114.' });
+        assert.equal(closed.statusCode, 200, closed.body);
+        assert.deepEqual([closed.json().status, closed.json().outcome, closed.json().closedByName], ['closed', 'agreed', 'Martha Nakale']);
+
+        // the thread is in the trails of the document and of the land record, under "Findings"
+        const docTrail = (await a.trail.list({ subject: `document:${doc.id}`, type: 'audit.finding.' })).entries;
+        assert.deepEqual(docTrail.map(e => e.type), ['audit.finding.raised', 'audit.finding.answered', 'audit.finding.closed']);
+        const last = docTrail.at(-1);
+        assert.ok(last.subjects.includes(`record:${a.record.id}`));
+        assert.deepEqual([last.data.outcome, last.data.Findings[0].status, last.data.Findings[0].outcome], ['agreed', 'closed', 'agreed']);
+        assert.deepEqual(last.data.Findings[0].answers.map(x => x.name), ['Second Auditor']);
+        assert.deepEqual([last.data.Findings[0].raisedBy.name, last.data.Findings[0].issue, last.data.Findings[0].closedBy.name], ['Martha Nakale', 'The extent on the SG diagram differs from the record', 'Martha Nakale']);
+        assert.match(last.data.Findings[0].answer, /^Meeting with the Registrar/);
+        assert.equal((await a.api(people.aud, 'POST', `/audit/findings/${f.id}/answers`, { text: 'One more thing' })).statusCode, 409);   // closed
+
+        // no open finding: the sign-off is accepted and names the finding in its range
+        c = await check(a);
+        assert.equal(c.canSignOff, true, c.reason);
+        const s = (await signOff(a)).json();
+        assert.deepEqual(s.items.findings, [f.id]);
+    });
+});
+
+describe('findings (API-659)', () => {
     it('a finding reaches the records officers and the registrars, who acknowledge it; a newer reviewed version resolves it', async () => {
         const a = await audited();
         const res = await a.api(people.aud, 'POST', '/audit/findings', { recordId: a.record.id, version: 1, description: 'The extent on the record differs from the SG diagram' });
@@ -144,7 +254,7 @@ describe('sign-off and findings (API-659)', () => {
         assert.equal((await a.bpm.inject({ url: `/instances/${f.instanceId}`, headers: a.as(people.sup) })).json().status, 'cancelled');
         assert.equal((await a.api(people.aud, 'POST', `/audit/findings/${f.id}/close`, { reason: 'again' })).statusCode, 409);
         const entry = (await a.trail.list({ type: 'audit.finding.closed' })).entries[0];
-        assert.deepEqual([entry.data.outcome, entry.data.reason, entry.actor.name], ['closed', 'Checked the original in the vault: readable', 'Second Auditor']);
+        assert.deepEqual([entry.data.outcome, entry.data.reason, entry.actor.name], ['mistake', 'Checked the original in the vault: readable', 'Second Auditor']);
 
         // a finding on a document version alone; edrms files an approved correction (version 2)
         const doc = a.docs.t2019;

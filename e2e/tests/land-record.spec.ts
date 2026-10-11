@@ -317,6 +317,46 @@ test('an auditor\'s finding on Erf 1873 reaches the records officer\'s inbox, wi
     expect(closed.status(), await closed.text()).toBe(200);
     await aud.dispose();
 });
+
+test('the audit of Erf 1873 is one checkpoint: findings are answered by auditors, and nothing is signed off before it is on the blockchain', { tag: ['@API-680'] }, async ({ playwright, baseURL }) => {
+    const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+    const { items } = await (await rec.api.get('/api/records?q=1873', { headers: rec.headers })).json();
+    const record = await (await rec.api.get(`/api/records/${items.find((r: { label: string }) => r.label === 'Erf 1873, Klein Windhoek').id}`, { headers: rec.headers })).json();
+    const aud = await apiAs(playwright, baseURL!, userByRole('aud').email);
+
+    // the open checkpoint: every committed version, waiting for the next batch (no anchoring runs in the e2e stack)
+    const check = await (await aud.api.get(`/api/audit/records/${record.id}/check`, { headers: aud.headers })).json();
+    expect(check.range).toEqual({ from: 1, to: record.currentVersion });
+    expect(check.versions.map((v: { anchoring: string }) => v.anchoring)).toEqual(Array(record.currentVersion).fill('waiting'));
+    expect(check.canSignOff).toBe(false);
+    expect(check.reason).toBe('Some items go to the blockchain with the next batch. You can sign off once everything is there.');
+    const early = await aud.api.post('/api/audit/signoffs', { headers: aud.headers, data: { recordId: record.id } });
+    expect([early.status(), (await early.json()).message]).toEqual([409, check.reason]);
+
+    // a finding is a thread: any auditor answers it, the records desk cannot; closing needs an answer and an outcome
+    const finding = await (await aud.api.post('/api/audit/findings', { headers: aud.headers, data: { recordId: record.id, version: record.currentVersion, description: 'Zoning on the record differs from the town planning scheme' } })).json();
+    const answered = await aud.api.post(`/api/audit/findings/${finding.id}/answers`, { headers: aud.headers, data: { text: 'Asked the records office for the scheme extract' } });
+    expect(answered.status(), await answered.text()).toBe(201);
+    expect((await rec.api.post(`/api/audit/findings/${finding.id}/answers`, { headers: rec.headers, data: { text: 'We are on it' } })).status()).toBe(403);
+    expect((await aud.api.post(`/api/audit/findings/${finding.id}/close`, { headers: aud.headers, data: { outcome: 'agreed' } })).status()).toBe(400);
+    const closed = await aud.api.post(`/api/audit/findings/${finding.id}/close`, { headers: aud.headers, data: { outcome: 'agreed', answer: 'Agreed with the Registrar in the meeting of 14 Oct 2026: the record is right' } });
+    expect(closed.status(), await closed.text()).toBe(200);
+    const body = await closed.json();
+    expect([body.status, body.outcome]).toEqual(['closed', 'agreed']);
+    // the trail is written by the audit service's consumer, so it may follow a moment later
+    const closingEntry = async () => {
+        const trail = await (await aud.api.get(`/api/audit/trail?subject=record:${record.id}&type=audit.finding.closed`, { headers: aud.headers })).json();
+        return trail.entries.find((e: { data: { findingId: string } }) => e.data.findingId === finding.id);
+    };
+    await expect.poll(closingEntry, { timeout: 15_000 }).toBeTruthy();
+    const last = await closingEntry();
+    expect(last.data.Findings[0].answers.map((a: { text: string }) => a.text)).toEqual(['Asked the records office for the scheme extract']);
+
+    // the registrar has no audit.signoff: refused (sod2 itself is covered by the audit unit tests)
+    const registrar = await apiAs(playwright, baseURL!, userByRole('sup').email);
+    expect((await registrar.api.post('/api/audit/signoffs', { headers: registrar.headers, data: { recordId: record.id } })).status()).toBe(403);
+    await Promise.all([rec.dispose(), aud.dispose(), registrar.dispose()]);
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {

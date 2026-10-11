@@ -131,6 +131,36 @@ export class EvidenceService {
     }
 }
 
+/** What a sign-off covers: an audit checkpoint (API-680) or one item (API-659). */
+function signedOffWhat(s) {
+    if (s.kind !== 'checkpoint') {
+        const document = s.edrmsNo ? `, ${s.edrmsNo} version ${s.documentVersion}` : '';
+        return `version ${s.recordVersion}${document}`;
+    }
+    if (s.fromVersion === s.toVersion) {
+        return `audit of version ${s.toVersion}`;
+    }
+    return `audit of versions ${s.fromVersion}\u2013${s.toVersion}`;
+}
+
+/** A sign-off as a README line. */
+function signoffLine(s) {
+    const when = s.signedAt instanceof Date ? s.signedAt.toISOString() : s.signedAt;
+    const comment = s.comment ? `: ${s.comment}` : '';
+    return `\n  ${when} ${s.signedByName ?? s.signedById}: ${signedOffWhat(s)}${comment}`;
+}
+
+/** A finding as a README line: how it stands, what it says, and how many answers it has. */
+function findingLine(f) {
+    let status = f.status;
+    if (f.status === 'closed' && f.outcome) {
+        status = f.outcome === 'agreed' ? 'closed (resolved by agreement)' : 'closed (raised by mistake)';
+    }
+    const count = (f.answers || []).length;
+    const answers = count ? ` (${count} answer${count > 1 ? 's' : ''})` : '';
+    return `\n  ${status}: ${f.description}${answers}`;
+}
+
 function readme({ record, summary, entries, signoffs, findings, exportedAt, actor, wallet, network }) {
     const line = (s = '') => `${s}\n`;
     let t = '';
@@ -144,8 +174,8 @@ function readme({ record, summary, entries, signoffs, findings, exportedAt, acto
     for (const d of summary.documents) t += line(`  ${d.edrmsNo} version ${d.version} (${d.title}): seal ${d.seal}, proof: ${d.proof}`);
     t += line();
     t += line(`Audit trail: ${entries.length} entries (trail/entries.json).`);
-    t += line(`Sign-offs: ${signoffs.length}${signoffs.map(s => `\n  ${s.signedAt instanceof Date ? s.signedAt.toISOString() : s.signedAt} ${s.signedByName ?? s.signedById}: version ${s.recordVersion}${s.edrmsNo ? `, ${s.edrmsNo} version ${s.documentVersion}` : ''}: ${s.comment}`).join('')}`);
-    t += line(`Findings: ${findings.length}${findings.map(f => `\n  ${f.status}: ${f.description}`).join('')}`);
+    t += line(`Sign-offs: ${signoffs.length}${signoffs.map(signoffLine).join('')}`);
+    t += line(`Findings: ${findings.length}${findings.map(findingLine).join('')}`);
     t += line(`Proofs: ${summary.proofs.anchored} anchored on Cardano, ${summary.proofs.waiting} waiting for the next anchoring.`);
     t += line();
     t += line('How to check this pack without the portal');

@@ -6,7 +6,7 @@ import { createEventBus, createServiceTokenSigner } from '@lrfe/common';
 import { AnchorService } from '../src/anchor.service.js';
 import { TrailService } from '../src/trail.service.js';
 import { TreeService } from '../src/tree.service.js';
-import { ProofService } from '../src/proof.service.js';
+import { ProofService, createVerifySources } from '../src/proof.service.js';
 import { SignoffService, createSignoffClients } from '../src/signoff.service.js';
 import { createMemoryRepo } from '../src/repo/memory.js';
 import { createCardanoAdapter } from '../src/cardano/adapter.js';
@@ -80,12 +80,12 @@ export async function audited() {
         if (url.startsWith('http://bpm')) { if (bpmDown) throw new Error('connect ECONNREFUSED'); return inject(reg.bpm)(url, init); }
         return (url.startsWith('http://records') ? inject(reg.app) : inject(edrmsApp))(url, init);
     };
-    signoffs = new SignoffService({ repo, events, clock, logger: quiet, ...createSignoffClients({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', bpmUrl: 'http://bpm', serviceToken: asService('audit'), fetchImpl: routed }) });
-    // anchoring on the fake chain, proofs and the evidence pack
+    // anchoring on the fake chain, proofs (the owning services recompute the seals), sign-off and the evidence pack
     const driver = fakeDriver();
     const cardano = createCardanoAdapter({ driver, signer: createLocalSigner(), network: 'preview', logger: quiet });
     const job = new AnchorService({ repo, tree, cardano, logger: quiet, clock, config: { confirmations: 10 } });
-    const proofs = new ProofService({ repo, tree, cardano, clock, logger: quiet });
+    const proofs = new ProofService({ repo, tree, cardano, clock, logger: quiet, sources: createVerifySources({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', serviceToken: asService('audit'), fetchImpl: routed }) });
+    signoffs = new SignoffService({ repo, events, proofs, clock, logger: quiet, ...createSignoffClients({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', bpmUrl: 'http://bpm', serviceToken: asService('audit'), fetchImpl: routed }) });
     const evidence = new EvidenceService({ trail, proofs, signoffs, events, cardano, clock, logger: quiet, sources: createEvidenceSources({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', serviceToken: asService('audit'), fetchImpl: routed }) });
     /** Run the hourly job until an anchoring is confirmed (a block a minute). */
     const anchor = async () => {

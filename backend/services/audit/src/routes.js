@@ -1,4 +1,5 @@
 import { KINDS } from './proof.service.js';
+import { CLOSE_OUTCOMES } from './signoff.service.js';
 
 export async function auditRoutes(app, { service, proofs, signoffs, evidence }) {
     const canView = app.requirePerm('audit.view');
@@ -63,10 +64,17 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence }) 
     const target = { recordId: uuid, version: { type: 'integer', minimum: 1 }, documentId: uuid };
     const filter = { type: 'object', additionalProperties: false, properties: { recordId: uuid, documentId: uuid } };
 
-    // mark a committed land record version, or a document version in it, audited
+    // the open checkpoint of a land record: what the next audit sign-off covers, checked against the
+    // blockchain, and whether the user asking may sign it off now (API-680)
+    app.get('/audit/records/:id/check', {
+        onRequest: canView,
+        schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } }
+    }, async (req) => signoffs.checkpoint(req.params.id, actorOf(req)));
+
+    // one audit sign-off for every version committed since the last one (API-680)
     app.post('/audit/signoffs', {
         onRequest: canSignOff,
-        schema: { body: { type: 'object', required: ['recordId', 'version', 'comment'], additionalProperties: false, properties: { ...target, comment: { type: 'string', maxLength: 4000 } } } }
+        schema: { body: { type: 'object', required: ['recordId'], additionalProperties: false, properties: { recordId: uuid, comment: { type: 'string', maxLength: 4000 } } } }
     }, async (req, reply) => reply.status(201).send(await signoffs.signOff(req.body, actorOf(req))));
 
     app.get('/audit/signoffs', { onRequest: canView, schema: { querystring: filter } }, async (req) => ({ items: await signoffs.listSignoffs(req.query) }));
@@ -87,11 +95,25 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence }) 
     app.get('/audit/findings/:id', { onRequest: canSeeFindings, schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } } },
         async (req) => signoffs.getFinding(req.params.id));
 
+    // only auditors answer and close a finding: any auditor, not only the one who raised it (API-680)
+    app.post('/audit/findings/:id/answers', {
+        onRequest: canSignOff,
+        schema: {
+            params: { type: 'object', required: ['id'], properties: { id: uuid } },
+            body: { type: 'object', required: ['text'], additionalProperties: false, properties: { text: { type: 'string', maxLength: 4000 } } }
+        }
+    }, async (req, reply) => reply.status(201).send(await signoffs.answerFinding(req.params.id, req.body, actorOf(req))));
+
+    // closing answers the finding: resolved by agreement outside the portal, or raised by mistake
     app.post('/audit/findings/:id/close', {
         onRequest: canSignOff,
         schema: {
             params: { type: 'object', required: ['id'], properties: { id: uuid } },
-            body: { type: 'object', required: ['reason'], additionalProperties: false, properties: { reason: { type: 'string', maxLength: 2000 } } }
+            body: {
+                type: 'object', additionalProperties: false,
+                anyOf: [{ required: ['answer'] }, { required: ['reason'] }],
+                properties: { outcome: { type: 'string', enum: CLOSE_OUTCOMES }, answer: { type: 'string', maxLength: 4000 }, reason: { type: 'string', maxLength: 2000 } }
+            }
         }
     }, async (req) => signoffs.closeFinding(req.params.id, req.body, actorOf(req)));
 

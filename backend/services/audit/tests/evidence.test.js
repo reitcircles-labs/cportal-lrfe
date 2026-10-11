@@ -47,13 +47,17 @@ function remanifest(files) {
 const editJson = (fn) => (buf) => { const v = JSON.parse(buf.toString()); fn(v); return JSON.stringify(v, null, 2); };
 const failed = (r) => r.checks.filter(c => !c.ok).map(c => c.name);
 
-/** Erf 1873 committed, signed off, a finding raised and closed, then anchored and confirmed. */
+/**
+ * Erf 1873 committed and anchored; a finding raised, answered and closed; the audit signed off; then
+ * anchored and confirmed again.
+ */
 async function auditedAndAnchored() {
     const a = await audited();
-    assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, comment: 'Deeds, diagram and owners reconcile' })).statusCode, 201);
-    assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, documentId: a.docs.sg.id, comment: 'Diagram matches the extent' })).statusCode, 201);
+    await a.anchor();
     const f = (await a.api(people.aud, 'POST', '/audit/findings', { recordId: a.record.id, version: 1, description: 'Owner ID number hard to read on T 1502/1996' })).json();
-    assert.equal((await a.api(people.aud2, 'POST', `/audit/findings/${f.id}/close`, { reason: 'Readable on the original in the vault' })).statusCode, 200);
+    assert.equal((await a.api(people.aud2, 'POST', `/audit/findings/${f.id}/answers`, { text: 'Asked the vault for the original' })).statusCode, 201);
+    assert.equal((await a.api(people.aud2, 'POST', `/audit/findings/${f.id}/close`, { outcome: 'mistake', answer: 'Readable on the original in the vault' })).statusCode, 200);
+    assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, comment: 'Deeds, diagram and owners reconcile' })).statusCode, 201);
     await a.anchor();
     return a;
 }
@@ -89,8 +93,8 @@ describe('evidence pack (API-660)', () => {
         const expected = (await a.trail.list({ subject: `record:${a.record.id}`, limit: 500 })).entries.filter(e => e.type !== 'audit.evidence.exported');
         assert.deepEqual(trail.map(e => e.seq), expected.map(e => e.seq));
         for (const e of trail) assert.ok(names.includes(`proofs/trail-${e.seq}.json`), `proof of entry ${e.seq}`);
-        assert.equal(JSON.parse(files.get('signoffs.json')).length, 2);
-        assert.deepEqual(JSON.parse(files.get('findings.json')).map(f => f.status), ['closed']);
+        assert.deepEqual(JSON.parse(files.get('signoffs.json')).map(s => [s.kind, s.fromVersion, s.toVersion]), [['checkpoint', 1, 1]]);
+        assert.deepEqual(JSON.parse(files.get('findings.json')).map(f => [f.status, f.outcome, f.answers.length]), [['closed', 'mistake', 1]]);
         assert.ok(names.includes('proofs/record-v1.json'));
         const readme = files.get('README.txt').toString();
         assert.match(readme, new RegExp(`Evidence pack: land record ${a.record.recordNo}`));
@@ -203,7 +207,11 @@ describe('evidence pack (API-660)', () => {
         // sign-offs and findings: a field changed, or a row dropped while its trail entry stays
         assert.ok(failed(await check(tamper(files, 'signoffs.json', editJson(ss => { ss[0].recordVersion = 2; })))).includes('sign-offs'));
         assert.ok(failed(await check(tamper(files, 'signoffs.json', editJson(ss => { ss[0].signedByName = 'Someone Else'; })))).includes('sign-offs'));
+        assert.ok(failed(await check(tamper(files, 'signoffs.json', editJson(ss => { ss[0].fromVersion = 2; })))).includes('sign-offs'));
         assert.ok(failed(await check(tamper(files, 'findings.json', editJson(fs => { fs[0].raisedByName = 'Someone Else'; })))).includes('findings'));
+        // a finding's answer changed, or its closing outcome (API-680)
+        assert.ok(failed(await check(tamper(files, 'findings.json', editJson(fs => { fs[0].answers[0].text = 'Never asked'; })))).includes('findings'));
+        assert.ok(failed(await check(tamper(files, 'findings.json', editJson(fs => { fs[0].outcome = 'agreed'; })))).includes('findings'));
         assert.ok(failed(await check(tamper(files, 'findings.json', editJson(fs => { fs[0].closeReason = 'Other reason'; })))).includes('findings'));
         assert.ok(failed(await check(tamper(files, 'findings.json', () => '[]'))).includes('findings'));
 
@@ -280,7 +288,7 @@ describe('evidence pack (API-660)', () => {
     it('a pack exported before the next anchoring is valid, and names what is still waiting', async () => {
         const a = await audited();
         await a.anchor();
-        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, version: 1, comment: 'Reconciled after the anchoring' })).statusCode, 201);
+        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id, comment: 'Reconciled after the anchoring' })).statusCode, 201);
         const files = filesOf(await download(a));
         const r = await verifyPack(files, { fetchImpl: publicSource(a.driver) });
         assert.equal(r.valid, true, JSON.stringify(r.checks.filter(c => !c.ok)));

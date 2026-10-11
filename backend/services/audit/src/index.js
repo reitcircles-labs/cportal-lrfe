@@ -42,8 +42,9 @@ const recordsUrl = env('RECORDS_URL', 'http://localhost:3505');
 const edrmsUrl = env('EDRMS_URL', 'http://localhost:3502');
 // proofs and verification (README.md section 4): the owning services recompute the seals
 const proofs = new ProofService({ repo, tree, cardano, logger: log, sources: createVerifySources({ recordsUrl, edrmsUrl, serviceToken }) });
-// sign-off and findings (README.md section 5): versions read from land-records and edrms, findings sent to bpm
-const signoffs = new SignoffService({ repo, events, logger: log, ...createSignoffClients({ recordsUrl, edrmsUrl, bpmUrl: env('BPM_URL', 'http://localhost:3503'), serviceToken }) });
+// sign-off and findings (README.md section 5): versions read from land-records and edrms, checked
+// against the blockchain (proofs), findings and re-review tasks sent to bpm
+const signoffs = new SignoffService({ repo, events, proofs, logger: log, ...createSignoffClients({ recordsUrl, edrmsUrl, bpmUrl: env('BPM_URL', 'http://localhost:3503'), serviceToken }) });
 
 // the evidence pack (README.md section 6): versions, documents and files read from land-records and edrms
 const evidence = new EvidenceService({ trail: service, proofs, signoffs, events, cardano, logger: log, sources: createEvidenceSources({ recordsUrl, edrmsUrl, serviceToken }) });

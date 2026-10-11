@@ -29,9 +29,13 @@ export default {
             tag: 'Proofs', summary: 'The anchoring status of versions (land-records, edrms)',
             description: 'Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx, network, confirmedAt } | null } }`; null when the version is not in the tree.'
         },
+        'GET /audit/records/{id}/check': {
+            tag: 'Sign-off', summary: 'The open audit checkpoint of a land record',
+            description: 'What the next audit sign-off covers: `range { from, to }` (every version committed since the last audit sign-off, or null), `lastSignoff`, `versions` and `documents` (the document versions they added that no earlier sign-off covered), each with `anchoring` (`waiting`, `sent`, `onChain`, `confirmed`) and `match` (`matches`, `changed`, `notOnChain`, `unavailable`; a changed one also `superseded` once a re-reviewed version matches), `openFindings`, and `canSignOff` with the `reason` when not, for the user asking. A changed item starts a re-review task for the records desk the first time it is found (bpm process `audit-rereview`).'
+        },
         'POST /audit/signoffs': {
-            tag: 'Sign-off', summary: 'Sign off a land record version, or a document version in it',
-            description: 'Body `{ recordId, version, documentId?, comment }`. The version must be committed; `documentId` must be pinned in it. 201 with the sign-off (`id`, the record and document numbers and versions, the `seal` of what was signed off, `comment`, `signedById`, `signedByName`, `signedAt`). 403 `{ details: { rule: "sod2" } }` for whoever holds `record.finalize` ("You can finalize land records: an auditor without that permission must sign it off") or approved the version or document version ("You approved this version: another auditor must sign it off"). 409 when this auditor already signed it off. Also a trail entry (`audit.signoff.recorded`), anchored with the next root.'
+            tag: 'Sign-off', summary: 'Sign off the open audit checkpoint of a land record',
+            description: 'Body `{ recordId, comment? }`. One sign-off for every version committed since the last one, checked again now: accepted only when everything is in a block on the blockchain, everything matches it, and no finding is open. 201 with the sign-off (`kind: "checkpoint"`, `fromVersion`, `toVersion`, `seal` of the top version, `items` with the version and document seals and the finding ids, `signedByName`, `signedAt`). 403 `{ details: { rule: "sod2" } }` for whoever holds `record.finalize` or approved a version in the range; 409 not on the blockchain yet, changed since review, an open finding, nothing to audit, or signed off by someone else at the same moment; 503 when the check could not run. Also a trail entry (`audit.signoff.recorded`), anchored with the next root.'
         },
         'GET /audit/signoffs': { tag: 'Sign-off', summary: 'Sign-offs of a land record or document', description: '`{ items }`, oldest first; `recordId` and/or `documentId`.' },
         'POST /audit/findings': {
@@ -39,10 +43,14 @@ export default {
             description: 'Body `{ recordId, version, documentId?, description }` (a land record version, or a document version in it) or `{ documentId, version, description }` (a document version). On the current version (409 for a replaced one). The records officers and the registrars get a task in their inbox (bpm process `audit-finding`); 503 when bpm cannot be reached (the finding is not raised). 201 with the finding (`status: "open"`, `instanceId`). A trail entry (`audit.finding.raised`).'
         },
         'GET /audit/findings': { tag: 'Sign-off', summary: 'Findings of a land record or document', description: '`{ items }`, oldest first; filter by `recordId`, `documentId`, `status` (`open`, `resolved`, `closed`). For auditors and the records desk.' },
-        'GET /audit/findings/{id}': { tag: 'Sign-off', summary: 'One finding', description: 'With `status`, and `resolvedByVersion` (a newer reviewed version resolved it) or `closedByName`, `closeReason`, `closedAt`.' },
+        'GET /audit/findings/{id}': { tag: 'Sign-off', summary: 'One finding', description: 'With `status`, `answers`, and `resolvedByVersion` (a newer reviewed version resolved it) or `outcome`, `closedByName`, `closeReason` (the closing answer), `closedAt`.' },
+        'POST /audit/findings/{id}/answers': {
+            tag: 'Sign-off', summary: 'Answer a finding',
+            description: 'Body `{ text }`. Any auditor, not only the one who raised it. 201 with the finding and its `answers` (`byName`, `role`, `at`, `text`). 409 when it is no longer open. A trail entry (`audit.finding.answered`) with the whole thread under `Findings`.'
+        },
         'POST /audit/findings/{id}/close': {
-            tag: 'Sign-off', summary: 'Close a finding with a reason',
-            description: 'Body `{ reason }`. 409 when it is no longer open. Its inbox tasks are withdrawn if still open. A trail entry (`audit.finding.closed`, `outcome: "closed"`); a newer reviewed version closes it the same way with `outcome: "resolved"`.'
+            tag: 'Sign-off', summary: 'Close a finding, answering it',
+            description: 'Body `{ outcome, answer }`: `agreed` (resolved by agreement outside the portal, for example in a meeting) or `mistake` (raised by mistake), and the answer: who agreed, when, what was decided. `{ reason }` alone is read as `{ outcome: "mistake", answer: reason }`. 409 when it is no longer open. Its inbox tasks are withdrawn if still open. A trail entry (`audit.finding.closed` with the `outcome`, and the thread under `Findings`); a newer reviewed version closes it the same way with `outcome: "resolved"`.'
         },
         'GET /audit/records/{id}/evidence': {
             tag: 'Evidence', summary: 'The evidence pack of a land record (zip)',

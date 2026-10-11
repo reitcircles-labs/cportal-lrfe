@@ -444,29 +444,64 @@ and Blockfrost.
 
 ## 5. Sign-off and findings
 
-API-659. `src/signoff.service.js`, the routes in `src/routes.js`, the bpm process
-`services/bpm/src/definitions/audit-finding.json`.
+API-659, API-680. `src/signoff.service.js`, the routes in `src/routes.js`, the bpm processes
+`services/bpm/src/definitions/audit-finding.json` and `audit-rereview.json`.
 
-**Sign-off** (`POST /audit/signoffs { recordId, version, documentId?, comment }`, `audit.signoff`):
-marks a committed land record version, or a document version pinned in it, audited, with a comment.
-The audit service reads the version from land-records (and the document from edrms) with its
-service token, and keeps the seal of what was signed off. Each auditor signs an item off once; a
-second auditor may sign it off too. `GET /audit/signoffs?recordId=&documentId=` (`audit.view`).
+**Who owns what.** The approver owns the land record: approving commits and seals the version (the
+record's details, every document with its own seal, the previous version's seal), and the seal is
+anchored. Auditors are external: they check, and never shape the record. Only what is on the
+blockchain and matches it can be trusted, so nothing is audited before it is there.
 
-**Segregation of duties (sod2).** Two refusals (403 with details `{ rule: "sod2" }`, so the screen can
-explain them), always applied, whatever the roles and the security policies say:
+**The audit sign-off is a checkpoint** (API-680). One sign-off covers every version of a land record
+committed since its last audit sign-off (or since v1), and the document versions those versions
+pinned that no earlier sign-off covered. The next audit starts after it. Documents have no sign-off
+of their own: each is checked against the blockchain automatically; the auditor checks each version's
+changes (do the documents belong to this erf, is anything missing, do the details follow from them).
 
-- whoever **can finalize land records** (holds `record.finalize`) does not sign them off: "You can
-  finalize land records: an auditor without that permission must sign it off";
-- whoever **approved the version** does not sign it off, nor a document version in it, even after
-  losing `record.finalize`: "You approved this version: another auditor must sign it off". The
-  approver is the version's `approvedById` in land-records. Likewise whoever approved a document
-  version (an amendment) does not sign that document version off.
+`GET /audit/records/{id}/check` (`audit.view`) gives the open checkpoint: `range { from, to }`,
+`lastSignoff`, each version and document with its `anchoring` (`waiting`, `sent`, `onChain`,
+`confirmed`) and, once on the blockchain, its `match` (`matches`, `changed`, `unavailable`; before that
+`notOnChain`), the open findings, and `canSignOff` with the `reason` when not, for the user asking.
+A match is the proof check of section 4: the seal recomputed now by land-records or edrms, the path
+to the anchored root, and the root in the transaction.
+
+`POST /audit/signoffs { recordId, comment? }` (`audit.signoff`) checks it all again and stores one
+sign-off: `kind: "checkpoint"`, `fromVersion`, `toVersion` (also `recordVersion`), the top version's
+`seal`, and in `items` the version and document seals it covers and the ids of the findings in its
+range. Refused, with the reason the screen shows as it is, in this order:
+
+| Status | When | Reason |
+|---|---|---|
+| 409 | nothing committed since the last sign-off | Nothing to audit: no version was committed since the last audit sign-off (v[N]). |
+| 403 `{ rule: "sod2" }` | the user holds `record.finalize` | You can commit land record versions, so you can't sign off audits. Another auditor signs off. |
+| 403 `{ rule: "sod2" }` | the user approved a version in the range (its `approvedById`) | You approved v[N], which is part of this audit, so another auditor must sign it off. |
+| 409 | an item is in no anchoring yet | Some items go to the blockchain with the next batch. You can sign off once everything is there. |
+| 409 | an item's transaction is sent but not in a block (it can still fail) | [ITEM] is on its way to the blockchain. You can sign off once it is in a block, usually within minutes. |
+| 409 | an item no longer matches the blockchain | The audit can't be signed off until the land record has been re-reviewed and submitted again. |
+| 503 | the check could not run (the chain or the owning service unreachable) | The blockchain couldn't be reached. Try again in a few minutes. |
+| 409 | a finding on the record or a covered document is open | The finding on [ITEM] is still open. … |
+
+Open findings that block it: those on the land record, and those on a document version on its own
+that this checkpoint covers. A finding on a document version covered by an earlier sign-off was part
+of that audit.
+
+One sign-off per checkpoint, whoever signs it, also for two requests at the same moment (unique
+indexes on record and `toVersion`, and on record and `fromVersion`, so checkpoints never overlap). API-659's sign-offs of one item (`kind: "item"`) stay readable as
+history. `GET /audit/signoffs?recordId=&documentId=` (`audit.view`).
 
 The catalogue's duty rule sod2 (`record.finalize` and `audit.signoff` held by one person,
 Administration → Security policies) is the role-level warning when roles are assigned; switching it
-off does not lift these refusals. One sign-off per auditor and item, also for two requests at the
-same moment (a unique index).
+off does not lift these refusals.
+
+**Changed since review.** An item that no longer matches is not a finding: the land record changed
+since it was reviewed and submitted, so it cannot be audited as true. The first time it is found, the
+audit service starts the bpm process `audit-rereview` (a task each for the records officers and the
+registrars: "Re-review: changed since review, …") and records `audit.item.changed`; once per item
+(`audit.changed_alert`, with the record's current version then). If bpm cannot be reached it is tried
+again at the next check. The records office then opens a new draft, corrects what changed and submits
+it; once a version committed after the change was found matches (and, for a changed document version,
+no longer pins it), the changed item no longer blocks the sign-off and is kept in it as
+`superseded`.
 
 **Finding** (`POST /audit/findings { recordId, version, documentId?, description }` or
 `{ documentId, version, description }`, `audit.signoff`): a description on a land record version, a
@@ -475,29 +510,40 @@ process `audit-finding`, which gives the records officers (role `rec`) and the r
 a task each in their inbox: the finding, who raised it, the record or document, and "Acknowledge". If
 bpm cannot be reached the finding is not raised (503): nobody would be told. A finding is raised on
 the current version (an older one is already replaced by a reviewed version, or a document version
-already corrected in edrms: 409); one raised while
-a newer version is being committed is resolved at once. A finding is **open** until:
+already corrected in edrms: 409); one raised while a newer version is being committed is resolved at
+once.
+
+A finding is a **thread**. Any auditor (`audit.signoff`), not only the one who raised it, may answer
+it (`POST /audit/findings/{id}/answers { text }`): the answer is stored with who wrote it and when.
+No other role answers or closes; the records desk reads findings and acknowledges its tasks. While a
+finding is open the audit cannot be signed off. It ends in one of three ways:
 
 - a **newer reviewed version resolves it**: a committed land record version (`records.record.committed`
   with a higher version number) for a finding on a record version, an approved correction
-  (`edrms.document.amended` with a higher version) for a finding on a document version. The audit
-  service's consumer does this as the event arrives (status `resolved`, `resolvedByVersion`); or
-- an **auditor closes it** with a reason (`POST /audit/findings/{id}/close { reason }`, `audit.signoff`;
-  status `closed`).
+  (`edrms.document.amended` with a higher version) for a finding on a document version (status
+  `resolved`, `resolvedByVersion`); the corrected version joins the next checkpoint, so it must be on
+  the blockchain before that is signed off;
+- an auditor closes it **resolved by agreement**: settled outside the portal, for example in a meeting
+  (`POST /audit/findings/{id}/close { outcome: "agreed", answer }`), the agreed exception; or
+- an auditor closes it **raised by mistake** (`outcome: "mistake"`).
 
-Either way the bpm process is withdrawn if it is still open (once both have acknowledged it has
-ended). The withdrawal is best effort: if bpm cannot be reached then, the finding is closed all the
-same and its tasks stay in the inbox until acknowledged. Acknowledging does not close a finding. `GET /audit/findings?recordId=&documentId=&status=`
+Closing needs an answer: who agreed, when, what was decided. It is stored as the thread's last message
+(`closeReason`, `closedByName`, `closedAt`, status `closed`, `outcome`). A close in API-659's form,
+`{ reason }`, is read as `{ outcome: "mistake", answer: reason }`. A finding is never deleted. Either
+way the bpm process is withdrawn if it is still open (best effort: if bpm cannot be reached the
+finding is closed all the same and its tasks stay until acknowledged). `GET /audit/findings?recordId=&documentId=&status=`
 and `GET /audit/findings/{id}` are for auditors and for the records desk (`audit.view` or
 `record.view`).
 
-**In the trail and on chain.** Sign-offs and findings are stored in `audit.signoff` and
-`audit.finding` and published as durable events in the same transaction (the audit service's outbox):
-`audit.signoff.recorded`, `audit.finding.raised`, `audit.finding.closed` (`outcome` `resolved` or
-`closed`). The audit service's consumer records them like any other event, under the record's and the
-document's subjects (`recordId`, `edrmsDocumentId`) and the process (`instanceId`), so they appear in
-the record's trail and the next anchoring covers them: a trail-entry proof (§4) shows the sign-off
-existed unchanged when that root went on Cardano.
+**In the trail and on chain.** Sign-offs, findings and alerts are stored in `audit.signoff`,
+`audit.finding` and `audit.changed_alert` and published as durable events in the same transaction (the
+audit service's outbox): `audit.signoff.recorded`, `audit.finding.raised`, `audit.finding.answered`,
+`audit.finding.closed` (`outcome` `resolved`, `agreed` or `mistake`), `audit.item.changed`. The audit
+service's consumer records them like any other event, under the record's and the document's subjects
+(`recordId`, `edrmsDocumentId`) and the process (`instanceId`), so a finding is in the audit trail of
+the document and of the land record it is about, and the next anchoring covers it. Each finding event
+carries the whole thread under the key `Findings`: who raised it and why, every answer (name, role,
+time, text), and how it ended.
 
 ## 6. Evidence pack
 
@@ -581,13 +627,14 @@ the chain showing it.
 | `POST /audit/verify` | `audit.view` | verify an item against the chain |
 | `POST /audit/anchoring` | land-records, edrms (service) | the anchoring status of versions |
 | `GET /audit/anchors` | `audit.view` | anchorings, their transactions and status |
-| `POST /audit/signoffs` · `POST /audit/findings` · `…/findings/{id}/close` | `audit.signoff` | sign off, raise or close a finding |
+| `GET /audit/records/{id}/check` | `audit.view` | the open checkpoint, checked against the blockchain |
+| `POST /audit/signoffs` · `POST /audit/findings` · `…/findings/{id}/answers` · `…/findings/{id}/close` | `audit.signoff` | sign off a checkpoint; raise, answer or close a finding |
 | `GET /audit/signoffs` | `audit.view` | sign-offs of a record or document |
 | `GET /audit/findings` · `GET /audit/findings/{id}` | `audit.view` or `record.view` | findings (also for the records desk) |
 | `GET /audit/records/{id}/evidence` | `audit.export` | evidence pack |
 
 Events, durable (in the trail): `audit.signoff.recorded`, `audit.finding.raised`,
-`audit.finding.closed`, `audit.evidence.exported`. Broadcast-only (§3; not in the trail):
+`audit.finding.answered`, `audit.finding.closed`, `audit.item.changed`, `audit.evidence.exported`. Broadcast-only (§3; not in the trail):
 `audit.root.anchored`, `audit.root.confirmed`, `audit.wallet.low`, `audit.trail.gap`. The permissions are
 already in the identity catalogue.
 

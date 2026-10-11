@@ -325,8 +325,10 @@ paths:
       tags:
         - audit · Sign-off
       summary: One finding
-      description: |-
-        With `status`, and `resolvedByVersion` (a newer reviewed version resolved it) or `closedByName`, `closeReason`, `closedAt`.
+      description: >-
+        With `status`, `answers`, and `resolvedByVersion` (a newer reviewed version resolved it) or `outcome`, `closedByName`, `closeReason`
+        (the closing answer), `closedAt`.
+
 
         **Access:** Signed-in user with any of `audit.view`, `record.view`.
       operationId: audit_getAuditFindingsId
@@ -373,14 +375,83 @@ paths:
         anyOf:
           - audit.view
           - record.view
+  /api/audit/findings/{id}/answers:
+    post:
+      tags:
+        - audit · Sign-off
+      summary: Answer a finding
+      description: >-
+        Body `{ text }`. Any auditor, not only the one who raised it. 201 with the finding and its `answers` (`byName`, `role`, `at`,
+        `text`). 409 when it is no longer open. A trail entry (`audit.finding.answered`) with the whole thread under `Findings`.
+
+
+        **Access:** Signed-in user with permission `audit.signoff`.
+      operationId: audit_postAuditFindingsIdAnswers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              additionalProperties: false
+              properties:
+                text:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.signoff
   /api/audit/findings/{id}/close:
     post:
       tags:
         - audit · Sign-off
-      summary: Close a finding with a reason
+      summary: Close a finding, answering it
       description: >-
-        Body `{ reason }`. 409 when it is no longer open. Its inbox tasks are withdrawn if still open. A trail entry
-        (`audit.finding.closed`, `outcome: "closed"`); a newer reviewed version closes it the same way with `outcome: "resolved"`.
+        Body `{ outcome, answer }`: `agreed` (resolved by agreement outside the portal, for example in a meeting) or `mistake` (raised by
+        mistake), and the answer: who agreed, when, what was decided. `{ reason }` alone is read as `{ outcome: "mistake", answer: reason
+        }`. 409 when it is no longer open. Its inbox tasks are withdrawn if still open. A trail entry (`audit.finding.closed` with the
+        `outcome`, and the thread under `Findings`); a newer reviewed version closes it the same way with `outcome: "resolved"`.
 
 
         **Access:** Signed-in user with permission `audit.signoff`.
@@ -398,10 +469,21 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - reason
               additionalProperties: false
+              anyOf:
+                - required:
+                    - answer
+                - required:
+                    - reason
               properties:
+                outcome:
+                  type: string
+                  enum:
+                    - agreed
+                    - mistake
+                answer:
+                  type: string
+                  maxLength: 4000
                 reason:
                   type: string
                   maxLength: 2000
@@ -513,6 +595,63 @@ paths:
       x-access:
         allOf:
           - audit.view
+  /api/audit/records/{id}/check:
+    get:
+      tags:
+        - audit · Sign-off
+      summary: The open audit checkpoint of a land record
+      description: >-
+        What the next audit sign-off covers: `range { from, to }` (every version committed since the last audit sign-off, or null),
+        `lastSignoff`, `versions` and `documents` (the document versions they added that no earlier sign-off covered), each with `anchoring`
+        (`waiting`, `sent`, `onChain`, `confirmed`) and `match` (`matches`, `changed`, `notOnChain`, `unavailable`; a changed one also
+        `superseded` once a re-reviewed version matches), `openFindings`, and `canSignOff` with the `reason` when not, for the user asking.
+        A changed item starts a re-review task for the records desk the first time it is found (bpm process `audit-rereview`).
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditRecordsIdCheck
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
   /api/audit/records/{id}/evidence:
     get:
       tags:
@@ -573,14 +712,14 @@ paths:
     post:
       tags:
         - audit · Sign-off
-      summary: Sign off a land record version, or a document version in it
+      summary: Sign off the open audit checkpoint of a land record
       description: >-
-        Body `{ recordId, version, documentId?, comment }`. The version must be committed; `documentId` must be pinned in it. 201 with the
-        sign-off (`id`, the record and document numbers and versions, the `seal` of what was signed off, `comment`, `signedById`,
-        `signedByName`, `signedAt`). 403 `{ details: { rule: "sod2" } }` for whoever holds `record.finalize` ("You can finalize land
-        records: an auditor without that permission must sign it off") or approved the version or document version ("You approved this
-        version: another auditor must sign it off"). 409 when this auditor already signed it off. Also a trail entry
-        (`audit.signoff.recorded`), anchored with the next root.
+        Body `{ recordId, comment? }`. One sign-off for every version committed since the last one, checked again now: accepted only when
+        everything is in a block on the blockchain, everything matches it, and no finding is open. 201 with the sign-off (`kind:
+        "checkpoint"`, `fromVersion`, `toVersion`, `seal` of the top version, `items` with the version and document seals and the finding
+        ids, `signedByName`, `signedAt`). 403 `{ details: { rule: "sod2" } }` for whoever holds `record.finalize` or approved a version in
+        the range; 409 not on the blockchain yet, changed since review, an open finding, nothing to audit, or signed off by someone else at
+        the same moment; 503 when the check could not run. Also a trail entry (`audit.signoff.recorded`), anchored with the next root.
 
 
         **Access:** Signed-in user with permission `audit.signoff`.
@@ -593,17 +732,9 @@ paths:
               type: object
               required:
                 - recordId
-                - version
-                - comment
               additionalProperties: false
               properties:
                 recordId:
-                  type: string
-                  format: uuid
-                version:
-                  type: integer
-                  minimum: 1
-                documentId:
                   type: string
                   format: uuid
                 comment:

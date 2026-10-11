@@ -198,6 +198,31 @@ export class ProofService {
 
     // ------------------------------------------------ status for land-records and edrms
 
+    /**
+     * Per leaf key, how far its anchoring has got: `waiting` (in no anchoring yet), `sent` (in a
+     * transaction not in a block yet), `onChain` or `confirmed`; null when not in the tree. The audit
+     * sign-off (API-680) counts only `onChain` and `confirmed`: a sent transaction can still fail.
+     */
+    async anchoringOf(keys) {
+        const out = {};
+        for (const key of keys) {
+            const leaf = await this.repo.tree.leafByKey(key);
+            if (!leaf) {
+                out[key] = null;
+                continue;
+            }
+            const a = await this.repo.anchorForLeaf(leaf.leafIndex);
+            if (!a) {
+                out[key] = 'waiting';
+            } else if (a.status === 'submitted') {
+                out[key] = 'sent';
+            } else {
+                out[key] = a.status;                                  // onChain or confirmed
+            }
+        }
+        return out;
+    }
+
     /** Per leaf key: { status: waiting | anchored | confirmed, batch, tx, network } or null (not in the tree). */
     async statusOf(keys) {
         const out = {};

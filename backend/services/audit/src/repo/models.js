@@ -86,10 +86,18 @@ export function defineModels(sequelize) {
         documentVersion: { type: DataTypes.INTEGER },
         seal: { type: DataTypes.STRING(64) }                                // the seal of what was looked at
     };
+    // An audit sign-off (API-680) is a checkpoint: `kind` 'checkpoint', the versions fromVersion …
+    // toVersion (recordVersion = toVersion, seal = its seal) and in `items` the version and document
+    // seals it covers and the ids of the findings in its range. API-659's sign-offs of one item have
+    // `kind` 'item' and stay readable as history.
     const Signoff = sequelize.define('signoff', {
         id: { type: DataTypes.UUID, primaryKey: true },
+        kind: { type: DataTypes.STRING, allowNull: false, defaultValue: 'item' },
         ...item,
-        comment: { type: DataTypes.TEXT, allowNull: false },
+        fromVersion: { type: DataTypes.INTEGER },
+        toVersion: { type: DataTypes.INTEGER },
+        items: { type: DataTypes.JSONB },
+        comment: { type: DataTypes.TEXT },
         signedById: { type: DataTypes.STRING, allowNull: false },
         signedByName: { type: DataTypes.STRING },
         signedAt: { type: DataTypes.DATE, allowNull: false }
@@ -99,6 +107,8 @@ export function defineModels(sequelize) {
         ...item,
         description: { type: DataTypes.TEXT, allowNull: false },
         status: { type: DataTypes.STRING, allowNull: false },               // open → resolved (a newer version) | closed (by an auditor)
+        outcome: { type: DataTypes.STRING },                                // when closed: agreed (resolved outside the portal) | mistake
+        answers: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },   // auditors' answers: { byId, byName, role, at, text }
         raisedById: { type: DataTypes.STRING, allowNull: false },
         raisedByName: { type: DataTypes.STRING },
         raisedAt: { type: DataTypes.DATE, allowNull: false },
@@ -110,5 +120,20 @@ export function defineModels(sequelize) {
         closedAt: { type: DataTypes.DATE }
     }, opts({ indexes: [{ fields: ['recordId', 'status'] }, { fields: ['documentId', 'status'] }] }));
 
-    return { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease, Signoff, Finding };
+    // A changed item (no longer matching the blockchain, API-680): found once, when its re-review task
+    // was started. Keyed by the item's leaf key.
+    const ChangedAlert = sequelize.define('changed_alert', {
+        key: { type: DataTypes.STRING, primaryKey: true },
+        recordId: { type: DataTypes.UUID, allowNull: false },
+        recordNo: { type: DataTypes.STRING },
+        versionNumber: { type: DataTypes.INTEGER },
+        documentId: { type: DataTypes.UUID },
+        edrmsNo: { type: DataTypes.STRING },
+        documentVersion: { type: DataTypes.INTEGER },
+        currentVersion: { type: DataTypes.INTEGER, allowNull: false },      // the record's current version when it was found
+        instanceId: { type: DataTypes.UUID },                               // the bpm re-review process
+        foundAt: { type: DataTypes.DATE, allowNull: false }
+    }, opts({ indexes: [{ fields: ['recordId'] }] }));
+
+    return { TrailEntry, TreeLeaf, TreeNode, Anchor, JobLease, Signoff, Finding, ChangedAlert };
 }
