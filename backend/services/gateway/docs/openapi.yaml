@@ -595,6 +595,84 @@ paths:
       x-access:
         allOf:
           - audit.view
+  /api/audit/records:
+    get:
+      tags:
+        - audit · Sign-off
+      summary: The land records list of the Audit screen
+      description: >-
+        `filter`: `changed` (a version committed since the last audit sign-off; the default), `attention` (an open finding, or an item found
+        changed since review and not re-reviewed yet) or `all`; `q` searches as land-records does; `limit` (up to 100) and `offset`. `{
+        items, total, counts: { changed, attention, all } }`. Each item: `id`, `recordNo`, `label`, `currentVersion`, `changedAt`, `owners`,
+        `proof` (the current version's anchoring: `waiting`, `sent`, `onChain`, `confirmed`), `needsAttention`, and `audit`: `range` (the
+        open checkpoint, or null), `newDocuments`, `check` (`matches`, `changed`, `notOnChain`: what is known as of the last check; the
+        record's own check runs it again), `openFindings`, `lastSignoff` (`toVersion`, `signedAt`, `signedByName`, and `proof`: how far its
+        trail entry has got, `waiting`, `sent`, `onChain` or `confirmed`).
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditRecords
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - changed
+              - attention
+              - all
+            default: changed
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
   /api/audit/records/{id}/check:
     get:
       tags:
@@ -3623,7 +3701,7 @@ paths:
         corrected).
 
 
-        **Access:** Signed-in user with permission `record.view`.
+        **Access:** Signed-in user with permission `record.view`, or a service token from `audit`.
       operationId: land-records_getRecords
       parameters:
         - name: q
@@ -3683,9 +3761,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
     post:
       tags:
         - land-records · Records

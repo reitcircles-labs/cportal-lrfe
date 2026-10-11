@@ -255,8 +255,8 @@ test('the registrar reviews it: a reject returns it with the comment, an approva
     await expect(versions.nth(1)).toContainText(`submitted by ${userByRole('rec').name}`);
     await expect(versions.nth(0).locator('.tag').first()).toHaveText('Seal verified');
     await expect(versions.nth(1).locator('.tag').first()).toHaveText('Seal verified');
-    // the audit service has the version in its tree; no anchoring runs in the e2e stack (API-658)
-    await expect(versions.nth(1).locator('.tag').nth(1)).toHaveText('Waiting for the next anchoring');
+    // the audit service has the version in its tree; no anchoring runs in the e2e stack (API-658, wording API-661)
+    await expect(versions.nth(1).locator('.tag').nth(1)).toHaveText('Waiting for next batch');
     await expect(officer.locator('.panel-head', { hasText: 'Committed versions' })).toContainText('Seal chain intact');
     await evidence(officer, 'API-650', 'History: both committed versions with submitter, approver and verified seals');
 
@@ -356,6 +356,86 @@ test('the audit of Erf 1873 is one checkpoint: findings are answered by auditors
     const registrar = await apiAs(playwright, baseURL!, userByRole('sup').email);
     expect((await registrar.api.post('/api/audit/signoffs', { headers: registrar.headers, data: { recordId: record.id } })).status()).toBe(403);
     await Promise.all([rec.dispose(), aud.dispose(), registrar.dispose()]);
+});
+
+test('the Audit screens: an auditor finds Erf 1873, opens its audit, reviews a document and answers and closes a finding', { tag: ['@API-661'] }, async ({ browser }) => {
+    test.setTimeout(90_000);                    // a long walk through both screens, with screenshots
+    const auditor = userByRole('aud');
+    const page = await as(browser, auditor.email, '/audit');
+
+    // the list: How audit works, search, the filters with counts, the record's open audit
+    await expect(page.getByRole('button', { name: /How audit works/ })).toBeVisible();
+    await expect(page.locator('.how-step')).toHaveCount(3);
+    await page.getByPlaceholder('Erf number, township, owner or deed number').fill('1873');
+    const row = page.locator('table.table tbody tr', { hasText: 'Erf 1873, Klein Windhoek' });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('Waiting for next batch');
+    await expect(row).toContainText(/v1–v2 · \d+ new documents/);
+    await expect(row).toContainText('Not all on the blockchain yet');
+    await expect(page.getByRole('button', { name: /Changed since last audit/ })).toContainText('1');
+    // an (i) explanation opens on click
+    await page.getByRole('button', { name: 'Explain: proof status' }).click();
+    await expect(page.getByRole('tooltip')).toContainText('Once an hour the new fingerprints go to a public blockchain');
+    await evidence(page, 'API-661', 'The Audit list: How audit works, search, filters with counts, and Erf 1873 with its open audit');
+
+    // one land record: the checkpoint, waiting for the blockchain, so the sign-off is disabled with the reason
+    await row.getByRole('link', { name: 'Open Erf 1873, Klein Windhoek for audit' }).click();
+    await expect(page.getByRole('heading', { name: 'Erf 1873, Klein Windhoek', exact: true })).toBeVisible();
+    await expect(page.locator('.audit-box')).toContainText('v1–v2');
+    const side = page.locator('aside.side');
+    await expect(side).toContainText('Everything on the blockchain');
+    await expect(side).toContainText('Some items go to the blockchain with the next batch. You can sign off once everything is there.');
+    await expect(side.getByRole('button', { name: 'Sign off v1–v2' })).toBeDisabled();
+    await expect(page.locator('.ver')).toHaveCount(2);
+    await expect(page.locator('.ver').first()).toContainText('Waiting for the blockchain');
+    await evidence(page, 'API-661', 'One land record: the audit sign-off card with its checklist; signing off waits for the blockchain');
+
+    // a version's changes are locked until it is on the blockchain and matches (newest first: v1 is last)
+    await page.locator('.ver').last().click();
+    await side.getByRole('tab', { name: '2 · Check changes' }).click();
+    await expect(side).toContainText('only what is on the blockchain can be trusted');
+    await expect(side.getByRole('button', { name: 'Changes match: mark checked' })).toHaveCount(0);
+
+    // the review opens the document that was clicked, with its status
+    await page.getByRole('button', { name: 'Show v2, the newest' }).click();
+    const sg = page.locator('table.table tbody tr', { hasText: 'A 412/2007' });
+    await sg.getByRole('button', { name: /^Review/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: /A 412\/2007/ })).toBeVisible();
+    await expect(page.locator('.status')).toContainText('No issues');
+    await evidence(page, 'API-661', 'The review of the document that was clicked: its status, page images, blockchain check, metadata and findings');
+
+    // a finding raised in the review makes it Open, with the reason; answered and closed by agreement, it is No issues again
+    await page.getByRole('button', { name: 'Raise finding' }).click();
+    await page.getByRole('dialog').locator('textarea').fill('The extent on the diagram is hard to read on page 1');
+    await page.getByRole('dialog').getByRole('button', { name: 'Raise finding' }).click();
+    await expect(page.locator('.status')).toContainText(/Open · Auditor finding #/);
+    const thread = page.locator('app-finding-thread');
+    await thread.locator('textarea').fill('Compared with the original in the vault: the extent reads 1 214 square metres');
+    await thread.getByRole('button', { name: 'Add answer' }).click();
+    await expect(thread).toContainText('answered');
+    await thread.locator('textarea').fill('Agreed with the Registrar in the meeting of 14 Oct 2026: the record is right');
+    await thread.getByRole('button', { name: 'Answer and close' }).click();
+    await expect(thread).toContainText('resolved by agreement');
+    await expect(page.locator('.status')).toContainText('No issues');
+    // the toasts fade by themselves; the screenshot waits for them
+    await expect(page.locator('.toast')).toHaveCount(0, { timeout: 10_000 });
+    await thread.scrollIntoViewIfNeeded();
+    await evidence(page, 'API-661', 'A finding as a thread: raised, answered and closed as resolved by agreement; the document has no issues again');
+
+    // back on the record, the trail shows what happened
+    await page.getByRole('button', { name: /← Erf 1873, Klein Windhoek/ }).click();
+    await expect(page.locator('app-audit-trail')).toContainText('Closed finding');
+});
+
+test('the Audit screens are read-only for whoever may not sign off', { tag: ['@API-661'] }, async ({ browser, playwright, baseURL }) => {
+    const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+    const { items } = await (await rec.api.get('/api/records?q=1873', { headers: rec.headers })).json();
+    const id = items.find((r: { label: string }) => r.label === 'Erf 1873, Klein Windhoek').id;
+    await rec.dispose();
+    const registrar = await as(browser, userByRole('sup').email, `/audit/records/${id}`);
+    const side = registrar.locator('aside.side');
+    await expect(side).toContainText('You can view and verify. Signing off and raising findings need the auditor role.');
+    await expect(side.getByRole('button', { name: /Sign off/ })).toHaveCount(0);
 });
 });
 

@@ -146,6 +146,7 @@ export function createMemoryRepo() {
         },
         alerts,                                        // tests read them directly
         async getAlert(key) { return alerts.has(key) ? { ...alerts.get(key) } : null; },
+        async listAlerts() { return [...alerts.values()].map(a => ({ ...a })); },
         /** Null when the item was found changed already. */
         async createAlert(row) {
             if (alerts.has(row.key)) return null;

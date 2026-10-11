@@ -74,7 +74,7 @@ import { IntakeApi } from './api/intake.api';
             <span class="av sm" [title]="$safeNavigationMigration(auth.role()?.name)">{{ auth.role()?.initials }}</span>
           </header>
           <main class="content"><router-outlet /></main>
-          <footer class="small muted foot-note">Sign-in, administration, tasks, capture, verify and Documents use the live services. Dashboard, land records and audit still show demo data (fictitious names and deed references) until the land-records and audit services are connected.</footer>
+          <footer class="small muted foot-note">Sign-in, administration, tasks, capture, verify and Documents use the live services. Dashboard and land records still show demo data (fictitious names and deed references) until the land-records service is connected.</footer>
         </div>
       </div>
     }

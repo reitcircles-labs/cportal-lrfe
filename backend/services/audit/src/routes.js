@@ -1,7 +1,8 @@
 import { KINDS } from './proof.service.js';
 import { CLOSE_OUTCOMES } from './signoff.service.js';
+import { LIST_FILTERS } from './audit-list.service.js';
 
-export async function auditRoutes(app, { service, proofs, signoffs, evidence }) {
+export async function auditRoutes(app, { service, proofs, signoffs, evidence, auditList }) {
     const canView = app.requirePerm('audit.view');
 
     // trail entries: of a land record (with its documents' steps), a document, a user, a process
@@ -63,6 +64,22 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence }) 
     const uuid = { type: 'string', format: 'uuid' };
     const target = { recordId: uuid, version: { type: 'integer', minimum: 1 }, documentId: uuid };
     const filter = { type: 'object', additionalProperties: false, properties: { recordId: uuid, documentId: uuid } };
+
+    // the land records list of the Audit screen: filters, counts and a summary per record (API-661)
+    app.get('/audit/records', {
+        onRequest: canView,
+        schema: {
+            querystring: {
+                type: 'object', additionalProperties: false,
+                properties: {
+                    q: { type: 'string', maxLength: 200 },
+                    filter: { type: 'string', enum: LIST_FILTERS, default: 'changed' },
+                    limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+                    offset: { type: 'integer', minimum: 0, default: 0 }
+                }
+            }
+        }
+    }, async (req) => auditList.list(req.query));
 
     // the open checkpoint of a land record: what the next audit sign-off covers, checked against the
     // blockchain, and whether the user asking may sign it off now (API-680)

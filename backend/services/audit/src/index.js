@@ -8,6 +8,7 @@ import { BackfillService, createSealSources } from './backfill.service.js';
 import { createVerifySources, ProofService } from './proof.service.js';
 import { createSignoffClients, SignoffService } from './signoff.service.js';
 import { createEvidenceSources, EvidenceService } from './evidence.service.js';
+import { AuditListService, createListSources } from './audit-list.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -49,11 +50,15 @@ const signoffs = new SignoffService({ repo, events, proofs, logger: log, ...crea
 // the evidence pack (README.md section 6): versions, documents and files read from land-records and edrms
 const evidence = new EvidenceService({ trail: service, proofs, signoffs, events, cardano, logger: log, sources: createEvidenceSources({ recordsUrl, edrmsUrl, serviceToken }) });
 
+// the land records list of the Audit screen (API-661)
+const auditList = new AuditListService({ repo, proofs, sources: createListSources({ recordsUrl, serviceToken }) });
+
 const app = await buildApp({
     service,
     proofs,
     signoffs,
     evidence,
+    auditList,
     jwtSecret: env('JWT_SECRET'),
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }

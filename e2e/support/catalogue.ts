@@ -90,6 +90,7 @@ function parseScreens(): Screen[] {
         if (!/^\s*\{\s*path:/.test(line)) continue;
         const path = line.match(/path:\s*'([^']*)'/)![1];
         if (/redirectTo:/.test(line) || !/perm:/.test(line)) continue;   // login, invite, denied, redirects
+        if (path.includes(':')) continue;                                  // a screen of one item (#/audit/records/:id), reached from its list
         const permExpr = line.match(/perm:\s*('[^']+'|\w+)/)?.[1];
         const title = line.match(/title:\s*'([^']+)'/)?.[1];
         if (!permExpr || !title) throw new Error(`${file}: cannot read the permission or title of route '${path}'`);

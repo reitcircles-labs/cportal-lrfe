@@ -29,6 +29,10 @@ export default {
             tag: 'Proofs', summary: 'The anchoring status of versions (land-records, edrms)',
             description: 'Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx, network, confirmedAt } | null } }`; null when the version is not in the tree.'
         },
+        'GET /audit/records': {
+            tag: 'Sign-off', summary: 'The land records list of the Audit screen',
+            description: '`filter`: `changed` (a version committed since the last audit sign-off; the default), `attention` (an open finding, or an item found changed since review and not re-reviewed yet) or `all`; `q` searches as land-records does; `limit` (up to 100) and `offset`. `{ items, total, counts: { changed, attention, all } }`. Each item: `id`, `recordNo`, `label`, `currentVersion`, `changedAt`, `owners`, `proof` (the current version\'s anchoring: `waiting`, `sent`, `onChain`, `confirmed`), `needsAttention`, and `audit`: `range` (the open checkpoint, or null), `newDocuments`, `check` (`matches`, `changed`, `notOnChain`: what is known as of the last check; the record\'s own check runs it again), `openFindings`, `lastSignoff` (`toVersion`, `signedAt`, `signedByName`, and `proof`: how far its trail entry has got, `waiting`, `sent`, `onChain` or `confirmed`).'
+        },
         'GET /audit/records/{id}/check': {
             tag: 'Sign-off', summary: 'The open audit checkpoint of a land record',
             description: 'What the next audit sign-off covers: `range { from, to }` (every version committed since the last audit sign-off, or null), `lastSignoff`, `versions` and `documents` (the document versions they added that no earlier sign-off covered), each with `anchoring` (`waiting`, `sent`, `onChain`, `confirmed`) and `match` (`matches`, `changed`, `notOnChain`, `unavailable`; a changed one also `superseded` once a re-reviewed version matches), `openFindings`, and `canSignOff` with the `reason` when not, for the user asking. A changed item starts a re-review task for the records desk the first time it is found (bpm process `audit-rereview`).'

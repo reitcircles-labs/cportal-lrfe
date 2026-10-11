@@ -627,6 +627,7 @@ the chain showing it.
 | `POST /audit/verify` | `audit.view` | verify an item against the chain |
 | `POST /audit/anchoring` | land-records, edrms (service) | the anchoring status of versions |
 | `GET /audit/anchors` | `audit.view` | anchorings, their transactions and status |
+| `GET /audit/records?filter=&q=` | `audit.view` | the Audit screen's list: changed since the last audit, needing attention, or all |
 | `GET /audit/records/{id}/check` | `audit.view` | the open checkpoint, checked against the blockchain |
 | `POST /audit/signoffs` · `POST /audit/findings` · `…/findings/{id}/answers` · `…/findings/{id}/close` | `audit.signoff` | sign off a checkpoint; raise, answer or close a finding |
 | `GET /audit/signoffs` | `audit.view` | sign-offs of a record or document |

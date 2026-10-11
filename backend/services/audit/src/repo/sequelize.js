@@ -176,6 +176,7 @@ export function createSequelizeRepo(sequelize) {
             return rows.length === 1;
         },
         async getAlert(key) { return (await ChangedAlert.findByPk(key))?.get({ plain: true }) ?? null; },
+        async listAlerts() { return (await ChangedAlert.findAll({ order: [['foundAt', 'ASC']] })).map(r => r.get({ plain: true })); },
         async createAlert(row) {
             try { return (await ChangedAlert.create(row)).get({ plain: true }); } catch (err) {
                 if (err instanceof UniqueConstraintError) return null;          // found by another check at the same moment

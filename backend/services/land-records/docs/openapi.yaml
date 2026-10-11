@@ -74,7 +74,7 @@ paths:
         corrected).
 
 
-        **Access:** Signed-in user with permission `record.view`.
+        **Access:** Signed-in user with permission `record.view`, or a service token from `audit`.
       operationId: getRecords
       parameters:
         - name: q
@@ -134,9 +134,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
       x-gateway-path: /api/records
     post:
       tags:

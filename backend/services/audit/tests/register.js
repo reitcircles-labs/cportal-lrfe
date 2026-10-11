@@ -12,6 +12,7 @@ import { createMemoryRepo } from '../src/repo/memory.js';
 import { createCardanoAdapter } from '../src/cardano/adapter.js';
 import { createLocalSigner } from '../src/cardano/signer.js';
 import { buildApp } from '../src/app.js';
+import { AuditListService, createListSources } from '../src/audit-list.service.js';
 import { fakeDriver } from './helpers.js';
 import { actor, makeWithReview, users, SECRET } from '../../land-records/tests/helpers.js';
 
@@ -96,7 +97,8 @@ export async function audited() {
         }
         throw new Error('no anchoring confirmed');
     };
-    const auditApp = await buildApp({ service: trail, proofs, signoffs, evidence, jwtSecret: SECRET });
+    const auditList = new AuditListService({ repo, proofs, sources: createListSources({ recordsUrl: 'http://records', serviceToken: asService('audit'), fetchImpl: routed }) });
+    const auditApp = await buildApp({ service: trail, proofs, signoffs, evidence, auditList, jwtSecret: SECRET });
     await auditApp.ready();
     const as = (u) => ({ authorization: `Bearer ${auditApp.jwt.sign({ typ: 'access', sub: u.id, name: u.name, perms: u.perms, roles: u.roles })}` });
     const api = async (u, method, url, payload) => { const res = await auditApp.inject({ method, url, headers: as(u), payload }); await settle(); return res; };

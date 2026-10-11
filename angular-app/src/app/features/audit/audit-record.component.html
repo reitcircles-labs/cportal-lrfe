@@ -1,0 +1,257 @@
+<div class="page stack" style="gap:20px">
+  @if (error(); as e) {
+    <div class="note danger" role="alert">{{ e }}</div>
+  }
+
+  @if (reviewing() && reviewRow(); as row) {
+    <!-- the review of one document, for the document that was clicked -->
+    <app-audit-review
+      [pin]="row.pin" [kind]="docTypeLabel(row.pin.docType)" [fields]="fieldsOf(row.pin)" [recordLabel]="record()?.label ?? ''" [rangeText]="rangeText()" [addedIn]="row.addedIn"
+      [checkDocument]="row.check" [findings]="row.findings" [position]="reviewPosition()" [count]="reviewCount()"
+      [canAnswer]="canAct()" [busy]="busy()"
+      (back)="reviewing.set(null)" (previous)="step(-1)" (next)="step(1)" (raise)="openRaise()" (reply)="replyToFinding($event)" />
+  } @else if (record(); as rec) {
+    <header class="row head">
+      <div>
+        <a routerLink="/audit" class="back">← All land records</a>
+        <h1>{{ rec.label }}</h1>
+        <div class="muted">{{ rec.recordNo }}@if (owners()) { · Owner {{ owners() }} } · audit, read-only</div>
+      </div>
+      <div class="audit-box">
+        <span class="small muted row" style="gap:0">This audit<app-info-tip label="audit checkpoint" align="right" [text]="tips.checkpoint" /></span>
+        @if (range(); as r) {
+          <strong>{{ rangeText() }} <span class="muted small">· {{ r.to - r.from + 1 }} version{{ r.to === r.from ? '' : 's' }} since the last sign-off</span></strong>
+        } @else {
+          <strong>Nothing to audit</strong>
+        }
+        <span class="small muted">Last sign-off: {{ lastSignoffText() }}</span>
+      </div>
+    </header>
+
+    <section class="panel strip row">
+      @if (chainIntact() === true) {
+        <span class="row" style="gap:0"><strong class="tone-success">Trail chain intact</strong><app-info-tip label="trail chain" [text]="tips.trailChain" /></span>
+      } @else if (chainIntact() === false) {
+        <span class="tone-danger"><strong>Trail chain broken.</strong> Entries from there on can't be trusted. Tell the registry's system administrator.</span>
+      }
+      @if (range()) {
+        <span><strong>{{ matchingNew() }} of {{ check()?.documents?.length }}</strong> new documents match the blockchain</span>
+      }
+      <span><strong>{{ check()?.openFindings?.length ?? 0 }}</strong> open finding{{ check()?.openFindings?.length === 1 ? '' : 's' }}</span>
+      <span class="spacer"></span>
+      @if (canExport()) {
+        <span class="row" style="gap:0">
+          <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="exportPack()">Export evidence pack</button>
+          <app-info-tip label="evidence pack" align="right" [text]="tips.evidencePack" />
+        </span>
+      }
+    </section>
+    @if (exported(); as x) {
+      <div class="note info" role="status"><strong>Evidence pack downloaded: {{ x.fileName }}</strong>
+        <span>Manifest checksum <span class="mono">{{ x.checksum.slice(0, 8) }}…{{ x.checksum.slice(-4) }}</span>. The export is recorded in the trail. Anyone can check the pack offline with the registry's verifier.</span></div>
+    }
+
+    <section class="row body">
+      <div class="main-col">
+        <!-- the one audit sign-off -->
+        <button type="button" class="cp-row" [class.on]="isSelected({ kind: 'checkpoint' })" [attr.aria-pressed]="isSelected({ kind: 'checkpoint' })" (click)="selectCheckpoint()">
+          <span class="stack" style="gap:2px">
+            <span class="small muted">Audit sign-off</span>
+            <strong>{{ rec.label }} · {{ range() ? rangeText() : 'nothing to audit' }}</strong>
+          </span>
+          <span [class]="range() ? 'tag tag-neutral' : 'tag tag-accent'">{{ range() ? 'Not signed off yet' : 'Signed off' }}</span>
+        </button>
+
+        <section class="panel">
+          <h2 class="panel-title">Versions <span class="muted small">· newest first</span></h2>
+          @for (v of versionRows(); track v.n) {
+            <button type="button" class="ver" [class.on]="v.on" [attr.aria-pressed]="v.on" (click)="pickVersion(v.n)">
+              <span class="stack" style="gap:0">
+                <strong>v{{ v.n }}@if (v.n === current()) { <span class="muted"> · current</span> }</strong>
+                <span class="small muted">{{ v.summary }}</span>
+              </span>
+              <span class="row" style="gap:8px">
+                @if (v.proofLabel) { <span [class]="v.proofClass">{{ v.proofLabel }}</span> }
+                <span [class]="v.stateClass">{{ v.state.label }}</span>
+              </span>
+            </button>
+          }
+        </section>
+
+        <section class="panel">
+          <div class="panel-head row" style="gap:10px">
+            <h2 class="panel-title" style="flex:1 1 auto;padding:0">Documents in v{{ shownN() }}
+              <span class="muted small">· {{ docCounts().all }} documents{{ shownN() === current() ? ' · the newest version' : '' }}</span></h2>
+            @if (shownN() !== current()) {
+              <button type="button" class="btn btn-secondary" (click)="showNewest()">Show v{{ current() }}, the newest</button>
+            }
+            <input class="input" type="search" placeholder="Search number or type" aria-label="Search documents" style="width:220px" (input)="typeDocQuery($event)" />
+          </div>
+          <div class="row filters" role="group" aria-label="Filter documents">
+            @for (f of docFilters; track f.id) {
+              <button type="button" class="chip" [class.on]="docFilter() === f.id" [attr.aria-pressed]="docFilter() === f.id" (click)="docFilter.set(f.id)">
+                {{ f.label }} <strong>{{ docCounts()[f.id] }}</strong>
+              </button>
+            }
+            <app-info-tip label="filters" [text]="tips.documentFilters" />
+          </div>
+          <div style="overflow-x:auto">
+            <table class="table" style="min-width:680px">
+              <thead><tr><th>Document</th><th>Added in</th><th>Blockchain check</th><th>Open issues</th><th><span class="sr-only">Review</span></th></tr></thead>
+              @for (g of docGroups(); track g.kind) {
+                <tbody>
+                  <tr class="group"><td colspan="5">{{ g.kind }} <span class="muted">· {{ g.docs.length }}</span></td></tr>
+                  @for (d of g.docs; track d.pin.edrmsDocumentId) {
+                    <tr [class.on]="isSelected({ kind: 'doc', id: d.pin.edrmsDocumentId })">
+                      <td><button type="button" class="doc" (click)="select({ kind: 'doc', id: d.pin.edrmsDocumentId })">
+                        <strong>{{ d.pin.ref || d.pin.edrmsNo }}</strong><span class="small muted">{{ d.pin.edrmsNo }}</span></button></td>
+                      <td>v{{ d.addedIn }}</td>
+                      <td><span [class]="'small ' + d.checkTone" style="font-weight:600">{{ d.checkLabel }}</span></td>
+                      <td>
+                        @if (d.issues.length) {
+                          <button type="button" class="issue" (click)="select({ kind: 'doc', id: d.pin.edrmsDocumentId })">Open · {{ d.issues.join(' · ') }}</button>
+                        }
+                      </td>
+                      <td style="text-align:right"><button type="button" class="btn btn-secondary" [attr.aria-label]="'Review ' + (d.pin.ref || d.pin.edrmsNo)" (click)="review(d.pin.edrmsDocumentId)">Review</button></td>
+                    </tr>
+                  }
+                </tbody>
+              } @empty {
+                <tbody><tr><td colspan="5" class="muted">No documents match. Clear the search or pick another filter.</td></tr></tbody>
+              }
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- the detail panel -->
+      <aside class="panel side">
+        @switch (selected().kind) {
+          @case ('checkpoint') {
+            <div class="small muted">Audit sign-off</div>
+            <h3>{{ rec.label }} · {{ range() ? rangeText() : 'nothing to audit' }}</h3>
+            @if (range()) {
+              <p class="muted" style="margin:0">One sign-off for every version committed since the last audit. Only what is on the blockchain can be trusted, so the audit can happen only once everything is there and matches. Documents are checked against the blockchain automatically; you check that each version's changes follow from its documents.</p>
+              <ul class="checks">
+                @for (c of checklist(); track c.label) {
+                  <li><span class="dot" [class.ok]="c.done">{{ c.done ? '✓' : '' }}</span><span class="stack" style="gap:0"><strong>{{ c.label }}</strong><span class="small muted">{{ c.detail }}</span></span></li>
+                }
+              </ul>
+              @if (changedItems().length) {
+                <div class="note danger" role="alert"><strong>Changed since review: {{ changedItems().join(', ') }}</strong><span>{{ changedSinceReview }}</span></div>
+              }
+              @for (f of recordFindings(); track f.id) {
+                <app-finding-thread [finding]="f" [canAnswer]="canAct()" [busy]="busy()" (reply)="replyToFinding($event)" />
+              }
+              @if (check()?.openFindings?.length) {
+                <div class="note warn">An open finding blocks the sign-off. It is resolved by a corrected version (reviewed, submitted and on the blockchain), or an auditor closes it when it was resolved by agreement outside the portal, with the reason.</div>
+              }
+              @if (canAct()) {
+                <div class="row actions">
+                  <button type="button" class="btn btn-primary" [disabled]="!!signReason() || busy()" (click)="signOff()">Sign off {{ rangeText() }}</button>
+                </div>
+                @if (signReason(); as r) { <div class="reason">{{ r }}</div> }
+              } @else {
+                <div class="small muted">You can view and verify. Signing off and raising findings need the auditor role.</div>
+              }
+            } @else {
+              <p class="muted" style="margin:0">{{ check()?.reason }}</p>
+            }
+          }
+          @case ('version') {
+            @if (selectedVersion(); as v) {
+              <div class="small muted">Land record version · {{ v.earlier ? 'signed off at an earlier audit' : 'part of this audit' }}</div>
+              <h3>{{ rec.label }} · version {{ v.n }}</h3>
+              <div class="tabs" role="tablist">
+                <button role="tab" type="button" [attr.aria-selected]="tab() === 'proof'" [class.on]="tab() === 'proof'" (click)="tab.set('proof')">1 · Blockchain check</button>
+                <button role="tab" type="button" [attr.aria-selected]="tab() === 'meta'" [class.on]="tab() === 'meta'" (click)="tab.set('meta')">2 · Check changes</button>
+              </div>
+              @if (tab() === 'proof') {
+                @if (v.inRange; as i) {
+                  @if (i.match === 'matches') {
+                    <span class="small tone-success" style="font-weight:600">Matches the blockchain ✓</span>
+                  } @else {
+                    <span class="reason">{{ versionLocked() }}</span>
+                  }
+                  <dl class="kv"><dt>Proof</dt><dd>{{ anchoringText(i.anchoring) }}</dd>
+                    <dt class="row" style="gap:0">Fingerprint<app-info-tip label="fingerprint" [text]="tips.fingerprint" /></dt><dd class="mono small">{{ i.seal.slice(0, 16) }}…</dd></dl>
+                } @else {
+                  <span class="small muted">Checked and signed off in the audit of {{ lastSignoffText() }}.</span>
+                }
+              } @else {
+                <p class="small muted" style="margin:0">Check that the changes in this version match the documents it added, for example the new owner against the deed of transfer.</p>
+                <app-record-diff [diff]="selectedDiff()" />
+                @if (v.inRange) {
+                  @if (versionLocked(); as note) {
+                    <div class="reason">{{ note }}</div>
+                  } @else if (checked().has(v.n)) {
+                    <span class="tone-success small" style="font-weight:600">✓ You checked this version's changes.</span>
+                  } @else if (canAct()) {
+                    <div class="row actions">
+                      <button type="button" class="btn btn-primary" (click)="markChecked(v.n)">Changes match: mark checked</button>
+                      @if (v.n === current()) { <button type="button" class="btn btn-secondary" (click)="openRaise()">Doesn't match: raise finding</button> }
+                    </div>
+                    @if (v.n !== current()) { <div class="small muted">Findings are raised on the current version, v{{ current() }}. Describe there what is wrong in v{{ v.n }}.</div> }
+                  }
+                }
+              }
+            }
+          }
+          @case ('doc') {
+            @if (selectedDoc(); as d) {
+              <div class="small muted">{{ docTypeLabel(d.pin.docType) }} · document version {{ d.pin.version }} · added in v{{ d.addedIn }}</div>
+              <h3>{{ d.pin.ref || d.pin.edrmsNo }}</h3>
+              <button type="button" class="btn btn-primary btn-block" (click)="review(d.pin.edrmsDocumentId)">Review document: view it, check it →</button>
+              <div class="tabs" role="tablist">
+                <button role="tab" type="button" [attr.aria-selected]="tab() === 'proof'" [class.on]="tab() === 'proof'" (click)="tab.set('proof')">1 · Blockchain check</button>
+                <button role="tab" type="button" [attr.aria-selected]="tab() === 'meta'" [class.on]="tab() === 'meta'" (click)="tab.set('meta')">2 · Metadata</button>
+                <button role="tab" type="button" [attr.aria-selected]="tab() === 'issues'" [class.on]="tab() === 'issues'" (click)="tab.set('issues')">3 · Open issues{{ d.issues.length ? ' (' + d.issues.length + ')' : '' }}</button>
+              </div>
+              @if (tab() === 'proof') {
+                <span [class]="'small ' + d.checkTone" style="font-weight:600">{{ d.checkLabel }}</span>
+                <dl class="kv"><dt class="row" style="gap:0">Fingerprint<app-info-tip label="fingerprint" [text]="tips.fingerprint" /></dt><dd class="mono small">{{ d.pin.seal.slice(0, 16) }}…</dd></dl>
+              } @else if (tab() === 'meta') {
+                <table class="table small"><tbody>
+                  <tr><th scope="row" class="muted">Document number</th><td>{{ d.pin.edrmsNo }}</td></tr>
+                  @for (f of fieldsOf(d.pin); track f.k) { <tr><th scope="row" class="muted">{{ f.k }}</th><td>{{ f.v }}</td></tr> }
+                </tbody></table>
+              } @else {
+                @if (d.changed) {
+                  <div class="note danger" role="alert"><strong>Open · On-chain data mismatch</strong><span>This document doesn't match the blockchain. {{ changedSinceReview }}</span></div>
+                }
+                @for (f of d.findings; track f.id) {
+                  <app-finding-thread [finding]="f" [canAnswer]="canAct()" [busy]="busy()" (reply)="replyToFinding($event)" />
+                }
+                @if (!d.changed && !d.findings.length) {
+                  <div class="small muted">No open issues: the document matches the blockchain and has no open finding.</div>
+                }
+                @if (canAct()) { <div><button type="button" class="btn btn-secondary" (click)="openRaise()">Raise finding</button></div> }
+              }
+            }
+          }
+        }
+      </aside>
+    </section>
+
+    <app-audit-trail [recordId]="id()" [reloadKey]="trailKey()" />
+  } @else if (!error()) {
+    <div class="muted">Loading…</div>
+  }
+</div>
+
+@if (raising(); as r) {
+  <div class="dialog-backdrop" (click)="raising.set(null)">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="raise-title" (click)="$event.stopPropagation()">
+      <div class="dialog-title" id="raise-title">Raise a finding on {{ r.about }}?</div>
+      <div class="dialog-body">The records officer and the records supervisor each get a task to acknowledge it. While it is open, the audit can't be signed off.</div>
+      <label class="field">
+        <span class="small" style="font-weight:600">What is wrong?</span>
+        <textarea class="input" rows="4" placeholder="For example: the amount on page 2 differs from the sealed metadata." (input)="typeFinding($event)"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" (click)="raising.set(null)">Cancel</button>
+        <button type="button" class="btn btn-primary" [disabled]="findingText().trim().length < 5 || busy()" (click)="raiseFinding()">Raise finding</button>
+      </div>
+    </div>
+  </div>
+}
