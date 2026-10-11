@@ -13,6 +13,7 @@ import { createCardanoAdapter } from '../src/cardano/adapter.js';
 import { createLocalSigner } from '../src/cardano/signer.js';
 import { buildApp } from '../src/app.js';
 import { AuditListService, createListSources } from '../src/audit-list.service.js';
+import { AnchoringsService, createCoverageSources } from '../src/anchorings.service.js';
 import { fakeDriver } from './helpers.js';
 import { actor, makeWithReview, users, SECRET } from '../../land-records/tests/helpers.js';
 
@@ -98,7 +99,8 @@ export async function audited() {
         throw new Error('no anchoring confirmed');
     };
     const auditList = new AuditListService({ repo, proofs, sources: createListSources({ recordsUrl: 'http://records', serviceToken: asService('audit'), fetchImpl: routed }) });
-    const auditApp = await buildApp({ service: trail, proofs, signoffs, evidence, auditList, jwtSecret: SECRET });
+    const anchorings = new AnchoringsService({ repo, tree, clock, sources: createCoverageSources({ recordsUrl: 'http://records', serviceToken: asService('audit'), fetchImpl: routed }) });
+    const auditApp = await buildApp({ service: trail, proofs, signoffs, evidence, auditList, anchorings, jwtSecret: SECRET });
     await auditApp.ready();
     const as = (u) => ({ authorization: `Bearer ${auditApp.jwt.sign({ typ: 'access', sub: u.id, name: u.name, perms: u.perms, roles: u.roles })}` });
     const api = async (u, method, url, payload) => { const res = await auditApp.inject({ method, url, headers: as(u), payload }); await settle(); return res; };
@@ -106,7 +108,7 @@ export async function audited() {
     const inbox = async (u) => (await reg.bpm.inject({ url: '/tasks', headers: as(u) })).json().tasks;
     const record = await reg.service.getRecord(r.id);
     return { ...reg, repo, clock, trail, tree, events, signoffs, settle, auditApp, api, as, inbox, record, edrmsApp, decideAll, setBpmDown: (v) => { bpmDown = v; },
-        driver, cardano, job, proofs, evidence, anchor };
+        driver, cardano, job, proofs, evidence, anchor, anchorings };
 }
 
 /** A second version of the record, through the review: submitted by the officer, approved by the registrar. */

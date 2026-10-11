@@ -88,6 +88,20 @@ export function createMemoryRepo() {
             }
             return out;
         },
+        /** Number and label of each land record by id (the Anchorings screens, API-696). */
+        async recordLabels(ids) {
+            return ids.filter(id => records.has(id)).map(id => ({ id, recordNo: records.get(id).recordNo, label: records.get(id).label }));
+        },
+        /** The committed versions (current or superseded) that pin each of these documents, with the document version pinned. */
+        async findCommittedPinning(documentIds) {
+            const wanted = new Set(documentIds), out = [];
+            for (const v of versions.filter(x => x.state === 'committed' || x.state === 'superseded')) {
+                for (const d of v.data?.documents || []) {
+                    if (wanted.has(d.edrmsDocumentId)) out.push({ documentId: d.edrmsDocumentId, version: d.version, recordId: v.recordId, versionNumber: v.versionNumber });
+                }
+            }
+            return out;
+        },
         /** Commit a version: it becomes committed, the previous current one superseded, the record updated. */
         async commit({ recordId, versionNumber, versionPatch, recordPatch, supersede }) {
             const v = findVersion(recordId, versionNumber);

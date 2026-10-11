@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { AnchoringsService, explorerUrl } from '../src/anchorings.service.js';
 import { createMemoryRepo } from '../src/repo/memory.js';
 import { buildApp } from '../src/app.js';
+import { audited, people } from './register.js';
 
 const SECRET = 'anchorings-test-secret-at-least-32-chars';
 const at = (time) => new Date(`2026-10-11T${time}:00Z`);
@@ -125,5 +126,78 @@ describe('the Anchorings list and detail (API-671)', () => {
         assert.equal((await get('/audit/anchors', as(['dashboard.view']))).statusCode, 403);
         assert.equal((await get('/audit/anchors')).statusCode, 401);
         await app.close();
+    });
+});
+
+describe('what a batch covers (API-696)', () => {
+    // anyone signed in may look: here the records officer, given anchors.view as every role has it
+    const viewer = { ...people.rec, perms: [...people.rec.perms, 'anchors.view'] };
+    const coverage = async (a, batch, query = '') => {
+        const res = await a.api(viewer, 'GET', `/audit/anchors/${batch}/coverage${query}`);
+        assert.equal(res.statusCode, 200, res.body);
+        return res.json();
+    };
+
+    it('counts the new fingerprints by kind and groups them by land record; a document no committed version pins is only counted', async () => {
+        const a = await audited();
+        await a.anchor();
+        const c = await coverage(a, 1);
+        // the record's first version and the six documents filed, one of them in no land record
+        assert.deepEqual(c.kinds, { recordVersions: 1, documentVersions: 6, signoffs: 0 });
+        assert.equal(c.documentsWithoutRecord, 1);
+        assert.ok(c.trailUpTo > 0);
+        assert.equal(c.total, 1);
+        assert.deepEqual(c.records, [{ recordId: a.record.id, recordNo: a.record.recordNo, label: a.record.label, versions: [1], documents: 5, signoffs: [] }]);
+    });
+
+    it('an audit sign-off is covered by the batch whose checkpoint comes after it, under its land record', async () => {
+        const a = await audited();
+        await a.anchor();
+        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id })).statusCode, 201);
+        await a.anchor();
+        const c = await coverage(a, 2);
+        assert.deepEqual(c.kinds, { recordVersions: 0, documentVersions: 0, signoffs: 1 });
+        assert.deepEqual(c.records.map(r => [r.recordNo, r.versions, r.documents, r.signoffs]), [[a.record.recordNo, [], 0, [{ from: 1, to: 1 }]]]);
+        // paged; an unknown batch is 404; without anchors.view it is refused
+        assert.deepEqual((await coverage(a, 2, '?offset=1')).records, []);
+        assert.equal((await a.api(viewer, 'GET', '/audit/anchors/9/coverage')).statusCode, 404);
+        assert.equal((await a.api(people.rec, 'GET', '/audit/anchors/1/coverage')).statusCode, 403);
+    });
+
+    it('a failed batch covers nothing: its replacement does', async () => {
+        const a = await audited();
+        await a.anchor();
+        a.repo.anchors[0].status = 'failed';
+        const c = await coverage(a, 1);
+        assert.deepEqual([c.kinds, c.records, c.total, c.trailUpTo], [{ recordVersions: 0, documentVersions: 0, signoffs: 0 }, [], 0, null]);
+    });
+
+    it('counts from the last batch before it that did not fail, and lists a record known only through a pin, by its label', async () => {
+        const repo = createMemoryRepo();
+        const ids = { kept: 'aaaaaaaa-0000-4000-8000-000000000001', loose: 'aaaaaaaa-0000-4000-8000-000000000002', rec: 'bbbbbbbb-0000-4000-8000-000000000001' };
+        repo.leaves.push(...['document-version:x:1', `document-version:${ids.kept}:1`, `document-version:${ids.loose}:1`].map((key, leafIndex) => ({ leafIndex, key })));
+        repo.anchors.push(
+            { batch: 1, size: 1, status: 'confirmed', createdAt: at('05:00') },
+            { batch: 2, size: 2, status: 'failed', createdAt: at('06:00') },
+            { batch: 3, size: 3, status: 'confirmed', createdAt: at('07:05') }
+        );
+        const sources = {
+            async lookup({ documents = [] }) {
+                return {
+                    records: documents.some(d => d.id === ids.kept) ? [{ id: ids.rec, recordNo: 'LR-NA-2026-000007', label: 'Erf 77, Eros' }] : [],
+                    documents: documents.map(d => ({ ...d, pinnedBy: d.id === ids.kept ? [{ recordId: ids.rec, versionNumber: 4 }] : [] }))
+                };
+            }
+        };
+        const c = await new AnchoringsService({ repo, tree: { size: async () => 3 }, sources }).coverage(3);
+        assert.deepEqual([c.kinds.documentVersions, c.documentsWithoutRecord], [2, 1]);   // batch 2 failed: both its leaf and batch 3's
+        assert.deepEqual(c.records, [{ recordId: ids.rec, recordNo: 'LR-NA-2026-000007', label: 'Erf 77, Eros', versions: [], documents: 1, signoffs: [] }]);
+    });
+
+    it('the land-records lookup answers only the audit service', async () => {
+        const a = await audited();
+        // a user's token is not a service token: refused as for the other service-only routes
+        const res = await a.app.inject({ method: 'POST', url: '/records/lookup', headers: a.as(people.rec), payload: { recordIds: [a.record.id] } });
+        assert.equal(res.statusCode, 401);
     });
 });

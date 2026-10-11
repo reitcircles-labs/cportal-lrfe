@@ -153,6 +153,24 @@ export async function recordsRoutes(app, { service }) {
 
     // ------------------------------------------------ reading
 
+    // land record labels and which committed versions pin each document version, for the audit
+    // service's Anchorings screens: what a batch covers (API-696)
+    app.post('/records/lookup', {
+        onRequest: app.requireService('audit'),
+        schema: {
+            body: {
+                type: 'object', additionalProperties: false,
+                properties: {
+                    recordIds: { type: 'array', maxItems: 1000, items: { type: 'string', format: 'uuid' } },
+                    documents: {
+                        type: 'array', maxItems: 1000,
+                        items: { type: 'object', required: ['id', 'version'], additionalProperties: false, properties: { id: { type: 'string', format: 'uuid' }, version: { type: 'integer', minimum: 1 } } }
+                    }
+                }
+            }
+        }
+    }, async (req) => service.lookup(req.body));
+
     // every committed version's seal, oldest first, for the audit service's backfill (API-669)
     app.get('/records/seals', {
         onRequest: app.requireService('audit'),

@@ -100,6 +100,23 @@ export function createSequelizeRepo(sequelize) {
             for (const { documentId, ...rest } of rows) out.set(documentId, [...(out.get(documentId) || []), rest]);
             return out;
         },
+        /** Number and label of each land record by id (the Anchorings screens, API-696). */
+        async recordLabels(ids) {
+            if (!ids.length) return [];
+            return (await m.Record.findAll({ where: { id: ids }, attributes: ['id', 'recordNo', 'label'] })).map(r => ({ id: r.id, recordNo: r.recordNo, label: r.label }));
+        },
+        /** The committed versions (current or superseded) that pin each of these documents, with the document version pinned. */
+        async findCommittedPinning(documentIds) {
+            if (!documentIds.length) return [];
+            const [rows] = await sequelize.query(
+                `SELECT d->>'edrmsDocumentId' AS "documentId", (d->>'version')::int AS "version", v."recordId", v."versionNumber"
+                   FROM "${SCHEMA}"."record_version" v
+                   CROSS JOIN LATERAL jsonb_array_elements(COALESCE(v."data"->'documents', '[]'::jsonb)) d
+                  WHERE v."state" IN ('committed', 'superseded') AND d->>'edrmsDocumentId' IN (:ids)`,
+                { replacements: { ids: documentIds } }
+            );
+            return rows;
+        },
         async commit({ recordId, versionNumber, versionPatch, recordPatch, supersede }) {
             return inTransaction(sequelize, async (transaction) => {
                 const [n] = await m.Version.update({ ...versionPatch, state: 'committed' }, { where: { recordId, versionNumber, state: 'in_review' }, transaction });

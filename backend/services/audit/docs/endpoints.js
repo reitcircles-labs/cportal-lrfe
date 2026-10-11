@@ -42,6 +42,10 @@ export default {
             tag: 'Anchorings', summary: 'One batch',
             description: 'As in the list, with what is on the blockchain: `root`, `size`, `prev` (`{ root, batch }`: the previous batch\'s root and the batch it belongs to); `steps` (`createdAt`, `sentAt`, `sends`, `onChainAt`, `confirmedAt`, `failedAt`); for a failed one the `replacement` (`batch`, `status`, `createdAt`); `previousBatch` and `nextBatch`. 404 for an unknown batch.'
         },
+        'GET /audit/anchors/{batch}/coverage': {
+            tag: 'Anchorings', summary: 'What one batch covers',
+            description: 'The fingerprints the batch put on the blockchain for the first time (since the last batch before it that did not fail) and the audit sign-offs in the trail up to its checkpoint. `{ batch, kinds: { recordVersions, documentVersions, signoffs }, trailUpTo, documentsWithoutRecord, records, total }`. `records`: the land records it holds something of, by record number, paged (`limit` up to 100, `offset`), each with `recordId`, `recordNo`, `label`, `versions` (the version numbers), `documents` (the document versions that its committed versions pin) and `signoffs` (`[{ from, to }]`). A document version no committed version pins yet is only counted (`documentsWithoutRecord`). A failed batch covers nothing; 404 for an unknown batch.'
+        },
         'GET /audit/records/{id}/check': {
             tag: 'Sign-off', summary: 'The open audit checkpoint of a land record',
             description: 'What the next audit sign-off covers: `range { from, to }` (every version committed since the last audit sign-off, or null), `lastSignoff`, `versions` and `documents` (the document versions they added that no earlier sign-off covered), each with `anchoring` (`waiting`, `sent`, `onChain`, `confirmed`) and `match` (`matches`, `changed`, `notOnChain`, `unavailable`; a changed one also `superseded` once a re-reviewed version matches), `openFindings`, and `canSignOff` with the `reason` when not, for the user asking. A changed item starts a re-review task for the records desk the first time it is found (bpm process `audit-rereview`).'

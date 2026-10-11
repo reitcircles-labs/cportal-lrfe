@@ -1138,6 +1138,80 @@ paths:
         services:
           - bpm
       x-gateway-path: /api/records/{id}/versions/{n}/reject
+  /records/lookup:
+    post:
+      tags:
+        - Records
+      summary: Land record labels, and the versions that pin document versions (audit service only)
+      description: >-
+        Body `{ recordIds?, documents?: [{ id, version }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }], documents: [{ id,
+        version, pinnedBy: [{ recordId, versionNumber }] }] }`: the committed versions (current or superseded) that pin each document
+        version; drafts never count. `records` has every record asked for and every record pinning one of the documents. For the audit
+        service's Anchorings screens: what a batch covers (API-696).
+
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: postRecordsLookup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                recordIds:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    type: string
+                    format: uuid
+                documents:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    type: object
+                    required:
+                      - id
+                      - version
+                    additionalProperties: false
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      version:
+                        type: integer
+                        minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
+      x-gateway-path: /api/records/lookup
   /records/seals:
     get:
       tags:

@@ -50,6 +50,10 @@ export default {
         'GET /records/{id}/history': { tag: 'Records', summary: 'History: every committed version', description: '`{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff` against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.' },
         'GET /records/{id}/comments': { tag: 'Records', summary: 'Comments on a record' },
         'POST /records/{id}/comments': { tag: 'Records', summary: 'Comment on a record', description: '`{ body }`. Kept with the version open at the time.' },
+        'POST /records/lookup': {
+            tag: 'Records', summary: 'Land record labels, and the versions that pin document versions (audit service only)',
+            description: 'Body `{ recordIds?, documents?: [{ id, version }] }`, up to 1000 of each. `{ records: [{ id, recordNo, label }], documents: [{ id, version, pinnedBy: [{ recordId, versionNumber }] }] }`: the committed versions (current or superseded) that pin each document version; drafts never count. `records` has every record asked for and every record pinning one of the documents. For the audit service\'s Anchorings screens: what a batch covers (API-696).'
+        },
         'GET /records/seals': {
             tag: 'Records', summary: 'Every committed version\'s seal, oldest first (audit service only)',
             description: '`{ items: [{ recordId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. Superseded versions included. For the audit service\'s one-time backfill of its tree (API-669).'

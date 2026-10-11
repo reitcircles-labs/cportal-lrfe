@@ -638,6 +638,25 @@ export class RecordsService {
     /** Every committed version's seal, oldest first, a page at a time: the audit service's backfill (API-669). */
     listSeals({ after = null, limit = 500 } = {}) { return this.repo.listSeals({ after, limit }); }
 
+    /**
+     * For the audit service's Anchorings screens (API-696): for each document version, the committed
+     * land record versions that pin it, and the number and label of each land record asked for or
+     * pinning one of the documents.
+     */
+    async lookup({ recordIds = [], documents = [] }) {
+        const pins = await this.repo.findCommittedPinning([...new Set(documents.map(d => d.id))]);
+        const records = await this.repo.recordLabels([...new Set([...recordIds, ...pins.map(p => p.recordId)])]);
+        const byDocumentVersion = new Map();
+        for (const p of pins) {
+            const key = `${p.documentId}:${p.version}`;
+            byDocumentVersion.set(key, [...(byDocumentVersion.get(key) ?? []), { recordId: p.recordId, versionNumber: p.versionNumber }]);
+        }
+        return {
+            records,
+            documents: documents.map(d => ({ id: d.id, version: d.version, pinnedBy: byDocumentVersion.get(`${d.id}:${d.version}`) ?? [] }))
+        };
+    }
+
     async getRecord(id) {
         const r = await this.requireRecord(id);
         const current = r.currentVersion ? await this.repo.getVersion(id, r.currentVersion) : null;

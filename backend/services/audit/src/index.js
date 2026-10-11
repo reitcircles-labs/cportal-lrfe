@@ -9,7 +9,7 @@ import { createVerifySources, ProofService } from './proof.service.js';
 import { createSignoffClients, SignoffService } from './signoff.service.js';
 import { createEvidenceSources, EvidenceService } from './evidence.service.js';
 import { AuditListService, createListSources } from './audit-list.service.js';
-import { AnchoringsService } from './anchorings.service.js';
+import { AnchoringsService, createCoverageSources } from './anchorings.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -56,7 +56,7 @@ const auditList = new AuditListService({ repo, proofs, sources: createListSource
 
 // the Anchorings screens (API-671): the job's settings, to say when the next batch is due
 const anchoringConfig = { periodMs: parsePeriod(process.env.ANCHOR_PERIOD), retryMs: 5 * 60_000, confirmations: envInt('ANCHOR_CONFIRMATIONS', 10) };
-const anchorings = new AnchoringsService({ repo, tree, anchoring: !!cardano, config: anchoringConfig });
+const anchorings = new AnchoringsService({ repo, tree, anchoring: !!cardano, config: anchoringConfig, sources: createCoverageSources({ recordsUrl, serviceToken }) });
 
 const app = await buildApp({
     service,
