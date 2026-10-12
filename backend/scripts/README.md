@@ -267,8 +267,11 @@ and needs no node. This section is about the own node.
 | Restart after an unclean stop | When the node was killed (its process killed, the machine restarted, or before API-677 its terminal closed) rather than stopped cleanly, it first checks every chunk of its stored chain (preview: about 26,000 chunks, growing; it can take half an hour), may then replay the ledger, and only then opens its socket; Ogmios starts and syncing resumes from where it was. `npm run cardano:status` shows the phase, its progress and the time left ("the node is checking its stored chain: 48%, about 5 min left"), and `-- --follow` prints it once per percent. Stop it with `--stop` to avoid the check |
 
 The first sync downloads the whole preview chain. On this server (8 cores, 31 GB of RAM) it took
-the time and disk shown in API-662's results; later starts continue where it stopped. To start
-over, stop it and delete the data folder. The supervisor does not start on boot: after a restart of
+**10 h 49 min** (10 October 2026, 10:10 to 20:59 UTC, from slot 0 to the tip at slot 125,009,920:
+measured from `node.log`), and the data folder holds **16 GB** (the chain in `db/`; two days later
+`node.log` is 56 MB and `ogmios.log` 8 MB: neither is rotated, so watch them). Preview grows, so a
+new sync takes longer. Later starts continue where it stopped. To start over, stop it and delete
+the data folder. The supervisor does not start on boot: after a restart of
 the machine, run `npm run cardano -- --dev` again (production runs it as a system service, below).
 
 **With `npm run dev`:** once the audit service's `.env` has `CARDANO_PROVIDER=ogmios`, `npm run dev`
