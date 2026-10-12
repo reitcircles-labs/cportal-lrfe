@@ -10,6 +10,8 @@ import { VerifyComponent } from './features/verify/verify.component';
 import { LinkComponent } from './features/link/link.component';
 import { AuditListComponent } from './features/audit/audit-list.component';
 import { AuditRecordComponent } from './features/audit/audit-record.component';
+import { AnchoringsListComponent } from './features/anchorings/anchorings-list.component';
+import { AnchoringBatchComponent } from './features/anchorings/anchoring-batch.component';
 import { DocumentsComponent } from './features/documents/documents.component';
 import { AdminComponent } from './features/admin/admin.component';
 import { DeniedComponent } from './features/denied/denied.component';
@@ -29,6 +31,8 @@ export const routes: Routes = [
   { path: 'link', component: LinkComponent, canActivate: g, data: { perm: 'record.view', title: 'Land record (create/finalize)', crumb: 'Workspace · Records desk' } },
   { path: 'audit', component: AuditListComponent, canActivate: g, data: { perm: 'audit.view', title: 'Audit', crumb: 'Workspace · Read-only' } },
   { path: 'audit/records/:id', component: AuditRecordComponent, canActivate: g, data: { perm: 'audit.view', title: 'Audit', crumb: 'Workspace · Read-only' } },
+  { path: 'anchorings', component: AnchoringsListComponent, canActivate: g, data: { perm: 'anchors.view', title: 'Anchorings', crumb: 'Workspace · Read-only' } },
+  { path: 'anchorings/:batch', component: AnchoringBatchComponent, canActivate: g, data: { perm: 'anchors.view', title: 'Anchorings', crumb: 'Workspace · Read-only' } },
   { path: 'admin/users', component: AdminComponent, canActivate: g, data: { perm: 'admin.users', tab: 'users', title: 'Users', crumb: 'Administration' } },
   { path: 'admin/offices', component: AdminComponent, canActivate: g, data: { perm: 'admin.offices', tab: 'offices', title: 'Offices', crumb: 'Administration' } },
   { path: 'admin/roles', component: AdminComponent, canActivate: g, data: { perm: 'admin.roles', tab: 'roles', title: 'Roles & permissions', crumb: 'Administration' } },

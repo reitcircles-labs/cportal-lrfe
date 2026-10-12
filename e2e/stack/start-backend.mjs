@@ -35,7 +35,9 @@ const COMMON = {
     MAIL_TRANSPORT: 'file', MAIL_FILE_DIR: MAIL_DIR, MAIL_FROM: 'Deeds Registry (e2e) <noreply@example.com>',
     IDENTITY_INVITE_URL_BASE: `${WEB_URL}/#/invite`,
     // plain http on localhost: a Secure cookie would not be sent back by every client
-    COOKIE_SECURE: 'false'
+    COOKIE_SECURE: 'false',
+    // no blockchain here: tests make up anchorings when they need them (POST /api/audit/test/anchorings, API-698)
+    AUDIT_TEST_ANCHORINGS: 'true'
 };
 // E2E_JEV=fake: the automatic cross-check on, with the fake judge (fixed answers, nothing sent)
 if (process.env.E2E_JEV === 'fake') Object.assign(COMMON, { JEV_ENABLED: 'true', JEV_PROVIDER: 'fake' });

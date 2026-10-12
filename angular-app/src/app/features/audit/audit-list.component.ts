@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } 
 import { RouterLink } from '@angular/router';
 
 import { AuditApi, AuditList, AuditListItem, ListFilter } from '../../api/audit.api';
+import { AuditTabsComponent } from '../../shared/audit-tabs.component';
 import { InfoTipComponent } from '../../shared/info-tip.component';
 import {
   ANCHORING, ANCHORING_ORDER, HOW_AUDIT_WORKS, TIPS, auditColumn, shortDate, toneClass
@@ -27,7 +28,7 @@ const SEARCH_PAUSE_MS = 300;
  */
 @Component({
   selector: 'app-audit-list',
-  imports: [RouterLink, InfoTipComponent],
+  imports: [RouterLink, InfoTipComponent, AuditTabsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -36,6 +37,7 @@ const SEARCH_PAUSE_MS = 300;
         <h1 style="margin:4px 0 4px;font-size:36px">Audit</h1>
         <p class="muted" style="margin:0">Pick a land record to check its versions, documents, proofs and trail.</p>
       </header>
+      <app-audit-tabs />
 
       <section class="how">
         <button type="button" class="how-head" [attr.aria-expanded]="howOpen()" (click)="howOpen.set(!howOpen())">

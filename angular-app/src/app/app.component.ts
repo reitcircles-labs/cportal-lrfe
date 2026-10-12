@@ -158,7 +158,8 @@ export class AppComponent {
       { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: this.inReview(), mine: role === 'rev', perm: 'verify.view' },
       { path: '/documents', label: 'Documents (EDRMS)', icon: 'file', badge: 0, mine: false, perm: ['capture.view', 'verify.view', 'record.view', 'audit.view'] },
       { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: 0, mine: role === 'rec', perm: 'record.view' },
-      { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud', perm: 'audit.view' }
+      { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud', perm: 'audit.view' },
+      { path: '/anchorings', label: 'Anchorings', icon: 'link', badge: 0, mine: false, perm: 'anchors.view' }
     ].filter(n => this.rbac.canAny(Array.isArray(n.perm) ? n.perm : [n.perm]));
   });
   adminNav = computed(() => {

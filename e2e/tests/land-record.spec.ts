@@ -437,6 +437,140 @@ test('the Audit screens are read-only for whoever may not sign off', { tag: ['@A
     await expect(side).toContainText('You can view and verify. Signing off and raising findings need the auditor role.');
     await expect(side.getByRole('button', { name: /Sign off/ })).toHaveCount(0);
 });
+
+// ------------------------------------------------ Anchorings (API-698). The test stack has no blockchain: the
+// administrator makes up a batch that expired and the confirmed one that replaced it (POST /api/audit/test/anchorings),
+// after every test above, which expect nothing on the blockchain yet.
+
+/** Erf 1873 and its deed T 2210/2008, read as the records officer. */
+async function erf1873(playwright: Parameters<typeof apiAs>[0], baseURL: string) {
+    const rec = await apiAs(playwright, baseURL, userByRole('rec').email);
+    const { items } = await (await rec.api.get('/api/records?q=1873', { headers: rec.headers })).json();
+    const record = await (await rec.api.get(`/api/records/${items.find((r: { label: string }) => r.label === 'Erf 1873, Klein Windhoek').id}`, { headers: rec.headers })).json();
+    await rec.dispose();
+    const deed = record.current.data.documents.find((d: { ref: string }) => d.ref === 'T 2210/2008');
+    return { id: record.id as string, recordNo: record.recordNo as string, version: record.currentVersion as number, deedNo: deed.edrmsNo as string };
+}
+
+/** The made-up batches: { failed, confirmed }, made once. */
+let batches: { failed: number; confirmed: number } | null = null;
+
+/** The land record's row on a batch page, after showing more until it is there. */
+async function rowOf(page: Page, label: string): Promise<Locator> {
+    const covers = page.locator('section', { has: page.getByRole('heading', { name: /What it covers/ }) });
+    const row = covers.locator('tbody tr', { hasText: label });
+    while (!(await row.count()) && await covers.getByRole('button', { name: 'Show more' }).count()) {
+        await covers.getByRole('button', { name: 'Show more' }).click();
+    }
+    return row;
+}
+
+test('Anchorings for every signed-in user: the side menu link, every batch, and "Is it on the blockchain?" for a land record and a document', { tag: ['@API-698'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(90_000);
+    const admin = await apiAs(playwright, baseURL!, userByRole('adm').email);
+    const make = async (outcome: string) => {
+        const res = await admin.api.post('/api/audit/test/anchorings', { headers: admin.headers, data: { outcome } });
+        expect(res.status(), await res.text()).toBe(201);
+        return (await res.json()).batch as number;
+    };
+    batches = { failed: await make('failed'), confirmed: await make('confirmed') };
+    await admin.dispose();
+    const erf = await erf1873(playwright, baseURL!);
+
+    // a records officer, who cannot open the Audit screen: the side menu link, no Audit tabs
+    const page = await as(browser, userByRole('rec').email, '/');
+    await page.getByRole('complementary', { name: 'Main navigation' }).getByRole('link', { name: 'Anchorings' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Anchorings', exact: true }).last()).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Audit views' })).toHaveCount(0);
+    const failedRow = page.locator('table.table tbody tr', { hasText: 'Failed' }).first();
+    await expect(failedRow).toContainText(`Expired before it reached the blockchain · replaced by batch ${batches.confirmed.toLocaleString('en')}`);
+    const confirmedRow = page.locator('table.table tbody tr', { has: page.getByRole('link', { name: batches.confirmed.toLocaleString('en'), exact: true }) });
+    await expect(confirmedRow).toContainText('Confirmed');
+    await expect(confirmedRow).toContainText(`Replaced batch ${batches.failed.toLocaleString('en')}`);
+    await expect(page.getByText('Gaps in batch numbers on the blockchain:')).toBeVisible();
+    await expect(page.locator('.cards')).toContainText(`Batch ${batches.confirmed.toLocaleString('en')}`);
+    await page.getByRole('button', { name: 'Explain: covers' }).click();
+    await expect(page.getByRole('tooltip')).toContainText('How many new fingerprints this batch put on the blockchain');
+    await evidence(page, 'API-698', 'Anchorings for a records officer: the side menu link, the cards, every batch with the failed one and the note on gaps');
+
+    // the land record by its number: yes, with its history, each line linked to its batch
+    const search = page.getByRole('search');
+    await search.getByRole('searchbox').fill(erf.recordNo);
+    await search.getByRole('button', { name: 'Search' }).click();
+    await expect(page.getByText(`Yes. Everything up to v${erf.version} is on the blockchain.`)).toBeVisible();
+    await expect(page.getByText(`${erf.recordNo} · Erf 1873, Klein Windhoek`)).toBeVisible();
+    await expect(page.getByRole('listitem').filter({ hasText: `Version v${erf.version} committed` }).getByRole('link', { name: `Batch ${batches.confirmed.toLocaleString('en')} →` })).toBeVisible();
+    await page.getByText('Its history on the blockchain, newest first').scrollIntoViewIfNeeded();
+    await evidence(page, 'API-698', '"Is it on the blockchain?": Erf 1873 by its land record number, with its history of batches');
+
+    // a document by its number, and words that match nothing
+    await search.getByRole('searchbox').fill(erf.deedNo);
+    await search.getByRole('button', { name: 'Search' }).click();
+    await expect(page.getByText('Yes. This document is on the blockchain.')).toBeVisible();
+    await expect(page.getByText(`${erf.deedNo} · Deed of transfer T 2210/2008`)).toBeVisible();
+    await expect(page.getByText(/^Used in land record .*, v\d+$/).first()).toBeVisible();
+    await evidence(page, 'API-698', '"Is it on the blockchain?": the deed T 2210/2008 by its document number, and the land record versions made of it');
+    await search.getByRole('searchbox').fill('Nowhere 999999');
+    await search.getByRole('button', { name: 'Search' }).click();
+    await expect(page.getByText('Nothing found for “Nowhere 999999”.', { exact: false })).toBeVisible();
+});
+
+test('one batch: what is on the blockchain and what it covers, with Open audit for the auditor and the registrar but not the records officer', { tag: ['@API-698'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(90_000);
+    expect(batches, 'the batches made by the test before').not.toBeNull();
+    const erf = await erf1873(playwright, baseURL!);
+    const path = `/anchorings/${batches!.confirmed}`;
+
+    const auditor = await as(browser, userByRole('aud').email, path);
+    await expect(auditor.getByRole('heading', { level: 1, name: `Batch ${batches!.confirmed.toLocaleString('en')}` })).toBeVisible();
+    await expect(auditor.getByRole('navigation', { name: 'Audit views' })).toHaveCount(0);   // the tabs are on the list
+    await expect(auditor.locator('.steps')).toContainText('Confirmed');
+    await expect(auditor.getByText('What is on the blockchain')).toBeVisible();
+    await expect(auditor.getByRole('link', { name: /View on a blockchain explorer/ })).toHaveAttribute('target', '_blank');
+    const row = await rowOf(auditor, 'Erf 1873, Klein Windhoek');
+    await expect(row).toContainText(`v${erf.version}`);
+    await expect(row).toContainText(/\d+ documents · v1(–v\d+)? before it/);
+    await expect(row.getByRole('link', { name: /^Open the audit of / })).toBeVisible();
+    await expect(auditor.getByText('export the land record’s evidence pack', { exact: false })).toBeVisible();
+    await expect(auditor.locator('section', { has: auditor.getByRole('heading', { name: /Documents in this batch/ }) })).toContainText('T 2210/2008');
+    await row.scrollIntoViewIfNeeded();
+    await evidence(auditor, 'API-698', 'One batch for the auditor: what it covers, each land record version with what it is made of, and Open audit');
+    await auditor.locator('.steps').scrollIntoViewIfNeeded();
+    await evidence(auditor, 'API-698', 'One batch: its steps, what is on the blockchain with the explorer link, and Check it yourself');
+    await row.getByRole('link', { name: /^Open the audit of / }).click();
+    await expect(auditor.getByRole('heading', { name: 'Erf 1873, Klein Windhoek', exact: true })).toBeVisible();
+
+    // the registrar reads the audit pages: Open audit too
+    const registrar = await as(browser, userByRole('sup').email, path);
+    await expect((await rowOf(registrar, 'Erf 1873, Klein Windhoek')).getByRole('link', { name: /^Open the audit of / })).toBeVisible();
+
+    // the records officer sees the same land records, without the button and without the evidence pack step
+    const officer = await as(browser, userByRole('rec').email, path);
+    const officerRow = await rowOf(officer, 'Erf 1873, Klein Windhoek');
+    await expect(officerRow).toContainText(`v${erf.version}`);
+    await expect(officer.getByRole('link', { name: /^Open the audit of / })).toHaveCount(0);
+    await expect(officer.getByText('export the land record’s evidence pack', { exact: false })).toHaveCount(0);
+    await officerRow.scrollIntoViewIfNeeded();
+    await evidence(officer, 'API-698', 'One batch for a records officer: the same land records, without Open audit');
+});
+
+test('a failed batch: why it never reached the blockchain, the batch that replaced it, and the gap explained', { tag: ['@API-698'] }, async ({ browser }) => {
+    expect(batches, 'the batches made by the first Anchorings test').not.toBeNull();
+    const page = await as(browser, userByRole('aud').email, '/anchorings');
+    await expect(page.getByRole('navigation', { name: 'Audit views' }).getByRole('link', { name: 'Land records' })).toBeVisible();
+    await page.getByRole('button', { name: /^Failed/ }).click();
+    await page.getByRole('link', { name: `Open batch ${batches!.failed.toLocaleString('en')}` }).click();
+    await expect(page.getByRole('heading', { level: 1, name: `Batch ${batches!.failed.toLocaleString('en')}` })).toBeVisible();
+    await expect(page.getByText('This batch never reached the blockchain')).toBeVisible();
+    await expect(page.getByText('Expired before it reached the blockchain. The blockchain accepts a transaction only for a limited time')).toBeVisible();
+    await expect(page.locator('.steps')).toContainText('Expired');
+    await expect(page.locator('.replaced')).toContainText(`Batch ${batches!.confirmed.toLocaleString('en')}`);
+    await expect(page.getByText('Not on the blockchain: an explorer won’t find it')).toBeVisible();
+    await expect(page.getByRole('heading', { name: `Why batch ${batches!.failed.toLocaleString('en')} is missing on the blockchain` })).toBeVisible();
+    await evidence(page, 'API-698', 'A failed batch: the reason, what happened, the batch that replaced it, what was prepared and the gap explained');
+    await page.locator('.replaced').getByRole('link').click();
+    await expect(page.getByRole('heading', { level: 1, name: `Batch ${batches!.confirmed.toLocaleString('en')}` })).toBeVisible();
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {

@@ -658,3 +658,9 @@ already in the identity catalogue.
 `DB_CONNECTION_STRING`, `DB_SYNC`, `JWT_SECRET`, OpenBao AppRole settings. The services it calls:
 `RECORDS_URL` (http://localhost:3505), `EDRMS_URL` (http://localhost:3502), `BPM_URL`
 (http://localhost:3503; findings).
+
+`AUDIT_TEST_ANCHORINGS=true` is for the end-to-end tests only (API-698): the test stack has no
+blockchain, so `POST /audit/test/anchorings` (`admin.users`, body `{ outcome: confirmed | failed }`)
+makes up a batch of everything sealed so far, as the job would but with a made-up transaction id.
+The service refuses to start with it unless `NODE_ENV=test` and no `CARDANO_PROVIDER` is set, and
+the route does not exist without it.

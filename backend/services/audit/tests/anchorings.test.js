@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { AnchoringsService, explorerUrl } from '../src/anchorings.service.js';
 import { createMemoryRepo } from '../src/repo/memory.js';
 import { buildApp } from '../src/app.js';
+import { TestAnchorings } from '../src/test-anchorings.js';
 import { audited, people } from './register.js';
 
 const SECRET = 'anchorings-test-secret-at-least-32-chars';
@@ -231,5 +232,37 @@ describe('what a batch covers (API-696)', () => {
         // a user's token is not a service token: refused as for the other service-only routes
         const res = await a.app.inject({ method: 'POST', url: '/records/lookup', headers: a.as(people.rec), payload: { recordIds: [a.record.id] } });
         assert.equal(res.statusCode, 401);
+    });
+});
+
+describe('made-up anchorings for the end-to-end tests (API-698)', () => {
+    it('a failed batch, then a confirmed one that replaces it and covers what was sealed, as the job would', async () => {
+        const a = await audited();
+        const made = new TestAnchorings({ repo: a.repo, tree: a.tree, clock: a.clock });
+        assert.deepEqual(await made.anchor('failed'), { batch: 1, status: 'failed', size: (await a.tree.size()) });
+        const confirmed = await made.anchor('confirmed');
+        assert.equal(confirmed.batch, 2);
+        const { items, counts } = await a.anchorings.list();
+        assert.deepEqual(counts, { all: 2, progress: 0, failed: 1 });
+        assert.deepEqual(items.map(i => [i.batch, i.status, i.reason, i.replacedBy, i.replaces]), [[2, 'confirmed', null, null, 1], [1, 'failed', 'expired', 2, null]]);
+        // the replacement starts from nothing on the blockchain: no prev, and it covers the record
+        assert.equal((await a.anchorings.detail(2)).prev, null);
+        const coverage = await a.anchorings.coverage(2);
+        assert.deepEqual(coverage.records.map(r => [r.recordNo, r.versions.map(v => v.versionNumber)]), [[a.record.recordNo, [1]]]);
+        assert.equal((await a.lookup.search(a.record.recordNo, 'u1')).answer.status, 'yes');
+    });
+
+    it('the route exists only when the service is started with them, and only for an administrator', async () => {
+        const testAnchorings = { anchor: async (outcome) => ({ batch: 1, status: outcome, size: 0 }) };
+        const app = await buildApp({ anchorings: service(seeded()), testAnchorings, jwtSecret: SECRET });
+        const without = await buildApp({ anchorings: service(seeded()), jwtSecret: SECRET });
+        await Promise.all([app.ready(), without.ready()]);
+        const as = (target, perms) => ({ authorization: `Bearer ${target.jwt.sign({ typ: 'access', sub: 'u1', name: 'Admin', perms, roles: ['admin'] })}` });
+        const post = (target, perms, outcome = 'failed') => target.inject({ method: 'POST', url: '/audit/test/anchorings', headers: as(target, perms), payload: { outcome } });
+        assert.equal((await post(app, ['admin.users'])).statusCode, 201);
+        assert.equal((await post(app, ['anchors.view'])).statusCode, 403);
+        assert.equal((await post(app, ['admin.users'], 'onChain')).statusCode, 400);
+        assert.equal((await post(without, ['admin.users'])).statusCode, 404);
+        await Promise.all([app.close(), without.close()]);
     });
 });

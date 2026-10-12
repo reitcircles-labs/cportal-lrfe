@@ -3,7 +3,7 @@ import { CLOSE_OUTCOMES } from './signoff.service.js';
 import { LIST_FILTERS } from './audit-list.service.js';
 import { ANCHOR_FILTERS } from './anchorings.service.js';
 
-export async function auditRoutes(app, { service, proofs, signoffs, evidence, auditList, anchorings, lookup }) {
+export async function auditRoutes(app, { service, proofs, signoffs, evidence, auditList, anchorings, lookup, testAnchorings = null }) {
     const canView = app.requirePerm('audit.view');
 
     // trail entries: of a land record (with its documents' steps), a document, a user, a process
@@ -112,6 +112,14 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
             }
         }
     }, async (req) => anchorings.documents(req.params.batch, req.query));
+
+    // made-up anchorings for the end-to-end tests only (test-anchorings.js); not registered anywhere else
+    if (testAnchorings) {
+        app.post('/audit/test/anchorings', {
+            onRequest: app.requirePerm('admin.users'),
+            schema: { body: { type: 'object', required: ['outcome'], additionalProperties: false, properties: { outcome: { type: 'string', enum: ['confirmed', 'failed'] } } } }
+        }, async (req, reply) => reply.code(201).send(await testAnchorings.anchor(req.body.outcome)));
+    }
 
     // ------------------------------------------------ sign-off and findings (README.md section 5)
     const canSignOff = app.requirePerm('audit.signoff');

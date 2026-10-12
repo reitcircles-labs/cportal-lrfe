@@ -11,6 +11,7 @@ import { createEvidenceSources, EvidenceService } from './evidence.service.js';
 import { AuditListService, createListSources } from './audit-list.service.js';
 import { AnchoringsService, createCoverageSources } from './anchorings.service.js';
 import { AnchorLookupService, createLookupSources } from './lookup.service.js';
+import { TestAnchorings } from './test-anchorings.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -61,6 +62,13 @@ const anchorings = new AnchoringsService({ repo, tree, anchoring: !!cardano, con
 // "Is it on the blockchain?" (API-697)
 const lookup = new AnchorLookupService({ repo, proofs, anchorings, sources: createLookupSources({ recordsUrl, edrmsUrl, serviceToken }) });
 
+// made-up anchorings for the end-to-end tests only (API-698); never next to a real blockchain
+let testAnchorings = null;
+if (envBool('AUDIT_TEST_ANCHORINGS', false)) {
+    if (process.env.NODE_ENV !== 'test' || cardano) throw new Error('AUDIT_TEST_ANCHORINGS needs NODE_ENV=test and no CARDANO_PROVIDER');
+    testAnchorings = new TestAnchorings({ repo, tree });
+}
+
 const app = await buildApp({
     service,
     proofs,
@@ -69,6 +77,7 @@ const app = await buildApp({
     auditList,
     anchorings,
     lookup,
+    testAnchorings,
     jwtSecret: env('JWT_SECRET'),
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }
