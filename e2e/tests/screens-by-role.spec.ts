@@ -29,7 +29,7 @@ for (const user of MATRIX_USERS) {
         await signInAs(page, user.email, user.home);
 
         await test.step('menu', async () => {
-            const expected = SCREENS.filter(s => can(user, s.anyOf)).map(s => hrefOf(s.path)).sort();
+            const expected = SCREENS.filter(s => s.inMenu && can(user, s.anyOf)).map(s => hrefOf(s.path)).sort();
             const shown = (await page.locator('nav.nav a').evaluateAll(as => as.map(a => a.getAttribute('href')))).sort();
             expect.soft(shown, 'links in the side menu').toEqual(expected);
         });

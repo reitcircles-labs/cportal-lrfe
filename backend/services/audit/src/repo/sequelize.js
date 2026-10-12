@@ -124,6 +124,14 @@ export function createSequelizeRepo(sequelize) {
             return [...new Set(rows.flatMap(r => r.subjects))];
         },
 
+        /** The people who acted in the trail whose name contains `q` (any case), by name, at most `limit`: { id, name }. */
+        async actors(q, limit) {
+            const [rows] = await sequelize.query(`SELECT DISTINCT ON ("actor"->>'id') "actor"->>'id' AS id, "actor"->>'name' AS name
+                FROM "${SCHEMA}"."trail_entry" WHERE "actor"->>'id' IS NOT NULL AND "actor"->>'name' ILIKE :pattern
+                ORDER BY "actor"->>'id', "seq" DESC`, { replacements: { pattern: `%${q.replace(/[\\%_]/g, '\\$&')}%` } });
+            return rows.sort((a, b) => a.name.localeCompare(b.name)).slice(0, limit);
+        },
+
         async page(after, limit) {
             return (await TrailEntry.findAll({ where: { seq: { [Op.gt]: after } }, order: [['seq', 'ASC']], limit })).map(plain);
         },

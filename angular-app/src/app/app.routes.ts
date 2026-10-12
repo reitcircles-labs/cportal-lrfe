@@ -10,6 +10,7 @@ import { VerifyComponent } from './features/verify/verify.component';
 import { LinkComponent } from './features/link/link.component';
 import { AuditListComponent } from './features/audit/audit-list.component';
 import { AuditRecordComponent } from './features/audit/audit-record.component';
+import { AuditTrailSearchComponent } from './features/audit/audit-trail-search.component';
 import { AnchoringsListComponent } from './features/anchorings/anchorings-list.component';
 import { AnchoringBatchComponent } from './features/anchorings/anchoring-batch.component';
 import { DocumentsComponent } from './features/documents/documents.component';
@@ -33,6 +34,8 @@ export const routes: Routes = [
   { path: 'documents', component: DocumentsComponent, canActivate: g, data: { perm: DOC_READERS, title: 'Documents (EDRMS)', crumb: 'Workspace · Documents of record' } },
   { path: 'link', component: LinkComponent, canActivate: g, data: { perm: 'record.view', title: 'Land record (create/finalize)', crumb: 'Workspace · Records desk' } },
   { path: 'audit', component: AuditListComponent, canActivate: g, data: { perm: 'audit.view', title: 'Audit', crumb: 'Workspace · Read-only' } },
+  // reached from the Audit screen's tabs, not the side menu
+  { path: 'audit/trail', component: AuditTrailSearchComponent, canActivate: g, data: { perm: 'audit.view', title: 'Audit', crumb: 'Workspace · Read-only', inMenu: false } },
   { path: 'audit/records/:id', component: AuditRecordComponent, canActivate: g, data: { perm: 'audit.view', title: 'Audit', crumb: 'Workspace · Read-only' } },
   { path: 'anchorings', component: AnchoringsListComponent, canActivate: g, data: { perm: 'anchors.view', title: 'Anchorings', crumb: 'Workspace · Read-only' } },
   { path: 'anchorings/:batch', component: AnchoringBatchComponent, canActivate: g, data: { perm: 'anchors.view', title: 'Anchorings', crumb: 'Workspace · Read-only' } },

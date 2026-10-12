@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
 import {
-  ANCHORING, auditColumn, documentStatus, findingNumber, findingState, lockedNote, openIssues,
+  ANCHORING, actionLabel, auditColumn, chainResult, EVENT_GROUPS, gapText, SEARCH_TIPS, sourceLabel, documentStatus, findingNumber, findingState, lockedNote, openIssues,
   proofLabel, rangeLabel, signoffBlock, TIPS, versionState, CHANGED_SINCE_REVIEW
 } from './audit-wording.ts';
 
@@ -54,8 +54,20 @@ describe('audit wording', () => {
     assert.equal(findingState({ status: 'closed', outcome: 'mistake' }), 'closed, raised by mistake');
   });
 
+  it('the trail search: actions, families, sources, gaps and the chain check in words', () => {
+    assert.equal(actionLabel('edrms.document.filed'), 'Filed document');
+    assert.equal(actionLabel('some.new.event'), 'some.new.event');
+    assert.equal(actionLabel('identity.session', { action: 'Signed in' }), 'Signed in');
+    assert.deepEqual(EVENT_GROUPS.map(g => g.prefix), ['intake.', 'edrms.', 'records.', 'bpm.', 'identity.', 'audit.']);
+    assert.equal(sourceLabel('land-records'), 'Land records');
+    assert.match(gapText(1), /^1 event was lost before the audit service could record it\./);
+    assert.match(gapText(3), /^3 events were lost/);
+    assert.equal(chainResult({ intact: true }).tone, 'success');
+    assert.match(chainResult({ intact: false, brokenAt: 42 }).text, /^The trail is broken at entry 42\./);
+  });
+
   it('never names the network or a tool', () => {
-    const all = JSON.stringify({ ANCHORING, TIPS, CHANGED_SINCE_REVIEW });
+    const all = JSON.stringify({ ANCHORING, TIPS, CHANGED_SINCE_REVIEW, SEARCH_TIPS, EVENT_GROUPS });
     for (const word of ['Cardano', 'Blockfrost', 'Ogmios', 'OpenBao', 'in your browser']) {
       assert.ok(!all.includes(word), word);
     }

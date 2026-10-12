@@ -3,29 +3,11 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input, si
 import { AuditApi, ProofStatus, TrailEntry } from '../../api/audit.api';
 import { InfoTipComponent } from '../../shared/info-tip.component';
 import { ProofLinkComponent } from '../../shared/proof-link.component';
-import { TIPS, proofLabel, shortDateTime, toneClass } from './audit-wording';
+import { TIPS, actionLabel, proofLabel, shortDateTime, toneClass } from './audit-wording';
 
 /** How many entries are shown at a time. */
 const PAGE = 25;
 
-/** What a trail entry's event means, in words. */
-const ACTIONS: Record<string, string> = {
-  'records.record.created': 'Created land record',
-  'records.draft.changed': 'Changed the draft',
-  'records.draft.submitted': 'Submitted for review',
-  'records.draft.withdrawn': 'Withdrew from review',
-  'records.draft.rejected': 'Returned the version',
-  'records.record.committed': 'Committed version',
-  'records.record.flagged': 'Flagged: a document was corrected',
-  'edrms.document.filed': 'Filed document',
-  'edrms.document.amended': 'Corrected document',
-  'audit.signoff.recorded': 'Signed off audit',
-  'audit.finding.raised': 'Raised finding',
-  'audit.finding.answered': 'Answered finding',
-  'audit.finding.closed': 'Closed finding',
-  'audit.item.changed': 'Found changed since review',
-  'audit.evidence.exported': 'Exported evidence pack'
-};
 
 /** The result of verifying one entry. */
 type Result = 'valid' | 'notValid' | 'notYet' | 'unavailable';
@@ -112,7 +94,7 @@ export class AuditTrailComponent {
     return {
       entry,
       time: shortDateTime(entry.time),
-      action: ACTIONS[entry.type] ?? entry.type,
+      action: actionLabel(entry.type, entry.data),
       item: itemOf(entry),
       proof: status ? { label: status.label, tagClass: toneClass(status.tone), batch: proof?.batch ?? null } : null,
       result: result ? RESULTS[result] : null

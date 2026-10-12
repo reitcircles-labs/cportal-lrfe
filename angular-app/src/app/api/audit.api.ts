@@ -148,6 +148,7 @@ export interface Checkpoint {
 export interface TrailEntry {
   seq: number;
   type: string;
+  source: string;
   time: string;
   actor: { id: string | null; name: string };
   subjects: string[];
@@ -199,6 +200,16 @@ export class AuditApi {
 
   closeFinding(findingId: string, outcome: 'agreed' | 'mistake', answer: string) {
     return this.api.post<Finding>(`/audit/findings/${findingId}/close`, { outcome, answer });
+  }
+
+  /** Trail entries, oldest first, by subject, event type (or a family ending in a dot) and dates (API-673). */
+  searchTrail(query: { subject?: string; type?: string; from?: string; to?: string; offset: number; limit: number }) {
+    return this.api.get<{ total: number; entries: TrailEntry[] }>('/audit/trail', query);
+  }
+
+  /** The people who acted in the trail whose name contains `q`. */
+  actors(q: string) {
+    return this.api.get<{ items: { id: string; name: string }[] }>('/audit/trail/actors', { q, limit: 10 });
   }
 
   trail(recordId: string, offset: number, limit: number) {

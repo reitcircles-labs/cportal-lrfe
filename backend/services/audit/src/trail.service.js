@@ -89,6 +89,15 @@ export class TrailService {
     }
 
     /**
+     * The people who acted in the trail, for searching by user on the Audit screen (API-673): whose
+     * name contains `q`, by name, at most `limit`. Taken from the trail itself, so an auditor can
+     * find anyone who did something without the administrators' user list.
+     */
+    async actors({ q = '', limit = 20 } = {}) {
+        return { items: await this.repo.actors(q.trim(), limit) };
+    }
+
+    /**
      * Recompute the whole chain. `intact` false names the first entry that is missing, changed or
      * out of place: everything after it can no longer be trusted from the chain alone.
      */

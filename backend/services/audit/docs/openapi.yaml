@@ -164,6 +164,63 @@ paths:
         allOf:
           - audit.view
       x-gateway-path: /api/audit/trail/verify
+  /audit/trail/actors:
+    get:
+      tags:
+        - Trail
+      summary: The people who acted in the trail
+      description: >-
+        For searching the trail by user. `q` matches part of the name (any case); `limit` up to 50 (20). `{ items: [{ id, name }] }`, by
+        name, each person once (with the name of their latest entry). Search their entries with `GET /audit/trail?subject=user:<id>`.
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: getAuditTrailActors
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+      x-gateway-path: /api/audit/trail/actors
   /audit/proofs/{kind}/{id}:
     get:
       tags:

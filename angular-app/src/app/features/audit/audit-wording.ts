@@ -201,6 +201,86 @@ export const HOW_AUDIT_WORKS = [
   }
 ] as const;
 
+/** What a trail entry's event means, in words. */
+const ACTIONS: Record<string, string> = {
+  'intake.document.captured': 'Captured a scan',
+  'intake.document.extracted': 'Read the scan’s details',
+  'intake.document.filed': 'Sent the scan for filing',
+  'edrms.document.filed': 'Filed document',
+  'edrms.document.amended': 'Corrected document',
+  'records.record.created': 'Created land record',
+  'records.draft.changed': 'Changed the draft',
+  'records.draft.submitted': 'Submitted for review',
+  'records.draft.withdrawn': 'Withdrew from review',
+  'records.draft.rejected': 'Returned the version',
+  'records.record.committed': 'Committed version',
+  'records.record.flagged': 'Flagged: a document was corrected',
+  'bpm.instance.started': 'Started a review',
+  'bpm.instance.completed': 'Finished a review',
+  'bpm.instance.cancelled': 'Cancelled a review',
+  'bpm.instance.failed': 'A review stopped with an error',
+  'bpm.task.created': 'Created a task',
+  'bpm.task.completed': 'Completed a task',
+  'identity.user.invited': 'Invited a user',
+  'audit.signoff.recorded': 'Signed off audit',
+  'audit.finding.raised': 'Raised finding',
+  'audit.finding.answered': 'Answered finding',
+  'audit.finding.closed': 'Closed finding',
+  'audit.item.changed': 'Found changed since review',
+  'audit.evidence.exported': 'Exported evidence pack',
+  'audit.trail.gap': 'Gap in the trail'
+};
+
+/**
+ * A trail entry's event in words. Sign-in and user administration events (identity.*) carry their
+ * action in words already ("Signed in", "Roles changed"); an event without a label is shown as it
+ * is named.
+ */
+export function actionLabel(type: string, data: Record<string, unknown> = {}): string {
+  if (ACTIONS[type]) {
+    return ACTIONS[type];
+  }
+  return type.startsWith('identity.') && typeof data['action'] === 'string' ? data['action'] : type;
+}
+
+/** The families of events the trail search filters on, by where they come from. */
+export const EVENT_GROUPS: { prefix: string; label: string }[] = [
+  { prefix: 'intake.', label: 'Capture and verify' },
+  { prefix: 'edrms.', label: 'Documents' },
+  { prefix: 'records.', label: 'Land records' },
+  { prefix: 'bpm.', label: 'Reviews and tasks' },
+  { prefix: 'identity.', label: 'Users and sign-in' },
+  { prefix: 'audit.', label: 'Audit' }
+];
+
+/** Where an entry came from, as the trail search shows it. */
+export function sourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    intake: 'Capture', edrms: 'Documents', 'land-records': 'Land records', bpm: 'Reviews and tasks', identity: 'Users', audit: 'Audit'
+  };
+  return labels[source] ?? source;
+}
+
+/** A recorded gap in words: how many events were lost before they could be recorded. */
+export function gapText(missing: number): string {
+  return `${missing} event${missing === 1 ? ' was' : 's were'} lost before the audit service could record ${missing === 1 ? 'it' : 'them'}. The gap is recorded so that the trail is never passed off as complete.`;
+}
+
+/** The result of checking the whole trail's chain. */
+export function chainResult(r: { intact: boolean; brokenAt?: number }): { text: string; tone: Tone } {
+  return r.intact
+    ? { text: 'The trail is intact: every entry links to the one before it.', tone: 'success' }
+    : { text: `The trail is broken at entry ${r.brokenAt}. Entries from there on can’t be trusted from the chain alone. Tell the registry’s system administrator.`, tone: 'danger' };
+}
+
+/** The (i) explanations of the trail search. */
+export const SEARCH_TIPS = {
+  subject: 'A person: everything they did. A document: everything that happened to it, by its document number, from capture to corrections. A land record: everything on it and on the documents it is made of, by its land record number.',
+  type: 'One kind of event, or a family of them, such as everything about documents.',
+  dates: 'When the event happened, in local time. Both days are included.',
+  source: 'The part of the portal that recorded the event: capture, documents, land records, reviews and tasks, users or audit.'
+} as const;
+
 /** The CSS tag class for a tone (the app's tag styles). */
 export function toneClass(tone: Tone): string {
   const classes: Record<Tone, string> = {

@@ -262,3 +262,29 @@ describe('audit trail: HTTP (API-654)', () => {
         assert.equal((await app.inject({ url: '/audit/trail?from=yesterday', headers: as(['audit.view']) })).statusCode, 400);
     });
 });
+
+describe('searching the trail by user (API-673)', () => {
+    it('lists the people who acted, by name, once each, matching part of the name in any case; the system is not a person', async () => {
+        const { trail } = makeTrail();
+        await trail.record(event('edrms.document.filed', { documentId: 'd1' }));
+        await trail.record(event('records.record.created', { recordId: 'r1' }, { actor: { id: 'u2', name: 'Aina Mwandingi' } }));
+        await trail.record(event('records.draft.changed', { recordId: 'r1' }, { actor: { id: 'u2', name: 'Aina Mwandingi' } }));
+        await trail.record(event('audit.trail.gap', { missing: 3 }, { actor: { id: null, name: 'System' } }));
+        assert.deepEqual((await trail.actors()).items, [{ id: 'u2', name: 'Aina Mwandingi' }, { id: 'u7', name: 'Josef Gawaseb' }]);
+        assert.deepEqual((await trail.actors({ q: 'gaWA' })).items, [{ id: 'u7', name: 'Josef Gawaseb' }]);
+        assert.deepEqual((await trail.actors({ q: 'nobody' })).items, []);
+        assert.deepEqual((await trail.actors({ limit: 1 })).items.length, 1);
+        // that person's actions, through the trail's user subject
+        assert.deepEqual((await trail.list({ subject: 'user:u2' })).entries.map(e => e.type), ['records.record.created', 'records.draft.changed']);
+    });
+
+    it('the route needs audit.view', async () => {
+        const { trail } = makeTrail();
+        const app = await buildApp({ service: trail, jwtSecret: SECRET });
+        await app.ready();
+        const as = (perms) => ({ authorization: `Bearer ${app.jwt.sign({ typ: 'access', sub: 'u1', name: 'A', perms, roles: [] })}` });
+        assert.equal((await app.inject({ url: '/audit/trail/actors?q=a', headers: as(['audit.view']) })).statusCode, 200);
+        assert.equal((await app.inject({ url: '/audit/trail/actors', headers: as(['record.view']) })).statusCode, 403);
+        await app.close();
+    });
+});

@@ -68,6 +68,15 @@ export function createMemoryRepo() {
             return [...out];
         },
 
+        /** The people who acted in the trail whose name contains `q` (any case), by name, at most `limit`: { id, name }. */
+        async actors(q, limit) {
+            const found = new Map();
+            for (const e of entries) {
+                if (e.actor?.id && e.actor.name && e.actor.name.toLowerCase().includes(q.toLowerCase())) found.set(e.actor.id, { id: e.actor.id, name: e.actor.name });
+            }
+            return [...found.values()].sort((a, b) => a.name.localeCompare(b.name)).slice(0, limit);
+        },
+
         /** Entries in order, from seq `after` + 1, at most `limit`. */
         async page(after, limit) {
             return entries.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq).slice(0, limit).map(copy);

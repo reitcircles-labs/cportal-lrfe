@@ -49,10 +49,10 @@ export class ProofDownloadComponent {
 
   /** What the proof is of. */
   readonly kind = input.required<ProofKind>();
-  /** The land record's or document's id. */
+  /** The land record's or document's id, or a trail entry's number. */
   readonly itemId = input.required<string>();
-  /** The version. */
-  readonly version = input.required<number>();
+  /** The version; none for a trail entry. */
+  readonly version = input<number | undefined>(undefined);
   /** The name the file is saved under. */
   readonly fileName = input.required<string>();
   /** The item waits for the next batch: its proof cannot be checked yet. */

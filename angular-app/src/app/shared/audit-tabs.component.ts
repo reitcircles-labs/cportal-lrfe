@@ -4,8 +4,9 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
 import { RbacService } from '../state/rbac.service';
 
 /**
- * The "Land records | Anchorings" tabs of the Audit screens (API-698). Shown only to whoever can open
- * the Audit screen (`audit.view`); everyone else reaches Anchorings from the side menu alone.
+ * The "Land records | Trail | Anchorings" tabs of the Audit screens (API-698, API-673). Shown only
+ * to whoever can open the Audit screen (`audit.view`); everyone else reaches Anchorings from the
+ * side menu alone.
  */
 @Component({
   selector: 'app-audit-tabs',
@@ -15,6 +16,7 @@ import { RbacService } from '../state/rbac.service';
     @if (rbac.can('audit.view')) {
       <nav class="tabs" aria-label="Audit views">
         <a routerLink="/audit" routerLinkActive="on" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">Land records</a>
+        <a routerLink="/audit/trail" routerLinkActive="on" ariaCurrentWhenActive="page">Trail</a>
         <a routerLink="/anchorings" routerLinkActive="on" ariaCurrentWhenActive="page">Anchorings</a>
       </nav>
     }

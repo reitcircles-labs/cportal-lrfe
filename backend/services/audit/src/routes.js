@@ -31,6 +31,12 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
     // recompute the whole chain
     app.get('/audit/trail/verify', { onRequest: canView }, async () => service.verify());
 
+    // the people who acted in the trail, to search by user (API-673)
+    app.get('/audit/trail/actors', {
+        onRequest: canView,
+        schema: { querystring: { type: 'object', additionalProperties: false, properties: { q: { type: 'string', maxLength: 100 }, limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 } } } }
+    }, async (req) => service.actors(req.query));
+
     const item = {
         kind: { type: 'string', enum: KINDS },
         id: { type: 'string', maxLength: 64 },

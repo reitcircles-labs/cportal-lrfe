@@ -687,6 +687,53 @@ test('Documents: a document version verified against the blockchain, and one tha
     await waitingHistory.scrollIntoViewIfNeeded();
     await evidence(waiting, 'API-675', 'Documents: a document version that still waits for the next batch');
 });
+
+test('the trail search: a person\'s actions, a document\'s history, and the whole trail checked intact', { tag: ['@API-673'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(90_000);
+    const erf = await erf1873(playwright, baseURL!);
+    const officer = userByRole('rec');
+    const page = await as(browser, userByRole('aud').email, '/audit');
+    await page.getByRole('navigation', { name: 'Audit views' }).getByRole('link', { name: 'Trail' }).click();
+    await expect(page).toHaveURL(/#\/audit\/trail$/);
+    const rows = page.locator('table.table tbody tr:not(.details)');
+
+    // what a person did, and what was done about it (e.g. the registrar approving their submission)
+    await page.getByLabel('About', { exact: true }).selectOption('user');
+    await page.getByLabel('Name', { exact: true }).fill(officer.name);
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(rows.filter({ hasText: 'Created land record' }).first()).toContainText(officer.name);
+    await expect(rows.filter({ hasText: 'Submitted for review' }).first()).toContainText(officer.name);
+    await expect(rows.filter({ hasText: 'Filed document' })).toHaveCount(0);            // filed by the reviewer, not about them
+    await evidence(page, 'API-673', 'Trail search: what one person did and what was done about it, oldest first');
+
+    // what happened to a document, by its number: filed, then used in the land record
+    await page.getByLabel('About', { exact: true }).selectOption('document');
+    await page.getByLabel('Document number', { exact: true }).fill(erf.deedNo);
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(rows.first()).toContainText('Captured a scan');
+    await expect(rows.filter({ hasText: 'Filed document' }).first()).toBeVisible();
+
+    // an entry's details and its proof
+    await rows.filter({ hasText: 'Filed document' }).first().getByRole('button', { name: 'Details' }).click();
+    const details = page.locator('tr.details');
+    await expect(details).toContainText('edrms.document.filed');
+    await expect(details.getByRole('link', { name: /in batch \d+: open the batch$/ })).toBeVisible();
+    await expect(details.getByRole('button', { name: 'Download proof' })).toBeVisible();
+    await evidence(page, 'API-673', 'Trail search: a document\'s history by its number, with one entry\'s details and proof');
+
+    // the whole chain recomputed
+    await page.getByRole('button', { name: 'Check the trail', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'The trail is intact' })).toBeVisible();
+    await page.getByRole('button', { name: 'Check the trail', exact: true }).scrollIntoViewIfNeeded();
+    await evidence(page, 'API-673', 'Check the trail: intact, every entry links to the one before it');
+
+    // the system administrator reads the audit pages but not land records: the land record search works for them too
+    const admin = await as(browser, userByRole('adm').email, '/audit/trail');
+    await admin.getByLabel('About', { exact: true }).selectOption('record');
+    await admin.getByLabel('Land record number', { exact: true }).fill(erf.recordNo);
+    await admin.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(admin.locator('table.table tbody tr:not(.details)').filter({ hasText: 'Created land record' }).first()).toBeVisible();
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {
