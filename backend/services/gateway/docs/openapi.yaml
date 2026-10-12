@@ -193,6 +193,26 @@ paths:
         services:
           - land-records
           - edrms
+  /api/audit/anchoring/wallet:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: The published anchoring wallet
+      description: >-
+        For checking a proof outside the portal (the offline verifier's `--address`). `{ address, explorerUrl }`: the wallet that pays for
+        every anchoring, and its page on a public blockchain explorer; both null when no blockchain is configured. 503 while the wallet's
+        key cannot be read. No sign-in.
+
+
+        **Access:** Public: no token needed.
+      operationId: audit_getAuditAnchoringWallet
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
   /api/audit/anchors:
     get:
       tags:

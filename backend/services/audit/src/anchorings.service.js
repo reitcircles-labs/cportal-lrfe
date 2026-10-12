@@ -1,4 +1,4 @@
-import { NotFoundError } from '@lrfe/common';
+import { AppError, NotFoundError } from '@lrfe/common';
 import { nextAnchoring } from './anchor.service.js';
 import { createServiceClient } from './service-client.js';
 
@@ -22,6 +22,11 @@ const EXPLORERS = {
 /** The transaction's page on a public blockchain explorer, or null for an unknown network. */
 export function explorerUrl(network, txHash) {
     return EXPLORERS[network] && txHash ? EXPLORERS[network] + txHash : null;
+}
+
+/** The wallet's page on the same explorer: every anchoring it paid for. Null for an unknown network. */
+export function addressExplorerUrl(network, address) {
+    return EXPLORERS[network] && address ? EXPLORERS[network].replace(/transaction\/$/, 'address/') + address : null;
 }
 
 /** By record number; a record land-records no longer knows (no number) last. */
@@ -58,12 +63,14 @@ export function reasonOf(a) {
  * fingerprints. What a batch covers is counted from the last batch before it that did not fail.
  *
  * `config`: { periodMs, retryMs, confirmations } of the anchoring job; `anchoring`: false when no
- * blockchain is configured (no next batch is due then). `sources`: { lookup({ recordIds, versions }) }
+ * blockchain is configured (no next batch is due then); `cardano`: the blockchain adapter, for the
+ * published wallet address. `sources`: { lookup({ recordIds, versions }) }
  * from land-records, for what a batch covers.
  */
 export class AnchoringsService {
-    constructor({ repo, tree, sources = null, clock = () => new Date(), anchoring = true, config = {} }) {
+    constructor({ repo, tree, sources = null, clock = () => new Date(), anchoring = true, cardano = null, config = {} }) {
         this.repo = repo;
+        this.cardano = cardano;
         this.tree = tree;
         this.sources = sources;
         this.clock = clock;
@@ -117,6 +124,22 @@ export class AnchoringsService {
             nextBatch: next?.batch ?? null,
             confirmationsNeeded: this.config.confirmations
         };
+    }
+
+    /**
+     * The anchoring wallet the installation publishes, for checking proofs outside the portal (the
+     * offline verifier's --address; API-672, API-676): `{ address, explorerUrl }`, both null when no
+     * blockchain is configured. 503 while the wallet's key cannot be read.
+     */
+    async wallet() {
+        if (!this.cardano) return { address: null, explorerUrl: null };
+        let address;
+        try {
+            address = await this.cardano.address();
+        } catch {
+            throw new AppError(503, 'The anchoring wallet cannot be read now. Try again in a minute.');
+        }
+        return { address, explorerUrl: addressExplorerUrl(this.cardano.network, address) };
     }
 
     /**

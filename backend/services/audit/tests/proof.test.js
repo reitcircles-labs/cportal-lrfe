@@ -131,7 +131,7 @@ describe('proofs and verification (API-658)', () => {
 
         const v = await a.proofs.verify('record-version', a.record.id, 1);
         assert.equal(v.valid, true, JSON.stringify(v.checks));
-        assert.deepEqual([v.checks.item.source, v.checks.chain.source, v.checks.chain.metadata.root], ['land-records', 'fake', anchor.root]);
+        assert.deepEqual([v.checks.item.source, v.checks.chain.source, v.checks.chain.metadata.root], ['land-records', 'test', anchor.root]);
 
         const d = await a.proofs.verify('document-version', a.doc('t2019').id, 1);
         assert.equal(d.valid, true, JSON.stringify(d.checks));

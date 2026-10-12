@@ -36,7 +36,9 @@ const COMMON = {
     IDENTITY_INVITE_URL_BASE: `${WEB_URL}/#/invite`,
     // plain http on localhost: a Secure cookie would not be sent back by every client
     COOKIE_SECURE: 'false',
-    // no blockchain here: tests make up anchorings when they need them (POST /api/audit/test/anchorings, API-698)
+    // the test blockchain, in memory (only with NODE_ENV=test): no anchoring job runs; tests make batches
+    // when they need them (POST /api/audit/test/anchorings, API-698), real transactions on that chain (API-672)
+    CARDANO_PROVIDER: 'test',
     AUDIT_TEST_ANCHORINGS: 'true'
 };
 // E2E_JEV=fake: the automatic cross-check on, with the fake judge (fixed answers, nothing sent)

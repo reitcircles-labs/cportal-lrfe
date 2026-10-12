@@ -438,6 +438,27 @@ paths:
         allOf:
           - anchors.view
       x-gateway-path: /api/audit/anchors
+  /audit/anchoring/wallet:
+    get:
+      tags:
+        - Anchorings
+      summary: The published anchoring wallet
+      description: >-
+        For checking a proof outside the portal (the offline verifier's `--address`). `{ address, explorerUrl }`: the wallet that pays for
+        every anchoring, and its page on a public blockchain explorer; both null when no blockchain is configured. 503 while the wallet's
+        key cannot be read. No sign-in.
+
+
+        **Access:** Public: no token needed.
+      operationId: getAuditAnchoringWallet
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
+      x-gateway-path: /api/audit/anchoring/wallet
   /audit/anchors/lookup:
     get:
       tags:

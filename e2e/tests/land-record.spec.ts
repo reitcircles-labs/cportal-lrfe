@@ -16,7 +16,8 @@ import { ENROLLED_USERS, userByRole } from '../support/catalogue';
 import { signInAs } from '../support/auth';
 import { apiAs } from '../support/intake';
 import { evidence } from '../support/evidence';
-import { REPO_DIR } from '../stack/config.mjs';
+import { pathToFileURL } from 'node:url';
+import { GATEWAY_URL, REPO_DIR } from '../stack/config.mjs';
 
 const SAMPLES = join(REPO_DIR, 'angular-app', 'docs', 'samples');
 
@@ -449,7 +450,7 @@ async function erf1873(playwright: Parameters<typeof apiAs>[0], baseURL: string)
     const record = await (await rec.api.get(`/api/records/${items.find((r: { label: string }) => r.label === 'Erf 1873, Klein Windhoek').id}`, { headers: rec.headers })).json();
     await rec.dispose();
     const deed = record.current.data.documents.find((d: { ref: string }) => d.ref === 'T 2210/2008');
-    return { id: record.id as string, recordNo: record.recordNo as string, version: record.currentVersion as number, deedNo: deed.edrmsNo as string };
+    return { id: record.id as string, recordNo: record.recordNo as string, version: record.currentVersion as number, deedNo: deed.edrmsNo as string, deedId: deed.edrmsDocumentId as string };
 }
 
 /** The made-up batches: { failed, confirmed }, made once. */
@@ -602,6 +603,52 @@ test('every proof status names its batch and links to it: the Blockchain check, 
     await expect(officer.getByRole('link', { name: /^On the blockchain, in batch \d+: open the batch$|^Confirmed, in batch \d+: open the batch$/ }).first()).toBeVisible();
     await officer.getByRole('link', { name: /in batch \d+: open the batch$/ }).first().scrollIntoViewIfNeeded();
     await evidence(officer, 'API-699', 'Land record versions: the proof tag names its batch and links to it');
+});
+
+test('a proof downloaded from the Audit screen passes the offline verifier, against the test blockchain', { tag: ['@API-672'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(90_000);
+    expect(batches, 'the batches made by the first Anchorings test').not.toBeNull();
+    const erf = await erf1873(playwright, baseURL!);
+
+    // the auditor downloads the current version's proof from its Blockchain check tab
+    const page = await as(browser, userByRole('aud').email, `/audit/records/${erf.id}`);
+    await page.locator('.ver').first().click();
+    const side = page.locator('aside.side');
+    await side.getByRole('tab', { name: '1 · Blockchain check' }).click();
+    await side.getByRole('button', { name: 'Explain: proof file' }).click();
+    await expect(side.getByRole('tooltip')).toContainText('node lrfe-verify.mjs <proof file> --address addr_test');
+    await evidence(page, 'API-672', 'Download proof on the Blockchain check tab, with how to check the file and the wallet address');
+    const [download] = await Promise.all([page.waitForEvent('download'), side.getByRole('button', { name: 'Download proof' }).click()]);
+    expect(download.suggestedFilename()).toBe(`proof-${erf.recordNo}-v${erf.version}.json`);
+    const proof = JSON.parse(readFileSync(await download.path(), 'utf8'));
+    expect([proof.format, proof.status, proof.anchor.batch]).toEqual(['lrfe-audit-proof/1', 'confirmed', batches!.confirmed]);
+
+    // the offline verifier, with the published wallet address, reading the test blockchain as it would a public one
+    const wallet = await (await fetch(`${GATEWAY_URL}/api/audit/anchoring/wallet`)).json();
+    const { verifyProof } = await import(pathToFileURL(join(REPO_DIR, 'backend', 'services', 'audit', 'verifier', 'lrfe-verify.mjs')).href);
+    const result = await verifyProof(proof, {
+        address: wallet.address,
+        fetchImpl: (url: string, init: RequestInit) => fetch(`${GATEWAY_URL}/api/audit/test/koios/${new URL(url).pathname.split('/').pop()}`, init)
+    });
+    expect(result.valid, JSON.stringify(result.checks)).toBe(true);
+    expect(result.checks.map((c: { name: string }) => c.name)).toContain('paid by the anchoring wallet');
+
+    // on the Land record's History tab for the registrar, who reads the audit pages; not for the records officer
+    const registrar = await as(browser, userByRole('sup').email, `/link?record=${erf.id}`);
+    await registrar.getByRole('tab', { name: 'History' }).click();
+    await expect(registrar.getByRole('button', { name: 'Download proof' }).first()).toBeVisible();
+    await registrar.getByRole('button', { name: 'Download proof' }).first().scrollIntoViewIfNeeded();
+    await evidence(registrar, 'API-672', 'Download proof on the Land record History tab, for the registrar');
+    const officer = await as(browser, userByRole('rec').email, `/link?record=${erf.id}`);
+    await officer.getByRole('tab', { name: 'History' }).click();
+    await expect(officer.locator('.hv').first()).toBeVisible();
+    await expect(officer.getByRole('button', { name: 'Download proof' })).toHaveCount(0);
+
+    // on the document's version history in Documents
+    const docs = await as(browser, userByRole('aud').email, `/documents?id=${erf.deedId}`);
+    await expect(docs.getByRole('button', { name: 'Download proof' }).first()).toBeVisible();
+    await docs.getByRole('button', { name: 'Download proof' }).first().scrollIntoViewIfNeeded();
+    await evidence(docs, 'API-672', 'Download proof on a document version in Documents');
 });
 });
 

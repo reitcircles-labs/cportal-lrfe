@@ -1,6 +1,7 @@
 import { anchorMetadata, addressOf, buildAnchorTx, CardanoError, LABEL, lovelaceToAda } from './tx.js';
 import { createBlockfrostDriver, createOgmiosDriver } from './drivers.js';
-import { createTransitSigner } from './signer.js';
+import { createLocalSigner, createTransitSigner } from './signer.js';
+import { createTestChainDriver } from './test-chain.js';
 
 /**
  * Putting a root on Cardano and finding it again (README.md section 3), through the portal's own
@@ -83,6 +84,7 @@ export function createCardanoAdapter({ driver, signer, network = 'preview', minB
 export function cardanoFromEnv(env, { logger, events, fetch } = {}) {
     const provider = (env.CARDANO_PROVIDER || '').toLowerCase();
     if (!provider) return null;
+    if (provider === 'test') return testChainAdapter(env, { logger, events });
     const network = (env.CARDANO_NETWORK || 'preview').toLowerCase();
     if (network === 'mainnet') throw new CardanoError('CARDANO_NETWORK=mainnet is not enabled yet (README.md section 9)', 'ECONFIG');
     const driver = provider === 'ogmios' ? createOgmiosDriver({ url: env.OGMIOS_URL, fetch })
@@ -91,4 +93,17 @@ export function cardanoFromEnv(env, { logger, events, fetch } = {}) {
     if (!driver) throw new CardanoError(`CARDANO_PROVIDER must be ogmios or blockfrost, not "${provider}"`, 'ECONFIG');
     const signer = createTransitSigner({ addr: env.BAO_ADDR, roleId: env.BAO_ROLE_ID, secretIdFile: env.BAO_SECRET_ID_FILE, keyName: env.ANCHOR_BAO_KEY || 'audit-anchor', fetch });
     return createCardanoAdapter({ driver, signer, network, minBalanceAda: Number(env.ANCHOR_MIN_BALANCE_ADA ?? 5), logger, events });
+}
+
+/**
+ * The end-to-end test stack's blockchain (CARDANO_PROVIDER=test): the in-memory chain of the unit
+ * tests and a key held in memory, on "preview". Refused unless NODE_ENV=test, so it can never stand
+ * in for a real blockchain. `testDriver` lets the test-only routes act on the chain.
+ */
+function testChainAdapter(env, { logger, events }) {
+    if (env.NODE_ENV !== 'test') throw new CardanoError('CARDANO_PROVIDER=test is only for the end-to-end tests (NODE_ENV=test)', 'ECONFIG');
+    const driver = createTestChainDriver();
+    const adapter = createCardanoAdapter({ driver, signer: createLocalSigner(), network: 'preview', logger, events });
+    adapter.testDriver = driver;
+    return adapter;
 }

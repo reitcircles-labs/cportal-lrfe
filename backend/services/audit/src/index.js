@@ -58,15 +58,15 @@ const auditList = new AuditListService({ repo, proofs, sources: createListSource
 
 // the Anchorings screens (API-671): the job's settings, to say when the next batch is due
 const anchoringConfig = { periodMs: parsePeriod(process.env.ANCHOR_PERIOD), retryMs: 5 * 60_000, confirmations: envInt('ANCHOR_CONFIRMATIONS', 10) };
-const anchorings = new AnchoringsService({ repo, tree, anchoring: !!cardano, config: anchoringConfig, sources: createCoverageSources({ recordsUrl, serviceToken }) });
+const anchorings = new AnchoringsService({ repo, tree, anchoring: !!cardano, cardano, config: anchoringConfig, sources: createCoverageSources({ recordsUrl, serviceToken }) });
 // "Is it on the blockchain?" (API-697)
 const lookup = new AnchorLookupService({ repo, proofs, anchorings, sources: createLookupSources({ recordsUrl, edrmsUrl, serviceToken }) });
 
 // made-up anchorings for the end-to-end tests only (API-698); never next to a real blockchain
 let testAnchorings = null;
 if (envBool('AUDIT_TEST_ANCHORINGS', false)) {
-    if (process.env.NODE_ENV !== 'test' || cardano) throw new Error('AUDIT_TEST_ANCHORINGS needs NODE_ENV=test and no CARDANO_PROVIDER');
-    testAnchorings = new TestAnchorings({ repo, tree });
+    if (process.env.NODE_ENV !== 'test' || (cardano && !cardano.testDriver)) throw new Error('AUDIT_TEST_ANCHORINGS needs NODE_ENV=test and no CARDANO_PROVIDER but the test one');
+    testAnchorings = new TestAnchorings({ repo, tree, cardano });
 }
 
 const app = await buildApp({
@@ -102,8 +102,8 @@ setTimeout(checkGap, 15_000).unref();
 setInterval(checkGap, 3_600_000).unref();
 
 // the wallet at start: its address, and a warning when it is low (an outage is only logged);
-// then the hourly anchoring (README.md section 3)
-if (cardano) {
+// then the hourly anchoring (README.md section 3). On the test blockchain the tests make the batches.
+if (cardano && !cardano.testDriver) {
     const anchoring = new AnchorService({
         repo, tree, cardano, events, logger: app.log,
         config: anchoringConfig

@@ -3,6 +3,8 @@ import { AnchoringsService, explorerUrl } from '../src/anchorings.service.js';
 import { createMemoryRepo } from '../src/repo/memory.js';
 import { buildApp } from '../src/app.js';
 import { TestAnchorings } from '../src/test-anchorings.js';
+import { cardanoFromEnv } from '../src/cardano/adapter.js';
+import { verifyProof } from '../verifier/lrfe-verify.mjs';
 import { audited, people } from './register.js';
 
 const SECRET = 'anchorings-test-secret-at-least-32-chars';
@@ -250,6 +252,37 @@ describe('made-up anchorings for the end-to-end tests (API-698)', () => {
         const coverage = await a.anchorings.coverage(2);
         assert.deepEqual(coverage.records.map(r => [r.recordNo, r.versions.map(v => v.versionNumber)]), [[a.record.recordNo, [1]]]);
         assert.equal((await a.lookup.search(a.record.recordNo, 'u1')).answer.status, 'yes');
+    });
+
+    it('on the test blockchain a confirmed batch is a real transaction: its proofs verify in the portal and with the offline verifier (API-672)', async () => {
+        const a = await audited();
+        a.cardano.testDriver = a.driver;
+        const made = new TestAnchorings({ repo: a.repo, tree: a.tree, cardano: a.cardano, clock: a.clock });
+        await made.anchor('confirmed');
+        const row = await a.repo.anchorByBatch(1);
+        assert.ok(a.driver.chain.blocks.some(b => b.id === row.txHash));
+        assert.equal((await a.proofs.verify('record-version', a.record.id, 1)).valid, true);
+        // the offline verifier, reading the chain from the test chain's public API answers
+        const fetchImpl = async (url, init) => ({
+            ok: true, status: 200,
+            json: async () => made.publicAnswer(new URL(url).pathname.replace(/^.*(\/tx_\w+)$/, '$1'), JSON.parse(init.body)._tx_hashes)
+        });
+        const proof = JSON.parse(JSON.stringify(await a.proofs.proof('record-version', a.record.id, 1)));
+        const result = await verifyProof(proof, { address: await a.cardano.address(), fetchImpl });
+        assert.equal(result.valid, true, JSON.stringify(result));
+        assert.equal(new TestAnchorings({ repo: a.repo, tree: a.tree }).publicAnswer('/tx_info', [row.txHash]), null);
+    });
+
+    it('the published wallet: its address and explorer page, nulls without a blockchain, 503 while the key cannot be read', async () => {
+        const wallet = (cardano) => new AnchoringsService({ repo: createMemoryRepo(), tree: { size: async () => 0 }, cardano }).wallet();
+        assert.deepEqual(await wallet(null), { address: null, explorerUrl: null });
+        assert.deepEqual(await wallet({ network: 'preview', address: async () => 'addr_test1abc' }), { address: 'addr_test1abc', explorerUrl: 'https://preview.cardanoscan.io/address/addr_test1abc' });
+        await assert.rejects(wallet({ network: 'preview', address: async () => { throw new Error('OpenBao down'); } }), e => e.statusCode === 503 && !/OpenBao/.test(e.message));
+    });
+
+    it('the test blockchain is refused outside the tests', () => {
+        assert.throws(() => cardanoFromEnv({ CARDANO_PROVIDER: 'test', NODE_ENV: 'production' }), /only for the end-to-end tests/);
+        assert.ok(cardanoFromEnv({ CARDANO_PROVIDER: 'test', NODE_ENV: 'test' }, { logger: { warn() {}, info() {} } }).testDriver);
     });
 
     it('the route exists only when the service is started with them, and only for an administrator', async () => {

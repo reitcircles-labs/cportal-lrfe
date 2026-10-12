@@ -154,6 +154,9 @@ export interface TrailEntry {
   hash: string;
 }
 
+/** What a proof can be of (GET /audit/proofs/{kind}/{id}). */
+export type ProofKind = 'record-version' | 'document-version' | 'trail-entry';
+
 /** A proof's status: in no anchoring yet, anchored, or confirmed. */
 export type ProofStatus = 'waiting' | 'anchored' | 'confirmed';
 
@@ -199,6 +202,16 @@ export class AuditApi {
 
   trail(recordId: string, offset: number, limit: number) {
     return this.api.get<{ total: number; entries: TrailEntry[] }>('/audit/trail', { subject: `record:${recordId}`, offset, limit });
+  }
+
+  /** A proof file (`lrfe-audit-proof/1`), for the offline verifier (API-672). */
+  proof(kind: ProofKind, id: string, version?: number) {
+    return this.api.get<Record<string, unknown>>(`/audit/proofs/${kind}/${id}`, { version });
+  }
+
+  /** The anchoring wallet the installation publishes (no sign-in needed). */
+  wallet() {
+    return this.api.get<{ address: string | null; explorerUrl: string | null }>('/audit/anchoring/wallet');
   }
 
   proofStatus(seq: number) {

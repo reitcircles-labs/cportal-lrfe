@@ -7,6 +7,7 @@ import { AuditApi, CheckDocument, CheckVersion, Checkpoint, Finding } from '../.
 import { IntakeApi, IntakeDocType } from '../../api/intake.api';
 import { History, LandRecord, PinnedDocument, RecordsApi, Version } from '../../api/records.api';
 import { InfoTipComponent } from '../../shared/info-tip.component';
+import { ProofDownloadComponent } from '../../shared/proof-download.component';
 import { ProofLinkComponent } from '../../shared/proof-link.component';
 import { RecordDiffComponent } from '../../shared/record-diff.component';
 import { ConfirmService } from '../../state/confirm.service';
@@ -52,7 +53,7 @@ interface DocRow {
  */
 @Component({
   selector: 'app-audit-record',
-  imports: [RouterLink, InfoTipComponent, ProofLinkComponent, RecordDiffComponent, FindingThreadComponent, AuditReviewComponent, AuditTrailComponent],
+  imports: [RouterLink, InfoTipComponent, ProofLinkComponent, ProofDownloadComponent, RecordDiffComponent, FindingThreadComponent, AuditReviewComponent, AuditTrailComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './audit-record.component.html',
   styleUrl: './audit-record.component.css'

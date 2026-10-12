@@ -10,6 +10,7 @@ import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
 import { RecordDiffComponent } from '../../shared/record-diff.component';
 import { anchoringLabel, anchoringTag } from '../../shared/anchoring';
+import { ProofDownloadComponent } from '../../shared/proof-download.component';
 import { ProofLinkComponent } from '../../shared/proof-link.component';
 
 type Tab = 'documents' | 'chain' | 'details' | 'history' | 'comments';
@@ -30,7 +31,7 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
  */
 @Component({
     selector: 'app-link',
-    imports: [IconComponent, CanDirective, RecordDiffComponent, ProofLinkComponent],
+    imports: [IconComponent, CanDirective, RecordDiffComponent, ProofLinkComponent, ProofDownloadComponent],
     template: `
     <div class="ws" [class.list-hidden]="!listOpen()">
       <!-- Land record list -->
@@ -277,7 +278,8 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                         <div class="small muted">Committed {{ fmt(v.committedAt) }} · submitted by {{ v.submittedByName || '—' }} · approved by {{ v.approvedByName || '—' }}</div>
                         @if (v.reviewComment) { <div class="small">Reviewer: {{ v.reviewComment }}</div> }
                         <div class="row small" style="gap:8px;align-items:center"><span class="mono muted">seal {{ v.seal.slice(0, 16) }}…</span>
-                          @if (v.anchoring; as a) { <app-proof-link [label]="anchoringLabel(a)" [tagClass]="anchoringTag(a)" [batch]="a.batch" /> }</div>
+                          @if (v.anchoring; as a) { <app-proof-link [label]="anchoringLabel(a)" [tagClass]="anchoringTag(a)" [batch]="a.batch" />
+                            <app-proof-download kind="record-version" [itemId]="r.id" [version]="v.versionNumber" [fileName]="'proof-' + r.recordNo + '-v' + v.versionNumber + '.json'" [waiting]="a.status === 'waiting'" /> }</div>
                         <app-record-diff [diff]="v.diff" />
                       </div>
                     } @empty { <div class="small muted" style="text-align:center;padding:12px">{{ history() ? 'No committed version yet.' : historyFailed() ? 'The history could not be loaded.' : 'Loading…' }}</div> }

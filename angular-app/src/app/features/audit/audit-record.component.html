@@ -182,7 +182,8 @@
                   } @else {
                     <span class="reason">{{ versionLocked() }}</span>
                   }
-                  <dl class="kv"><dt>Proof</dt><dd><app-proof-link [label]="anchoringText(i.anchoring)" [tagClass]="anchoringClass(i.anchoring)" [batch]="i.batch" /></dd>
+                  <dl class="kv"><dt>Proof</dt><dd><app-proof-link [label]="anchoringText(i.anchoring)" [tagClass]="anchoringClass(i.anchoring)" [batch]="i.batch" />
+                    <app-proof-download kind="record-version" [itemId]="rec.id" [version]="v.n" [fileName]="'proof-' + rec.recordNo + '-v' + v.n + '.json'" [waiting]="i.anchoring === 'waiting'" /></dd>
                     <dt class="row" style="gap:0">Fingerprint<app-info-tip label="fingerprint" [text]="tips.fingerprint" /></dt><dd class="mono small">{{ i.seal.slice(0, 16) }}…</dd></dl>
                 } @else {
                   <span class="small muted">Checked and signed off in the audit of {{ lastSignoffText() }}.</span>
@@ -218,7 +219,11 @@
               </div>
               @if (tab() === 'proof') {
                 <span [class]="'small ' + d.checkTone" style="font-weight:600">{{ d.checkLabel }}</span>
-                <dl class="kv"><dt class="row" style="gap:0">Fingerprint<app-info-tip label="fingerprint" [text]="tips.fingerprint" /></dt><dd class="mono small">{{ d.pin.seal.slice(0, 16) }}…</dd></dl>
+                <dl class="kv"><dt class="row" style="gap:0">Fingerprint<app-info-tip label="fingerprint" [text]="tips.fingerprint" /></dt><dd class="mono small">{{ d.pin.seal.slice(0, 16) }}…</dd>
+                  @if (d.check; as c) {
+                    <dt>Proof</dt><dd><app-proof-link [label]="anchoringText(c.anchoring)" [tagClass]="anchoringClass(c.anchoring)" [batch]="c.batch" />
+                      <app-proof-download kind="document-version" [itemId]="d.pin.edrmsDocumentId" [version]="d.pin.version" [fileName]="'proof-' + d.pin.edrmsNo + '-v' + d.pin.version + '.json'" [waiting]="c.anchoring === 'waiting'" /></dd>
+                  }</dl>
               } @else if (tab() === 'meta') {
                 <table class="table small"><tbody>
                   <tr><th scope="row" class="muted">Document number</th><td>{{ d.pin.edrmsNo }}</td></tr>

@@ -9,6 +9,7 @@ import { TasksService } from '../../state/tasks.service';
 import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
 import { Anchoring, anchoringLabel, anchoringTag } from '../../shared/anchoring';
+import { ProofDownloadComponent } from '../../shared/proof-download.component';
 import { ProofLinkComponent } from '../../shared/proof-link.component';
 
 interface DocRow { id: string; edrmsNo: string; docType: string; title: string; instrumentRef: string | null; batchId: string | null; currentVersion: number; filedAt: string; props: Record<string, string>; }
@@ -27,7 +28,7 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
  */
 @Component({
     selector: 'app-documents',
-    imports: [IconComponent, CanDirective, ProofLinkComponent],
+    imports: [IconComponent, CanDirective, ProofLinkComponent, ProofDownloadComponent],
     template: `
     <div class="shell">
       <aside class="rail">
@@ -107,7 +108,10 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
                       @if (v.reason) { <div class="small muted">“{{ v.reason }}”</div> }
                       @for (c of v.changes; track c.k) { <div class="small"><span class="muted">{{ c.k }}:</span> <span class="strike">{{ c.from }}</span> → <b>{{ c.to }}</b></div> }
                       <div class="small mono muted" [title]="'content SHA-256 ' + v.sha256 + ' · seal ' + v.seal">sha256 {{ v.sha256.slice(0, 12) }}… · seal {{ v.seal.slice(0, 12) }}…</div>
-                      @if (v.anchoring; as a) { <div><app-proof-link [label]="anchoringLabel(a)" [tagClass]="anchoringTag(a)" [batch]="a.batch" /></div> }
+                      @if (v.anchoring; as a) {
+                        <div class="row" style="gap:8px;align-items:center"><app-proof-link [label]="anchoringLabel(a)" [tagClass]="anchoringTag(a)" [batch]="a.batch" />
+                          <app-proof-download kind="document-version" [itemId]="d.id" [version]="v.versionNumber" [fileName]="'proof-' + d.edrmsNo + '-v' + v.versionNumber + '.json'" [waiting]="a.status === 'waiting'" /></div>
+                      }
                     </div>
                   }
                 </div>

@@ -77,6 +77,9 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
         }
     }, async (req) => anchorings.list(req.query));
 
+    // the published anchoring wallet, for checking proofs outside the portal: no sign-in (API-672, API-676)
+    app.get('/audit/anchoring/wallet', async () => anchorings.wallet());
+
     // "Is it on the blockchain?": a land record or document by number, Erf or deed number, with its batches (API-697)
     app.get('/audit/anchors/lookup', {
         onRequest: canSeeAnchorings,
@@ -119,6 +122,16 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
             onRequest: app.requirePerm('admin.users'),
             schema: { body: { type: 'object', required: ['outcome'], additionalProperties: false, properties: { outcome: { type: 'string', enum: ['confirmed', 'failed'] } } } }
         }, async (req, reply) => reply.code(201).send(await testAnchorings.anchor(req.body.outcome)));
+        // the test blockchain as a public blockchain API (Koios) answers, for the offline verifier in the tests
+        app.post('/audit/test/koios/:endpoint', {
+            schema: {
+                params: { type: 'object', required: ['endpoint'], properties: { endpoint: { type: 'string', enum: ['tx_metadata', 'tx_status', 'tx_info'] } } },
+                body: { type: 'object', required: ['_tx_hashes'], properties: { _tx_hashes: { type: 'array', maxItems: 50, items: { type: 'string', pattern: '^[0-9a-f]{64}$' } } } }
+            }
+        }, async (req, reply) => {
+            const answer = testAnchorings.publicAnswer(`/${req.params.endpoint}`, req.body._tx_hashes);
+            return answer ?? reply.code(404).send({ message: 'There is no test blockchain' });
+        });
     }
 
     // ------------------------------------------------ sign-off and findings (README.md section 5)
