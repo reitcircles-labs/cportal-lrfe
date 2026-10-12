@@ -1379,11 +1379,12 @@ paths:
         - audit · Proofs
       summary: Check an item now
       description: >-
-        Body `{ kind, id, version }` as for the proof. `{ valid, status, checks: { item, path, chain }, checkedAt, proof }`. `item`: the
-        seal recomputed from the current data by land-records or edrms (a trail entry: its hashes, and the chain to the checkpoint). `path`:
-        the leaf and the path to the root. `chain`: the root and size in the transaction's metadata on the chain (Blockfrost: `source` is
-        the provider), or with the own node, in the signed transaction as sent (`source: "stored"`). Each check has `ok` and, when it fails,
-        `problem`. `valid` only when all three hold; never while `waiting`.
+        Body `{ kind, id, version }` as for the proof. `{ valid, status, checks: { item, path, chain }, checkedAt, explorerUrl, proof }`
+        (`explorerUrl`: the transaction's page on a public blockchain explorer; null while waiting). `item`: the seal recomputed from the
+        current data by land-records or edrms (a trail entry: its hashes, and the chain to the checkpoint). `path`: the leaf and the path to
+        the root. `chain`: the root and size in the transaction's metadata on the chain (Blockfrost: `source` is the provider), or with the
+        own node, in the signed transaction as sent (`source: "stored"`). Each check has `ok` and, when it fails, `problem`. `valid` only
+        when all three hold; never while `waiting`.
 
 
         **Access:** Signed-in user with permission `audit.view`.

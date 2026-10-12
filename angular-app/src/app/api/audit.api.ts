@@ -2,6 +2,7 @@ import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
+import type { VerifyResult } from '../features/audit/verify-wording';
 import { ApiService, toApiError } from './api.service';
 
 /** Types and calls of the audit service (gateway prefix /api/audit). */
@@ -207,6 +208,11 @@ export class AuditApi {
   /** A proof file (`lrfe-audit-proof/1`), for the offline verifier (API-672). */
   proof(kind: ProofKind, id: string, version?: number) {
     return this.api.get<Record<string, unknown>>(`/audit/proofs/${kind}/${id}`, { version });
+  }
+
+  /** Check a version against the blockchain now (API-675). */
+  verify(kind: ProofKind, id: string, version?: number) {
+    return this.api.post<VerifyResult>('/audit/verify', { kind, id, ...(version ? { version } : {}) });
   }
 
   /** The anchoring wallet the installation publishes (no sign-in needed). */

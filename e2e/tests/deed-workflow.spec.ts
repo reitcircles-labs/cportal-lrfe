@@ -137,7 +137,7 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
         await expect(field(page, 'Conveyancer')).toContainText('H. J. van Wyk');
         await expect(field(page, 'Conveyancer')).toContainText('corrected');
         await expect(field(page, 'Prior title')).toContainText('T 1502/1996');
-        await expect(page.getByRole('button', { name: 'Check integrity' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Check integrity', exact: true })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Request correction' })).toHaveAttribute('aria-disabled', 'true');
         await evidence(page, 'API-606', 'Records officer: the sealed record, without integrity check or correction');
         await page.context().close();
@@ -146,7 +146,7 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
     await test.step(`auditor ${AUDITOR.email} verifies the sealed version 1.0`, async () => {
         const page = await as(browser, AUDITOR.email, '/documents');
         await openInDocuments(page, edrmsNo);
-        await page.getByRole('button', { name: 'Check integrity' }).click();
+        await page.getByRole('button', { name: 'Check integrity', exact: true }).click();
         await expect(page.locator('.banner.ok')).toContainText('Integrity verified · version 1.0');
         await evidence(page, 'API-606', 'Auditor: integrity of version 1.0 verified');
         await page.context().close();
@@ -197,7 +197,7 @@ test('a deed goes from scan to sealed record, and a correction is approved by a 
     await test.step(`auditor ${AUDITOR.email} verifies the new version 2.0`, async () => {
         const page = await as(browser, AUDITOR.email, '/documents');
         await openInDocuments(page, edrmsNo);
-        await page.getByRole('button', { name: 'Check integrity' }).click();
+        await page.getByRole('button', { name: 'Check integrity', exact: true }).click();
         await expect(page.locator('.banner.ok')).toContainText('Integrity verified · version 2.0');
         await evidence(page, 'API-606', 'Auditor: integrity of version 2.0 verified');
         await page.context().close();

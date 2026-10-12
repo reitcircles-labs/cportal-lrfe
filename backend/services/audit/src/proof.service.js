@@ -2,6 +2,7 @@ import { AppError, BadRequestError, NotFoundError } from '@lrfe/common';
 import { chainHash, contentHash } from './chain.js';
 import { leafHash, verifyInclusion } from './mmr.js';
 import { committedMetadata, LABEL } from './cardano/tx.js';
+import { explorerUrl } from './anchorings.service.js';
 
 export const PROOF_FORMAT = 'lrfe-audit-proof/1';
 export const KINDS = ['record-version', 'document-version', 'trail-entry'];
@@ -132,7 +133,8 @@ export class ProofService {
      * Check an item now: (1) its seal recomputed from the current data by the service that owns it
      * (a trail entry: its hashes recomputed here, then the chain to the checkpoint), (2) the leaf and
      * the path to the root, (3) the root and size in the anchoring transaction's metadata. `valid`
-     * only when all three hold; a version not yet anchored is never valid.
+     * only when all three hold; a version not yet anchored is never valid. `explorerUrl`: the
+     * transaction's page on a public blockchain explorer (null while waiting).
      */
     async verify(kind, id, version) {
         const p = await this.proof(kind, id, version);
@@ -143,7 +145,9 @@ export class ProofService {
         }
         if (p.anchor) checks.chain = await this.checkChain(p);
         const valid = p.status !== 'waiting' && [checks.item, checks.path, checks.chain].every(c => c?.ok === true);
-        return { valid, status: p.status, checks, checkedAt: this.clock().toISOString(), proof: p };
+        // the transaction's page on a public blockchain explorer, for the screens (API-675)
+        const explorer = p.anchor ? explorerUrl(p.anchor.network, p.anchor.tx) : null;
+        return { valid, status: p.status, checks, checkedAt: this.clock().toISOString(), explorerUrl: explorer, proof: p };
     }
 
     async checkItem(p) {

@@ -261,7 +261,9 @@ describe('made-up anchorings for the end-to-end tests (API-698)', () => {
         await made.anchor('confirmed');
         const row = await a.repo.anchorByBatch(1);
         assert.ok(a.driver.chain.blocks.some(b => b.id === row.txHash));
-        assert.equal((await a.proofs.verify('record-version', a.record.id, 1)).valid, true);
+        const verified = await a.proofs.verify('record-version', a.record.id, 1);
+        assert.equal(verified.valid, true);
+        assert.equal(verified.explorerUrl, `https://preview.cardanoscan.io/transaction/${row.txHash}`);   // API-675
         // the offline verifier, reading the chain from the test chain's public API answers
         const fetchImpl = async (url, init) => ({
             ok: true, status: 200,

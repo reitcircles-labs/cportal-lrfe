@@ -650,6 +650,43 @@ test('a proof downloaded from the Audit screen passes the offline verifier, agai
     await docs.getByRole('button', { name: 'Download proof' }).first().scrollIntoViewIfNeeded();
     await evidence(docs, 'API-672', 'Download proof on a document version in Documents');
 });
+
+test('Documents: a document version verified against the blockchain, and one that still waits for the next batch', { tag: ['@API-675'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(120_000);
+    expect(batches, 'the batches made by the first Anchorings test').not.toBeNull();
+    const erf = await erf1873(playwright, baseURL!);
+
+    // T 2210/2008, in the test batch: every check matches, with the transaction on an explorer
+    const page = await as(browser, userByRole('aud').email, `/documents?id=${erf.deedId}`);
+    const history = page.locator('.panel', { has: page.getByRole('heading', { name: 'Version history' }) });
+    await expect(page.getByRole('button', { name: 'Explain: check integrity' })).toBeVisible();
+    await history.getByRole('button', { name: 'Verify against the blockchain', exact: true }).first().click();
+    const result = history.getByRole('status').first();
+    await expect(result).toContainText('Matches the blockchain ✓');
+    await expect(result.locator('li')).toHaveCount(3);
+    await expect(result).toContainText('Fingerprint recomputed from the file and its metadata');
+    await expect(result).toContainText('Batch is in the blockchain transaction');
+    await expect(result.getByRole('link')).toHaveAttribute('href', /^https:\/\/[a-z.]*cardanoscan\.io\/transaction\/[0-9a-f]{64}$/);
+    await result.scrollIntoViewIfNeeded();
+    await evidence(page, 'API-675', 'Documents: a document version verified against the blockchain, each check passed, with the transaction');
+
+    // a document filed after the batch: sealed, waiting for the next batch
+    const edrmsNo = await fileSample(playwright, baseURL!, '02-T-1502-1996-deed-of-transfer.pdf');
+    const waiting = await as(browser, userByRole('aud').email, '/documents');
+    await waiting.getByPlaceholder('EDRMS no., deed no., erf, owner').fill(edrmsNo);
+    await waiting.locator('.drow', { hasText: edrmsNo }).click();
+    const waitingHistory = waiting.locator('.panel', { has: waiting.getByRole('heading', { name: 'Version history' }) });
+    // the audit service seals it from the event a moment after filing
+    await expect(async () => {
+        await waiting.reload();
+        await expect(waitingHistory.getByRole('button', { name: 'Verify against the blockchain', exact: true })).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+    await waitingHistory.getByRole('button', { name: 'Verify against the blockchain', exact: true }).click();
+    await expect(waitingHistory.getByRole('status')).toContainText('Waiting for next batch: this version can be checked against the blockchain once it is there.');
+    await expect(waitingHistory.getByRole('status').locator('li')).toHaveCount(1);
+    await waitingHistory.scrollIntoViewIfNeeded();
+    await evidence(waiting, 'API-675', 'Documents: a document version that still waits for the next batch');
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {
