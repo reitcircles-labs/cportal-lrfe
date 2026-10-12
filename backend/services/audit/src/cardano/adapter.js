@@ -9,6 +9,8 @@ import { createTestChainDriver } from './test-chain.js';
  *
  *   address()                        the anchoring wallet's address
  *   balance()                        { lovelace, ada, low }; low also logs a warning and publishes audit.wallet.low
+ *   funds()                          the same, without the warning (the health panel reads it often)
+ *   synced()                         whether the node or provider is at the chain's tip
  *   prepare({ root, size, batch, prev, spend })  build and sign: { txHash, cbor, fee, bytes, metadata, ttl, input }
  *                                    (valid for `ttlSlots`, an hour: from slot `ttl` on it can never land;
  *                                    `spend`: { txHash, index } of the output it must spend)
@@ -31,16 +33,21 @@ export function createCardanoAdapter({ driver, signer, network = 'preview', minB
             return address;
         },
 
-        async balance() {
+        async funds() {
             const utxos = await driver.utxos(await self.address());
             const lovelace = utxos.reduce((sum, u) => sum + BigInt(u.lovelace), 0n);
-            const ada = lovelaceToAda(lovelace);
-            const low = Number(lovelace) / 1e6 < minBalanceAda;
+            return { lovelace: String(lovelace), ada: lovelaceToAda(lovelace), low: Number(lovelace) / 1e6 < minBalanceAda, minimumAda: minBalanceAda };
+        },
+
+        async synced() { return driver.synced(); },
+
+        async balance() {
+            const { lovelace, ada, low } = await self.funds();
             if (low) {
                 logger.warn?.({ address, ada, minimum: minBalanceAda }, 'audit: the anchoring wallet is low on funds');
                 await events?.publish('audit.wallet.low', { network, address, ada, minimum: minBalanceAda }, { durable: false })?.catch?.(() => {});
             }
-            return { lovelace: String(lovelace), ada, low };
+            return { lovelace, ada, low };
         },
 
         async prepare({ root, size, batch, prev, spend }) {

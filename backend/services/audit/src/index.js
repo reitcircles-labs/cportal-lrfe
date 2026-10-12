@@ -12,6 +12,7 @@ import { AuditListService, createListSources } from './audit-list.service.js';
 import { AnchoringsService, createCoverageSources } from './anchorings.service.js';
 import { AnchorLookupService, createLookupSources } from './lookup.service.js';
 import { TestAnchorings } from './test-anchorings.js';
+import { AnchoringHealthService } from './anchoring-health.service.js';
 import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
@@ -62,6 +63,10 @@ const anchorings = new AnchoringsService({ repo, tree, anchoring: !!cardano, car
 // "Is it on the blockchain?" (API-697)
 const lookup = new AnchorLookupService({ repo, proofs, anchorings, sources: createLookupSources({ recordsUrl, edrmsUrl, serviceToken }) });
 
+// whether anchoring is working, for administrators (API-674)
+const health = new AnchoringHealthService({ repo, cardano, anchorings, events, config: anchoringConfig });
+health.start();
+
 // made-up anchorings for the end-to-end tests only (API-698); never next to a real blockchain
 let testAnchorings = null;
 if (envBool('AUDIT_TEST_ANCHORINGS', false)) {
@@ -78,6 +83,7 @@ const app = await buildApp({
     anchorings,
     lookup,
     testAnchorings,
+    health,
     jwtSecret: env('JWT_SECRET'),
     revocations: createRevocationList({ events }),
     logger: { level: env('LOG_LEVEL', 'info') }

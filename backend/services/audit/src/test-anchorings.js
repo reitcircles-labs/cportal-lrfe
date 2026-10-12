@@ -62,6 +62,18 @@ export class TestAnchorings {
         };
     }
 
+    /**
+     * The test wallet's funds set to `lovelace` (API-674: the health panel's low-funds warning); the
+     * wallet is then read as the job would, which broadcasts the low-funds warning when it is low.
+     * Null without the test chain.
+     */
+    async setFunds(lovelace) {
+        if (!this.cardano) return null;
+        const chain = this.cardano.testDriver.chain;
+        chain.ledger = [{ txHash: createHash('sha256').update(`test-funds:${chain.ledger.length}:${lovelace}`).digest('hex'), index: 0, lovelace: String(lovelace), assets: false }];
+        return this.cardano.balance();
+    }
+
     /** What a public blockchain API answers about the test chain, for the offline verifier (null without the test chain). */
     publicAnswer(path, txHashes) {
         return this.cardano ? testChainKoiosAnswer(this.cardano.testDriver, path, txHashes) : null;

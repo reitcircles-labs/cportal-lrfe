@@ -734,6 +734,41 @@ test('the trail search: a person\'s actions, a document\'s history, and the whol
     await admin.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(admin.locator('table.table tbody tr:not(.details)').filter({ hasText: 'Created land record' }).first()).toBeVisible();
 });
+
+test('Anchoring health for administrators: healthy, then a low-balance warning while the page is open', { tag: ['@API-674'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(90_000);
+    expect(batches, 'the batches made by the first Anchorings test').not.toBeNull();
+    const page = await as(browser, userByRole('adm').email, '/');
+    await page.getByRole('complementary', { name: 'Main navigation' }).getByRole('link', { name: 'Anchoring health' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Anchoring health' }).last()).toBeVisible();
+
+    // healthy: the wallet, its funds, connected, the last batch, no gaps, nothing to attend to
+    await expect(page.getByRole('status').filter({ hasText: 'Anchoring is working: nothing needs attention.' })).toBeVisible();
+    await expect(page.locator('code.addr')).toHaveText(/^addr_test1/);
+    await expect(page.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Batch \d+$/ })).toBeVisible();
+    await expect(page.getByText('None: the trail has every event.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Explain: funds' })).toBeVisible();
+    expect(await page.locator('main').innerText()).not.toMatch(/Cardano|preview|Koios|Blockfrost|Ogmios|OpenBao/i);
+    await evidence(page, 'API-674', 'Anchoring health, healthy: the wallet, its funds, the blockchain connection, the last and next anchoring, no trail gaps');
+
+    // the wallet runs low: the warning, and the alert the wallet sent
+    const admin = await apiAs(playwright, baseURL!, userByRole('adm').email);
+    const setFunds = async (lovelace: number) => {
+        const res = await admin.api.post('/api/audit/test/funds', { headers: admin.headers, data: { lovelace } });
+        expect(res.status(), await res.text()).toBe(200);
+    };
+    await setFunds(2_000_000);
+    try {
+        await page.reload();
+        await expect(page.getByRole('alert').filter({ hasText: 'The anchoring wallet is low on funds: 2 left, at least 5 needed.' })).toBeVisible();
+        await expect(page.getByText('reported low funds')).toBeVisible();
+        await evidence(page, 'API-674', 'Anchoring health with a low-balance warning, and the alert the wallet sent');
+    } finally {
+        await setFunds(10_000_000_000);                                                 // the next tests' batches still need funds
+        await admin.dispose();
+    }
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {

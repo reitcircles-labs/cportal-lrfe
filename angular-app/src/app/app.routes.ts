@@ -15,6 +15,7 @@ import { AnchoringsListComponent } from './features/anchorings/anchorings-list.c
 import { AnchoringBatchComponent } from './features/anchorings/anchoring-batch.component';
 import { DocumentsComponent } from './features/documents/documents.component';
 import { AdminComponent } from './features/admin/admin.component';
+import { AnchoringHealthComponent } from './features/admin/anchoring-health.component';
 import { DeniedComponent } from './features/denied/denied.component';
 import { CheckProofComponent } from './features/check-proof/check-proof.component';
 
@@ -44,6 +45,7 @@ export const routes: Routes = [
   { path: 'admin/roles', component: AdminComponent, canActivate: g, data: { perm: 'admin.roles', tab: 'roles', title: 'Roles & permissions', crumb: 'Administration' } },
   { path: 'admin/policies', component: AdminComponent, canActivate: g, data: { perm: 'admin.policies', tab: 'policies', title: 'Security policies', crumb: 'Administration' } },
   { path: 'admin/log', component: AdminComponent, canActivate: g, data: { perm: 'admin.users', tab: 'log', title: 'Access log', crumb: 'Administration' } },
+  { path: 'admin/anchoring', component: AnchoringHealthComponent, canActivate: g, data: { perm: 'admin.policies', title: 'Anchoring health', crumb: 'Administration' } },
   { path: 'admin', redirectTo: 'admin/users', pathMatch: 'full' },
   { path: 'denied', component: DeniedComponent, canActivate: [authGuard], data: { title: 'Access denied', crumb: 'Deeds Registry' } },
   { path: '**', redirectTo: '' }

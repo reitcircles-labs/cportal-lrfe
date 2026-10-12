@@ -169,7 +169,8 @@ export class AppComponent {
       { path: '/admin/offices', label: 'Offices', icon: 'building', perm: 'admin.offices', badge: 0 },
       { path: '/admin/roles', label: 'Roles & permissions', icon: 'lock', perm: 'admin.roles', badge: 0 },
       { path: '/admin/policies', label: 'Security policies', icon: 'shield', perm: 'admin.policies', badge: 0 },
-      { path: '/admin/log', label: 'Access log', icon: 'clock', perm: 'admin.users', badge: 0 }
+      { path: '/admin/log', label: 'Access log', icon: 'clock', perm: 'admin.users', badge: 0 },
+      { path: '/admin/anchoring', label: 'Anchoring health', icon: 'link', perm: 'admin.policies', badge: 0 }
     ].filter(n => this.rbac.can(n.perm));
   });
 

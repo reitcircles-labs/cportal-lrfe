@@ -496,6 +496,47 @@ paths:
         allOf:
           - anchors.view
       x-gateway-path: /api/audit/anchors
+  /audit/anchoring/health:
+    get:
+      tags:
+        - Anchorings
+      summary: Whether anchoring is working (administrators)
+      description: >-
+        For `admin.policies` or `audit.view`. `{ configured, network, wallet: { readable, address, funds: { ada, low, minimumAda } }, chain:
+        { reachable, tipHeight, synced }, lastAnchoring: { batch, status, createdAt }, next: { dueAt, waiting }, overdue, gaps: { count,
+        latest: [{ seq, at, missing }] }, warnings, live }`. Each part is read on its own: when the blockchain or the wallet's key cannot be
+        read, the report says so and the rest still comes back. `warnings`: `walletUnreadable`, `lowFunds`, `unreachable`, `catchingUp`,
+        `overdue` (fingerprints wait and the last anchoring is more than two periods old), `trailGap`. `live`: the broadcast warnings
+        `audit.wallet.low` and `audit.trail.gap` received in the last day (`kind` `lowFunds` or `trailGap`, `at`, `missing`).
+
+
+        **Access:** Signed-in user with any of `admin.policies`, `audit.view`.
+      operationId: getAuditAnchoringHealth
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - admin.policies
+          - audit.view
+      x-gateway-path: /api/audit/anchoring/health
   /audit/anchoring/wallet:
     get:
       tags:
