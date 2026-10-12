@@ -1,7 +1,7 @@
 {
   "key": "land-record-review",
   "name": "Review of a land record version",
-  "description": "A land record version submitted by a records officer, approved by a different person who can finalize records, then committed (sealed) by land-records. Started by land-records when the officer submits.",
+  "description": "A land record version submitted by a records officer, approved by a different person who can finalize records, then committed (sealed) by land-records. Started by land-records when the officer submits. Four-eyes: neither the submitter nor, with the security policy Four-eyes finalization on, the reviewers who filed the record's documents (filedBy) may approve it.",
   "start": { "services": ["land-records"] },
   "managePerm": "record.finalize",
   "businessKey": { "var": "record.id" },
@@ -26,6 +26,11 @@
         "additionalProperties": false,
         "required": ["id", "name"],
         "properties": { "id": { "type": "string", "minLength": 1 }, "name": { "type": "string" } }
+      },
+      "filedBy": {
+        "type": "array",
+        "maxItems": 200,
+        "items": { "type": "string", "minLength": 1 }
       }
     }
   },
@@ -36,7 +41,7 @@
       "type": "humanTask",
       "title": { "cat": ["Approve land record ", { "var": "record.recordNo" }, " (", { "var": "record.label" }, ") version ", { "var": "record.versionNumber" }] },
       "assignee": { "perm": "record.finalize" },
-      "exclude": [{ "var": "submittedBy.id" }],
+      "exclude": [{ "var": "submittedBy.id" }, { "var": "filedBy" }],
       "outcomes": ["approved", "rejected"],
       "requireCommentFor": ["rejected"],
       "outputVar": "approval",

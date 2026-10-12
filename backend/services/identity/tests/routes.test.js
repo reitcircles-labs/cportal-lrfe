@@ -94,6 +94,18 @@ describe('identity HTTP API', () => {
         expect(matrix.json().changes).to.equal(3);                        // capture.scan, capture.rescan, anchors.view removed
     });
 
+    it('services read the policies they enforce with a service token; people cannot (API-663)', async () => {
+        const { app, login, auth } = await makeApp();
+        const { signServiceToken } = await import('@lrfe/common');
+        const effective = (headers) => app.inject({ url: '/policies/effective', headers });
+        const res = await effective({ authorization: `Bearer ${signServiceToken(app, 'land-records')}` });
+        expect(res.statusCode).to.equal(200);
+        expect(res.json()).to.deep.equal({ fourEyes: true });
+        expect((await effective({ authorization: `Bearer ${signServiceToken(app, 'intake')}` })).statusCode).to.equal(403);
+        const { token } = await login('p.hamutenya@deeds.gov.na');
+        expect((await effective(auth(token))).statusCode).to.equal(401);                    // a person's token is not a service token
+    });
+
     it('registrar can manage users but not roles or policies', async () => {
         const { app, login, auth } = await makeApp();
         const { token } = await login('e.shivute@deeds.gov.na');

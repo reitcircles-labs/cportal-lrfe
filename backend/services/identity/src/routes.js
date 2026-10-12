@@ -113,6 +113,8 @@ export async function identityRoutes(app, { service, accessTtlSeconds, cookie })
     }, async (req) => service.saveMatrix(req.body.matrix, actorOf(req)));
 
     app.get('/policies', { onRequest: app.requireAnyPerm('admin.policies', 'admin.users') }, async () => service.getPolicySettings());
+    // the policies other services enforce, read with their service token (API-663: Four-eyes finalization)
+    app.get('/policies/effective', { onRequest: app.requireService('land-records') }, async () => service.effectivePolicies());
     app.put('/policies', {
         onRequest: app.requirePerm('admin.policies'),
         schema: body({

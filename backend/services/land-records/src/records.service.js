@@ -32,12 +32,13 @@ export function searchTextOf(record, ...datas) {
  * a linked document, and the history (API-648).
  */
 export class RecordsService {
-    constructor({ repo, events, edrms = null, bpm = null, anchoring = null, clock = () => new Date(), config = {} }) {
+    constructor({ repo, events, edrms = null, bpm = null, anchoring = null, identity = null, clock = () => new Date(), config = {} }) {
         this.repo = repo;
         this.events = events;
         this.edrms = edrms;
         this.bpm = bpm;
         this.anchoring = anchoring;      // the audit service: is a version anchored on chain yet (API-658)
+        this.identity = identity;        // the security policies: Four-eyes finalization (API-663); none: only the submitter is excluded
         this.clock = clock;
         this.config = { country: 'NA', ...config };
     }
@@ -297,6 +298,21 @@ export class RecordsService {
 
     // ---------------------------------------------------------------- review and commit (API-647)
 
+    /**
+     * Four-eyes finalization (API-663): with the security policy on, the reviewers who filed the
+     * documents a version pins, the first time they were filed to the EDRMS. A correction (a later
+     * version of a document) adds nobody: the same reviewers may correct their documents. With the
+     * policy off, or no identity service configured, nobody (the submitter is excluded anyway).
+     */
+    async fourEyesExcluded(data) {
+        if (!this.identity) return [];
+        const { fourEyes } = await this.identity.policies();
+        if (!fourEyes) return [];
+        const ids = [...new Set((data.documents || []).map(d => d.edrmsDocumentId))];
+        const docs = await Promise.all(ids.map(id => this.requireDocument(id)));
+        return [...new Set(docs.map(d => d.filedById).filter(Boolean))];
+    }
+
     requireBpm() {
         if (!this.bpm) throw new AppError(503, 'The review process is not configured');
         return this.bpm;
@@ -322,6 +338,8 @@ export class RecordsService {
         if (failing.length) throw new BadRequestError(`${failing.length} check${failing.length > 1 ? 's' : ''} must pass before review: ${failing.map(c => c.message).join('; ')}`, { failing });
 
         const bpm = this.requireBpm();
+        // four-eyes: with the policy on, the reviewers who filed the record's documents may not approve it either
+        const filedBy = await this.fourEyesExcluded(version.data);
         const now = this.clock();
         const frozen = await this.repo.updateVersion(recordId, version.versionNumber, {
             state: 'in_review', revision: revision + 1, checks, reviewComment: null,
@@ -335,7 +353,8 @@ export class RecordsService {
         try {
             instance = await bpm.startReview({
                 record: { id: recordId, recordNo: record.recordNo, label: record.label, versionNumber: version.versionNumber },
-                submittedBy: { id: actor.id, name: actor.name ?? actor.id }
+                submittedBy: { id: actor.id, name: actor.name ?? actor.id },
+                filedBy
             });
         } catch (err) {
             // the review did not start: the draft is editable again, as before
@@ -399,6 +418,10 @@ export class RecordsService {
         if (version.state === 'committed' && version.approvedById === by.id) return this.getRecord(recordId);
         if (version.state !== 'in_review') throw new ConflictError(`Version ${versionNumber} is not in review (${version.state})`);
         if (by.id === version.submittedById) throw new ForbiddenError('The submitter cannot approve their own version (four-eyes)');
+        // the policy as it is now: also when it was switched on while the version was in review
+        if ((await this.fourEyesExcluded(version.data)).includes(by.id)) {
+            throw new ForbiddenError('You filed a document of this land record, so another person must approve it (four-eyes)');
+        }
 
         const previous = record.currentVersion ? await this.repo.getVersion(recordId, record.currentVersion) : null;
         const committedAt = this.clock();

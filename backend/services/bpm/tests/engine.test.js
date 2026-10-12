@@ -85,6 +85,23 @@ describe('BpmEngine', () => {
     });
 
     describe('human tasks & four-eyes', () => {
+        it('an exclude rule may name a list of users: each is excluded, once (API-663)', async () => {
+            const listed = def({
+                start: { type: 'start', next: 'approve' },
+                approve: { type: 'humanTask', title: 'Approve', assignee: { perm: 'verify.file' }, exclude: [{ var: 'startedBy.id' }, { var: 'filedBy' }], outcomes: ['approved'], dueInHours: 1, next: 'done' },
+                done: { type: 'end', outcome: 'ok' }
+            }, { key: 'listed', variables: { type: 'object', properties: { filedBy: { type: 'array', items: { type: 'string' } } } } });
+            const { engine, repo } = makeEngine({});
+            await engine.deployDefinition(listed);
+            const inst = await engine.startInstance({ key: 'listed', variables: { filedBy: ['u8', 'u3', 'u8'] }, starter: users.aina });
+            const [task] = await repo.listTasks({ instanceId: inst.id });
+            expect(task.excludedUserIds).to.deep.equal(['u3', 'u8']);
+            expect(await engine.inbox(users.tangeni)).to.have.length(0);
+            // no list given: only the starter
+            const other = await engine.startInstance({ key: 'listed', variables: {}, starter: users.aina });
+            expect((await repo.listTasks({ instanceId: other.id }))[0].excludedUserIds).to.deep.equal(['u3']);
+        });
+
         it('creates a titled, due task that the requester cannot see, claim or complete', async () => {
             const { engine, repo, published } = await setup();
             const inst = await start(engine);

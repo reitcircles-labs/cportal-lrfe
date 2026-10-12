@@ -1,6 +1,7 @@
 import { createAnchoringClient, createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
 import { createEdrmsClient } from './edrms-client.js';
 import { createBpmClient } from './bpm-client.js';
+import { createIdentityClient } from './identity-client.js';
 import { buildApp } from './app.js';
 import { RecordsService } from './records.service.js';
 import { createMemoryRepo } from './repo/memory.js';
@@ -33,7 +34,9 @@ const edrms = createEdrmsClient({ baseUrl: env('EDRMS_URL', 'http://localhost:35
 const bpm = createBpmClient({ baseUrl: env('BPM_URL', 'http://localhost:3503'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'land-records' }) });
 // each committed version's anchoring status, from the audit service (API-658; best effort)
 const anchoring = createAnchoringClient({ baseUrl: env('AUDIT_URL', 'http://localhost:3506'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'land-records' }) });
-const service = new RecordsService({ repo, events, edrms, bpm, anchoring, config: { country: env('RECORDS_COUNTRY_CODE', 'NA') } });
+// the security policy Four-eyes finalization, read from identity when a version is submitted and approved (API-663)
+const identity = createIdentityClient({ baseUrl: env('IDENTITY_URL', 'http://localhost:3501'), serviceToken: createServiceTokenSigner({ secret: jwtSecret, service: 'land-records' }) });
+const service = new RecordsService({ repo, events, edrms, bpm, anchoring, identity, config: { country: env('RECORDS_COUNTRY_CODE', 'NA') } });
 
 // a correction filed in edrms flags every record that pins an older version of the document; a
 // durable consumer (API-613), so a correction approved while land-records is down is not missed

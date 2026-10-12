@@ -29,7 +29,9 @@ Land record (create/finalize), Audit, and under Administration **Users** and **A
 ## Approve or return a land record
 
 **Before you start:** a records officer has submitted a record for review, e.g. Erf 1873 (see
-[the records officer guide](records-officer.md#build-erf-1873-from-the-sample-documents)).
+[the records officer guide](records-officer.md#build-erf-1873-from-the-sample-documents)). You don't get
+the task for a record you submitted, nor, with the security policy Four-eyes finalization on (the
+default), for one whose documents you filed as a reviewer: another registrar approves those.
 
 | # | Do | You should see |
 |---|---|---|
@@ -74,6 +76,6 @@ The tabs **Offices**, **Roles & permissions** and **Security policies** are not 
 | What happens | Why, and what to do |
 |---|---|
 | No land record task in the bell | Nothing is waiting: the officer has not submitted yet, withdrew it, or another person with the right to finalize approved it already. Click the bell to refresh |
-| "You cannot act on this task: a different person must do it (four-eyes)" | You submitted this version yourself (possible with an account that has both roles): someone else must approve it |
+| "You cannot act on this task: a different person must do it (four-eyes)" | You submitted this version yourself, or (with the security policy Four-eyes finalization on) you filed one of its documents as a reviewer: someone else must approve it. Such a task isn't offered to you in the bell at all |
 | The review shows a check that fails | It cannot happen for a fresh submission (the officer cannot submit then), but a correction filed in the EDRMS while you review is shown on the record as **Needs review**: return it so the officer takes the newer document over |
 | The review screen for documents is read-only | Expected: reviewing documents is the metadata reviewer's job |

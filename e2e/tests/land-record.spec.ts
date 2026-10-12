@@ -22,19 +22,25 @@ import { GATEWAY_URL, REPO_DIR } from '../stack/config.mjs';
 
 const SAMPLES = join(REPO_DIR, 'angular-app', 'docs', 'samples');
 
-/** Upload a sample as the scan operator and file it as the reviewer: `corrections` typed in, the rest accepted as read. */
-async function fileSample(playwright: Parameters<typeof apiAs>[0], baseURL: string, file: string, corrections: Record<string, string> = {}): Promise<string> {
+/**
+ * Upload a sample as the scan operator and file it as the reviewer: `corrections` typed in, the rest
+ * accepted as read. `as`: another file name (the canned AI reads its deed number from it), and
+ * `reviewer`: who files it (default the demo reviewer).
+ */
+async function fileSample(playwright: Parameters<typeof apiAs>[0], baseURL: string, file: string, corrections: Record<string, string> = {},
+    { as: name = file, reviewer }: { as?: string; reviewer?: () => Promise<{ api: import('@playwright/test').APIRequestContext; headers: Record<string, string>; dispose: () => Promise<void> }> } = {}): Promise<string> {
     const scan = await apiAs(playwright, baseURL, userByRole('scan').email);
     const batch = await (await scan.api.post('/api/intake/batches', { headers: scan.headers, data: { source: 'Tester samples' } })).json();
     const up = await scan.api.post(`/api/intake/batches/${batch.id}/documents`, {
-        headers: scan.headers, multipart: { file: { name: file, mimeType: 'application/pdf', buffer: readFileSync(join(SAMPLES, file)) } }
+        // under another name, another file (a comment line appended), as intake refuses a scan it has seen before
+        headers: scan.headers, multipart: { file: { name, mimeType: 'application/pdf', buffer: name === file ? readFileSync(join(SAMPLES, file)) : Buffer.concat([readFileSync(join(SAMPLES, file)), Buffer.from(`\n% ${name}\n`)]) } }
     });
     expect(up.status(), await up.text()).toBe(201);
     const { id } = await up.json();
     await expect.poll(async () => (await (await scan.api.get(`/api/intake/documents/${id}`, { headers: scan.headers })).json()).status, { timeout: 30_000 }).toBe('ready');
     await scan.dispose();
 
-    const rev = await apiAs(playwright, baseURL, userByRole('rev').email);
+    const rev = reviewer ? await reviewer() : await apiAs(playwright, baseURL, userByRole('rev').email);
     const h = { headers: rev.headers };
     await expect.poll(async () => (await rev.api.post(`/api/intake/documents/${id}/claim`, h)).status(), { timeout: 20_000 }).toBe(200);
     for (const [k, value] of Object.entries(corrections)) {
@@ -911,6 +917,62 @@ test('the whole audit flow: a version approved, sod2 for its approver, the audit
     expect(result.valid, JSON.stringify(result.checks.filter((c: { ok: boolean }) => !c.ok))).toBe(true);
     expect(result.unproven).toEqual([]);
     await Promise.all([admin.dispose(), auditor.dispose()]);
+});
+
+test('four-eyes finalization: a registrar who filed one of the record\'s documents gets no approval task and cannot approve', { tag: ['@API-663'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(150_000);
+    const erf = await erf1873(playwright, baseURL!);
+    const admin = await adminApi(playwright, baseURL!);
+    // someone who reviews documents and may also approve land records (a duty conflict the administrator accepted)
+    const filer = await createUser(admin, ['rev', 'sup'], 'filer');
+    // a later survey diagram of the same parcel (it leaves the chain of title as it is)
+    const edrmsNo = await fileSample(playwright, baseURL!, '03-SG-A-412-2007-diagram.pdf', {}, {
+        as: 'SG-A-9131-2012-diagram.pdf', reviewer: () => apiAsNewUser(playwright, baseURL!, filer.email)
+    });
+
+    // the records officer adds it to Erf 1873's next version and submits it
+    const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+    const docs = await (await rec.api.get(`/api/documents?q=${encodeURIComponent(edrmsNo)}`, { headers: rec.headers })).json();
+    const doc = docs.items.find((d: { edrmsNo: string }) => d.edrmsNo === edrmsNo);
+    expect(doc?.filedById, 'filed by the new reviewer').toBe(filer.id);
+    const opened = await rec.api.post(`/api/records/${erf.id}/draft`, { headers: rec.headers });
+    expect(opened.status(), await opened.text()).toBe(201);
+    let record = await (await rec.api.get(`/api/records/${erf.id}`, { headers: rec.headers })).json();
+    const added = await rec.api.post(`/api/records/${erf.id}/draft/documents`, { headers: rec.headers, data: { revision: record.draft.revision, edrmsDocumentId: doc.id } });
+    expect(added.status(), await added.text()).toBe(200);
+    record = await (await rec.api.get(`/api/records/${erf.id}`, { headers: rec.headers })).json();
+    const submitted = await rec.api.post(`/api/records/${erf.id}/draft/submit`, { headers: rec.headers, data: { revision: record.draft.revision } });
+    expect(submitted.status(), await submitted.text()).toBe(200);
+    await rec.dispose();
+
+    // the registrar who filed it: no task in the bell; a direct attempt is refused (four-eyes)
+    const title = `Approve land record ${erf.recordNo} (Erf 1873, Klein Windhoek) version ${record.draft.versionNumber}`;
+    const registrar = await apiAs(playwright, baseURL!, userByRole('sup').email);
+    let taskId = '';
+    await expect.poll(async () => {
+        const { tasks } = await (await registrar.api.get('/api/tasks', { headers: registrar.headers })).json();
+        taskId = tasks.find((t: { title: string }) => t.title === title)?.id ?? '';
+        return taskId;
+    }, { timeout: 20_000 }).not.toBe('');
+    const filerApi = await apiAsNewUser(playwright, baseURL!, filer.email);
+    const { tasks: filerTasks } = await (await filerApi.api.get('/api/tasks', { headers: filerApi.headers })).json();
+    expect(filerTasks.map((t: { title: string }) => t.title)).not.toContain(title);
+    const refused = await filerApi.api.post(`/api/tasks/${taskId}/complete`, { headers: filerApi.headers, data: { output: { outcome: 'approved' } } });
+    expect([refused.status(), (await refused.json()).message]).toEqual([403, 'You cannot act on this task: a different person must do it (four-eyes)']);
+    await filerApi.dispose();
+    const page = await as(browser, filer.email, '/', NEW_USER_PASSWORD);
+    await page.getByRole('button', { name: 'Tasks' }).click();
+    await expect(page.locator('.menu')).not.toContainText(title);
+    await evidence(page, 'API-663', 'The registrar who filed one of the record\'s documents: the approval task is not in their bell');
+
+    // another registrar approves it
+    const regPage = await as(browser, userByRole('sup').email, '/');
+    await regPage.getByRole('button', { name: 'Tasks' }).click();
+    await expect(regPage.locator('.menu .item', { hasText: title })).toBeVisible();
+    await evidence(regPage, 'API-663', 'Another registrar has the approval task in their bell');
+    const approved = await registrar.api.post(`/api/tasks/${taskId}/complete`, { headers: registrar.headers, data: { output: { outcome: 'approved' } } });
+    expect(approved.status(), await approved.text()).toBe(200);
+    await Promise.all([registrar.dispose(), admin.dispose()]);
 });
 });
 

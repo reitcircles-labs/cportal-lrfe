@@ -22,7 +22,7 @@ const nodeError = (id, msg) => invalid(`node "${id}" ${msg}`);
  *     precheck:   { connector }   runs before the instance is created; errors reject the start
  *     startAt, nodes: { id: node }
  *   }
- * humanTask: assignee { perm | role | user(JsonLogic) }, exclude [JsonLogic → user id],
+ * humanTask: assignee { perm | role | user(JsonLogic) }, exclude [JsonLogic → user id or list of ids],
  *            outcomes [..], requireCommentFor [..], outputVar, dueInHours, title (string | JsonLogic)
  * serviceTask: connector (must exist), input, outputVar
  * end: outcome — the instance's outcome when this end completes it

@@ -515,6 +515,12 @@ export class IdentityService {
 
     // ---------------------------------------------------------------- policies
 
+    /** The policies other services enforce, read each time they need them (API-663): only those, no settings. */
+    async effectivePolicies() {
+        const { policies } = await this.context();
+        return { fourEyes: policies.fourEyes !== false };
+    }
+
     async getPolicySettings() {
         const { policies, sod } = await this.context();
         return { policies, sod };

@@ -335,7 +335,8 @@ export class BpmEngine {
         const data = this.vars(instance, token);
         const kind = ['perm', 'role', 'user'].find(k => node.assignee[k] !== undefined);
         const candidate = kind === 'user' ? evaluate(node.assignee.user, data) : node.assignee[kind];
-        const excludedUserIds = (node.exclude || []).map(rule => evaluate(rule, data)).filter(Boolean).map(String);
+        // each rule names one user or a list of them (land-record-review: the reviewers who filed the record's documents)
+        const excludedUserIds = [...new Set((node.exclude || []).flatMap(rule => [evaluate(rule, data)].flat()).filter(Boolean).map(String))];
         const title = typeof node.title === 'object' ? evaluate(node.title, data) : node.title || token.currentNode;
         const now = this.clock();
         // the task, its history entry and its event are committed together (API-613)
