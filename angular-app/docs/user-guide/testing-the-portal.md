@@ -1,6 +1,6 @@
 # Testing the portal: start here
 
-*For testers. Last checked against the app on 6 October 2026.*
+*For testers. Last checked against the app on 12 October 2026.*
 
 This guide gets you ready to test the Deeds Registry portal and explains how the roles hand work to
 each other. Each role then has its own guide with step-by-step tasks; follow them in the order of
@@ -13,7 +13,7 @@ record.
 | [Metadata reviewer](roles/metadata-reviewer.md) | Check what the AI read, correct it, file documents to the EDRMS, reject what does not belong; approve corrections |
 | [Records officer](roles/records-officer.md) | Build the land record of a parcel from its filed documents and submit it for review |
 | [Registrar (supervisor)](roles/registrar.md) | Oversee the work, approve or return land records, invite users |
-| [Auditor · read-only](roles/auditor.md) | Verify the integrity of filed documents, audit land records, export evidence |
+| [Auditor · read-only](roles/auditor.md) | Audit land records against the blockchain, sign them off, search the trail, export evidence |
 | [System administrator](roles/system-administrator.md) | Offices, users, roles, security policies, access log |
 
 ## What you need
@@ -81,11 +81,12 @@ and deed references) until their services are built; a line at the bottom of eve
 | Sign-in, Administration (users, offices, roles, policies, access log), Tasks | **Live** |
 | Capture, Verify metadata, Documents (EDRMS) | **Live**: uploads, AI reading, review, filing, corrections, integrity checks |
 | Land record | **Live**: records built from filed documents, checks, review and approval through the bell, versions and history, comments |
-| Audit | **Demo data**: sign-offs and findings are kept only until you reload; the document trail shows demo entries |
+| Audit, Anchorings, the public page Check a proof yourself | **Live**: the audit trail, proofs on the blockchain, sign-off, findings, evidence packs |
 | Dashboard, Process & schema | **Demo data** |
 
-So the audit steps can be practised, but their results are not saved yet. Do them in one sitting,
-without reloading.
+The blockchain: once an hour the portal writes a batch of new fingerprints to a public test
+blockchain. An audit can be signed off only once everything in it is on the blockchain, so allow up
+to an hour between the registrar's approval and the auditor's sign-off.
 
 ## The whole flow
 
@@ -104,12 +105,20 @@ real AI only: skip them on a system with the canned AI, see the samples README).
 | 6 | Registrar | [Return it with a comment](roles/registrar.md#approve-or-return-a-land-record) | |
 | 7 | Records officer | [Fix it and submit again](roles/records-officer.md#after-the-review) | |
 | 7a | Registrar | [Approve it](roles/registrar.md#approve-or-return-a-land-record) (version 1); optionally the records officer then [changes it](roles/records-officer.md#change-a-committed-record) for a version 2 | |
-| 8 | Auditor | [Check the filed documents' integrity](roles/auditor.md#check-a-documents-integrity), [look at the record's history](roles/auditor.md#look-at-a-land-record) and [audit it](roles/auditor.md#audit-a-land-record-demo) | |
+| 8 | Auditor | [Audit Erf 1873 against the blockchain](roles/auditor.md#audit-a-land-record-start-to-finish): find it, check it, check each version's changes; findings if needed | |
+| 8a | Auditor | After the next batch: [sign it off](roles/auditor.md#4-sign-off) and [export the evidence pack](roles/auditor.md#5-export-the-evidence-pack) | |
+| 8b | Anyone, no account | [Check a proof yourself](roles/auditor.md#check-a-proof-outside-the-portal): a downloaded proof or the evidence pack with the offline verifier gives **VALID** | |
+| 8c | Auditor | [Search the whole trail](roles/auditor.md#search-the-whole-trail) for a person or a document, and **Check the trail** | |
 | 9 | Metadata reviewer + second reviewer | [Correct a filed document](roles/metadata-reviewer.md#correct-a-filed-document) | a sample linked into Erf 1873, e.g. T 4521/2019 |
 | 10 | Records officer, then registrar | [Take the correction over](roles/records-officer.md#when-a-linked-document-is-corrected-in-the-edrms) and approve it | |
 | 11 | System administrator | [Check the access log](roles/system-administrator.md#check-the-access-log) | |
 
-Steps 1 to 6 take about 45 minutes. Only the audit step must be done in one sitting (a demo screen).
+Steps 1 to 6 take about 45 minutes. The sign-off (8a) waits for the hourly batch after the approval.
+
+The automated end-to-end tests (`e2e/`) run this whole flow too, in `e2e/tests/land-record.spec.ts`:
+filing, building Erf 1873, review and approval, versions, a correction, the audit against the test
+blockchain, a registrar who approved a version being refused its sign-off, the sign-off, and the
+evidence pack checked by the offline verifier.
 
 ## If something goes wrong
 

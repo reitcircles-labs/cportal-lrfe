@@ -23,7 +23,7 @@ Land record (create/finalize), Audit, and under Administration **Users** and **A
 | **Dashboard** | Figures and recent activity (demo data for now) |
 | **Capture**: pick a batch | Its documents and their status (Queued, Reading, In review, Filed, Rejected). The upload box is faded: you cannot upload |
 | **Verify metadata**: open a document | The review screen, read-only: fields and buttons are disabled for you |
-| **Documents (EDRMS)**: open a filed sample, **Check integrity** | "Integrity verified · version 1.0" (see the [auditor guide](auditor.md#check-a-documents-integrity)) |
+| **Documents (EDRMS)**: open a filed sample, **Check integrity** | "Integrity verified · version 1.0" (see [the two checks on a document](auditor.md#documents-two-different-checks)) |
 | The bell (**Tasks**) | Land records waiting for your approval (corrections to filed documents are approved by reviewers, not by the registrar) |
 
 ## Approve or return a land record
@@ -55,11 +55,13 @@ who submitted can withdraw it before you decide; the task then disappears from y
 | **Comments** tab | The discussion on the record; you can add to it |
 | A record with status **Needs review** | One of its documents was corrected in the EDRMS: the banner says which and why. The records officer takes over the correction in a new version, which comes to you for approval |
 
-## Look at audit evidence (demo)
+## Look at the audit
 
-**Audit** shows the evidence for Erf 1873: each document's provenance (what the AI read and what the
-reviewer filed), integrity and trail. As registrar you can look and export; signing off is the
-auditor's job ("Mark document audited" is faded for you). Details: [auditor guide](auditor.md#audit-a-land-record-demo).
+**Audit** is read-only for you: you can open any land record's audit, its checks against the
+blockchain, its trail and its findings, search the whole trail and export evidence packs. Signing
+off and raising findings are the auditor's job: the card says "You can view and verify. Signing off
+and raising findings need the auditor role." Even if you are later given the auditor role, you may
+not sign off the audit of a version you approved. Details: [auditor guide](auditor.md#audit-a-land-record-start-to-finish).
 
 ## Manage users
 

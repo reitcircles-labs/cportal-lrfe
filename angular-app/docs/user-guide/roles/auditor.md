@@ -1,75 +1,161 @@
 # Auditor · read-only
 
-*For testers and the Office of the Auditor-General. Last checked against the app on 6 October 2026.*
+*For testers and the Office of the Auditor-General. Last checked against the app on 12 October 2026.*
 *New to testing the portal? Read [Testing the portal: start here](../testing-the-portal.md) first.*
 
-The auditor checks that the land records can be trusted: that each filed document is exactly what
-was sealed, that every value can be traced to the scan, and that the record's history is complete.
-The auditor changes nothing; their sign-offs and findings are added to the audit trail.
+The auditor checks that the land records can be trusted: every document is exactly what was sealed,
+every value can be traced to the documents, and the record's history is complete. The auditor
+changes nothing. Their sign-offs and findings are added to the audit trail, and go on the blockchain
+like everything else.
 
 **You start on:** Audit. **Your menu:** Dashboard, Capture, Verify metadata, Documents (EDRMS),
-Land record, Audit, Process & schema; everything except Audit is view-only for you.
+Land record, Audit, Anchorings, Process & schema. Everything except Audit is view-only for you.
 
 | You can | You cannot |
 |---|---|
-| Check the integrity of any filed document and version | Upload, review, file or correct documents |
-| Sign off documents as audited, or raise a finding | Create, change or finalize land records |
-| Look at every screen of the land-record work | Approve corrections |
+| Audit a land record against the blockchain and sign it off | Upload, review, file or correct documents |
+| Raise findings, answer and close them | Create, change or approve land records |
+| Search the whole audit trail and check that it is unbroken | Sign off an audit of a version you approved yourself |
+| Download proofs and export evidence packs, to be checked outside the portal | |
 
-The app keeps duties apart: someone who can **file** documents, or **finalize** land records, should
-not also **sign off** audits. An administrator who gives such a combination is warned, and the
-exception is written to the access log.
+The app keeps duties apart: someone who can **approve land records** cannot also **sign off
+audits**. A registrar who later becomes an auditor still cannot sign off the audit of a version
+they approved: another auditor must.
 
-## Check a document's integrity
+## How it works, in one minute
 
-Live: this checks the real filed documents, e.g. the samples the reviewer filed.
+- **Every change is sealed.** Each land record version, filed document and audit sign-off gets a
+  fingerprint: a short code that changes completely if anything in it changes.
+- **Once an hour, the new fingerprints go to a public blockchain** as one batch. After that nobody,
+  not even the registry, can change them without it showing.
+- **You can only trust what is on the blockchain**, so an audit can be signed off only once
+  everything in it is there and matches. On a real system that means waiting up to an hour after a
+  version is approved. The status of each item says where it is:
+
+| Status | Means |
+|---|---|
+| Waiting for next batch | Sealed in the portal; goes out with the next batch. Not ready to sign off |
+| Sent to the blockchain | On its way, usually in a block within minutes. Not ready to sign off yet |
+| On the blockchain | Written into a block. Can be signed off |
+| Confirmed | 10 newer blocks on top of it: it can no longer be undone |
+
+Every status names its batch, for example "Confirmed in batch 1,412 →", and links to it. Every term
+on the audit screens has an **(i)**: click it for a short explanation.
+
+## Audit a land record, start to finish
+
+Live: this audits the real Erf 1873, Klein Windhoek, once the records officer and the registrar have
+committed it (steps 5 to 7a of [the whole flow](../testing-the-portal.md#the-whole-flow)).
+
+### 1. Find the record to audit
 
 | # | Do | You should see |
 |---|---|---|
-| 1 | Sign in as the auditor, open **Documents (EDRMS)** | The filed documents, newest first |
-| 2 | Search "T 2210/2008" and click it | The record: EDRMS number, type, registry, batch, "v1.0" (or v2.0 after a correction), **Verified metadata**, **Version history**, **Record metadata (ISO 23081)** |
-| 3 | Click **Check integrity** | **Integrity verified · version 1.0**: the content matches its SHA-256 fingerprint and the seal is intact, with the time of the check |
-| 4 | In **Verified metadata**, look for values marked **corrected** | Values the reviewer changed from what the AI read (e.g. Tomas Nghishidi's ID on T 4521/2019) |
-| 5 | In **Version history**, look at each version | Who filed it; for a correction: who requested it, who approved it, the reason, and old → new values. Every version keeps its own fingerprint and seal |
-| 6 | Click **Open file** | The sealed scan opens in a new tab |
+| 1 | Open **Audit** | **How audit works** in three steps, a search, and the filters **Changed since last audit**, **Needs attention** and **All**, each with a count |
+| 2 | Search "1873" | **Erf 1873, Klein Windhoek** with its owners, current version and **Proof** status, and under **Audit** the open audit, e.g. "v1–v2 · 3 new documents" with what is known of the blockchain check ("All match the blockchain ✓" or "Not all on the blockchain yet") |
+| 3 | Click the record (or **Open**) | Its audit: the open audit (every version since the last sign-off), **Trail chain intact**, how many new documents match the blockchain, open findings |
 
-**Request correction** is faded for you ("Requires …"): auditors do not change records. If a value
-is wrong, report it so that a reviewer requests a correction.
+### 2. Check against the blockchain
 
-A failed check would show **Integrity check FAILED**, and say whether the content no longer matches
-its fingerprint or the seal is broken. That must never happen; report it at once.
+| # | Do | You should see |
+|---|---|---|
+| 4 | Click a version under **Versions**, tab **1 · Blockchain check** | "Matches the blockchain ✓", its proof (e.g. "Confirmed in batch 2 →") and fingerprint. A version not on the blockchain yet says it can be checked once it is there |
+| 5 | Click a document in the table, tab **1 · Blockchain check** | Its own check and proof. **Review document** opens the scan with its metadata and history |
+| 6 | Scroll to **Audit trail** at the bottom | Every action on the record and its documents, newest first: capture, filing, changes, submission, approval, commit, findings. **Show 25 more** goes back further. Each entry has its proof status, linked to its batch |
+| 7 | Click **Verify** on an entry, e.g. "Committed version" | **Valid**: the entry is unchanged, links into the trail's chain, and its batch is on the blockchain |
 
-## Look at a land record
+If something does not match, the version or document shows **Changed since review ✕**: the record
+must be reviewed and submitted again before it can be audited. Report it.
 
-**Land record** is view-only for you: **New record** and the buttons on a record (**Add documents**
-on a draft, **Change record** on a committed record) are faded ("Requires …").
+### 3. Check each version's changes
+
+| # | Do | You should see |
+|---|---|---|
+| 8 | Click a version, tab **2 · Check changes** | What the version changed (old → new), and the documents it added |
+| 9 | Compare the changes with the documents: e.g. the new owner against the deed of transfer. If they match, click **Changes match: mark checked** | "✓ You checked this version's changes". Do this for every version in the audit |
+| 10 | If something is wrong, click **Doesn't match: raise finding** (on the current version), or **Raise finding** in a document's review, and describe it | The finding is open; the records officer and the registrar get a task. An open finding blocks the sign-off |
+| 11 | When the finding is resolved, open it, type the answer and click **Answer and close** | "resolved by agreement". A corrected version, reviewed and on the blockchain, resolves it by itself |
+
+### 4. Sign off
+
+| # | Do | You should see |
+|---|---|---|
+| 12 | Click the card at the top, **Erf 1873, Klein Windhoek · v1–v3** (your range) | **Audit sign-off** with four checks: everything on the blockchain, everything matches, no open findings, every version's changes checked |
+| 13 | When all four are ticked, click **Sign off v1–v3**, then **Sign off** | "Audit signed off. It goes on the blockchain with the next batch." The audit is one sign-off for all those versions; the next audit starts after them |
+| 14 | After the next batch, open the record again | "✓ Audit signed off up to v3", by you, when, with its proof: "Confirmed in batch … →" |
+
+If the button stays faded, the card says why: something is not on the blockchain yet (wait for the
+next batch), a finding is open, a version is not checked, or you approved one of the versions.
+
+### 5. Export the evidence pack
+
+| # | Do | You should see |
+|---|---|---|
+| 15 | Click **Export evidence pack** | A zip file with the record's versions, documents, trail, sign-offs, findings and proofs, and its checksum. The export itself is written to the trail |
+| 16 | Check it outside the portal (below) | **VALID** |
+
+## Check a proof outside the portal
+
+Anyone can check the registry's proofs without the portal, for example a bank, a court or a buyer's
+lawyer.
+
+1. **Get a proof file.** On a version's or document's **Blockchain check**, on the Land record's
+   **History** tab or on a document's version history, click **Download proof**. Its **(i)** shows
+   the command and the registry's wallet address. An evidence pack holds the proofs of a whole record.
+2. **Get the verifier.** Open the public page **Check a proof yourself** (the link "Check it
+   yourself" on the sign-in page; no account needed). It explains the steps, gives the verifier
+   file (needs Node.js 18 or later) and shows the registry's anchoring wallet.
+3. **Run it:** `node lrfe-verify.mjs proof.json --address <the wallet address>`, or the same with
+   the evidence pack's zip file. **VALID** means the item is exactly as sealed, in its batch, and the
+   batch was written to the blockchain by the registry's wallet. The page also links the transaction
+   on a public blockchain explorer, a website run independently of the registry.
+
+## Search the whole trail
+
+**Audit → Trail** answers "what did this person do", "what happened to this document" and "what
+happened in this period".
 
 | Do | You should see |
 |---|---|
-| Open **Land record**, pick **Erf 1873, Klein Windhoek** | Its documents (each with the EDRMS number and version it was linked at), owners, chain of title and checks |
-| **History** tab | Every approved version: who submitted it, who approved it (always a different person), when, the reviewer's comment, what it changed, and **Seal verified**; above them "Seal chain intact". A version whose content no longer matches its seal would show "Seal does not match", and the panel "Seal chain broken": report that at once |
+| **About** → A person, type a name (suggested from the trail), **Search** | Their actions, and what was done about them (e.g. the registrar approving their submission), oldest first, with when, who, what and the **Source** |
+| **About** → A document, its number, e.g. EDR-NA-2026-000002 | Its history from "Captured a scan" to filing and corrections |
+| **What** and **From / To** | Only one family of events (e.g. Documents), and only those days (both included) |
+| **Details** on an entry | The event, what it is about, its fingerprint and data, its proof linked to its batch, and **Download proof** |
+| **Check the trail** | "The trail is intact: every entry links to the one before it", or the first entry where it is broken: report that at once |
 
-## Audit a land record (demo)
+A highlighted row "Gap in the trail" means events were lost before they could be recorded. The gap
+is recorded so that the trail is never passed off as complete: report it.
 
-> **Demo screen.** The Audit screen still runs on demo data for **Erf 1873, Klein Windhoek**. Its
-> documents become available once they are filed (the samples filed through Verify count). Your
-> sign-offs and findings are kept only until you reload the page or sign out.
+## Anchorings: what is on the blockchain
 
-| # | Do | You should see |
-|---|---|---|
-| 1 | Open **Audit** | "Audit · Erf 1873, Klein Windhoek", the number of trail entries, "Hash chain intact", "N of 5 documents audited". Along the top, the record's documents by year (G 88/1978, T 1502/1996, SG A 412/2007, T 2210/2008, T 4521/2019), each with its state (Linked, Filed, Audited…); those not filed yet show "Not captured" and are greyed out |
-| 2 | Click **T 4521/2019** | Page 1 of the document (corrected values outlined), **Metadata provenance** (each field: what the AI extracted, the verified value, confidence, and whether the reviewer accepted or corrected it), **Integrity** (the real EDRMS number once filed; the other values there are demo values: use **Check integrity** in Documents for the real check) and **Document trail** |
-| 3 | Check the provenance: is every corrected value justified by the scan? Click **Open viewer** to see all pages | |
-| 4 | If all reconciles: **Mark document audited** → **Mark audited** | "Audited · Office of the Auditor-General"; the counter goes up |
-| 5 | On another document, try **Raise finding** → **Raise finding** | "Finding raised · Office of the Auditor-General"; the records officer and registrar would be notified, and the document stays flagged until resolved |
+**Anchorings** (in the menu) lists every batch the portal has put on the blockchain.
 
-**Export evidence pack** is shown but does not do anything yet; it comes with the audit service.
+- **Is it on the blockchain?** Search a land record number, document number, Erf or deed number:
+  the answer in plain words ("Yes. Everything up to v3 is on the blockchain.") with its history,
+  each line linked to its batch.
+- Each batch shows what is on the blockchain (with a link to a public explorer) and what it covers:
+  each land record version with the documents it is made of. **Open audit** takes you to the audit.
+- A **Failed** batch never reached the blockchain; the next batch replaced it, so nothing is lost.
+
+## Documents: two different checks
+
+On a document in **Documents (EDRMS)**:
+
+| Check | What it checks |
+|---|---|
+| **Check integrity** (top) | The stored file and its metadata against the fingerprint they were sealed with in the portal |
+| **Verify against the blockchain** (on each version) | The version's fingerprint, recomputed and found in its batch, and the batch in the blockchain transaction, with the transaction linked to a public explorer |
+
+A version that waits for the next batch says it can be checked against the blockchain once it is
+there. **Request correction** is faded for you: auditors do not change records. If a value is
+wrong, raise a finding.
 
 ## Common problems
 
 | What happens | Why, and what to do |
 |---|---|
-| A document is greyed out on the Audit screen | It is not filed yet. The samples count once a reviewer has filed them; reload the Audit screen afterwards |
-| My sign-offs are gone | The Audit screen is a demo: reloading starts it again |
-| **Check integrity** is not there | Your account does not have the auditor's permission "View audit trail & evidence" |
-| Integrity shows version 2.0 | A correction was approved; check the earlier version under **Version history** |
+| **Sign off** stays faded with "Some items go to the blockchain with the next batch" | Batches go out once an hour. Wait, then open the record again |
+| "You approved v3, which is part of this audit, so another auditor must sign it off" | You approved that version as a registrar. Another auditor signs off |
+| **Changes match: mark checked** is not there | The version is not on the blockchain yet, or does not match it: only what is on the blockchain can be trusted |
+| A batch link says **Failed** | That batch never reached the blockchain; the batch after it replaced it. Follow "replaced by batch …" |
+| The verifier says it could not check against the chain | Its public source of the blockchain was unavailable: try again later. It is not a failed check |

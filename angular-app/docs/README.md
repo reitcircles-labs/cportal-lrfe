@@ -11,7 +11,7 @@ says so.
 | [Metadata reviewer](user-guide/roles/metadata-reviewer.md) | Review desk | Checking and correcting what the AI read, filing to the EDRMS, rejecting, correcting a filed document with a second reviewer's approval |
 | [Records officer](user-guide/roles/records-officer.md) | Records desk | Building a parcel's land record from its filed documents, submitting it for review, changing it later, taking over corrected documents |
 | [Registrar (supervisor)](user-guide/roles/registrar.md) | Registry supervisors | Following the work, approving or returning land records, audit evidence, managing users |
-| [Auditor · read-only](user-guide/roles/auditor.md) | Office of the Auditor-General | Checking filed documents' integrity, a land record's history and seals, auditing a land record |
+| [Auditor · read-only](user-guide/roles/auditor.md) | Office of the Auditor-General | Auditing land records against the blockchain, sign-off, findings, trail search, evidence packs, checking a proof outside the portal |
 | [System administrator](user-guide/roles/system-administrator.md) | ICT | Test accounts, offices, the permission matrix, security policies, the access log |
 | [Inviting users and assigning roles](user-guide/inviting-users-and-assigning-roles.md) | Administrators | Inviting someone by email, what they do to activate their account, the six roles, changing roles, suspending, and a step-by-step check that it all works |
 

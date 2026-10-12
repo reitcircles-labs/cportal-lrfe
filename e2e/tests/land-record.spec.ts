@@ -13,8 +13,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { ENROLLED_USERS, userByRole } from '../support/catalogue';
-import { signInAs } from '../support/auth';
+import { apiSignIn, signInAs } from '../support/auth';
 import { apiAs } from '../support/intake';
+import { adminApi, createUser, NEW_USER_PASSWORD } from '../support/admin';
 import { evidence } from '../support/evidence';
 import { pathToFileURL } from 'node:url';
 import { GATEWAY_URL, REPO_DIR } from '../stack/config.mjs';
@@ -59,11 +60,18 @@ const ESTATE_TRANSFER = {
 };
 
 /** A person in their own browser window, signed in. */
-async function as(browser: Browser, email: string, path: string): Promise<Page> {
+async function as(browser: Browser, email: string, path: string, password?: string): Promise<Page> {
     const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, viewport: { width: 1600, height: 1000 } });
     const page = await context.newPage();
-    await signInAs(page, email, path);
+    await signInAs(page, email, path, password);
     return page;
+}
+
+/** A user created by the test (own password), signed in for API calls. */
+async function apiAsNewUser(playwright: Parameters<typeof apiAs>[0], baseURL: string, email: string) {
+    const api = await playwright.request.newContext({ baseURL });
+    const token = await apiSignIn(api, email, NEW_USER_PASSWORD);
+    return { api, headers: { authorization: `Bearer ${token}` }, dispose: () => api.dispose() };
 }
 
 test.describe.serial('Erf 1873 from filed documents to committed land record', () => {
@@ -768,6 +776,141 @@ test('Anchoring health for administrators: healthy, then a low-balance warning w
         await setFunds(10_000_000_000);                                                 // the next tests' batches still need funds
         await admin.dispose();
     }
+});
+
+// ------------------------------------------------ The whole audit flow (API-615): a new registrar approves version 3; once
+// moved to auditing, they may not sign it off (sod2); the auditor audits v1–v3 against the blockchain, signs off, and the
+// evidence pack exported after the next batch passes the offline verifier.
+
+test('the whole audit flow: a version approved, sod2 for its approver, the audit signed off and its evidence pack verified offline', { tag: ['@API-615'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(180_000);
+    expect(batches, 'the batches made by the first Anchorings test').not.toBeNull();
+    const erf = await erf1873(playwright, baseURL!);
+    const admin = await adminApi(playwright, baseURL!);
+    // the audit trail is written from each event a moment after the action: wait for the entry a batch must cover
+    const auditor = await apiAs(playwright, baseURL!, userByRole('aud').email);
+    const trailHas = async (type: string, matches: (data: Record<string, unknown>) => boolean = () => true) => {
+        const res = await auditor.api.get(`/api/audit/trail?subject=record:${erf.id}&type=${type}&limit=500`, { headers: auditor.headers });
+        return (await res.json()).entries.some((e: { data: Record<string, unknown> }) => matches(e.data));
+    };
+    const makeBatch = async () => {
+        const res = await admin.api.post('/api/audit/test/anchorings', { headers: admin.headers, data: { outcome: 'confirmed' } });
+        expect(res.status(), await res.text()).toBe(201);
+        return (await res.json()).batch as number;
+    };
+
+    // 1: a new registrar; the records officer takes the corrected T 4521/2019 into version 3 and submits it
+    const registrar = await createUser(admin, ['sup'], 'registrar');
+    const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+    let record = await (await rec.api.get(`/api/records/${erf.id}`, { headers: rec.headers })).json();
+    if (!record.draft) {
+        const opened = await rec.api.post(`/api/records/${erf.id}/draft`, { headers: rec.headers });
+        expect(opened.status(), await opened.text()).toBe(201);
+        record = await (await rec.api.get(`/api/records/${erf.id}`, { headers: rec.headers })).json();
+    }
+    const t2019 = record.draft.data.documents.find((d: { ref: string }) => d.ref === 'T 4521/2019');
+    const refreshed = await rec.api.post(`/api/records/${erf.id}/draft/documents/${t2019.edrmsDocumentId}/refresh`, { headers: rec.headers, data: { revision: record.draft.revision } });
+    expect(refreshed.status(), await refreshed.text()).toBe(200);
+    // the corrected deed changes Tomas Nghishidi's ID number: the officer takes the owners over from the documents again
+    record = await (await rec.api.get(`/api/records/${erf.id}`, { headers: rec.headers })).json();
+    const changed = await rec.api.patch(`/api/records/${erf.id}/draft`, { headers: rec.headers, data: { revision: record.draft.revision, accept: ['owners'] } });
+    expect(changed.status(), await changed.text()).toBe(200);
+    record = await (await rec.api.get(`/api/records/${erf.id}`, { headers: rec.headers })).json();
+    const submitted = await rec.api.post(`/api/records/${erf.id}/draft/submit`, { headers: rec.headers, data: { revision: record.draft.revision } });
+    expect(submitted.status(), await submitted.text()).toBe(200);
+    await rec.dispose();
+
+    // 2: the new registrar approves it: version 3, approved by them
+    const reg = await apiAsNewUser(playwright, baseURL!, registrar.email);
+    let task: { id: string } | undefined;
+    await expect.poll(async () => {
+        const { tasks } = await (await reg.api.get('/api/tasks', { headers: reg.headers })).json();
+        task = tasks.find((t: { title?: string; businessKey?: string }) => t.businessKey === erf.id || (t.title ?? '').includes(erf.recordNo));
+        return !!task;
+    }, { timeout: 20_000 }).toBe(true);
+    const approved = await reg.api.post(`/api/tasks/${task!.id}/complete`, { headers: reg.headers, data: { output: { outcome: 'approved' } } });
+    expect(approved.status(), await approved.text()).toBe(200);
+    await reg.dispose();
+    await expect.poll(async () => {
+        const r = await apiAs(playwright, baseURL!, userByRole('rec').email);
+        const now = await (await r.api.get(`/api/records/${erf.id}`, { headers: r.headers })).json();
+        await r.dispose();
+        return now.currentVersion;
+    }, { timeout: 20_000 }).toBe(3);
+    await expect.poll(() => trailHas('records.record.committed', d => d['versionNumber'] === 3), { timeout: 20_000 }).toBe(true);
+    await makeBatch();
+
+    // 3: sod2: the registrar who approved v3, moved to auditing, may not sign this audit off
+    const moved = await admin.api.put(`/api/users/${registrar.id}/roles`, { headers: admin.headers, data: { roles: ['aud'] } });
+    expect(moved.status(), await moved.text()).toBe(200);
+    const former = await as(browser, registrar.email, `/audit/records/${erf.id}`, NEW_USER_PASSWORD);
+    await expect(former.locator('aside.side')).toContainText('You approved v3, which is part of this audit, so another auditor must sign it off.');
+    await expect(former.locator('aside.side').getByRole('button', { name: /^Sign off/ })).toBeDisabled();
+    await evidence(former, 'API-615', 'Segregation of duties: the registrar who approved v3, now an auditor, may not sign the audit off');
+    const formerApi = await apiAsNewUser(playwright, baseURL!, registrar.email);
+    const refused = await formerApi.api.post('/api/audit/signoffs', { headers: formerApi.headers, data: { recordId: erf.id } });
+    expect([refused.status(), (await refused.json()).message]).toEqual([403, 'You approved v3, which is part of this audit, so another auditor must sign it off.']);
+    await formerApi.dispose();
+
+    // 4: the auditor finds Erf 1873 in the Audit list and opens it: the trail's chain is intact, every step from capture on
+    const page = await as(browser, userByRole('aud').email, '/audit');
+    await page.getByPlaceholder('Erf number, township, owner or deed number').fill('1873');
+    const row = page.locator('table.table tbody tr', { hasText: 'Erf 1873, Klein Windhoek' });
+    await expect(row).toContainText('v1–v3');
+    await expect(row).toContainText('All match the blockchain ✓');
+    await evidence(page, 'API-615', 'The Audit list: Erf 1873 with its open audit v1–v3, every item matching the blockchain');
+    await row.getByRole('link', { name: 'Open Erf 1873, Klein Windhoek for audit' }).click();
+    await expect(page.getByText('Trail chain intact')).toBeVisible();
+    const trail = page.locator('app-audit-trail');
+    await expect(trail).toContainText('Committed version');
+    // newest first, 25 at a time: back to the first steps, the capture and filing of its documents
+    const trailRows = trail.locator('tbody tr');
+    for (let i = 0; i < 10 && await trail.getByRole('button', { name: 'Show 25 more' }).count(); i++) {
+        const shown = await trailRows.count();
+        await trail.getByRole('button', { name: 'Show 25 more' }).click();
+        await expect.poll(() => trailRows.count(), { timeout: 30_000 }).toBeGreaterThan(shown);
+    }
+    await expect(trail).toContainText('Captured a scan');
+    await expect(trail).toContainText('Filed document');
+
+    // 5: a version's proof verified now: the trail entry of a commit, against the blockchain
+    const commitRow = trail.locator('tr', { hasText: 'Committed version' }).first();
+    await commitRow.getByRole('button', { name: 'Verify' }).click();
+    await expect(commitRow).toContainText('Valid');
+
+    // 6: the auditor checks each version's changes, then signs off v1–v3 once
+    const side = page.locator('aside.side');
+    for (const ver of await page.locator('.ver').all()) {
+        await ver.click();
+        await side.getByRole('tab', { name: '2 · Check changes' }).click();
+        await side.getByRole('button', { name: 'Changes match: mark checked' }).click();
+    }
+    await page.getByRole('button', { name: /Erf 1873, Klein Windhoek · v1–v3/ }).click();
+    await expect(side.locator('.checks li')).toHaveCount(4);
+    await expect(side.locator('.checks .dot.ok')).toHaveCount(4);
+    await evidence(page, 'API-615', 'The audit sign-off card: everything on and matching the blockchain, no open findings, every version checked');
+    await side.getByRole('button', { name: 'Sign off v1–v3' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Sign off', exact: true }).click();
+    await expect(page.locator('.toast', { hasText: 'Audit signed off' }).last()).toBeVisible();
+
+    // 7: the sign-off goes on the blockchain with the next batch; then the evidence pack, checked offline
+    await expect.poll(() => trailHas('audit.signoff.recorded'), { timeout: 20_000 }).toBe(true);
+    await makeBatch();
+    await page.reload();
+    await expect(side.locator('.signed')).toContainText('✓ Audit signed off up to v3');
+    await expect(side.getByRole('link', { name: /^Confirmed, in batch \d+: open the batch$/ })).toBeVisible();
+    await evidence(page, 'API-615', 'Signed off up to v3, the sign-off itself confirmed on the blockchain in its batch');
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export evidence pack' }).click()]);
+    const packFile = await download.path();
+    const wallet = await (await fetch(`${GATEWAY_URL}/api/audit/anchoring/wallet`)).json();
+    const { readPack, verifyPack } = await import(pathToFileURL(join(REPO_DIR, 'backend', 'services', 'audit', 'verifier', 'lrfe-verify.mjs')).href);
+    const result = await verifyPack(readPack(packFile), {
+        address: wallet.address,
+        fetchImpl: (url: string, init: RequestInit) => fetch(`${GATEWAY_URL}/api/audit/test/koios/${new URL(url).pathname.split('/').pop()}`, init)
+    });
+    expect(result.valid, JSON.stringify(result.checks.filter((c: { ok: boolean }) => !c.ok))).toBe(true);
+    expect(result.unproven).toEqual([]);
+    await Promise.all([admin.dispose(), auditor.dispose()]);
 });
 });
 

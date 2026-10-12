@@ -160,9 +160,10 @@ npm run cardano:status      # in another terminal: sync, time left, disk, warnin
 ```
 
 The node runs as a client only (it accepts no connections), Ogmios listens on `127.0.0.1:1337`,
-and the chain is kept in `~/data/cportal-lrfe/cardano/preview`, outside git. The first sync takes a
-while; later starts continue where it stopped, and `npm run dev` starts it when the audit service is
-set to `ogmios`. Production rules (dedicated user, mainnet resources):
+and the chain is kept in `~/data/cportal-lrfe/cardano/preview`, outside git. The first sync took
+10 h 49 min on an 8-core server with 31 GB of RAM, and the chain needs about 16 GB of disk (preview,
+October 2026; it grows). Later starts continue where it stopped, and `npm run dev` starts it when
+the audit service is set to `ogmios`. Production rules (dedicated user, mainnet resources):
 [Cardano node: installation rules](scripts/README.md#cardano-node-installation-rules).
 
 **The anchoring wallet.** Its key is created in OpenBao (`audit-anchor`, ed25519, never exportable)
@@ -204,6 +205,16 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "record_version_seal_order" ON records.r
 Once `CARDANO_PROVIDER` is set, the audit service anchors by itself: every hour in which something
 was recorded (`ANCHOR_PERIOD=1h`), followed until it is `ANCHOR_CONFIRMATIONS=10` blocks deep. Its
 log says `root anchored` and `anchoring confirmed`; each anchoring is a row in `audit.anchor`.
+
+**Check that anchoring works** without the logs: sign in as an administrator, **Administration →
+Anchoring health** (the wallet and its funds, whether the blockchain can be reached and is in sync,
+the last and next anchoring, trail gaps, with warnings), and **Anchorings** in the menu (every batch,
+with a link to a public explorer). Anyone given a proof checks it with the public page
+`#/check-a-proof` (no sign-in): it shows this installation's wallet address and offers the offline
+verifier (`GET /api/audit/verifier/lrfe-verify.mjs`).
+
+`CARDANO_PROVIDER=test` is an in-memory test blockchain for the end-to-end tests only: the service
+refuses to start with it unless `NODE_ENV=test`. Never use it on a server.
 
 **Blockfrost instead of the own node.** Create a project for *Cardano preview* on blockfrost.io and
 keep its key in a file only you can read (the service refuses a key file others can read):
