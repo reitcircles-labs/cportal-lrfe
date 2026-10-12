@@ -409,6 +409,10 @@ node lrfe-verify.mjs proof.json --json                # the result as JSON
 npm run verify -w @lrfe/audit -- proof.json           # the same, from backend/
 ```
 
+Anyone given a proof can download the verifier without signing in (`GET /audit/verifier/lrfe-verify.mjs`)
+and read how to use it on the portal's public page `#/check-a-proof` (API-676), which shows the
+installation's published wallet address and explorer links from `GET /audit/anchoring/wallet`.
+
 Last, it checks the transaction was **paid by the anchoring wallet** named in the proof (Koios
 `tx_info` inputs, Blockfrost `/txs/{tx}/utxos`): without it, anyone could put a made-up tree's root
 on chain from their own wallet. `--address <the installation's published address>` also requires

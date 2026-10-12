@@ -128,18 +128,19 @@ export class AnchoringsService {
 
     /**
      * The anchoring wallet the installation publishes, for checking proofs outside the portal (the
-     * offline verifier's --address; API-672, API-676): `{ address, explorerUrl }`, both null when no
-     * blockchain is configured. 503 while the wallet's key cannot be read.
+     * offline verifier's --address; API-672, API-676): `{ address, explorerUrl, transactionUrl }`:
+     * the wallet's explorer page, and the explorer's address for a transaction (its id appended). All
+     * null when no blockchain is configured. 503 while the wallet's key cannot be read.
      */
     async wallet() {
-        if (!this.cardano) return { address: null, explorerUrl: null };
+        if (!this.cardano) return { address: null, explorerUrl: null, transactionUrl: null };
         let address;
         try {
             address = await this.cardano.address();
         } catch {
             throw new AppError(503, 'The anchoring wallet cannot be read now. Try again in a minute.');
         }
-        return { address, explorerUrl: addressExplorerUrl(this.cardano.network, address) };
+        return { address, explorerUrl: addressExplorerUrl(this.cardano.network, address), transactionUrl: EXPLORERS[this.cardano.network] ?? null };
     }
 
     /**

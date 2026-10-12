@@ -1,7 +1,11 @@
+import { readFile } from 'node:fs/promises';
 import { KINDS } from './proof.service.js';
 import { CLOSE_OUTCOMES } from './signoff.service.js';
 import { LIST_FILTERS } from './audit-list.service.js';
 import { ANCHOR_FILTERS } from './anchorings.service.js';
+
+/** The offline verifier, as published to anyone given a proof. */
+const VERIFIER_FILE = new URL('../verifier/lrfe-verify.mjs', import.meta.url);
 
 export async function auditRoutes(app, { service, proofs, signoffs, evidence, auditList, anchorings, lookup, testAnchorings = null }) {
     const canView = app.requirePerm('audit.view');
@@ -79,6 +83,12 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
 
     // the published anchoring wallet, for checking proofs outside the portal: no sign-in (API-672, API-676)
     app.get('/audit/anchoring/wallet', async () => anchorings.wallet());
+
+    // the offline verifier, one file, for anyone given a proof: no sign-in (API-676)
+    app.get('/audit/verifier/lrfe-verify.mjs', async (req, reply) => reply
+        .type('text/javascript; charset=utf-8')
+        .header('content-disposition', 'attachment; filename="lrfe-verify.mjs"')
+        .send(await readFile(VERIFIER_FILE)));
 
     // "Is it on the blockchain?": a land record or document by number, Erf or deed number, with its batches (API-697)
     app.get('/audit/anchors/lookup', {

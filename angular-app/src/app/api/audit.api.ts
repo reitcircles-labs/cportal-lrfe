@@ -217,7 +217,7 @@ export class AuditApi {
 
   /** The anchoring wallet the installation publishes (no sign-in needed). */
   wallet() {
-    return this.api.get<{ address: string | null; explorerUrl: string | null }>('/audit/anchoring/wallet');
+    return this.api.get<{ address: string | null; explorerUrl: string | null; transactionUrl: string | null }>('/audit/anchoring/wallet');
   }
 
   proofStatus(seq: number) {

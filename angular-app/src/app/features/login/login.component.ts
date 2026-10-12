@@ -48,6 +48,7 @@ import { IconComponent } from '../../shared/icon.component';
             <div class="or"><span>or</span></div>
             <button class="btn btn-secondary" type="button" disabled title="National eID sign-in is not connected yet" style="min-height:44px"><app-icon name="idcard" [size]="18" />Continue with national eID</button>
             <p class="small muted" style="margin:0;text-align:center">New here? Open the invitation link your administrator sent you.</p>
+            <p class="small muted" style="margin:0;text-align:center">Given a proof by the registry? <a href="#/check-a-proof">Check it yourself</a></p>
           </form>
         }
 

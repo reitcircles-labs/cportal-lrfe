@@ -199,9 +199,9 @@ paths:
         - audit · Anchorings
       summary: The published anchoring wallet
       description: >-
-        For checking a proof outside the portal (the offline verifier's `--address`). `{ address, explorerUrl }`: the wallet that pays for
-        every anchoring, and its page on a public blockchain explorer; both null when no blockchain is configured. 503 while the wallet's
-        key cannot be read. No sign-in.
+        For checking a proof outside the portal (the offline verifier's `--address`). `{ address, explorerUrl, transactionUrl }`: the wallet
+        that pays for every anchoring, its page on a public blockchain explorer, and the explorer's address for a transaction (append the
+        transaction id); all null when no blockchain is configured. 503 while the wallet's key cannot be read. No sign-in.
 
 
         **Access:** Public: no token needed.
@@ -1373,6 +1373,25 @@ paths:
       x-access:
         allOf:
           - audit.view
+  /api/audit/verifier/lrfe-verify.mjs:
+    get:
+      tags:
+        - audit · Proofs
+      summary: The offline verifier
+      description: >-
+        The verifier as one file (Node 18 or later, nothing to install), for anyone given a proof: `node lrfe-verify.mjs proof.json
+        --address <wallet>`. No sign-in.
+
+
+        **Access:** Public: no token needed.
+      operationId: audit_getAuditVerifierLrfeVerifyMjs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
   /api/audit/verify:
     post:
       tags:

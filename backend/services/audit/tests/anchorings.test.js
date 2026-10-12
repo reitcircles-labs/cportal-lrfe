@@ -277,8 +277,10 @@ describe('made-up anchorings for the end-to-end tests (API-698)', () => {
 
     it('the published wallet: its address and explorer page, nulls without a blockchain, 503 while the key cannot be read', async () => {
         const wallet = (cardano) => new AnchoringsService({ repo: createMemoryRepo(), tree: { size: async () => 0 }, cardano }).wallet();
-        assert.deepEqual(await wallet(null), { address: null, explorerUrl: null });
-        assert.deepEqual(await wallet({ network: 'preview', address: async () => 'addr_test1abc' }), { address: 'addr_test1abc', explorerUrl: 'https://preview.cardanoscan.io/address/addr_test1abc' });
+        assert.deepEqual(await wallet(null), { address: null, explorerUrl: null, transactionUrl: null });
+        assert.deepEqual(await wallet({ network: 'preview', address: async () => 'addr_test1abc' }), {
+            address: 'addr_test1abc', explorerUrl: 'https://preview.cardanoscan.io/address/addr_test1abc', transactionUrl: 'https://preview.cardanoscan.io/transaction/'
+        });
         await assert.rejects(wallet({ network: 'preview', address: async () => { throw new Error('OpenBao down'); } }), e => e.statusCode === 503 && !/OpenBao/.test(e.message));
     });
 
@@ -299,5 +301,18 @@ describe('made-up anchorings for the end-to-end tests (API-698)', () => {
         assert.equal((await post(app, ['admin.users'], 'onChain')).statusCode, 400);
         assert.equal((await post(without, ['admin.users'])).statusCode, 404);
         await Promise.all([app.close(), without.close()]);
+    });
+});
+
+describe('the offline verifier for anyone given a proof (API-676)', () => {
+    it('is served without sign-in, as the file in the repository', async () => {
+        const { readFileSync } = await import('node:fs');
+        const app = await buildApp({ anchorings: service(seeded()), jwtSecret: SECRET });
+        const res = await app.inject({ method: 'GET', url: '/audit/verifier/lrfe-verify.mjs' });
+        assert.equal(res.statusCode, 200);
+        assert.match(res.headers['content-disposition'], /filename="lrfe-verify.mjs"/);
+        assert.equal(res.body, readFileSync(new URL('../verifier/lrfe-verify.mjs', import.meta.url), 'utf8'));
+        assert.equal((await app.inject({ method: 'GET', url: '/audit/anchoring/wallet' })).json().address, null);
+        await app.close();
     });
 });

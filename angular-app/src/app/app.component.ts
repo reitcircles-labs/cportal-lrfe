@@ -146,7 +146,7 @@ export class AppComponent {
   /** Documents waiting for review (intake), refreshed on every navigation. */
   inReview = signal(0);
   drawer = signal(false);
-  isLogin = signal(/^#\/(login|invite)/.test(location.hash));
+  isLogin = signal(/^#\/(login|invite|check-a-proof)/.test(location.hash));
   title = signal('Dashboard');
   crumb = signal('Deeds Registry');
 
@@ -175,7 +175,7 @@ export class AppComponent {
 
   constructor() {
     this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe((e: any) => {
-      this.isLogin.set(/^\/(login|invite)/.test(e.urlAfterRedirects));
+      this.isLogin.set(/^\/(login|invite|check-a-proof)/.test(e.urlAfterRedirects));
       let r = this.route.firstChild;
       while (r?.firstChild) r = r.firstChild;
       const d = r?.snapshot.data || {};

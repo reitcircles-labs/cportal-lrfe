@@ -40,7 +40,11 @@ export default {
         },
         'GET /audit/anchoring/wallet': {
             tag: 'Anchorings', summary: 'The published anchoring wallet', auth: 'public',
-            description: 'For checking a proof outside the portal (the offline verifier\'s `--address`). `{ address, explorerUrl }`: the wallet that pays for every anchoring, and its page on a public blockchain explorer; both null when no blockchain is configured. 503 while the wallet\'s key cannot be read. No sign-in.'
+            description: 'For checking a proof outside the portal (the offline verifier\'s `--address`). `{ address, explorerUrl, transactionUrl }`: the wallet that pays for every anchoring, its page on a public blockchain explorer, and the explorer\'s address for a transaction (append the transaction id); all null when no blockchain is configured. 503 while the wallet\'s key cannot be read. No sign-in.'
+        },
+        'GET /audit/verifier/lrfe-verify.mjs': {
+            tag: 'Proofs', summary: 'The offline verifier', auth: 'public',
+            description: 'The verifier as one file (Node 18 or later, nothing to install), for anyone given a proof: `node lrfe-verify.mjs proof.json --address <wallet>`. No sign-in.'
         },
         'GET /audit/anchors/lookup': {
             tag: 'Anchorings', summary: 'Is it on the blockchain? Find a land record or document',
