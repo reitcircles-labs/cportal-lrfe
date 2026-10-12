@@ -9,7 +9,8 @@ import { RbacService, fmtTime } from '../../state/rbac.service';
 import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
 import { RecordDiffComponent } from '../../shared/record-diff.component';
-import { anchoringLabel, anchoringTag, anchoringTitle } from '../../shared/anchoring';
+import { anchoringLabel, anchoringTag } from '../../shared/anchoring';
+import { ProofLinkComponent } from '../../shared/proof-link.component';
 
 type Tab = 'documents' | 'chain' | 'details' | 'history' | 'comments';
 type SFilter = 'all' | 'draft' | 'in_review' | 'committed' | 'needs_review';
@@ -29,7 +30,7 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
  */
 @Component({
     selector: 'app-link',
-    imports: [IconComponent, CanDirective, RecordDiffComponent],
+    imports: [IconComponent, CanDirective, RecordDiffComponent, ProofLinkComponent],
     template: `
     <div class="ws" [class.list-hidden]="!listOpen()">
       <!-- Land record list -->
@@ -276,7 +277,7 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                         <div class="small muted">Committed {{ fmt(v.committedAt) }} · submitted by {{ v.submittedByName || '—' }} · approved by {{ v.approvedByName || '—' }}</div>
                         @if (v.reviewComment) { <div class="small">Reviewer: {{ v.reviewComment }}</div> }
                         <div class="row small" style="gap:8px;align-items:center"><span class="mono muted">seal {{ v.seal.slice(0, 16) }}…</span>
-                          @if (v.anchoring; as a) { <span [class]="anchoringTag(a)" [title]="anchoringTitle(a)">{{ anchoringLabel(a) }}</span> }</div>
+                          @if (v.anchoring; as a) { <app-proof-link [label]="anchoringLabel(a)" [tagClass]="anchoringTag(a)" [batch]="a.batch" /> }</div>
                         <app-record-diff [diff]="v.diff" />
                       </div>
                     } @empty { <div class="small muted" style="text-align:center;padding:12px">{{ history() ? 'No committed version yet.' : historyFailed() ? 'The history could not be loaded.' : 'Loading…' }}</div> }
@@ -550,7 +551,6 @@ export class LinkComponent {
   fmt = fmtTime;
   anchoringLabel = anchoringLabel;
   anchoringTag = anchoringTag;
-  anchoringTitle = anchoringTitle;
 
   constructor() {
     this.route.queryParamMap.subscribe(p => { const r = p.get('record'); if (r && r !== this.selId()) this.select(r); });

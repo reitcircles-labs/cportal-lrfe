@@ -47,3 +47,35 @@ describe('the land records list of the Audit screen (API-661)', () => {
         assert.equal((await a.api(people.rec, 'GET', '/audit/records')).statusCode, 403);
     });
 });
+
+describe('every proof status names its batch (API-699)', () => {
+    it('the checkpoint, the list, the last sign-off, a trail entry and the land-records status each carry the batch', async () => {
+        const a = await audited();
+        const check = async () => (await a.api(people.aud, 'GET', `/audit/records/${a.record.id}/check`)).json();
+        const row = async () => (await a.api(people.aud, 'GET', '/audit/records?filter=all')).json().items[0];
+        // waiting: no batch anywhere
+        let c = await check();
+        assert.deepEqual([...c.versions, ...c.documents].map(i => [i.anchoring, i.batch]).filter(([s, b]) => s !== 'waiting' || b !== null), []);
+        assert.deepEqual([(await row()).proof, (await row()).proofBatch], ['waiting', null]);
+
+        // in batch 1: the checkpoint's versions and documents, and the list's current version
+        await a.anchor();
+        c = await check();
+        assert.deepEqual([...new Set([...c.versions, ...c.documents].map(i => `${i.anchoring}:${i.batch}`))], ['confirmed:1']);
+        assert.deepEqual([(await row()).proof, (await row()).proofBatch], ['confirmed', 1]);
+        const key = `record-version:${a.record.id}:1`;
+        assert.deepEqual(await a.proofs.anchoringOf([key, 'record-version:nope:1']), { [key]: { status: 'confirmed', batch: 1 }, 'record-version:nope:1': null });
+        assert.equal((await a.proofs.statusOf([key]))[key].batch, 1);
+
+        // the sign-off: waiting until the next batch, then in batch 2, on the checkpoint and in the list
+        assert.equal((await a.api(people.aud, 'POST', '/audit/signoffs', { recordId: a.record.id })).statusCode, 201);
+        assert.deepEqual((await check()).lastSignoff.proof, { status: 'waiting', batch: null });
+        assert.deepEqual([(await row()).audit.lastSignoff.proof, (await row()).audit.lastSignoff.batch], ['waiting', null]);
+        await a.anchor();
+        assert.deepEqual((await check()).lastSignoff.proof, { status: 'confirmed', batch: 2 });
+        assert.deepEqual([(await row()).audit.lastSignoff.proof, (await row()).audit.lastSignoff.batch], ['confirmed', 2]);
+        const { entries } = await a.trail.list({ subjects: [`record:${a.record.id}`], type: 'audit.signoff.recorded' });
+        const trailProof = await a.api(people.aud, 'GET', `/audit/proofs/trail-entry/${entries[0].seq}`);
+        assert.equal(trailProof.json().anchor.batch, 2);
+    });
+});

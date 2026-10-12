@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input, si
 
 import { AuditApi, ProofStatus, TrailEntry } from '../../api/audit.api';
 import { InfoTipComponent } from '../../shared/info-tip.component';
+import { ProofLinkComponent } from '../../shared/proof-link.component';
 import { TIPS, proofLabel, shortDateTime, toneClass } from './audit-wording';
 
 /** How many entries are shown at a time. */
@@ -42,7 +43,7 @@ const RESULTS: Record<Result, string> = {
  */
 @Component({
   selector: 'app-audit-trail',
-  imports: [InfoTipComponent],
+  imports: [InfoTipComponent, ProofLinkComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="stack" style="gap:10px">
@@ -58,7 +59,7 @@ const RESULTS: Record<Result, string> = {
                 <td>{{ r.entry.actor.name }}</td>
                 <td>{{ r.action }}</td>
                 <td>{{ r.item }}</td>
-                <td>@if (r.proof) { <span [class]="r.proof.tagClass">{{ r.proof.label }}</span> }</td>
+                <td>@if (r.proof) { <app-proof-link [label]="r.proof.label" [tagClass]="r.proof.tagClass" [batch]="r.proof.batch" stacked /> }</td>
                 <td class="mono small muted">{{ r.entry.hash.slice(0, 4) }}…{{ r.entry.hash.slice(-4) }}</td>
                 <td style="text-align:right">
                   @if (r.result) {
@@ -101,19 +102,19 @@ export class AuditTrailComponent {
   protected readonly total = signal(0);
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
-  private readonly proofs = signal<Record<number, ProofStatus>>({});
+  private readonly proofs = signal<Record<number, { status: ProofStatus; batch: number | null }>>({});
   private readonly results = signal<Record<number, Result>>({});
 
   protected readonly rows = computed(() => this.entries().map(entry => {
     const proof = this.proofs()[entry.seq];
     const result = this.results()[entry.seq];
-    const status = proof ? proofLabel(proof) : null;
+    const status = proof ? proofLabel(proof.status) : null;
     return {
       entry,
       time: shortDateTime(entry.time),
       action: ACTIONS[entry.type] ?? entry.type,
       item: itemOf(entry),
-      proof: status ? { label: status.label, tagClass: toneClass(status.tone) } : null,
+      proof: status ? { label: status.label, tagClass: toneClass(status.tone), batch: proof?.batch ?? null } : null,
       result: result ? RESULTS[result] : null
     };
   }));
@@ -155,8 +156,8 @@ export class AuditTrailComponent {
       this.entries.set([...entries].reverse());
       // proofs that were waiting may have moved on since: ask again for those
       const known = this.proofs();
-      const missing = entries.filter(e => !known[e.seq] || known[e.seq] === 'waiting');
-      const statuses = await Promise.all(missing.map(e => this.audit.proofStatus(e.seq).then(p => [e.seq, p.status] as const, () => null)));
+      const missing = entries.filter(e => !known[e.seq] || known[e.seq].status === 'waiting');
+      const statuses = await Promise.all(missing.map(e => this.audit.proofStatus(e.seq).then(p => [e.seq, { status: p.status, batch: p.anchor?.batch ?? null }] as const, () => null)));
       this.proofs.update(p => {
         const next = { ...p };
         for (const s of statuses) {

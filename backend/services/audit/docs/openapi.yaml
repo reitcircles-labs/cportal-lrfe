@@ -710,10 +710,11 @@ paths:
         `filter`: `changed` (a version committed since the last audit sign-off; the default), `attention` (an open finding, or an item found
         changed since review and not re-reviewed yet) or `all`; `q` searches as land-records does; `limit` (up to 100) and `offset`. `{
         items, total, counts: { changed, attention, all } }`. Each item: `id`, `recordNo`, `label`, `currentVersion`, `changedAt`, `owners`,
-        `proof` (the current version's anchoring: `waiting`, `sent`, `onChain`, `confirmed`), `needsAttention`, and `audit`: `range` (the
-        open checkpoint, or null), `newDocuments`, `check` (`matches`, `changed`, `notOnChain`: what is known as of the last check; the
-        record's own check runs it again), `openFindings`, `lastSignoff` (`toVersion`, `signedAt`, `signedByName`, and `proof`: how far its
-        trail entry has got, `waiting`, `sent`, `onChain` or `confirmed`).
+        `proof` (the current version's anchoring: `waiting`, `sent`, `onChain`, `confirmed`), `proofBatch` (its batch; null while waiting),
+        `needsAttention`, and `audit`: `range` (the open checkpoint, or null), `newDocuments`, `check` (`matches`, `changed`, `notOnChain`:
+        what is known as of the last check; the record's own check runs it again), `openFindings`, `lastSignoff` (`toVersion`, `signedAt`,
+        `signedByName`, and `proof`: how far its trail entry has got, `waiting`, `sent`, `onChain` or `confirmed`, with its `batch` beside
+        it; the checkpoint gives the same as `lastSignoff.proof: { status, batch }`).
 
 
         **Access:** Signed-in user with permission `audit.view`.
@@ -787,8 +788,9 @@ paths:
       summary: The open audit checkpoint of a land record
       description: >-
         What the next audit sign-off covers: `range { from, to }` (every version committed since the last audit sign-off, or null),
-        `lastSignoff`, `versions` and `documents` (the document versions they added that no earlier sign-off covered), each with `anchoring`
-        (`waiting`, `sent`, `onChain`, `confirmed`) and `match` (`matches`, `changed`, `notOnChain`, `unavailable`; a changed one also
+        `lastSignoff` (with `proof: { status, batch }`, how far its trail entry has got and in which batch), `versions` and `documents` (the
+        document versions they added that no earlier sign-off covered), each with `anchoring` (`waiting`, `sent`, `onChain`, `confirmed`),
+        `batch` (the batch it is in; null while waiting) and `match` (`matches`, `changed`, `notOnChain`, `unavailable`; a changed one also
         `superseded` once a re-reviewed version matches), `openFindings`, and `canSignOff` with the `reason` when not, for the user asking.
         A changed item starts a re-review task for the records desk the first time it is found (bpm process `audit-rereview`).
 

@@ -8,7 +8,8 @@ import { ConfirmService } from '../../state/confirm.service';
 import { TasksService } from '../../state/tasks.service';
 import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
-import { Anchoring, anchoringLabel, anchoringTag, anchoringTitle } from '../../shared/anchoring';
+import { Anchoring, anchoringLabel, anchoringTag } from '../../shared/anchoring';
+import { ProofLinkComponent } from '../../shared/proof-link.component';
 
 interface DocRow { id: string; edrmsNo: string; docType: string; title: string; instrumentRef: string | null; batchId: string | null; currentVersion: number; filedAt: string; props: Record<string, string>; }
 interface Field { k: string; label: string; v: string; c?: number; edited?: boolean; }
@@ -26,7 +27,7 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
  */
 @Component({
     selector: 'app-documents',
-    imports: [IconComponent, CanDirective],
+    imports: [IconComponent, CanDirective, ProofLinkComponent],
     template: `
     <div class="shell">
       <aside class="rail">
@@ -106,7 +107,7 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
                       @if (v.reason) { <div class="small muted">“{{ v.reason }}”</div> }
                       @for (c of v.changes; track c.k) { <div class="small"><span class="muted">{{ c.k }}:</span> <span class="strike">{{ c.from }}</span> → <b>{{ c.to }}</b></div> }
                       <div class="small mono muted" [title]="'content SHA-256 ' + v.sha256 + ' · seal ' + v.seal">sha256 {{ v.sha256.slice(0, 12) }}… · seal {{ v.seal.slice(0, 12) }}…</div>
-                      @if (v.anchoring; as a) { <div><span [class]="anchoringTag(a)" [title]="anchoringTitle(a)">{{ anchoringLabel(a) }}</span></div> }
+                      @if (v.anchoring; as a) { <div><app-proof-link [label]="anchoringLabel(a)" [tagClass]="anchoringTag(a)" [batch]="a.batch" /></div> }
                     </div>
                   }
                 </div>
@@ -202,7 +203,6 @@ export class DocumentsComponent {
   fmt = fmtTime;
   anchoringLabel = anchoringLabel;
   anchoringTag = anchoringTag;
-  anchoringTitle = anchoringTitle;
   versionsDesc = computed(() => [...(this.sel()?.versions || [])].reverse());
   recordMeta = computed(() => {
     const m = this.sel()?.recordMetadata || {};

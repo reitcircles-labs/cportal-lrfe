@@ -122,8 +122,10 @@ export class SignoffService {
      * The open checkpoint of a land record, for the screen and for the sign-off itself:
      *
      *   range                 { from, to }: the versions committed since the last audit sign-off, or null
-     *   lastSignoff           the last audit sign-off, or null
-     *   versions, documents   each with its leaf key, `anchoring` (waiting | sent | onChain | confirmed)
+     *   lastSignoff           the last audit sign-off, or null; with `withProof` (the screen), also
+     *                         `proof` { status, batch } of its trail entry
+     *   versions, documents   each with its leaf key, `anchoring` (waiting | sent | onChain | confirmed),
+     *                         `batch` (the batch it is in, null while waiting)
      *                         and `match` (matches | changed | notOnChain | unavailable); a changed one
      *                         is `superseded` when a version committed after the change was found
      *                         matches (the re-reviewed version)
@@ -133,13 +135,16 @@ export class SignoffService {
      * Only what is on the blockchain is checked for a match: the rest is `notOnChain`. A changed item
      * starts a re-review task the first time it is found (alertChanged).
      */
-    async checkpoint(recordId, actor = null) {
+    async checkpoint(recordId, actor = null, { withProof = false } = {}) {
         const record = await this.sources.recordInfo(recordId);
         const past = (await this.repo.listSignoffs({ recordId })).filter(s => s.kind === 'checkpoint');
         const lastSignoff = past.at(-1) ?? null;
         const from = lastSignoff ? lastSignoff.toVersion + 1 : 1;
         const to = record.currentVersion ?? 0;
-        const base = { recordId, recordNo: record.recordNo, label: record.label, lastSignoff };
+        // for the screen only: how far the last sign-off's trail entry has got, and in which batch (API-699).
+        // Signing off does not need it, so it never waits for it.
+        const shown = withProof && lastSignoff ? { ...lastSignoff, proof: await this.proofs.signoffBatch(recordId, lastSignoff.id) } : lastSignoff;
+        const base = { recordId, recordNo: record.recordNo, label: record.label, lastSignoff: shown };
         if (from > to) {
             const reason = lastSignoff
                 ? `Nothing to audit: no version was committed since the last audit sign-off (v${lastSignoff.toVersion}).`
@@ -161,7 +166,8 @@ export class SignoffService {
 
         const anchoring = await this.proofs.anchoringOf(items.map(i => i.key));
         await inBatches(items, VERIFY_AT_ONCE, async (item) => {
-            item.anchoring = anchoring[item.key] ?? 'waiting';
+            item.anchoring = anchoring[item.key]?.status ?? 'waiting';
+            item.batch = anchoring[item.key]?.batch ?? null;
             if (['onChain', 'confirmed'].includes(item.anchoring)) {
                 item.match = await this.matchOf(item, recordId);
             } else {

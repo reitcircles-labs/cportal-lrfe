@@ -40,3 +40,4 @@ tr.group td { background: var(--color-neutral-100, #f7f9fb); font-weight: 600; f
 .tone-success { color: var(--success-fg); } .tone-danger { color: var(--danger-fg); } .tone-neutral { color: var(--color-neutral-700); }
 .tone-warn { color: var(--warn-fg); } .tone-accent { color: var(--color-accent-800); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.signed { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--success-bd); border-radius: 10px; background: var(--success-bg); }

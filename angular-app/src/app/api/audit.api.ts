@@ -24,13 +24,15 @@ export interface AuditListItem {
   changedAt: string;
   owners: string[];
   proof: Anchoring;
+  /** The batch the current version is in; null while it waits for the next batch (API-699). */
+  proofBatch: number | null;
   needsAttention: boolean;
   audit: {
     range: { from: number; to: number } | null;
     newDocuments: number;
     check: 'matches' | 'changed' | 'notOnChain';
     openFindings: number;
-    lastSignoff: { toVersion: number; signedAt: string; signedByName: string | null; proof: Anchoring } | null;
+    lastSignoff: { toVersion: number; signedAt: string; signedByName: string | null; proof: Anchoring; batch: number | null } | null;
   };
 }
 
@@ -50,6 +52,8 @@ export interface CheckVersion {
   approvedByName: string | null;
   committedAt: string;
   anchoring: Anchoring;
+  /** The batch it is in; null while it waits for the next batch (API-699). */
+  batch: number | null;
   match: Match;
   superseded?: boolean;
 }
@@ -64,6 +68,8 @@ export interface CheckDocument {
   seal: string;
   addedIn: number;
   anchoring: Anchoring;
+  /** The batch it is in; null while it waits for the next batch (API-699). */
+  batch: number | null;
   match: Match;
   superseded?: boolean;
 }
@@ -119,6 +125,8 @@ export interface Signoff {
   toVersion: number | null;
   signedByName: string | null;
   signedAt: string;
+  /** How far its trail entry has got on the blockchain, and in which batch (the checkpoint's last sign-off, API-699). */
+  proof?: { status: Anchoring; batch: number | null };
 }
 
 /** The open checkpoint of a land record (GET /audit/records/:id/check). */
@@ -194,7 +202,7 @@ export class AuditApi {
   }
 
   proofStatus(seq: number) {
-    return this.api.get<{ status: ProofStatus }>(`/audit/proofs/trail-entry/${seq}`);
+    return this.api.get<{ status: ProofStatus; anchor: { batch: number } | null }>(`/audit/proofs/trail-entry/${seq}`);
   }
 
   /** The whole trail's hash chain, recomputed. */

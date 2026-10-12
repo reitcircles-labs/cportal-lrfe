@@ -102,12 +102,13 @@ export class AuditListService {
         const keys = [...inRange.map(v => `record-version:${record.id}:${v.versionNumber}`), ...newDocuments];
         const anchoring = keys.length ? await this.proofs.anchoringOf(keys) : {};
         const currentKey = `record-version:${record.id}:${record.currentVersion}`;
-        const proof = (await this.proofs.anchoringOf([currentKey]))[currentKey] ?? 'waiting';
+        const currentProof = (await this.proofs.anchoringOf([currentKey]))[currentKey];
         return {
             id: record.id, recordNo: record.recordNo, label: record.label,
             currentVersion: record.currentVersion, changedAt: current?.committedAt ?? record.updatedAt,
             owners: (current?.data?.owners || []).map(o => o.name),
-            proof,
+            proof: currentProof?.status ?? 'waiting',
+            proofBatch: currentProof?.batch ?? null,
             needsAttention,
             audit: {
                 range: inRange.length ? { from: lastTo + 1, to: record.currentVersion } : null,
@@ -131,7 +132,7 @@ export class AuditListService {
                 return 'changed';
             }
         }
-        if (keys.some(k => !['onChain', 'confirmed'].includes(anchoring[k]))) {
+        if (keys.some(k => !['onChain', 'confirmed'].includes(anchoring[k]?.status))) {
             return 'notOnChain';
         }
         return 'matches';
@@ -144,17 +145,9 @@ export class AuditListService {
         if (!last) {
             return null;
         }
-        const { entries } = await this.repo.list({ subjects: [`record:${recordId}`], type: 'audit.signoff.recorded' }, { limit: 500, offset: 0 });
-        const entry = entries.find(e => e.data?.signoffId === last.id);
-        // the four states of the record screens: a sent transaction is not on the blockchain yet
-        let proof = 'waiting';
-        if (entry) {
-            const anchor = await this.repo.anchorForEntry(entry.seq);
-            if (anchor) {
-                proof = anchor.status === 'submitted' ? 'sent' : anchor.status;
-            }
-        }
-        return { toVersion: last.toVersion, signedAt: last.signedAt, signedByName: last.signedByName, proof };
+        // the four states of the record screens, and the batch its trail entry is in (API-699)
+        const { status, batch } = await this.proofs.signoffBatch(recordId, last.id);
+        return { toVersion: last.toVersion, signedAt: last.signedAt, signedByName: last.signedByName, proof: status, batch };
     }
 }
 

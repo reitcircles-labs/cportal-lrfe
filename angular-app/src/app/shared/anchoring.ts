@@ -7,4 +7,3 @@ const TAGS = { waiting: 'tag tag-neutral', anchored: 'tag tag-info', confirmed: 
 
 export const anchoringLabel = (a: Anchoring) => LABELS[a.status];
 export const anchoringTag = (a: Anchoring) => TAGS[a.status];
-export const anchoringTitle = (a: Anchoring) => a.tx ? `batch ${a.batch} · blockchain transaction ${a.tx}` : 'sealed; it goes to the blockchain with the next batch';

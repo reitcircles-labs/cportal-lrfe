@@ -571,6 +571,38 @@ test('a failed batch: why it never reached the blockchain, the batch that replac
     await page.locator('.replaced').getByRole('link').click();
     await expect(page.getByRole('heading', { level: 1, name: `Batch ${batches!.confirmed.toLocaleString('en')}` })).toBeVisible();
 });
+
+test('every proof status names its batch and links to it: the Blockchain check, the trail and the Land record versions', { tag: ['@API-699'] }, async ({ browser, playwright, baseURL }) => {
+    test.setTimeout(90_000);
+    expect(batches, 'the batches made by the first Anchorings test').not.toBeNull();
+    const erf = await erf1873(playwright, baseURL!);
+    const inBatch = `Confirmed, in batch ${batches!.confirmed.toLocaleString('en')}: open the batch`;
+
+    // one land record: the current version's Blockchain check names its batch
+    const page = await as(browser, userByRole('aud').email, `/audit/records/${erf.id}`);
+    await page.locator('.ver').first().click();
+    const side = page.locator('aside.side');
+    await side.getByRole('tab', { name: '1 · Blockchain check' }).click();
+    await expect(side.getByRole('link', { name: inBatch })).toContainText(new RegExp(`Confirmed\\s*in batch ${batches!.confirmed.toLocaleString('en')} →`));
+    await evidence(page, 'API-699', 'One land record, Blockchain check: the proof names its batch and links to it');
+
+    // the audit trail's Proof column: each entry in the batch links to it
+    const trail = page.locator('app-audit-trail');
+    await trail.scrollIntoViewIfNeeded();
+    await expect(trail.getByRole('link', { name: inBatch }).first()).toBeVisible();
+    await evidence(page, 'API-699', 'The audit trail: each entry\'s proof names its batch and links to it');
+
+    // following the link opens the batch page
+    await side.getByRole('link', { name: inBatch }).click();
+    await expect(page.getByRole('heading', { level: 1, name: `Batch ${batches!.confirmed.toLocaleString('en')}` })).toBeVisible();
+
+    // the Land record screen: the version tags link to their batch instead of a tooltip
+    const officer = await as(browser, userByRole('rec').email, `/link?record=${erf.id}`);
+    await officer.getByRole('tab', { name: 'History' }).click();
+    await expect(officer.getByRole('link', { name: /^On the blockchain, in batch \d+: open the batch$|^Confirmed, in batch \d+: open the batch$/ }).first()).toBeVisible();
+    await officer.getByRole('link', { name: /in batch \d+: open the batch$/ }).first().scrollIntoViewIfNeeded();
+    await evidence(officer, 'API-699', 'Land record versions: the proof tag names its batch and links to it');
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {

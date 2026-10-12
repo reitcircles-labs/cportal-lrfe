@@ -149,7 +149,7 @@ export async function auditRoutes(app, { service, proofs, signoffs, evidence, au
     app.get('/audit/records/:id/check', {
         onRequest: canView,
         schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } }
-    }, async (req) => signoffs.checkpoint(req.params.id, actorOf(req)));
+    }, async (req) => signoffs.checkpoint(req.params.id, actorOf(req), { withProof: true }));
 
     // one audit sign-off for every version committed since the last one (API-680)
     app.post('/audit/signoffs', {

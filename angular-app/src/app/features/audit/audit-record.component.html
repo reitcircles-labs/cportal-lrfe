@@ -155,6 +155,15 @@
                 <div class="small muted">You can view and verify. Signing off and raising findings need the auditor role.</div>
               }
             } @else {
+              @if (check()?.lastSignoff; as last) {
+                <div class="signed">
+                  <strong class="tone-success">✓ Audit signed off up to v{{ last.toVersion }}</strong>
+                  <span class="small muted">By {{ last.signedByName ?? 'an auditor' }} · {{ dateTime(last.signedAt) }}</span>
+                  @if (last.proof; as p) {
+                    <app-proof-link [label]="anchoringText(p.status)" [tagClass]="anchoringClass(p.status)" [batch]="p.batch" />
+                  }
+                </div>
+              }
               <p class="muted" style="margin:0">{{ check()?.reason }}</p>
             }
           }
@@ -173,7 +182,7 @@
                   } @else {
                     <span class="reason">{{ versionLocked() }}</span>
                   }
-                  <dl class="kv"><dt>Proof</dt><dd>{{ anchoringText(i.anchoring) }}</dd>
+                  <dl class="kv"><dt>Proof</dt><dd><app-proof-link [label]="anchoringText(i.anchoring)" [tagClass]="anchoringClass(i.anchoring)" [batch]="i.batch" /></dd>
                     <dt class="row" style="gap:0">Fingerprint<app-info-tip label="fingerprint" [text]="tips.fingerprint" /></dt><dd class="mono small">{{ i.seal.slice(0, 16) }}…</dd></dl>
                 } @else {
                   <span class="small muted">Checked and signed off in the audit of {{ lastSignoffText() }}.</span>

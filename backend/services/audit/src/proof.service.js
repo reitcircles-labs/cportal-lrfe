@@ -23,7 +23,7 @@ function anchoringStatus(anchor) {
  *   verify(kind, id, version)   the item's seal recomputed from the current data, the path to the
  *                               root, and the root in the anchoring transaction on the chain
  *   statusOf(keys)              per leaf key: waiting | anchored | confirmed (land-records, edrms)
- *   anchoringOf(keys), batchOf(keys), entryBatch(seq)
+ *   anchoringOf(keys), batchOf(keys), entryBatch(seq), signoffBatch(recordId, signoffId)
  *                               how far an item has got (waiting | sent | onChain | confirmed), and
  *                               with batchOf and entryBatch the batch (the Anchorings screens)
  *
@@ -208,31 +208,27 @@ export class ProofService {
     // ------------------------------------------------ status for land-records and edrms
 
     /**
-     * Per leaf key, how far its anchoring has got: `waiting` (in no anchoring yet), `sent` (in a
-     * transaction not in a block yet), `onChain` or `confirmed`; null when not in the tree. The audit
-     * sign-off (API-680) counts only `onChain` and `confirmed`: a sent transaction can still fail.
+     * Per leaf key, how far its anchoring has got and in which batch: `{ status, batch }`, status
+     * `waiting` (in no anchoring yet; batch null), `sent` (in a transaction not in a block yet),
+     * `onChain` or `confirmed`; null when not in the tree. The audit sign-off (API-680) counts only
+     * `onChain` and `confirmed`: a sent transaction can still fail. The screens link the status to
+     * its batch (API-699).
      */
     async anchoringOf(keys) {
         const batches = await this.batchOf(keys);
-        return Object.fromEntries(keys.map(key => [key, batches[key]?.status ?? null]));
+        return Object.fromEntries(keys.map(key => [key, batches[key] ? { status: batches[key].status, batch: batches[key].batch } : null]));
     }
 
     /**
-     * Per leaf key: `{ status, batch, sealedAt }`, the status as in anchoringOf, the batch that put it
-     * on the blockchain (null while waiting) and when it was sealed into the tree; null when not in
-     * the tree. The Anchorings screens link each item to its batch (API-697, API-699).
+     * Per leaf key: `{ status, batch, sealedAt }`, as anchoringOf with when it was sealed into the
+     * tree; null when not in the tree. The Anchorings screens link each item to its batch (API-697).
      */
     async batchOf(keys) {
-        const out = {};
-        for (const key of keys) {
-            const leaf = await this.repo.tree.leafByKey(key);
-            if (!leaf) {
-                out[key] = null;
-                continue;
-            }
-            out[key] = { ...anchoringStatus(await this.repo.anchorForLeaf(leaf.leafIndex)), sealedAt: leaf.createdAt ?? null };
-        }
-        return out;
+        const found = await this.anchorsOf(keys);
+        return Object.fromEntries(keys.map(key => {
+            const f = found.get(key);
+            return [key, f ? { ...anchoringStatus(f.anchor), sealedAt: f.leaf.createdAt ?? null } : null];
+        }));
     }
 
     /** Trail entry `seq`, as batchOf says for a leaf: an entry is on the blockchain through the checkpoint after it. */
@@ -240,18 +236,35 @@ export class ProofService {
         return anchoringStatus(await this.repo.anchorForEntry(seq));
     }
 
+    /** A land record's audit sign-off `signoffId`, as entryBatch says for its trail entry (waiting until it is in the trail). */
+    async signoffBatch(recordId, signoffId) {
+        const { entries } = await this.repo.list({ subjects: [`record:${recordId}`], type: 'audit.signoff.recorded' }, { limit: 500, offset: 0 });
+        const entry = entries.find(e => e.data?.signoffId === signoffId);
+        return entry ? this.entryBatch(entry.seq) : anchoringStatus(null);
+    }
+
     /** Per leaf key: { status: waiting | anchored | confirmed, batch, tx, network } or null (not in the tree). */
     async statusOf(keys) {
-        const out = {};
+        const found = await this.anchorsOf(keys);
+        return Object.fromEntries(keys.map(key => {
+            const f = found.get(key);
+            if (!f) return [key, null];
+            const a = f.anchor;
+            return [key, a
+                ? { status: a.status === 'confirmed' ? 'confirmed' : 'anchored', batch: a.batch, tx: a.txHash, network: a.network, confirmedAt: a.confirmedAt ?? null }
+                : { status: 'waiting' }];
+        }));
+    }
+
+    /** Per leaf key in the tree, its leaf and the first anchoring sent that covers it (null while none does); read once per leaf. */
+    async anchorsOf(keys) {
+        const out = new Map();
         const byIndex = new Map();
         for (const key of keys) {
             const leaf = await this.repo.tree.leafByKey(key);
-            if (!leaf) { out[key] = null; continue; }
+            if (!leaf) continue;
             if (!byIndex.has(leaf.leafIndex)) byIndex.set(leaf.leafIndex, await this.repo.anchorForLeaf(leaf.leafIndex));
-            const a = byIndex.get(leaf.leafIndex);
-            out[key] = a
-                ? { status: a.status === 'confirmed' ? 'confirmed' : 'anchored', batch: a.batch, tx: a.txHash, network: a.network, confirmedAt: a.confirmedAt ?? null }
-                : { status: 'waiting' };
+            out.set(key, { leaf, anchor: byIndex.get(leaf.leafIndex) });
         }
         return out;
     }
