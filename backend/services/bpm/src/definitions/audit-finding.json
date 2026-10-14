@@ -1,0 +1,78 @@
+{
+  "key": "audit-finding",
+  "name": "Audit finding",
+  "description": "An auditor raised a finding on a land record version or a document version. The records officers and the registrars see it in their task inbox and acknowledge it. The finding stays open in the audit service until a newer reviewed version resolves it or the auditor closes it; then the audit service withdraws this process if it is still open. Started by the audit service (API-659).",
+  "start": { "services": ["audit"] },
+  "managePerm": "audit.signoff",
+  "businessKey": { "var": "finding.id" },
+  "variables": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["finding", "raisedBy"],
+    "properties": {
+      "finding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description", "about"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "description": { "type": "string", "minLength": 1, "maxLength": 4000 },
+          "about": { "type": "string" }
+        }
+      },
+      "record": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "recordNo", "label", "versionNumber"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "recordNo": { "type": "string" },
+          "label": { "type": "string" },
+          "versionNumber": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "document": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "edrmsNo", "title", "currentVersion"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "edrmsNo": { "type": "string" },
+          "title": { "type": "string" },
+          "currentVersion": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "raisedBy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name"],
+        "properties": { "id": { "type": "string", "minLength": 1 }, "name": { "type": "string" } }
+      }
+    }
+  },
+  "startAt": "start",
+  "nodes": {
+    "start": { "type": "start", "next": "notify" },
+    "notify": { "type": "parallelGateway", "next": ["officer", "registrar"] },
+    "officer": {
+      "type": "humanTask",
+      "title": { "cat": ["Audit finding on ", { "var": "finding.about" }] },
+      "assignee": { "role": "rec" },
+      "outcomes": ["acknowledged"],
+      "outputVar": "officerAck",
+      "dueInHours": 120,
+      "next": "acknowledged"
+    },
+    "registrar": {
+      "type": "humanTask",
+      "title": { "cat": ["Audit finding on ", { "var": "finding.about" }] },
+      "assignee": { "role": "sup" },
+      "outcomes": ["acknowledged"],
+      "outputVar": "registrarAck",
+      "dueInHours": 120,
+      "next": "acknowledged"
+    },
+    "acknowledged": { "type": "join", "next": "done" },
+    "done": { "type": "end", "outcome": "acknowledged" }
+  }
+}

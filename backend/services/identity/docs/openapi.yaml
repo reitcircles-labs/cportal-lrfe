@@ -1221,6 +1221,42 @@ paths:
         allOf:
           - admin.policies
       x-gateway-path: /api/policies
+  /policies/effective:
+    get:
+      tags:
+        - Policies
+      summary: The policies other services enforce (land-records)
+      description: >-
+        For the land-records service token: `{ fourEyes }`, the security policy Four-eyes finalization as set now. Read when a land record
+        version is submitted and approved (API-663).
+
+
+        **Access:** Service token only, from: `land-records`. Browsers cannot call this.
+      operationId: getPoliciesEffective
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - land-records
+      x-gateway-path: /api/policies/effective
   /access-log:
     get:
       tags:

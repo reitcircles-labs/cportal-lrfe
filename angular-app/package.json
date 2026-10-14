@@ -6,7 +6,8 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "watch": "ng build --watch --configuration development"
+    "watch": "ng build --watch --configuration development",
+    "test:audit": "node --test src/app/features/audit/*.test.ts src/app/features/anchorings/*.test.ts src/app/features/admin/*.test.ts"
   },
   "private": true,
   "dependencies": {

@@ -4,7 +4,8 @@
  *
  *   npm run dev                      NATS, all six services, and the API docs on http://localhost:3510
  *   npm run dev -- identity intake   only these (add `nats` for the event bus, `docs` for the API docs,
- *                                    `bao` for OpenBao; it is added anyway when one of them needs it)
+ *                                    `bao` for OpenBao, `cardano` for the Cardano node; each is added
+ *                                    anyway when one of them needs it)
  *
  * NATS (scripts/nats.js, port 4222) is the event bus between the services. When it is part of the
  * run, the services use it (EVENT_BUS_DRIVER=nats, NATS_URL), whatever their .env says; set
@@ -12,9 +13,16 @@
  * The first run downloads nats-server into backend/.tools/.
  *
  * OpenBao (scripts/bao.js --dev, port 8200) is started first when a selected service encrypts with
- * it (EDRMS_ENCRYPTION=bao or INTAKE_ENCRYPTION=bao, in its .env or this shell), or when `bao` is
+ * it (EDRMS_ENCRYPTION=bao or INTAKE_ENCRYPTION=bao, in its .env or this shell), when the audit
+ * service anchors on Cardano (CARDANO_PROVIDER set: its wallet key is in OpenBao), or when `bao` is
  * named. Those services wait for the vault at startup (up to a minute). If port 8200 is taken by an
  * OpenBao started separately, that one is used.
+ *
+ * The Cardano node and Ogmios (scripts/cardano.js --dev, Ogmios on port 1337, API-662) are started
+ * when the audit service anchors through them (CARDANO_PROVIDER=ogmios in its .env or this shell), or
+ * when `cardano` is named. If Ogmios already answers on its port, that one is used. They run in the
+ * background under their supervisor (API-677), so Ctrl+C here leaves them running; stop them with
+ * `npm run cardano -- --stop`.
  *
  * Each service starts in its own directory, so it reads its own .env exactly as
  * `npm run dev:<name>` does. Output lines are prefixed with the service name. Ctrl+C stops all
@@ -33,6 +41,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PROCESSES = {
     // the vault first, when a service encrypts with it; those services wait for it at startup
     bao: { cwd: ROOT, args: ['scripts/bao.js', '--dev'], optional: true },
+    // the local Cardano node and Ogmios, when the audit service anchors through them
+    cardano: { cwd: ROOT, args: ['scripts/cardano.js', '--dev'], optional: true },
     // the event bus; the services connect when it is up (and retry until then)
     nats: { cwd: ROOT, args: ['scripts/nats.js'], optional: true },
     identity: { cwd: join(ROOT, 'services', 'identity'), args: ['--watch', 'src/index.js'] },
@@ -40,12 +50,13 @@ const PROCESSES = {
     bpm: { cwd: join(ROOT, 'services', 'bpm'), args: ['--watch', 'src/index.js'] },
     intake: { cwd: join(ROOT, 'services', 'intake'), args: ['--watch', 'src/index.js'] },
     'land-records': { cwd: join(ROOT, 'services', 'land-records'), args: ['--watch', 'src/index.js'] },
+    audit: { cwd: join(ROOT, 'services', 'audit'), args: ['--watch', 'src/index.js'] },
     gateway: { cwd: join(ROOT, 'services', 'gateway'), args: ['--watch', 'src/index.js'] },
     // reads docs/openapi.yaml on every request: `npm run docs` updates it without a restart
     docs: { cwd: ROOT, args: ['scripts/docs-server.js'], optional: true }
 };
 const SERVICES = Object.keys(PROCESSES);
-const COLORS = [31, 37, 36, 33, 35, 32, 94, 34, 90];
+const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 34, 96, 90];
 
 const wanted = process.argv.slice(2);
 const unknown = wanted.filter(s => !SERVICES.includes(s));
@@ -53,21 +64,44 @@ if (unknown.length) {
     console.error(`Unknown service(s): ${unknown.join(', ')}. Choose from: ${SERVICES.join(', ')}`);
     process.exit(1);
 }
-/** The services (among `selected`) whose files are encrypted with OpenBao: their .env, or this shell. */
+/**
+ * The services (among `selected`) that use OpenBao, by their .env or this shell: edrms and intake
+ * when they encrypt with it, audit when it anchors on Cardano (its wallet key is there).
+ */
 function baoUsers(selected) {
+    const uses = {
+        edrms: (get) => (get('EDRMS_ENCRYPTION') ?? 'off').toLowerCase() === 'bao',
+        intake: (get) => (get('INTAKE_ENCRYPTION') ?? 'off').toLowerCase() === 'bao',
+        audit: (get) => ['ogmios', 'blockfrost'].includes((get('CARDANO_PROVIDER') ?? '').toLowerCase())
+    };
     return selected.filter(name => {
-        const setting = { edrms: 'EDRMS_ENCRYPTION', intake: 'INTAKE_ENCRYPTION' }[name];
-        if (!setting) return false;
+        if (!uses[name] || !PROCESSES[name]) return false;
         const file = join(PROCESSES[name].cwd, '.env');
-        const fromFile = existsSync(file) ? dotenv.parse(readFileSync(file))[setting] : undefined;
-        return (process.env[setting] ?? fromFile ?? 'off').toLowerCase() === 'bao';
+        const env = existsSync(file) ? dotenv.parse(readFileSync(file)) : {};
+        return uses[name]((key) => process.env[key] ?? env[key]);
     });
 }
-// Everything but OpenBao by default; OpenBao when named, or when a selected service needs it
-const selected = wanted.length ? SERVICES.filter(s => wanted.includes(s)) : SERVICES.filter(s => s !== 'bao');
+/** The services (among `selected`) that anchor through the local Cardano node (Ogmios). */
+function cardanoUsers(selected) {
+    return selected.filter(name => {
+        if (name !== 'audit' || !PROCESSES[name]) return false;
+        const file = join(PROCESSES[name].cwd, '.env');
+        const fromFile = existsSync(file) ? dotenv.parse(readFileSync(file)).CARDANO_PROVIDER : undefined;
+        return (process.env.CARDANO_PROVIDER ?? fromFile ?? '').toLowerCase() === 'ogmios';
+    });
+}
+// Everything but OpenBao and the Cardano node by default; each when named, or when a selected service needs it
+const ON_DEMAND = ['bao', 'cardano'];
+const selected = wanted.length ? SERVICES.filter(s => wanted.includes(s)) : SERVICES.filter(s => !ON_DEMAND.includes(s));
 const needBao = baoUsers(selected);
-const names = needBao.length && !selected.includes('bao') ? ['bao', ...selected] : selected;
+const needCardano = cardanoUsers(selected);
+const names = [
+    ...(needBao.length && !selected.includes('bao') ? ['bao'] : []),
+    ...(needCardano.length && !selected.includes('cardano') ? ['cardano'] : []),
+    ...selected
+];
 if (needBao.length && !wanted.includes('bao')) console.log(`OpenBao is started too: ${needBao.map(n => `${n} encrypts its files with it`).join(', ')}.`);
+if (needCardano.length && !wanted.includes('cardano')) console.log('The Cardano node and Ogmios are started too: the audit service anchors through them.');
 
 const width = Math.max(...names.map(n => n.length));
 const color = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -121,7 +155,9 @@ for (const name of names) {
     pipe(child.stderr, process.stderr, label(name), name);
     child.on('exit', (code, signal) => {
         children.delete(name);
-        if (!stopping && optional) {
+        if (!stopping && name === 'cardano' && code === 0) {
+            // started (or found) in the background, supervised: it outlives npm run dev (API-677)
+        } else if (!stopping && optional) {
             console.error(`${label(name)}exited (${signal || `code ${code}`}); the services keep running`);
         } else if (!stopping) {
             console.error(`${label(name)}exited (${signal || `code ${code}`}); stopping the other services`);

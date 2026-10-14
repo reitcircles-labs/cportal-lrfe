@@ -47,12 +47,20 @@ export default {
         'POST /records/{id}/versions/{n}/reject': { tag: 'Records', summary: 'Return a rejected version to the submitter (bpm only)', description: '`{ by, comment }`. The version becomes a draft again with the comment.' },
         'POST /records/{id}/draft': { tag: 'Records', summary: 'Open a new draft to change a committed record', description: 'The draft vN+1 is a copy of the current version, which stays current until the new one is approved. One open draft per record (409). The record then carries `draftDiff`: what the draft changes against the current version.' },
         'POST /records/{id}/draft/documents/{edrmsDocumentId}/refresh': { tag: 'Records', summary: 'Adopt a document\'s newer EDRMS version', description: '`{ revision }`. After a correction in edrms: the pinned version, seal and fields are updated in the draft, suggestions and checks recomputed. Goes through review like any change.' },
-        'GET /records/{id}/history': { tag: 'Records', summary: 'History: every committed version', description: '`{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, and `diff` against the version before.' },
+        'GET /records/{id}/history': { tag: 'Records', summary: 'History: every committed version', description: '`{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff` against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.' },
         'GET /records/{id}/comments': { tag: 'Records', summary: 'Comments on a record' },
         'POST /records/{id}/comments': { tag: 'Records', summary: 'Comment on a record', description: '`{ body }`. Kept with the version open at the time.' },
+        'POST /records/lookup': {
+            tag: 'Records', summary: 'Land record labels, the documents committed versions are made of, and the versions that pin documents (audit service only)',
+            description: 'Body `{ recordIds?, versions?: [{ recordId, versionNumber }], pinning?: [documentId] }`, up to 1000 record ids and versions and 100 documents. `{ records: [{ id, recordNo, label }], versions: [{ recordId, versionNumber, documents: [{ id, version, edrmsNo, docType, ref }] }], pinnedBy: [{ documentId, version, recordId, versionNumber }] }`: for committed versions (current or superseded) only; drafts never count. `records` has every record asked for or named in the answer. For the audit service\'s Anchorings screens: what a batch covers (API-696) and the search (API-697).'
+        },
+        'GET /records/seals': {
+            tag: 'Records', summary: 'Every committed version\'s seal, oldest first (audit service only)',
+            description: '`{ items: [{ recordId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. Superseded versions included. For the audit service\'s one-time backfill of its tree (API-669).'
+        },
         'GET /records/{id}': { tag: 'Records', summary: 'One land record with its current version and open draft' },
         'GET /records/{id}/versions': { tag: 'Records', summary: 'All versions of a record: state, who submitted and approved, seal, changes' },
         'GET /records/{id}/versions/{n}': { tag: 'Records', summary: 'One version, with its data (core, attributes, pinned documents)' },
-        'GET /records/{id}/verify': { tag: 'Records', summary: 'Recompute the seal chain of the committed versions', description: '`{ intact, versions: [{ versionNumber, seal, intact, linked }] }`. `intact`: the seal matches the version; `linked`: it includes the previous version\'s seal.' }
+        'GET /records/{id}/verify': { tag: 'Records', summary: 'Recompute the seal chain of the committed versions', description: '`{ intact, versions: [{ versionNumber, seal, intact, linked }] }`. `intact`: the seal matches the version; `linked`: it includes the previous version\'s seal. Also for the audit service, which checks a proof against it.' }
     }
 };

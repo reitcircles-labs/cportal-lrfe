@@ -24,7 +24,11 @@ export default {
             tag: 'Documents', summary: 'Find one document by a reference',
             description: 'By `edrmsNo`, `instrumentRef` (e.g. T 2210/2008) or `sourceId` (the intake document id). 404 when there is none.'
         },
-        'GET /documents/{id}': { tag: 'Documents', summary: 'One document with its fields, record metadata and version history' },
+        'GET /documents/seals': {
+            tag: 'Documents', summary: 'Every document version\'s seal, oldest first (audit service only)',
+            description: '`{ items: [{ documentId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. For the audit service\'s one-time backfill of its tree (API-669).'
+        },
+        'GET /documents/{id}': { tag: 'Documents', summary: 'One document with its fields, record metadata and version history', description: 'For a user, each version also has `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next anchoring), `anchored` or `confirmed`, or null when the audit service cannot say. Services reading the document do not get it.' },
         'GET /documents/{id}/versions/{n}': { tag: 'Documents', summary: 'One version of a document' },
         'GET /documents/{id}/content': {
             tag: 'Documents', summary: 'Short-lived link to the file',
@@ -34,6 +38,7 @@ export default {
             tag: 'Documents', auth: 'signed-link', summary: 'File content behind a signed link (local/memory storage)',
             description: 'Use the `url` from GET /documents/{id}/content; `exp` and `sig` authorise it. 404 when expired or tampered with.'
         },
+        'GET /documents/{id}/versions/{n}/file': { tag: 'Documents', summary: 'A version\'s file, for the audit service\'s evidence pack', description: 'The stored bytes (decrypted when the store encrypts), as filed. Audit service token only.' },
         'GET /documents/{id}/versions/{n}/verify': {
             tag: 'Documents', summary: 'Integrity check of a version',
             description: 'Recomputes the SHA-256 of the stored file and checks the seal: `{ intact, contentIntact, sealIntact, version, checkedAt, … }`.'

@@ -83,13 +83,17 @@ export class BpmEngine {
             if (result && typeof result === 'object') Object.assign(vars, result);
         }
 
-        const instance = await this.repo.createInstance({
-            id: randomUUID(), definitionId: defRow.id, definitionKey: key, definitionVersion: defRow.version, name: def.name,
-            businessKey, variables: vars, status: 'active', outcome: null, errorMessage: null,
-            startedById: startedBy.id, startedByName: startedBy.name, startedAt: this.clock(), endedAt: null
+        // the instance, its history entry and its event are committed together (API-613)
+        const instance = await this.atomic(async () => {
+            const created = await this.repo.createInstance({
+                id: randomUUID(), definitionId: defRow.id, definitionKey: key, definitionVersion: defRow.version, name: def.name,
+                businessKey, variables: vars, status: 'active', outcome: null, errorMessage: null,
+                startedById: startedBy.id, startedByName: startedBy.name, startedAt: this.clock(), endedAt: null
+            });
+            await this.history(created, null, 'instance_started', { businessKey, definitionVersion: defRow.version }, startedBy);
+            await this.publish('bpm.instance.started', created, {}, startedBy);
+            return created;
         });
-        await this.history(instance, null, 'instance_started', { businessKey, definitionVersion: defRow.version }, startedBy);
-        await this.publish('bpm.instance.started', instance, {}, startedBy);
         const token = await this.newToken(instance, { currentNode: def.startAt });
         await this.advance(instance, def, token);
         return this.repo.getInstance(instance.id);
@@ -111,15 +115,18 @@ export class BpmEngine {
         const def = await this.definitionOf(instance);
         if (instance.startedById !== user.id && !(user.perms || []).includes(def.managePerm)) throw new ForbiddenError('Not permitted to cancel this process');
         if (!['active', 'error'].includes(instance.status)) throw new ConflictError(`The process is already ${instance.status}`);
-        for (const task of await this.repo.listTasks({ instanceId: id, statuses: OPEN_TASK })) {
-            await this.repo.updateTaskIf(task.id, OPEN_TASK, { status: 'cancelled', completedAt: this.clock() });
-        }
-        for (const token of await this.repo.findTokens({ instanceId: id, status: LIVE_TOKEN })) {
-            await this.repo.updateToken(token.id, { status: 'cancelled' });
-        }
-        await this.saveInstance(instance, { status: 'cancelled', outcome: 'cancelled', endedAt: this.clock() });
-        await this.history(instance, null, 'instance_cancelled', { reason: reason || null }, user);
-        await this.publish('bpm.instance.cancelled', instance, { reason: reason || null }, user);
+        // the cancellation and its event are committed together (API-613)
+        await this.atomic(async () => {
+            for (const task of await this.repo.listTasks({ instanceId: id, statuses: OPEN_TASK })) {
+                await this.repo.updateTaskIf(task.id, OPEN_TASK, { status: 'cancelled', completedAt: this.clock() });
+            }
+            for (const token of await this.repo.findTokens({ instanceId: id, status: LIVE_TOKEN })) {
+                await this.repo.updateToken(token.id, { status: 'cancelled' });
+            }
+            await this.saveInstance(instance, { status: 'cancelled', outcome: 'cancelled', endedAt: this.clock() });
+            await this.history(instance, null, 'instance_cancelled', { reason: reason || null }, user);
+            await this.publish('bpm.instance.cancelled', instance, { reason: reason || null }, user);
+        });
         return instance;
     }
 
@@ -206,13 +213,18 @@ export class BpmEngine {
 
         const now = this.clock();
         const by = { id: user.id, name: user.name };
-        const updated = await this.repo.updateTaskIf(id, [task.status], {
-            status: 'completed', output, completedById: by.id, completedByName: by.name, completedAt: now,
-            ...(task.status === 'created' ? { claimedById: by.id, claimedByName: by.name, claimedAt: now } : {})
+        // the decision and its event are committed together (API-613); what follows (service tasks
+        // calling other services) runs after the commit
+        const updated = await this.atomic(async () => {
+            const done = await this.repo.updateTaskIf(id, [task.status], {
+                status: 'completed', output, completedById: by.id, completedByName: by.name, completedAt: now,
+                ...(task.status === 'created' ? { claimedById: by.id, claimedByName: by.name, claimedAt: now } : {})
+            });
+            if (!done) throw new ConflictError('The task was changed by someone else');
+            await this.history(instance, { id: task.tokenId }, 'task_completed', { taskId: id, nodeId: task.nodeId, output }, by);
+            await this.publish('bpm.task.completed', instance, { taskId: id, nodeId: task.nodeId, outcome: output.outcome ?? null }, by);
+            return done;
         });
-        if (!updated) throw new ConflictError('The task was changed by someone else');
-        await this.history(instance, { id: task.tokenId }, 'task_completed', { taskId: id, nodeId: task.nodeId, output }, by);
-        await this.publish('bpm.task.completed', instance, { taskId: id, nodeId: task.nodeId, outcome: output.outcome ?? null }, by);
 
         const token = await this.repo.getToken(task.tokenId);
         const result = { ...output, by, at: now.toISOString() };
@@ -250,6 +262,11 @@ export class BpmEngine {
             id: randomUUID(), instanceId: instance.id, tokenId: token?.id ?? null, type, payload,
             actorId: actor?.id ?? null, actorName: actor?.name ?? null, at: this.clock()
         });
+    }
+
+    /** Run `fn` so its writes and the events it publishes are committed together (API-613). */
+    atomic(fn) {
+        return this.events?.atomic ? this.events.atomic(fn) : fn();
     }
 
     async publish(type, instance, data, actor) {
@@ -318,20 +335,24 @@ export class BpmEngine {
         const data = this.vars(instance, token);
         const kind = ['perm', 'role', 'user'].find(k => node.assignee[k] !== undefined);
         const candidate = kind === 'user' ? evaluate(node.assignee.user, data) : node.assignee[kind];
-        const excludedUserIds = (node.exclude || []).map(rule => evaluate(rule, data)).filter(Boolean).map(String);
+        // each rule names one user or a list of them (land-record-review: the reviewers who filed the record's documents)
+        const excludedUserIds = [...new Set((node.exclude || []).flatMap(rule => [evaluate(rule, data)].flat()).filter(Boolean).map(String))];
         const title = typeof node.title === 'object' ? evaluate(node.title, data) : node.title || token.currentNode;
         const now = this.clock();
-        const task = await this.repo.createTask({
-            id: randomUUID(), instanceId: instance.id, tokenId: token.id, nodeId: token.currentNode,
-            definitionKey: instance.definitionKey, businessKey: instance.businessKey, title: String(title),
-            candidateType: kind, candidate: String(candidate ?? ''), excludedUserIds, outcomes: node.outcomes || null,
-            input: data, output: null, status: 'created', createdAt: now,
-            dueAt: node.dueInHours ? new Date(now.getTime() + node.dueInHours * 3_600_000) : null,
-            claimedById: null, claimedByName: null, claimedAt: null, completedById: null, completedByName: null, completedAt: null
+        // the task, its history entry and its event are committed together (API-613)
+        return this.atomic(async () => {
+            const task = await this.repo.createTask({
+                id: randomUUID(), instanceId: instance.id, tokenId: token.id, nodeId: token.currentNode,
+                definitionKey: instance.definitionKey, businessKey: instance.businessKey, title: String(title),
+                candidateType: kind, candidate: String(candidate ?? ''), excludedUserIds, outcomes: node.outcomes || null,
+                input: data, output: null, status: 'created', createdAt: now,
+                dueAt: node.dueInHours ? new Date(now.getTime() + node.dueInHours * 3_600_000) : null,
+                claimedById: null, claimedByName: null, claimedAt: null, completedById: null, completedByName: null, completedAt: null
+            });
+            await this.history(instance, token, 'task_created', { taskId: task.id, nodeId: task.nodeId, candidate: `${kind}:${task.candidate}` });
+            await this.publish('bpm.task.created', instance, { taskId: task.id, nodeId: task.nodeId, title: task.title, candidateType: kind, candidate: task.candidate });
+            return task;
         });
-        await this.history(instance, token, 'task_created', { taskId: task.id, nodeId: task.nodeId, candidate: `${kind}:${task.candidate}` });
-        await this.publish('bpm.task.created', instance, { taskId: task.id, nodeId: task.nodeId, title: task.title, candidateType: kind, candidate: task.candidate });
-        return task;
     }
 
     async runServiceTask(instance, token, node) {
@@ -351,10 +372,12 @@ export class BpmEngine {
 
     /** Park the token as failed and put the instance in error; `retry` resumes from this step. */
     async fail(instance, token, message, extra = {}) {
-        await this.saveToken(token, { status: 'failed' });
-        await this.saveInstance(instance, { status: 'error', errorMessage: message });
-        await this.history(instance, token, 'step_failed', { node: token.currentNode, error: message, ...extra });
-        await this.publish('bpm.instance.failed', instance, { node: token.currentNode, error: message });
+        await this.atomic(async () => {
+            await this.saveToken(token, { status: 'failed' });
+            await this.saveInstance(instance, { status: 'error', errorMessage: message });
+            await this.history(instance, token, 'step_failed', { node: token.currentNode, error: message, ...extra });
+            await this.publish('bpm.instance.failed', instance, { node: token.currentNode, error: message });
+        });
     }
 
     async fork(instance, def, token, node) {
@@ -438,8 +461,10 @@ export class BpmEngine {
         const remaining = await this.repo.findTokens({ instanceId: instance.id, status: LIVE_TOKEN });
         if (remaining.length) return;
         const outcome = node.outcome ?? token.currentNode;
-        await this.saveInstance(instance, { status: 'completed', outcome, endedAt: this.clock() });
-        await this.history(instance, null, 'instance_completed', { outcome });
-        await this.publish('bpm.instance.completed', instance, { outcome });
+        await this.atomic(async () => {
+            await this.saveInstance(instance, { status: 'completed', outcome, endedAt: this.clock() });
+            await this.history(instance, null, 'instance_completed', { outcome });
+            await this.publish('bpm.instance.completed', instance, { outcome });
+        });
     }
 }

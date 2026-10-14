@@ -23,13 +23,15 @@ Land record (create/finalize), Audit, and under Administration **Users** and **A
 | **Dashboard** | Figures and recent activity (demo data for now) |
 | **Capture**: pick a batch | Its documents and their status (Queued, Reading, In review, Filed, Rejected). The upload box is faded: you cannot upload |
 | **Verify metadata**: open a document | The review screen, read-only: fields and buttons are disabled for you |
-| **Documents (EDRMS)**: open a filed sample, **Check integrity** | "Integrity verified · version 1.0" (see the [auditor guide](auditor.md#check-a-documents-integrity)) |
+| **Documents (EDRMS)**: open a filed sample, **Check integrity** | "Integrity verified · version 1.0" (see [the two checks on a document](auditor.md#documents-two-different-checks)) |
 | The bell (**Tasks**) | Land records waiting for your approval (corrections to filed documents are approved by reviewers, not by the registrar) |
 
 ## Approve or return a land record
 
 **Before you start:** a records officer has submitted a record for review, e.g. Erf 1873 (see
-[the records officer guide](records-officer.md#build-erf-1873-from-the-sample-documents)).
+[the records officer guide](records-officer.md#build-erf-1873-from-the-sample-documents)). You don't get
+the task for a record you submitted, nor, with the security policy Four-eyes finalization on (the
+default), for one whose documents you filed as a reviewer: another registrar approves those.
 
 | # | Do | You should see |
 |---|---|---|
@@ -55,11 +57,13 @@ who submitted can withdraw it before you decide; the task then disappears from y
 | **Comments** tab | The discussion on the record; you can add to it |
 | A record with status **Needs review** | One of its documents was corrected in the EDRMS: the banner says which and why. The records officer takes over the correction in a new version, which comes to you for approval |
 
-## Look at audit evidence (demo)
+## Look at the audit
 
-**Audit** shows the evidence for Erf 1873: each document's provenance (what the AI read and what the
-reviewer filed), integrity and trail. As registrar you can look and export; signing off is the
-auditor's job ("Mark document audited" is faded for you). Details: [auditor guide](auditor.md#audit-a-land-record-demo).
+**Audit** is read-only for you: you can open any land record's audit, its checks against the
+blockchain, its trail and its findings, search the whole trail and export evidence packs. Signing
+off and raising findings are the auditor's job: the card says "You can view and verify. Signing off
+and raising findings need the auditor role." Even if you are later given the auditor role, you may
+not sign off the audit of a version you approved. Details: [auditor guide](auditor.md#audit-a-land-record-start-to-finish).
 
 ## Manage users
 
@@ -72,6 +76,6 @@ The tabs **Offices**, **Roles & permissions** and **Security policies** are not 
 | What happens | Why, and what to do |
 |---|---|
 | No land record task in the bell | Nothing is waiting: the officer has not submitted yet, withdrew it, or another person with the right to finalize approved it already. Click the bell to refresh |
-| "You cannot act on this task: a different person must do it (four-eyes)" | You submitted this version yourself (possible with an account that has both roles): someone else must approve it |
+| "You cannot act on this task: a different person must do it (four-eyes)" | You submitted this version yourself, or (with the security policy Four-eyes finalization on) you filed one of its documents as a reviewer: someone else must approve it. Such a task isn't offered to you in the bell at all |
 | The review shows a check that fails | It cannot happen for a fresh submission (the officer cannot submit then), but a correction filed in the EDRMS while you review is shown on the record as **Needs review**: return it so the officer takes the newer document over |
 | The review screen for documents is read-only | Expected: reviewing documents is the metadata reviewer's job |

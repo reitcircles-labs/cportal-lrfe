@@ -19,7 +19,8 @@ backend/
     ├── edrms/              :3502  sealed, versioned documents of record (S3 / local / memory storage)
     ├── bpm/                :3503  workflow engine: processes, task inbox, four-eyes approvals
     ├── intake/             :3504  capture, AI extraction (Gemini), field review, filing into edrms
-    └── land-records/       :3505  land records: filed documents per parcel, reviewed versions, seals
+    ├── land-records/       :3505  land records: filed documents per parcel, reviewed versions, seals
+    └── audit/              :3506  tamper-evident trail of every domain event, Merkle tree anchored on Cardano
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 ```
 
@@ -38,7 +39,17 @@ a linked document (`edrms.document.amended` over NATS). Design and API in
 [`services/land-records/README.md`](services/land-records/README.md); the frontend's Land record
 screen (`#/link`) and the review in the task inbox use it.
 
-Planned next: **audit** (hash-chained trail, sign-off, evidence export); **search**.
+**audit** (epic API-652, being built): a hash-chained audit trail from the durable events, a growing
+Merkle tree over every land record version, document version and trail checkpoint, its root
+anchored on Cardano hourly, proofs anyone can check, sign-off, findings and evidence packs. Done so
+far: the trail, the tree, the Cardano adapter (own node through Ogmios, or Blockfrost; the wallet key
+in OpenBao), hourly anchoring followed to confirmation, the backfill of earlier seals, proofs with
+the offline verifier, sign-off and findings (sod2), and evidence packs. Design,
+and how anchoring and its timeouts work, in [`services/audit/README.md`](services/audit/README.md);
+setting it up (node, wallet, faucet, `npm run anchor:test`, `npm run audit:backfill`) in
+[`install.md`](install.md#4b-cardano-node-for-the-audit-service-optional).
+
+Planned next: **search**.
 
 ## Running
 
@@ -64,6 +75,7 @@ EDRMS_STORE=memory EDRMS_STORAGE=local npm run dev:edrms
 BPM_STORE=memory npm run dev:bpm
 INTAKE_STORE=memory npm run dev:intake     # extraction uses the mock model unless EXTRACTION_PROVIDER=gemini
 RECORDS_STORE=memory npm run dev:land-records
+AUDIT_STORE=memory npm run dev:audit       # sees other services' events only with EVENT_BUS_DRIVER=nats
 npm run dev:gateway
 
 # With Postgres from docker compose (published on localhost:5433;
@@ -119,8 +131,19 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
   `createEventBus()`. With `EVENT_BUS_DRIVER=nats` (what `npm run dev` and docker compose use)
   they go over NATS (`NATS_URL`, subjects `lrfe.<type>`) to every service; with `log` (the default)
   they are logged and stay in the service. A service that cannot reach NATS logs a warning and keeps
-  working. Durable events for the audit service (a JetStream stream and a transactional outbox)
-  come with that service.
+  working.
+- **Durable events (API-613).** A service on PostgreSQL writes each event to its own `outbox` table
+  in the same database transaction as the change (`events.atomic(fn)`; repositories' transactions
+  join it). A relay publishes unsent rows to the JetStream stream `LRFE` (subjects `lrfe.>`, on disk,
+  kept `EVENT_STREAM_MAX_AGE_DAYS`, default 30, applied when the stream is created), with the event
+  id as message id so a retry within the stream's 2-minute de-duplication window is not stored twice. A committed change therefore always produces its event, also across a NATS outage
+  or a restart; a rolled-back change never does. `events.consume(type, handler, { durable })` reads
+  the stream with a durable consumer that catches up after downtime and redelivers what failed
+  (handlers must be idempotent). Broadcast-only events (`{ durable: false }`, the session
+  revocation) go to `lrfe-live.<type>` and are never stored. The `outbox` table is created with
+  `DB_SYNC`; memory stores publish as before. On PostgreSQL, `atomic` makes a change and its
+  history rows one transaction whatever the driver; only with `nats` are events kept in the outbox.
+  Sent outbox rows are not pruned yet (follow-up).
 - Ending a session before its access tokens expire: identity publishes `identity.session.revoked`
   (a user suspended, a session signed out) and every service refuses the matching tokens until they
   would have expired (`createRevocationList`, passed to `authPlugin`). Normal sign-in, refresh and
@@ -179,11 +202,11 @@ content hash plus the fields and record metadata that version asserts. Correctio
 | `POST /api/documents` (multipart: `meta` JSON **first**, then `file`) | intake service token | file a reviewed document → `EDR-NA-<year>-<nnnnnn>`, v1.0. Idempotent on `meta.sourceId` (201 new / 200 existing) |
 | `GET /api/documents?q=&docType=&batchId=&field.<key>=<value>&limit=&offset=` | read* | list/filter, e.g. `field.property=Erf 1873, Klein Windhoek` |
 | `GET /api/documents/lookup?edrmsNo=` / `instrumentRef=` / `sourceId=` | read* | find one document |
-| `GET /api/documents/:id` | read* | document, current fields and version history |
+| `GET /api/documents/:id` | read* | document, current fields and version history (for a user, each version's anchoring status from the audit service) |
 | `GET /api/documents/:id/versions/:n` | read* | one version's fields, metadata, hash, seal |
 | `GET /api/documents/:id/content?version=` | read* | short-lived viewer URL (S3 presigned, or a signed `/api/document-content/...` link) |
 | `POST /api/documents/:id/amendments` | **bpm service only** | apply an approved change `{reason, expectedVersion, changes: [{k, v}], recordMetadata?, actor, approvedBy}`; users request changes through bpm (below) |
-| `GET /api/documents/:id/versions/:n/verify` | `audit.view` | re-hash stored content and recompute the seal: `{intact, contentIntact, sealIntact}` |
+| `GET /api/documents/:id/versions/:n/verify` | `audit.view` (or the audit service) | re-hash stored content and recompute the seal: `{intact, contentIntact, sealIntact}` |
 | `GET /api/document-catalogue` | signed in | document types and the ISO 23081 record-metadata fields |
 
 \* read = a user with any of `capture.view`, `verify.view`, `record.view`, `audit.view`, or the
@@ -245,6 +268,28 @@ the version they started on.
 3. Approved → bpm calls edrms, which creates the new major version sealed with requester and
    approver. If the record changed meanwhile, edrms answers 409, the instance goes to `error`,
    and it can be cancelled (or retried once resolved).
+
+### Process: `audit-finding` — an auditor's finding (API-659)
+
+1. Started by the audit service when an auditor raises a finding on a land record version or a
+   document version (`POST /api/audit/findings`).
+2. Two tasks at once, outcome `acknowledged`: one for the records officers (role `rec`) and one for
+   the registrars (role `sup`), each showing the finding, who raised it and the record or document;
+   due in 5 days. When both have acknowledged, the process ends.
+3. The finding itself stays open in the audit service until a newer reviewed version resolves it or
+   an auditor answers and closes it (resolved by agreement, or raised by mistake); then the audit
+   service withdraws this process if it is still open. Design: [`services/audit/README.md`](services/audit/README.md) §5.
+
+### Process: `audit-rereview` — changed since review (API-680)
+
+1. Started by the audit service, once per item, when a land record version or a document version in
+   it no longer matches the blockchain: the land record changed since it was reviewed and submitted,
+   so it cannot be audited as true.
+2. Two tasks at once, outcome `acknowledged`, titled "Re-review: changed since review, …": one for the
+   records officers (role `rec`) and one for the registrars (role `sup`); due in 5 days.
+3. The records office then opens a new draft, corrects what changed and submits it for review. The
+   audit cannot be signed off until a version committed after the change was found matches.
+   Design: [`services/audit/README.md`](services/audit/README.md) §5.
 
 ### Engine additions over cportal-be
 

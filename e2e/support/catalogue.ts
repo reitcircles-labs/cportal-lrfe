@@ -76,6 +76,8 @@ export interface Screen {
     anyOf: string[];
     /** Shown in the top bar's heading. */
     title: string;
+    /** In the side menu; false for a screen reached from another screen's tabs (`inMenu: false`). */
+    inMenu: boolean;
 }
 
 function parseScreens(): Screen[] {
@@ -90,12 +92,13 @@ function parseScreens(): Screen[] {
         if (!/^\s*\{\s*path:/.test(line)) continue;
         const path = line.match(/path:\s*'([^']*)'/)![1];
         if (/redirectTo:/.test(line) || !/perm:/.test(line)) continue;   // login, invite, denied, redirects
+        if (path.includes(':')) continue;                                  // a screen of one item (#/audit/records/:id), reached from its list
         const permExpr = line.match(/perm:\s*('[^']+'|\w+)/)?.[1];
         const title = line.match(/title:\s*'([^']+)'/)?.[1];
         if (!permExpr || !title) throw new Error(`${file}: cannot read the permission or title of route '${path}'`);
         const anyOf = permExpr.startsWith("'") ? [permExpr.slice(1, -1)] : consts.get(permExpr);
         if (!anyOf?.length) throw new Error(`${file}: route '${path}' uses ${permExpr}, which is not a const array of permissions in that file`);
-        screens.push({ path, anyOf, title });
+        screens.push({ path, anyOf, title, inMenu: !/inMenu:\s*false/.test(line) });
     }
     if (screens.length < 10) throw new Error(`${file}: found only ${screens.length} guarded routes; has the file's format changed?`);
     return screens;

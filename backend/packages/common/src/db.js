@@ -1,6 +1,35 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import pg from 'pg';
 import { Sequelize } from 'sequelize';
 import { env, envInt } from './config.js';
+
+/**
+ * The transaction a piece of work runs in follows it through every await (Sequelize's "CLS"
+ * namespace, on Node's AsyncLocalStorage). Inside `inTransaction`, every query a repository makes
+ * joins the transaction without being handed it, and so does an event written to the outbox
+ * (API-613): the change and its event are committed together or not at all.
+ */
+const store = new AsyncLocalStorage();
+const namespace = {
+    run(fn) { const context = new Map(); return store.run(context, () => fn(context)); },
+    get(key) { return store.getStore()?.get(key); },
+    set(key, value) { store.getStore()?.set(key, value); },
+    bind(fn) { return fn; }          // AsyncLocalStorage follows async calls by itself
+};
+Sequelize.useCLS(namespace);
+
+/** The transaction the current work runs in, if any. */
+export const currentTransaction = () => namespace.get('transaction') || null;
+
+/**
+ * Run `fn(transaction)` in a transaction: the current one if there is one (so a repository's own
+ * transaction joins a service's unit of work), otherwise a new one, committed when `fn` resolves
+ * and rolled back when it throws.
+ */
+export function inTransaction(sequelize, fn) {
+    const current = currentTransaction();
+    return current ? fn(current) : sequelize.transaction(fn);
+}
 
 /**
  * One Sequelize instance per service. The constructor never touches the network (it connects

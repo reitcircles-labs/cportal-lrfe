@@ -78,6 +78,7 @@ export default {
         'GET /access-log': { tag: 'Users', summary: 'Admin access log', description: 'Sign-ins, denials, user, role and policy changes, newest first. `{ items, total }`.' },
 
         'GET /policies': { tag: 'Policies', summary: 'Security policies and segregation-of-duties rules' },
+        'GET /policies/effective': { tag: 'Policies', summary: 'The policies other services enforce (land-records)', description: 'For the land-records service token: `{ fourEyes }`, the security policy Four-eyes finalization as set now. Read when a land record version is submitted and approved (API-663).' },
         'PUT /policies': { tag: 'Policies', summary: 'Save policies and switch rules on or off', description: 'Returns `{ policies, sod, changes }`.' }
     }
 };

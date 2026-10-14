@@ -280,12 +280,73 @@ paths:
           - search
           - bpm
       x-gateway-path: /api/documents/lookup
+  /documents/seals:
+    get:
+      tags:
+        - Documents
+      summary: Every document version's seal, oldest first (audit service only)
+      description: >-
+        `{ items: [{ documentId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. For the audit
+        service's one-time backfill of its tree (API-669).
+
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: getDocumentsSeals
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
+      x-gateway-path: /api/documents/seals
   /documents/{id}:
     get:
       tags:
         - Documents
       summary: One document with its fields, record metadata and version history
       description: >-
+        For a user, each version also has `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next
+        anchoring), `anchored` or `confirmed`, or null when the audit service cannot say. Services reading the document do not get it.
+
+
         **Access:** Signed-in user with any of `capture.view`, `verify.view`, `record.view`, `audit.view`, or a service token from `intake`,
         `land-records`, `audit`, `search`, `bpm`.
       operationId: getDocumentsId
@@ -482,6 +543,65 @@ paths:
           - search
           - bpm
       x-gateway-path: /api/documents/{id}/content
+  /documents/{id}/versions/{n}/file:
+    get:
+      tags:
+        - Documents
+      summary: A version's file, for the audit service's evidence pack
+      description: |-
+        The stored bytes (decrypted when the store encrypts), as filed. Audit service token only.
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: getDocumentsIdVersionsNFile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
+      x-gateway-path: /api/documents/{id}/versions/{n}/file
   /content/{id}/{n}:
     get:
       tags:
@@ -545,7 +665,7 @@ paths:
       description: |-
         Recomputes the SHA-256 of the stored file and checks the seal: `{ intact, contentIntact, sealIntact, version, checkedAt, … }`.
 
-        **Access:** Signed-in user with permission `audit.view`.
+        **Access:** Signed-in user with permission `audit.view`, or a service token from `audit`.
       operationId: getDocumentsIdVersionsNVerify
       parameters:
         - name: id
@@ -592,9 +712,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - audit.view
+        services:
+          - audit
       x-gateway-path: /api/documents/{id}/versions/{n}/verify
   /documents/{id}/amendments:
     post:

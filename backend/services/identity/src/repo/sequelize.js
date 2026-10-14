@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { inTransaction } from '@lrfe/common';
 import { defineModels, SCHEMA } from './models.js';
 
 const POLICIES_KEY = 'security.policies';
@@ -61,14 +62,14 @@ export function createSequelizeRepo(sequelize) {
         getUserByEmail: (email) => findUser({ email }),
         getUserByInviteHash: (inviteHash) => findUser({ inviteHash }),
         async createUser(data) {
-            return sequelize.transaction(async (transaction) => {
+            return inTransaction(sequelize, async (transaction) => {
                 const row = await m.User.create(pick(data, USER_FIELDS), { transaction });
                 await setRoles(row.id, data.roles || [], transaction);
                 return toUser(row, data.roles || []);
             });
         },
         async updateUser(id, patch) {
-            return sequelize.transaction(async (transaction) => {
+            return inTransaction(sequelize, async (transaction) => {
                 const row = await m.User.findByPk(id, { transaction });
                 if (!row) return null;
                 await row.update(pick(patch, USER_FIELDS), { transaction });
@@ -88,7 +89,7 @@ export function createSequelizeRepo(sequelize) {
                 .map(({ id, a, b, label, enabled }) => ({ id, a, b, label, on: enabled }));
         },
         async saveSod(rules) {
-            await sequelize.transaction(async (transaction) => {
+            await inTransaction(sequelize, async (transaction) => {
                 for (const { id, a, b, label, on } of rules) {
                     const existing = await m.SodRule.findByPk(id, { transaction });
                     if (existing) await existing.update({ enabled: on }, { transaction });

@@ -8,12 +8,19 @@ import { ConfirmService } from '../../state/confirm.service';
 import { TasksService } from '../../state/tasks.service';
 import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
+import { Anchoring, anchoringLabel, anchoringTag } from '../../shared/anchoring';
+import { BlockchainVerifyComponent } from '../../shared/blockchain-verify.component';
+import { InfoTipComponent } from '../../shared/info-tip.component';
+import { ProofDownloadComponent } from '../../shared/proof-download.component';
+import { ProofLinkComponent } from '../../shared/proof-link.component';
+import { VERIFY_TIPS } from '../audit/verify-wording';
 
 interface DocRow { id: string; edrmsNo: string; docType: string; title: string; instrumentRef: string | null; batchId: string | null; currentVersion: number; filedAt: string; props: Record<string, string>; }
 interface Field { k: string; label: string; v: string; c?: number; edited?: boolean; }
 interface Version {
   versionNumber: number; label: string; kind: 'filed' | 'amendment'; reason: string | null; changes: { k: string; from: string; to: string }[];
   sha256: string; seal: string; size: number; mimeType: string; createdAt: string; createdByName: string | null; approvedByName: string | null;
+  anchoring?: Anchoring | null;
 }
 interface DocDetail extends DocRow { registry: string; pages: number; fields: Field[]; recordMetadata: Record<string, any>; filedByName: string | null; versions: Version[]; }
 interface OpenChange { id: string; status: 'active' | 'error'; startedById: string; startedByName: string; startedAt: string; errorMessage: string | null; }
@@ -24,7 +31,7 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
  */
 @Component({
     selector: 'app-documents',
-    imports: [IconComponent, CanDirective],
+    imports: [IconComponent, CanDirective, ProofLinkComponent, ProofDownloadComponent, BlockchainVerifyComponent, InfoTipComponent],
     template: `
     <div class="shell">
       <aside class="rail">
@@ -57,7 +64,7 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
               <span class="row" style="gap:10px;align-items:baseline"><span class="h-cond" style="font-size:28px;line-height:1.05">{{ d.instrumentRef || d.title }}</span><span class="small muted">{{ d.title }} · {{ d.pages }} page{{ d.pages === 1 ? '' : 's' }} · v{{ d.currentVersion }}.0</span></span>
             </div>
             <button class="btn btn-secondary" (click)="openFile(d)"><app-icon name="eye" [size]="15" />Open file</button>
-            @if (rbac.can('audit.view')) { <button class="btn btn-secondary" (click)="verify(d)"><app-icon name="shield" [size]="15" />Check integrity</button> }
+            @if (rbac.can('audit.view')) { <span class="row" style="gap:0;align-items:center"><button class="btn btn-secondary" (click)="verify(d)"><app-icon name="shield" [size]="15" />Check integrity</button><app-info-tip label="check integrity" align="right" [text]="verifyTips.integrity" /></span> }
             <button class="btn btn-primary" appCan="verify.edit" [disabled]="!!openChange()" (click)="startCorrection(d)">Request correction</button>
           </header>
 
@@ -104,6 +111,11 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
                       @if (v.reason) { <div class="small muted">“{{ v.reason }}”</div> }
                       @for (c of v.changes; track c.k) { <div class="small"><span class="muted">{{ c.k }}:</span> <span class="strike">{{ c.from }}</span> → <b>{{ c.to }}</b></div> }
                       <div class="small mono muted" [title]="'content SHA-256 ' + v.sha256 + ' · seal ' + v.seal">sha256 {{ v.sha256.slice(0, 12) }}… · seal {{ v.seal.slice(0, 12) }}…</div>
+                      @if (v.anchoring; as a) {
+                        <div class="row" style="gap:8px;align-items:center"><app-proof-link [label]="anchoringLabel(a)" [tagClass]="anchoringTag(a)" [batch]="a.batch" />
+                          <app-proof-download kind="document-version" [itemId]="d.id" [version]="v.versionNumber" [fileName]="'proof-' + d.edrmsNo + '-v' + v.versionNumber + '.json'" [waiting]="a.status === 'waiting'" /></div>
+                        <app-blockchain-verify kind="document-version" [itemId]="d.id" [version]="v.versionNumber" />
+                      }
                     </div>
                   }
                 </div>
@@ -197,6 +209,9 @@ export class DocumentsComponent {
   private searchTimer: any;
 
   fmt = fmtTime;
+  anchoringLabel = anchoringLabel;
+  anchoringTag = anchoringTag;
+  protected readonly verifyTips = VERIFY_TIPS;
   versionsDesc = computed(() => [...(this.sel()?.versions || [])].reverse());
   recordMeta = computed(() => {
     const m = this.sel()?.recordMetadata || {};

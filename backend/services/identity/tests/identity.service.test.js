@@ -22,7 +22,7 @@ describe('IdentityService', () => {
             const res = await service.login({ email: ' K.Iipinge@deeds.gov.na ', password: PASSWORD });
             expect(res.next).to.equal('done');
             expect(res.claims).to.include({ typ: 'access', name: 'Kristofina Iipinge' });
-            expect(res.claims.perms).to.deep.equal(['dashboard.view', 'capture.view', 'capture.scan', 'capture.rescan']);
+            expect(res.claims.perms).to.deep.equal(['dashboard.view', 'capture.view', 'capture.scan', 'capture.rescan', 'anchors.view']);
             expect(res.me.home).to.equal('/capture');
             expect(res.refreshToken).to.match(/^[0-9a-f-]{36}\.[\w-]+$/);
             expect(published.map(e => e.type)).to.include('identity.session');

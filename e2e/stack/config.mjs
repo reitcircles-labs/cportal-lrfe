@@ -26,6 +26,7 @@ export const PORTS = {
     postgres: apiBase + 6,
     bao: apiBase + 7,          // E2E_BAO=real; its cluster port is the next one
     'land-records': apiBase + 9,
+    audit: apiBase + 10,
     web: Number(process.env.E2E_WEB_PORT || 4300)
 };
 export const WEB_URL = `http://localhost:${PORTS.web}`;

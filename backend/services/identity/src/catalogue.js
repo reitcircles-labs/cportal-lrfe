@@ -23,6 +23,7 @@ export const PERMS = [
     { id: 'audit.view', group: 'Audit', label: 'View audit trail & evidence', desc: 'Provenance, hashes, full trail' },
     { id: 'audit.signoff', group: 'Audit', label: 'Sign off & raise findings', desc: 'Record the auditor’s conclusion' },
     { id: 'audit.export', group: 'Audit', label: 'Export evidence packs', desc: 'Download images, metadata and trail' },
+    { id: 'anchors.view', group: 'Audit', label: 'View anchorings', desc: 'Batches put on the blockchain, their status and explorer links', since: 3 },
     { id: 'admin.users', group: 'Administration', label: 'Manage users', desc: 'Invite, assign roles, suspend' },
     { id: 'admin.roles', group: 'Administration', label: 'Manage roles & permissions', desc: 'Edit the permission matrix' },
     { id: 'admin.policies', group: 'Administration', label: 'Manage security policies', desc: 'MFA, sessions, segregation of duties' },
@@ -34,7 +35,7 @@ export const PERMS = [
  * database is on an older version, the seed grants it to the roles that hold it by default
  * (below), once, and never touches it again (an administrator may have removed it since).
  */
-export const CATALOGUE_VERSION = 2;
+export const CATALOGUE_VERSION = 3;
 
 export const PERM_IDS = PERMS.map(p => p.id);
 export const isKnownPerm = (id) => PERM_IDS.includes(id);
@@ -46,17 +47,17 @@ const role = (id, label, desc, home, perms) => ({ id, label, desc, home, system:
 
 export const ROLES = [
     role('sup', 'Registrar (supervisor)', 'Oversees the registry. Finalizes records and reviews audit evidence.', '/',
-        ['dashboard.view', 'capture.view', 'verify.view', 'record.view', 'record.comment', 'record.finalize', 'audit.view', 'audit.export', 'admin.users']),
+        ['dashboard.view', 'capture.view', 'verify.view', 'record.view', 'record.comment', 'record.finalize', 'audit.view', 'audit.export', 'anchors.view', 'admin.users']),
     role('scan', 'Scan operator', 'Captures deeds, grants and SG diagrams at the scan station.', '/capture',
-        ['dashboard.view', 'capture.view', 'capture.scan', 'capture.rescan']),
+        ['dashboard.view', 'capture.view', 'capture.scan', 'capture.rescan', 'anchors.view']),
     role('rev', 'Metadata reviewer', 'Verifies extracted metadata against the image and files to the EDRMS.', '/verify',
-        ['dashboard.view', 'capture.view', 'capture.rescan', 'verify.view', 'verify.edit', 'verify.file', 'record.view', 'record.comment']),
+        ['dashboard.view', 'capture.view', 'capture.rescan', 'verify.view', 'verify.edit', 'verify.file', 'record.view', 'record.comment', 'anchors.view']),
     role('rec', 'Records officer', 'Creates land records, links documents and prepares them for finalization.', '/link',
-        ['dashboard.view', 'verify.view', 'record.view', 'record.create', 'record.link', 'record.unlink', 'record.comment', 'record.finalize']),
+        ['dashboard.view', 'verify.view', 'record.view', 'record.create', 'record.link', 'record.unlink', 'record.comment', 'record.finalize', 'anchors.view']),
     role('aud', 'Auditor · read-only', 'Office of the Auditor-General. Inspects evidence and signs off; cannot change records.', '/audit',
-        ['dashboard.view', 'capture.view', 'verify.view', 'record.view', 'audit.view', 'audit.signoff', 'audit.export']),
+        ['dashboard.view', 'capture.view', 'verify.view', 'record.view', 'audit.view', 'audit.signoff', 'audit.export', 'anchors.view']),
     role('adm', 'System administrator', 'Manages users, roles and security policies. No rights over land-record data.', '/admin/users',
-        ['dashboard.view', 'audit.view', 'admin.users', 'admin.roles', 'admin.policies', 'admin.offices'])
+        ['dashboard.view', 'audit.view', 'anchors.view', 'admin.users', 'admin.roles', 'admin.policies', 'admin.offices'])
 ];
 
 export const ROLE_IDS = ROLES.map(r => r.id);

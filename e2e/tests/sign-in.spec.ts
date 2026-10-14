@@ -26,6 +26,15 @@ for (const user of MATRIX_USERS) {
         // Verify adds the document it opens (?doc=) when its queue is not empty
         await expect(page).toHaveURL(new RegExp(`#${user.home}(\\?.*)?$`));
         await expect(page.locator('aside.sidebar')).toContainText(user.name);
+        // Opening Verify took that document for review: leave it, so the review lock is released
+        // and another test's document is not held for the lock's 30 minutes (API-664)
+        if (/[?&]doc=/.test(page.url())) {
+            // (no release when it could only look: the document was not ready, or someone else had it)
+            const released = page.waitForResponse(r => r.url().includes('/release') && r.request().method() === 'POST', { timeout: 5000 }).catch(() => {});
+            await page.goto('/#/documents');
+            await expect(page.locator('header.topbar h1')).toHaveText('Documents (EDRMS)');
+            await released;
+        }
     });
 }
 

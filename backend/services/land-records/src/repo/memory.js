@@ -7,6 +7,9 @@ const clone = (v) => (v === undefined ? v : structuredClone(v));
  * ./sequelize.js: unique record number and parcel key, gap-free per-year numbering, revision
  * checks on draft edits, commits that supersede the previous current version in one step.
  */
+/** The document versions a land record version pins: { id, version, edrmsNo, docType, ref }. */
+const pinnedOf = (v) => (v.data?.documents || []).map(d => ({ id: d.edrmsDocumentId, version: d.version, edrmsNo: d.edrmsNo, docType: d.docType, ref: d.ref ?? null }));
+
 export function createMemoryRepo() {
     const records = new Map();
     const versions = [];
@@ -32,11 +35,12 @@ export function createMemoryRepo() {
             const [k, v] = Object.entries(where)[0];
             return clone([...records.values()].find(r => r[k] === v)) ?? null;
         },
-        async listRecords({ q, status, limit = 50, offset = 0 } = {}) {
+        async listRecords({ q, status, match, limit = 50, offset = 0 } = {}) {
             const needle = q?.toLowerCase();
+            const fields = (r) => (match === 'parcel' ? [r.recordNo, r.label] : [r.recordNo, r.label, r.searchText]);
             const all = [...records.values()]
                 .filter(r => !status || r.status === status)
-                .filter(r => !needle || [r.recordNo, r.label, r.searchText].some(s => String(s ?? '').toLowerCase().includes(needle)))
+                .filter(r => !needle || fields(r).some(s => String(s ?? '').toLowerCase().includes(needle)))
                 .sort((a, b) => (a.recordNo < b.recordNo ? 1 : -1));
             return { items: all.slice(offset, offset + limit).map(clone), total: all.length };
         },
@@ -48,6 +52,14 @@ export function createMemoryRepo() {
         },
 
         async getVersion(recordId, n) { return clone(findVersion(recordId, n)) ?? null; },
+        /** Every committed version's seal (superseded ones too), oldest first, after the cursor `after` (API-669). */
+        async listSeals({ after = null, limit = 500 } = {}) {
+            const key = (v) => [new Date(v.committedAt).getTime(), v.recordId, v.versionNumber];
+            const cmp = (a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) || a[2] - b[2];
+            const from = after && [new Date(after.at).getTime(), after.id, after.version];
+            return versions.filter(v => v.seal).sort((a, b) => cmp(key(a), key(b))).filter(v => !from || cmp(key(v), from) > 0).slice(0, limit)
+                .map(v => ({ recordId: v.recordId, version: v.versionNumber, seal: v.seal, at: v.committedAt }));
+        },
         async listVersions(recordId) {
             return versions.filter(v => v.recordId === recordId).sort((a, b) => a.versionNumber - b.versionNumber).map(clone);
         },
@@ -79,6 +91,26 @@ export function createMemoryRepo() {
                 }
             }
             return out;
+        },
+        /** Number and label of each land record by id (the Anchorings screens, API-696). */
+        async recordLabels(ids) {
+            return ids.filter(id => records.has(id)).map(id => ({ id, recordNo: records.get(id).recordNo, label: records.get(id).label }));
+        },
+        /** The committed versions (current or superseded) that pin any version of these documents: [{ documentId, version, recordId, versionNumber }]. */
+        async findCommittedPinning(documentIds) {
+            const wanted = new Set(documentIds), out = [];
+            for (const v of versions.filter(x => x.state === 'committed' || x.state === 'superseded')) {
+                for (const d of pinnedOf(v)) {
+                    if (wanted.has(d.id)) out.push({ documentId: d.id, version: d.version, recordId: v.recordId, versionNumber: v.versionNumber });
+                }
+            }
+            return out;
+        },
+        /** The documents each committed version (current or superseded) is made of: [{ recordId, versionNumber, documents: [{ id, version }] }]. */
+        async versionDocuments(pairs) {
+            const wanted = new Set(pairs.map(p => `${p.recordId}:${p.versionNumber}`));
+            return versions.filter(v => (v.state === 'committed' || v.state === 'superseded') && wanted.has(`${v.recordId}:${v.versionNumber}`))
+                .map(v => ({ recordId: v.recordId, versionNumber: v.versionNumber, documents: pinnedOf(v) }));
         },
         /** Commit a version: it becomes committed, the previous current one superseded, the record updated. */
         async commit({ recordId, versionNumber, versionPatch, recordPatch, supersede }) {

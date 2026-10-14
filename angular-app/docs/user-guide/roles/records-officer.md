@@ -17,7 +17,7 @@ reviewed version, never edited.
 | You can | You cannot |
 |---|---|
 | Create land records, link and remove documents, edit a draft, comment | Upload, review or file documents |
-| Submit a record for review, withdraw it before the decision | Approve a record you submitted yourself (a second person must) |
+| Submit a record for review, withdraw it before the decision | Approve a record you submitted yourself, or, with Four-eyes finalization on, one whose documents you filed as a reviewer (an account with both roles): a second person must |
 | Approve or return records that **other** officers submitted (from the bell) | Change a filed document (ask a reviewer for a correction) |
 
 ## The Land record screen

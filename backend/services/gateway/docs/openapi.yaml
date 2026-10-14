@@ -55,6 +55,16 @@ tags:
     description: Land records, their versions and seal chain.
   - name: land-records · Documents
     description: Filed EDRMS documents, found for land records.
+  - name: audit · Trail
+    description: The audit trail and its hash chain.
+  - name: audit · Proofs
+    description: Proofs that an item is in a root anchored on Cardano, and checking them.
+  - name: audit · Anchorings
+    description: Every batch put on the blockchain, for every signed-in user.
+  - name: audit · Sign-off
+    description: Auditors' sign-offs and findings, with segregation of duties (sod2).
+  - name: audit · Evidence
+    description: "Evidence packs: a land record with everything needed to check it outside the portal."
   - name: gateway
     description: The gateway itself.
 paths:
@@ -125,6 +135,1427 @@ paths:
       x-access:
         allOf:
           - admin.users
+  /api/audit/anchoring:
+    post:
+      tags:
+        - audit · Proofs
+      summary: The anchoring status of versions (land-records, edrms)
+      description: >-
+        Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx,
+        network, confirmedAt } | null } }`; null when the version is not in the tree.
+
+
+        **Access:** Service token only, from: `land-records`, `edrms`. Browsers cannot call this.
+      operationId: audit_postAuditAnchoring
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - keys
+              additionalProperties: false
+              properties:
+                keys:
+                  type: array
+                  maxItems: 500
+                  items:
+                    type: string
+                    pattern: ^(record|document)-version:[0-9a-fA-F-]{36}:[1-9][0-9]{0,8}$
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - land-records
+          - edrms
+  /api/audit/anchoring/health:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: Whether anchoring is working (administrators)
+      description: >-
+        For `admin.policies` or `audit.view`. `{ configured, network, wallet: { readable, address, funds: { ada, low, minimumAda } }, chain:
+        { reachable, tipHeight, synced }, lastAnchoring: { batch, status, createdAt }, next: { dueAt, waiting }, overdue, gaps: { count,
+        latest: [{ seq, at, missing }] }, warnings, live }`. Each part is read on its own: when the blockchain or the wallet's key cannot be
+        read, the report says so and the rest still comes back. `warnings`: `walletUnreadable`, `lowFunds`, `unreachable`, `catchingUp`,
+        `overdue` (fingerprints wait and the last anchoring is more than two periods old), `trailGap`. `live`: the broadcast warnings
+        `audit.wallet.low` and `audit.trail.gap` received in the last day (`kind` `lowFunds` or `trailGap`, `at`, `missing`).
+
+
+        **Access:** Signed-in user with any of `admin.policies`, `audit.view`.
+      operationId: audit_getAuditAnchoringHealth
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - admin.policies
+          - audit.view
+  /api/audit/anchoring/wallet:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: The published anchoring wallet
+      description: >-
+        For checking a proof outside the portal (the offline verifier's `--address`). `{ address, explorerUrl, transactionUrl }`: the wallet
+        that pays for every anchoring, its page on a public blockchain explorer, and the explorer's address for a transaction (append the
+        transaction id); all null when no blockchain is configured. 503 while the wallet's key cannot be read. No sign-in.
+
+
+        **Access:** Public: no token needed.
+      operationId: audit_getAuditAnchoringWallet
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
+  /api/audit/anchors:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: Every batch put on the blockchain, newest first
+      description: >-
+        `status`: `all` (the default), `progress` (sent or in a block, not confirmed yet) or `failed`; `limit` (up to 100) and `offset`. `{
+        items, total, counts: { all, progress, failed }, confirmationsNeeded, next }`. Each item: `batch`, `createdAt`, `status` (`sent`,
+        `onChain`, `confirmed`, `failed`), `covers` (the new fingerprints since the last batch before it that did not fail; null for a
+        failed one), `txHash` and `explorerUrl` (a public blockchain explorer; null for a failed one), `block`, `confirmations`, `reason` (a
+        failed one: `expired`, `rolledBackExpired` or `refused`), `replacedBy` (a failed one: the next batch) and `replaces` (the failed
+        batch before it). `next`: `{ dueAt, waiting }`, when the next batch is due and how many fingerprints wait for it; null when no
+        blockchain is configured. Every role holds `anchors.view`.
+
+
+        **Access:** Signed-in user with permission `anchors.view`.
+      operationId: audit_getAuditAnchors
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - all
+              - progress
+              - failed
+            default: all
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - anchors.view
+  /api/audit/anchors/{batch}:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: One batch
+      description: >-
+        As in the list, with what is on the blockchain: `root`, `size`, `prev` (`{ root, batch }`: the previous batch's root and the batch
+        it belongs to); `steps` (`createdAt`, `sentAt`, `sends`, `onChainAt`, `confirmedAt`, `failedAt`); for a failed one the `replacement`
+        (`batch`, `status`, `createdAt`); `previousBatch` and `nextBatch`. 404 for an unknown batch.
+
+
+        **Access:** Signed-in user with permission `anchors.view`.
+      operationId: audit_getAuditAnchorsBatch
+      parameters:
+        - name: batch
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - anchors.view
+  /api/audit/anchors/{batch}/coverage:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: What one batch covers
+      description: >-
+        The fingerprints the batch put on the blockchain for the first time (since the last batch before it that did not fail) and the audit
+        sign-offs in the trail up to its checkpoint. `{ batch, kinds: { recordVersions, documentVersions, signoffs }, trailUpTo, records,
+        total }`. `records`: the land records with a version or an audit sign-off in the batch, by record number, paged (`limit` up to 100,
+        `offset`), each with `recordId`, `recordNo`, `label`, `versions` and `signoffs` (`[{ from, to }]`). Each version comes with what its
+        fingerprint stands for: `documents` (how many it is made of), `documentsEarlier` (how many of those reached the blockchain in
+        earlier batches) and `versionsBefore` (chained through the previous version's seal). A failed batch covers nothing; 404 for an
+        unknown batch.
+
+
+        **Access:** Signed-in user with permission `anchors.view`.
+      operationId: audit_getAuditAnchorsBatchCoverage
+      parameters:
+        - name: batch
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - anchors.view
+  /api/audit/anchors/{batch}/documents:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: The document versions one batch put on the blockchain
+      description: >-
+        In the order they were sealed, paged (`limit` up to 100, `offset`): `{ batch, items, total }`, each item `documentId`, `version`,
+        `edrmsNo`, `docType` and `ref` (the deed or instrument number; from its filing or correction in the trail, null for a document
+        sealed before the audit service) and `usedIn`: the land record versions in the same batch made of it (`recordId`, `versionNumber`,
+        `recordNo`, `label`). A failed batch has none; 404 for an unknown batch.
+
+
+        **Access:** Signed-in user with permission `anchors.view`.
+      operationId: audit_getAuditAnchorsBatchDocuments
+      parameters:
+        - name: batch
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - anchors.view
+  /api/audit/anchors/lookup:
+    get:
+      tags:
+        - audit · Anchorings
+      summary: Is it on the blockchain? Find a land record or document
+      description: >-
+        `q`: a land record number (`LR-NA-2026-000001`), a document number (`EDR-NA-2026-000412`), a deed or instrument number (`T
+        2210/2008`), or words (an Erf, a township). Numbers match exactly; words match land records with a committed version, on their
+        number and parcel only (never owners). `{ query, kind }`, `kind` one of: `record` (with `record`, `answer`, `history`), `document`
+        (with `document`, `answer`, `history`), `choices` (several land records matched the words: `choices: [{ recordId, recordNo, label
+        }]`, at most 20) or `none`. `answer` is for the current version, whose seal stands for everything before it: `{ status: "yes",
+        version, batch }` (in a block or confirmed), `{ status: "sent", version, batch }`, `{ status: "waiting", version, nextDueAt }`, or
+        `{ status: "notRecorded", version }` (no fingerprint recorded: no committed version yet, or not in the audit tree). `history`,
+        newest first: each item with `at`, `status` (`waiting`, `sent`, `onChain`, `confirmed`, `notRecorded`) and `batch`; for a land
+        record `version` items (`versionNumber`), `document` items (the documents its versions are made of: `documentId`, `version`,
+        `edrmsNo`, `docType`, `ref`) and `signoff` items (`from`, `to`); for a document its `document` versions and `usedIn` items (the
+        committed land record versions made of it: `recordId`, `recordNo`, `label`, `versionNumber`, `documentVersion`). 30 searches a
+        minute per user (429 after).
+
+
+        **Access:** Signed-in user with permission `anchors.view`.
+      operationId: audit_getAuditAnchorsLookup
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - anchors.view
+  /api/audit/findings:
+    post:
+      tags:
+        - audit · Sign-off
+      summary: Raise a finding
+      description: >-
+        Body `{ recordId, version, documentId?, description }` (a land record version, or a document version in it) or `{ documentId,
+        version, description }` (a document version). On the current version (409 for a replaced one). The records officers and the
+        registrars get a task in their inbox (bpm process `audit-finding`); 503 when bpm cannot be reached (the finding is not raised). 201
+        with the finding (`status: "open"`, `instanceId`). A trail entry (`audit.finding.raised`).
+
+
+        **Access:** Signed-in user with permission `audit.signoff`.
+      operationId: audit_postAuditFindings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - description
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                version:
+                  type: integer
+                  minimum: 1
+                documentId:
+                  type: string
+                  format: uuid
+                description:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.signoff
+    get:
+      tags:
+        - audit · Sign-off
+      summary: Findings of a land record or document
+      description: >-
+        `{ items }`, oldest first; filter by `recordId`, `documentId`, `status` (`open`, `resolved`, `closed`). For auditors and the records
+        desk.
+
+
+        **Access:** Signed-in user with any of `audit.view`, `record.view`.
+      operationId: audit_getAuditFindings
+      parameters:
+        - name: recordId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: documentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+              - resolved
+              - closed
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - audit.view
+          - record.view
+  /api/audit/findings/{id}:
+    get:
+      tags:
+        - audit · Sign-off
+      summary: One finding
+      description: >-
+        With `status`, `answers`, and `resolvedByVersion` (a newer reviewed version resolved it) or `outcome`, `closedByName`, `closeReason`
+        (the closing answer), `closedAt`.
+
+
+        **Access:** Signed-in user with any of `audit.view`, `record.view`.
+      operationId: audit_getAuditFindingsId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - audit.view
+          - record.view
+  /api/audit/findings/{id}/answers:
+    post:
+      tags:
+        - audit · Sign-off
+      summary: Answer a finding
+      description: >-
+        Body `{ text }`. Any auditor, not only the one who raised it. 201 with the finding and its `answers` (`byName`, `role`, `at`,
+        `text`). 409 when it is no longer open. A trail entry (`audit.finding.answered`) with the whole thread under `Findings`.
+
+
+        **Access:** Signed-in user with permission `audit.signoff`.
+      operationId: audit_postAuditFindingsIdAnswers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              additionalProperties: false
+              properties:
+                text:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.signoff
+  /api/audit/findings/{id}/close:
+    post:
+      tags:
+        - audit · Sign-off
+      summary: Close a finding, answering it
+      description: >-
+        Body `{ outcome, answer }`: `agreed` (resolved by agreement outside the portal, for example in a meeting) or `mistake` (raised by
+        mistake), and the answer: who agreed, when, what was decided. `{ reason }` alone is read as `{ outcome: "mistake", answer: reason
+        }`. 409 when it is no longer open. Its inbox tasks are withdrawn if still open. A trail entry (`audit.finding.closed` with the
+        `outcome`, and the thread under `Findings`); a newer reviewed version closes it the same way with `outcome: "resolved"`.
+
+
+        **Access:** Signed-in user with permission `audit.signoff`.
+      operationId: audit_postAuditFindingsIdClose
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              anyOf:
+                - required:
+                    - answer
+                - required:
+                    - reason
+              properties:
+                outcome:
+                  type: string
+                  enum:
+                    - agreed
+                    - mistake
+                answer:
+                  type: string
+                  maxLength: 4000
+                reason:
+                  type: string
+                  maxLength: 2000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.signoff
+  /api/audit/proofs/{kind}/{id}:
+    get:
+      tags:
+        - audit · Proofs
+      summary: The proof of a land record version, a document version or a trail entry
+      description: >-
+        `kind` is `record-version` or `document-version` (`id` the land record or document id, `?version=` required) or `trail-entry` (`id`
+        its seq). `{ format: "lrfe-audit-proof/1", status, item, leaf, tree: { size, path, peaks, root }, anchor: { network, label, batch,
+        tx, root, size, address (the anchoring wallet), block, blockIs, confirmations, status, confirmedAt } }`; a trail entry adds `trail:
+        { entry, later, checkpoint }` (the entry, the contentHash of each later entry up to the anchored checkpoint). `status`: `waiting`
+        (not in an anchoring yet: `anchor` is null, and for a trail entry `leaf` and `tree` too), `anchored` or `confirmed`. Save it as a
+        file for the offline verifier (services/audit/verifier). 404 when the item is not in the tree.
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditProofsKindId
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - record-version
+              - document-version
+              - trail-entry
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+  /api/audit/records:
+    get:
+      tags:
+        - audit · Sign-off
+      summary: The land records list of the Audit screen
+      description: >-
+        `filter`: `changed` (a version committed since the last audit sign-off; the default), `attention` (an open finding, or an item found
+        changed since review and not re-reviewed yet) or `all`; `q` searches as land-records does; `limit` (up to 100) and `offset`. `{
+        items, total, counts: { changed, attention, all } }`. Each item: `id`, `recordNo`, `label`, `currentVersion`, `changedAt`, `owners`,
+        `proof` (the current version's anchoring: `waiting`, `sent`, `onChain`, `confirmed`), `proofBatch` (its batch; null while waiting),
+        `needsAttention`, and `audit`: `range` (the open checkpoint, or null), `newDocuments`, `check` (`matches`, `changed`, `notOnChain`:
+        what is known as of the last check; the record's own check runs it again), `openFindings`, `lastSignoff` (`toVersion`, `signedAt`,
+        `signedByName`, and `proof`: how far its trail entry has got, `waiting`, `sent`, `onChain` or `confirmed`, with its `batch` beside
+        it; the checkpoint gives the same as `lastSignoff.proof: { status, batch }`).
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditRecords
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - changed
+              - attention
+              - all
+            default: changed
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+  /api/audit/records/{id}/check:
+    get:
+      tags:
+        - audit · Sign-off
+      summary: The open audit checkpoint of a land record
+      description: >-
+        What the next audit sign-off covers: `range { from, to }` (every version committed since the last audit sign-off, or null),
+        `lastSignoff` (with `proof: { status, batch }`, how far its trail entry has got and in which batch), `versions` and `documents` (the
+        document versions they added that no earlier sign-off covered), each with `anchoring` (`waiting`, `sent`, `onChain`, `confirmed`),
+        `batch` (the batch it is in; null while waiting) and `match` (`matches`, `changed`, `notOnChain`, `unavailable`; a changed one also
+        `superseded` once a re-reviewed version matches), `openFindings`, and `canSignOff` with the `reason` when not, for the user asking.
+        A changed item starts a re-review task for the records desk the first time it is found (bpm process `audit-rereview`).
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditRecordsIdCheck
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+  /api/audit/records/{id}/evidence:
+    get:
+      tags:
+        - audit · Evidence
+      summary: The evidence pack of a land record (zip)
+      description: >-
+        Every committed version with its seal, the pinned document versions (metadata and files), the record's trail, sign-offs, findings, a
+        proof for each version, document version and trail entry, `manifest.json` (every file's SHA-256) and `README.txt`. Check it with the
+        offline verifier: `node lrfe-verify.mjs <pack>.zip --address <wallet>`. The export is a trail entry (`audit.evidence.exported`, with
+        the manifest's SHA-256, also in the `x-manifest-sha256` header). 409 when the record has no committed version.
+
+
+        **Access:** Signed-in user with permission `audit.export`.
+      operationId: audit_getAuditRecordsIdEvidence
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.export
+  /api/audit/signoffs:
+    post:
+      tags:
+        - audit · Sign-off
+      summary: Sign off the open audit checkpoint of a land record
+      description: >-
+        Body `{ recordId, comment? }`. One sign-off for every version committed since the last one, checked again now: accepted only when
+        everything is in a block on the blockchain, everything matches it, and no finding is open. 201 with the sign-off (`kind:
+        "checkpoint"`, `fromVersion`, `toVersion`, `seal` of the top version, `items` with the version and document seals and the finding
+        ids, `signedByName`, `signedAt`). 403 `{ details: { rule: "sod2" } }` for whoever holds `record.finalize` or approved a version in
+        the range; 409 not on the blockchain yet, changed since review, an open finding, nothing to audit, or signed off by someone else at
+        the same moment; 503 when the check could not run. Also a trail entry (`audit.signoff.recorded`), anchored with the next root.
+
+
+        **Access:** Signed-in user with permission `audit.signoff`.
+      operationId: audit_postAuditSignoffs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recordId
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.signoff
+    get:
+      tags:
+        - audit · Sign-off
+      summary: Sign-offs of a land record or document
+      description: |-
+        `{ items }`, oldest first; `recordId` and/or `documentId`.
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditSignoffs
+      parameters:
+        - name: recordId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: documentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+  /api/audit/trail:
+    get:
+      tags:
+        - audit · Trail
+      summary: Trail entries, oldest first
+      description: >-
+        `{ total, subjects, entries }`. Each entry has `seq`, `eventId`, `type`, `source`, `time`, `actor`, `subjects`, `data`, `prevHash`,
+        `contentHash` and `hash`. `subject` is `record:<id>`, `document:<id>`, `edrmsNo:<number>`, `intake:<id>`, `process:<id>` or
+        `user:<id>`. A land record or document also brings in the steps of what it is made of: its documents' capture, filing and
+        amendments, and its review processes. Other records' steps are left out; `subjects` lists what was included. `type` is an event
+        type, or a prefix ending in a dot (`intake.`). `from` and `to` are dates on the event's time (`to` is exclusive).
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditTrail
+      parameters:
+        - name: subject
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+  /api/audit/trail/actors:
+    get:
+      tags:
+        - audit · Trail
+      summary: The people who acted in the trail
+      description: >-
+        For searching the trail by user. `q` matches part of the name (any case); `limit` up to 50 (20). `{ items: [{ id, name }] }`, by
+        name, each person once (with the name of their latest entry). Search their entries with `GET /audit/trail?subject=user:<id>`.
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditTrailActors
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+  /api/audit/trail/verify:
+    get:
+      tags:
+        - audit · Trail
+      summary: Recompute the trail's hash chain
+      description: >-
+        `{ intact: true, entries, head: { seq, hash, time } }`, or `{ intact: false, entries, brokenAt, problem }`, where `problem` is
+        `changed`, `missing`, `out of order` or `does not follow the entry before it`. `entries` is how many entries were checked before the
+        break.
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_getAuditTrailVerify
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
+  /api/audit/verifier/lrfe-verify.mjs:
+    get:
+      tags:
+        - audit · Proofs
+      summary: The offline verifier
+      description: >-
+        The verifier as one file (Node 18 or later, nothing to install), for anyone given a proof: `node lrfe-verify.mjs proof.json
+        --address <wallet>`. No sign-in.
+
+
+        **Access:** Public: no token needed.
+      operationId: audit_getAuditVerifierLrfeVerifyMjs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
+  /api/audit/verify:
+    post:
+      tags:
+        - audit · Proofs
+      summary: Check an item now
+      description: >-
+        Body `{ kind, id, version }` as for the proof. `{ valid, status, checks: { item, path, chain }, checkedAt, explorerUrl, proof }`
+        (`explorerUrl`: the transaction's page on a public blockchain explorer; null while waiting). `item`: the seal recomputed from the
+        current data by land-records or edrms (a trail entry: its hashes, and the chain to the checkpoint). `path`: the leaf and the path to
+        the root. `chain`: the root and size in the transaction's metadata on the chain (Blockfrost: `source` is the provider), or with the
+        own node, in the signed transaction as sent (`source: "stored"`). Each check has `ok` and, when it fails, `problem`. `valid` only
+        when all three hold; never while `waiting`.
+
+
+        **Access:** Signed-in user with permission `audit.view`.
+      operationId: audit_postAuditVerify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - kind
+                - id
+              additionalProperties: false
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - record-version
+                    - document-version
+                    - trail-entry
+                id:
+                  type: string
+                  maxLength: 64
+                version:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - audit.view
   /api/auth/login:
     post:
       tags:
@@ -535,6 +1966,10 @@ paths:
         - edrms · Documents
       summary: One document with its fields, record metadata and version history
       description: >-
+        For a user, each version also has `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next
+        anchoring), `anchored` or `confirmed`, or null when the audit service cannot say. Services reading the document do not get it.
+
+
         **Access:** Signed-in user with any of `capture.view`, `verify.view`, `record.view`, `audit.view`, or a service token from `intake`,
         `land-records`, `audit`, `search`, `bpm`.
       operationId: edrms_getDocumentsId
@@ -836,6 +2271,64 @@ paths:
           - audit
           - search
           - bpm
+  /api/documents/{id}/versions/{n}/file:
+    get:
+      tags:
+        - edrms · Documents
+      summary: A version's file, for the audit service's evidence pack
+      description: |-
+        The stored bytes (decrypted when the store encrypts), as filed. Audit service token only.
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: edrms_getDocumentsIdVersionsNFile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
   /api/documents/{id}/versions/{n}/verify:
     get:
       tags:
@@ -844,7 +2337,7 @@ paths:
       description: |-
         Recomputes the SHA-256 of the stored file and checks the seal: `{ intact, contentIntact, sealIntact, version, checkedAt, … }`.
 
-        **Access:** Signed-in user with permission `audit.view`.
+        **Access:** Signed-in user with permission `audit.view`, or a service token from `audit`.
       operationId: edrms_getDocumentsIdVersionsNVerify
       parameters:
         - name: id
@@ -891,9 +2384,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - audit.view
+        services:
+          - audit
   /api/documents/lookup:
     get:
       tags:
@@ -961,6 +2457,62 @@ paths:
           - audit
           - search
           - bpm
+  /api/documents/seals:
+    get:
+      tags:
+        - edrms · Documents
+      summary: Every document version's seal, oldest first (audit service only)
+      description: >-
+        `{ items: [{ documentId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. For the audit
+        service's one-time backfill of its tree (API-669).
+
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: edrms_getDocumentsSeals
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
   /api/intake/batches:
     get:
       tags:
@@ -2326,6 +3878,41 @@ paths:
       x-access:
         allOf:
           - admin.policies
+  /api/policies/effective:
+    get:
+      tags:
+        - identity · Policies
+      summary: The policies other services enforce (land-records)
+      description: >-
+        For the land-records service token: `{ fourEyes }`, the security policy Four-eyes finalization as set now. Read when a land record
+        version is submitted and approved (API-663).
+
+
+        **Access:** Service token only, from: `land-records`. Browsers cannot call this.
+      operationId: identity_getPoliciesEffective
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - land-records
   /api/process-instances:
     get:
       tags:
@@ -2620,7 +4207,7 @@ paths:
         corrected).
 
 
-        **Access:** Signed-in user with permission `record.view`.
+        **Access:** Signed-in user with permission `record.view`, or a service token from `audit`.
       operationId: land-records_getRecords
       parameters:
         - name: q
@@ -2639,6 +4226,15 @@ paths:
               - committed
               - in_review
               - needs_review
+        - name: match
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - all
+              - parcel
+            default: all
         - name: limit
           in: query
           required: false
@@ -2680,9 +4276,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
     post:
       tags:
         - land-records · Records
@@ -2748,7 +4347,7 @@ paths:
       tags:
         - land-records · Records
       summary: One land record with its current version and open draft
-      description: "**Access:** Signed-in user with permission `record.view`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
       operationId: land-records_getRecordsId
       parameters:
         - name: id
@@ -2789,9 +4388,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
   /api/records/{id}/comments:
     get:
       tags:
@@ -3378,8 +4980,9 @@ paths:
         - land-records · Records
       summary: "History: every committed version"
       description: >-
-        `{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, and `diff`
-        against the version before.
+        `{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff`
+        against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next
+        anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.
 
 
         **Access:** Signed-in user with permission `record.view`.
@@ -3542,10 +5145,10 @@ paths:
       summary: Recompute the seal chain of the committed versions
       description: >-
         `{ intact, versions: [{ versionNumber, seal, intact, linked }] }`. `intact`: the seal matches the version; `linked`: it includes the
-        previous version's seal.
+        previous version's seal. Also for the audit service, which checks a proof against it.
 
 
-        **Access:** Signed-in user with permission `record.view`.
+        **Access:** Signed-in user with permission `record.view`, or a service token from `audit`.
       operationId: land-records_getRecordsIdVerify
       parameters:
         - name: id
@@ -3586,15 +5189,18 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
   /api/records/{id}/versions:
     get:
       tags:
         - land-records · Records
       summary: "All versions of a record: state, who submitted and approved, seal, changes"
-      description: "**Access:** Signed-in user with permission `record.view`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
       operationId: land-records_getRecordsIdVersions
       parameters:
         - name: id
@@ -3635,15 +5241,18 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
   /api/records/{id}/versions/{n}:
     get:
       tags:
         - land-records · Records
       summary: One version, with its data (core, attributes, pinned documents)
-      description: "**Access:** Signed-in user with permission `record.view`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
       operationId: land-records_getRecordsIdVersionsN
       parameters:
         - name: id
@@ -3690,9 +5299,12 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+        - serviceToken: []
       x-access:
         allOf:
           - record.view
+        services:
+          - audit
   /api/records/{id}/versions/{n}/commit:
     post:
       tags:
@@ -3951,6 +5563,142 @@ paths:
       x-access:
         allOf:
           - record.view
+  /api/records/lookup:
+    post:
+      tags:
+        - land-records · Records
+      summary: Land record labels, the documents committed versions are made of, and the versions that pin documents (audit service only)
+      description: >-
+        Body `{ recordIds?, versions?: [{ recordId, versionNumber }], pinning?: [documentId] }`, up to 1000 record ids and versions and 100
+        documents. `{ records: [{ id, recordNo, label }], versions: [{ recordId, versionNumber, documents: [{ id, version, edrmsNo, docType,
+        ref }] }], pinnedBy: [{ documentId, version, recordId, versionNumber }] }`: for committed versions (current or superseded) only;
+        drafts never count. `records` has every record asked for or named in the answer. For the audit service's Anchorings screens: what a
+        batch covers (API-696) and the search (API-697).
+
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: land-records_postRecordsLookup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                recordIds:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    type: string
+                    format: uuid
+                pinning:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
+                    format: uuid
+                versions:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    type: object
+                    required:
+                      - recordId
+                      - versionNumber
+                    additionalProperties: false
+                    properties:
+                      recordId:
+                        type: string
+                        format: uuid
+                      versionNumber:
+                        type: integer
+                        minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
+  /api/records/seals:
+    get:
+      tags:
+        - land-records · Records
+      summary: Every committed version's seal, oldest first (audit service only)
+      description: >-
+        `{ items: [{ recordId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. Superseded versions
+        included. For the audit service's one-time backfill of its tree (API-669).
+
+
+        **Access:** Service token only, from: `audit`. Browsers cannot call this.
+      operationId: land-records_getRecordsSeals
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - audit
   /api/roles:
     get:
       tags:

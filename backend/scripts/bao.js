@@ -19,10 +19,11 @@
  * token in dev-init.json in the data folder (readable by this user only): fine for development,
  * never for production. Later starts unseal with it. Ctrl+C stops OpenBao.
  *
- * Every start then prepares document encryption (packages/storage/README.md), idempotently: the
- * transit engine, one key per service (edrms-files, intake-files), a policy per service allowing
- * only datakey and decrypt on its own key, and an AppRole per service (edrms, intake; 1 h tokens,
- * bound to 127.0.0.1). Each service's role ID and secret ID go to approle/ in the data folder
+ * Every start then prepares document encryption (packages/storage/README.md) and the audit
+ * service's Cardano wallet key, idempotently: the transit engine, one key per service
+ * (edrms-files, intake-files; audit-anchor, ed25519), a policy per service allowing only what it
+ * needs on its own key (datakey and decrypt; for audit sign and reading the public key), and an
+ * AppRole per service (edrms, intake, audit; 1 h tokens, bound to 127.0.0.1). Each service's role ID and secret ID go to approle/ in the data folder
  * (this user only), and the settings for the services' .env files are printed.
  *
  * Production: OpenBao must not run as the same user as the portal. An administrator installs it
@@ -212,9 +213,19 @@ async function prepareEncryption(root) {
         if (i >= 120) throw new Error('OpenBao did not become active within a minute after unsealing');
         await new Promise(r => setTimeout(r, 500));
     }
+    // data keys for stored files; the audit service's Cardano wallet key signs anchorings (API-656)
+    const files = (key) => ({
+        type: 'aes256-gcm96', what: 'new data keys and unwrapping',
+        paths: [`path "transit/datakey/plaintext/${key}" { capabilities = ["update"] }`, `path "transit/decrypt/${key}" { capabilities = ["update"] }`]
+    });
     const SERVICES = [
-        { name: 'edrms', setting: 'EDRMS_ENCRYPTION', key: 'edrms-files' },
-        { name: 'intake', setting: 'INTAKE_ENCRYPTION', key: 'intake-files' }
+        { name: 'edrms', setting: 'EDRMS_ENCRYPTION=bao', key: 'edrms-files', ...files('edrms-files') },
+        { name: 'intake', setting: 'INTAKE_ENCRYPTION=bao', key: 'intake-files', ...files('intake-files') },
+        {
+            name: 'audit', setting: 'CARDANO_PROVIDER=ogmios (or blockfrost)', key: 'audit-anchor', keySetting: 'ANCHOR_BAO_KEY',
+            type: 'ed25519', what: 'signing and reading its public key',
+            paths: ['path "transit/sign/audit-anchor" { capabilities = ["update"] }', 'path "transit/keys/audit-anchor" { capabilities = ["read"] }']
+        }
     ];
     const as = (method, path, body) => api(path, { method, token: root, ...(body ? { body: JSON.stringify(body) } : {}) });
     const exists = (path) => as('GET', path).then(() => true, (err) => { if (err.status === 404) return false; throw err; });
@@ -228,13 +239,11 @@ async function prepareEncryption(root) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const lines = [];
     for (const s of SERVICES) {
-        // the KEK: created once, never exportable (it never leaves OpenBao)
-        if (!(await exists(`transit/keys/${s.key}`))) await as('POST', `transit/keys/${s.key}`, { type: 'aes256-gcm96', exportable: false });
-        // the policy: a new data key and unwrapping, on this service's key only
+        // the key: created once, never exportable (it never leaves OpenBao)
+        if (!(await exists(`transit/keys/${s.key}`))) await as('POST', `transit/keys/${s.key}`, { type: s.type, exportable: false });
+        // the policy: only what the service needs, on its own key only
         await as('PUT', `sys/policies/acl/${s.key}`, {
-            policy: `# ${s.name}: new data keys and unwrapping, on its own key only (written by bao.js)\n` +
-                `path "transit/datakey/plaintext/${s.key}" { capabilities = ["update"] }\n` +
-                `path "transit/decrypt/${s.key}" { capabilities = ["update"] }\n`
+            policy: `# ${s.name}: ${s.what}, on its own key only (written by bao.js)\n${s.paths.join('\n')}\n`
         });
         // the AppRole: short-lived renewable tokens, usable from this machine only
         await as('POST', `auth/approle/role/${s.name}`, {
@@ -249,7 +258,7 @@ async function prepareEncryption(root) {
         if (!valid) writeFileSync(secretFile, (await as('POST', `auth/approle/role/${s.name}/secret-id`)).data.secret_id + '\n', { mode: 0o600 });
         writeFileSync(join(dir, `${s.name}-role-id`), roleId + '\n', { mode: 0o600 });
         lines.push(`  ${s.name} (backend/services/${s.name}/.env):`,
-            `    ${s.setting}=bao`, `    BAO_ADDR=${addr}`, `    BAO_ROLE_ID=${roleId}`, `    BAO_SECRET_ID_FILE=${secretFile}`, `    BAO_KEY_NAME=${s.key}`);
+            `    ${s.setting}`, `    BAO_ADDR=${addr}`, `    BAO_ROLE_ID=${roleId}`, `    BAO_SECRET_ID_FILE=${secretFile}`, `    ${s.keySetting || 'BAO_KEY_NAME'}=${s.key}`);
     }
     console.log(`Document encryption ready: transit keys ${SERVICES.map(s => s.key).join(', ')}; AppRoles ${SERVICES.map(s => s.name).join(', ')}.`);
     console.log('  Settings for the services (development only):');

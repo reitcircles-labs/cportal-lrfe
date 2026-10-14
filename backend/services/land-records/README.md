@@ -163,14 +163,19 @@ The seal of a committed version is SHA-256 over the canonical JSON (sorted keys,
 ```
 
 Each seal includes the previous version's seal, so the versions form a chain: changing any earlier
-version breaks every later seal. `GET /records/:id/verify` recomputes the chain.
+version breaks every later seal. `GET /records/:id/verify` recomputes the chain (also for the audit
+service, which checks a proof against it: API-658).
 `GET /records/:id/history` lists every committed version (newest first) with submitter, approver,
-date, review comment, its seal (`intact`, `linked`) and what it changed against the version before.
+date, review comment, its seal (`intact`, `linked`), what it changed against the version before, and
+its `anchoring` status from the audit service (`waiting` for the next anchoring, `anchored`,
+`confirmed`; null while the audit service cannot be reached, which holds nothing else up; `AUDIT_URL`).
 An open draft carries `draftDiff`: what it changes against the current version.
 
 ## 8. When edrms corrects a document
 
 edrms publishes `edrms.document.amended` (over NATS) when a filed document gets a new version.
+land-records reads it with a durable consumer (`land-records-document-amended`, API-613), so a
+correction approved while land-records is down is handled once it is back.
 land-records finds every record whose current version or open draft pins an older version of that
 document and flags it **needs review** (`flags: [{ type: "document_updated", edrmsNo, from, to,
 reason, message: "Document updated: EDR-NA-… v1 → v2. Review needed." }]`, `records.record.flagged`).
@@ -202,7 +207,7 @@ checks, is logged in the version's `changes` (who, what, when) and published as 
 |---|---|---|
 | `GET /records?q=&status=` | `record.view` | list and search records |
 | `GET /records/:id` | `record.view` | the record with its current version, open draft and flags |
-| `GET /records/:id/versions/:n` · `…/verify` | `record.view` | a version · verify the seal chain |
+| `GET /records/:id/versions/:n` · `…/verify` | `record.view` (verify: or the audit service) | a version · verify the seal chain |
 | `POST /records {parcel}` · `{edrmsDocumentId}` | `record.create` | create a record (draft v1); from a filed document: parcel read from its property field, document linked |
 | `PATCH /records/:id/draft {revision, changes, accept, reason}` | `record.create` or `record.link` | edit core fields and attributes; `accept` suggested owners, extent, encumbrances; `reason` for values entered by hand |
 | `POST /records/:id/draft/documents {edrmsDocumentId}` | `record.link` | pin a document (its current version) |

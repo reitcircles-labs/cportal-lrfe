@@ -7,7 +7,8 @@ const app = await buildApp({
         edrms: env('EDRMS_URL', 'http://localhost:3502'),
         bpm: env('BPM_URL', 'http://localhost:3503'),
         intake: env('INTAKE_URL', 'http://localhost:3504'),
-        'land-records': env('RECORDS_URL', 'http://localhost:3505')
+        'land-records': env('RECORDS_URL', 'http://localhost:3505'),
+        audit: env('AUDIT_URL', 'http://localhost:3506')
     },
     corsOrigins: envList('CORS_ORIGINS', 'http://localhost:4200'),
     logger: { level: env('LOG_LEVEL', 'info') }

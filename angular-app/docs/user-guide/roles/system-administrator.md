@@ -66,7 +66,7 @@ Some boxes are locked so that the portal always keeps an administrator.
 | Allow sign-in with national eID | On | Not connected yet |
 | Restrict to government network | Off | Not enforced yet |
 | Idle session timeout | 30 min | Users are signed out after this long without activity |
-| Four-eyes finalization | On | The officer who finalizes a land record must differ from the reviewer who filed its documents. Today the app enforces that the person who submits a land record cannot approve it; excluding the reviewers who filed its documents is not enforced yet |
+| Four-eyes finalization | On | The person who approves a land record must differ from the reviewers who filed its documents (the reviewer who first filed each document; correcting a document later adds nobody). They don't get the approval task, and can't approve it. The submitter can never approve their own record, whatever this setting. Switching it on applies to new submissions, and on approval also to records already in review: if someone it leaves out approves a record that was already in review, the approval isn't applied, and the submitter withdraws the record and submits it again. Switching it off gives the task back to those people only once the record is submitted again |
 | Segregation of duties | 3 of 4 rules on | Pairs of permissions no one should hold together; each shows how many users are affected |
 
 Change a policy, then **Save policies** and confirm: "Security policies saved". Enabling a duty rule

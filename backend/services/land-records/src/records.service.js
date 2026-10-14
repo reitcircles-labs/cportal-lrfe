@@ -32,17 +32,24 @@ export function searchTextOf(record, ...datas) {
  * a linked document, and the history (API-648).
  */
 export class RecordsService {
-    constructor({ repo, events, edrms = null, bpm = null, clock = () => new Date(), config = {} }) {
+    constructor({ repo, events, edrms = null, bpm = null, anchoring = null, identity = null, clock = () => new Date(), config = {} }) {
         this.repo = repo;
         this.events = events;
         this.edrms = edrms;
         this.bpm = bpm;
+        this.anchoring = anchoring;      // the audit service: is a version anchored on chain yet (API-658)
+        this.identity = identity;        // the security policies: Four-eyes finalization (API-663); none: only the submitter is excluded
         this.clock = clock;
         this.config = { country: 'NA', ...config };
     }
 
     catalogue() {
         return { parcelKinds: PARCEL_KINDS.map(k => ({ ...k, schema: schemaFor(k.schemaVersion), draftSchema: schemaFor(k.schemaVersion, { complete: false }) })) };
+    }
+
+    /** Run `fn` so its writes and the events it publishes are committed together (API-613). */
+    atomic(fn) {
+        return this.events?.atomic ? this.events.atomic(fn) : fn();
     }
 
     async requireRecord(id) {
@@ -76,23 +83,26 @@ export class RecordsService {
         if (existing) throw new ConflictError(`${parcelLabel(parcel)} already has a land record (${existing.recordNo})`, { recordId: existing.id, recordNo: existing.recordNo });
 
         const id = randomUUID(), now = this.clock();
-        const record = await this.repo.createRecord({
-            year: now.getUTCFullYear(),
-            build: (seq) => {
-                const r = {
-                    id, recordNo: formatRecordNo(this.config.country, now.getUTCFullYear(), seq), parcelKey: key, kind: kind.id, label: parcelLabel(parcel),
-                    status: 'draft', currentVersion: null, draftVersion: 1, draftState: 'draft', flags: [],
-                    createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
-                };
-                r.searchText = searchTextOf(r, data);
-                const version = {
-                    id: randomUUID(), recordId: id, versionNumber: 1, state: 'draft', revision: 1, schemaVersion: kind.schemaVersion, data,
-                    derived: suggestFromDocuments([]), checks: checksFor(data), changes: [{ at: now.toISOString(), byId: actor.id, byName: actor.name ?? null, action: 'create' }], createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
-                };
-                return { record: r, version };
-            }
+        // the record, its first draft and its event are committed together (API-613)
+        await this.atomic(async () => {
+            const record = await this.repo.createRecord({
+                year: now.getUTCFullYear(),
+                build: (seq) => {
+                    const r = {
+                        id, recordNo: formatRecordNo(this.config.country, now.getUTCFullYear(), seq), parcelKey: key, kind: kind.id, label: parcelLabel(parcel),
+                        status: 'draft', currentVersion: null, draftVersion: 1, draftState: 'draft', flags: [],
+                        createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
+                    };
+                    r.searchText = searchTextOf(r, data);
+                    const version = {
+                        id: randomUUID(), recordId: id, versionNumber: 1, state: 'draft', revision: 1, schemaVersion: kind.schemaVersion, data,
+                        derived: suggestFromDocuments([]), checks: checksFor(data), changes: [{ at: now.toISOString(), byId: actor.id, byName: actor.name ?? null, action: 'create' }], createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
+                    };
+                    return { record: r, version };
+                }
+            });
+            await this.events?.publish('records.record.created', { recordId: id, recordNo: record.recordNo, parcelKey: key }, { actor });
         });
-        await this.events?.publish('records.record.created', { recordId: id, recordNo: record.recordNo, parcelKey: key }, { actor });
         if (edrmsDocumentId) return this.addDocument(id, { revision: 1, edrmsDocumentId }, actor);
         return this.getRecord(id);
     }
@@ -125,17 +135,20 @@ export class RecordsService {
         const derived = suggestFromDocuments(data.documents);
         const now = this.clock();
         const entry = { at: now.toISOString(), byId: actor.id, byName: actor.name ?? null, ...change };
-        const saved = await this.repo.updateVersion(record.id, version.versionNumber, {
-            data, derived, checks: checksFor(data, { flags: record.flags, suggested: derived }),
-            revision: revision + 1, changes: [...(version.changes || []), entry], updatedAt: now
-        }, { expectedRevision: revision });
-        if (!saved) throw conflict();
-        const current = record.currentVersion ? await this.repo.getVersion(record.id, record.currentVersion) : null;
-        const label = parcelLabel(data.parcel), key = parcelKey(data.parcel);
-        await this.repo.updateRecord(record.id, { label, parcelKey: key, updatedAt: now, searchText: searchTextOf({ ...record, label, parcelKey: key }, current?.data, data) });
-        await this.events?.publish('records.draft.changed', {
-            recordId: record.id, recordNo: record.recordNo, versionNumber: version.versionNumber, revision: revision + 1, change: entry
-        }, { actor });
+        // the draft, the record and the event are committed together (API-613)
+        await this.atomic(async () => {
+            const saved = await this.repo.updateVersion(record.id, version.versionNumber, {
+                data, derived, checks: checksFor(data, { flags: record.flags, suggested: derived }),
+                revision: revision + 1, changes: [...(version.changes || []), entry], updatedAt: now
+            }, { expectedRevision: revision });
+            if (!saved) throw conflict();
+            const current = record.currentVersion ? await this.repo.getVersion(record.id, record.currentVersion) : null;
+            const label = parcelLabel(data.parcel), key = parcelKey(data.parcel);
+            await this.repo.updateRecord(record.id, { label, parcelKey: key, updatedAt: now, searchText: searchTextOf({ ...record, label, parcelKey: key }, current?.data, data) });
+            await this.events?.publish('records.draft.changed', {
+                recordId: record.id, recordNo: record.recordNo, versionNumber: version.versionNumber, revision: revision + 1, change: entry
+            }, { actor });
+        });
         return this.getRecord(record.id);
     }
 
@@ -219,15 +232,18 @@ export class RecordsService {
         const data = structuredClone(current.data);
         const derived = suggestFromDocuments(data.documents);
         const change = this.entry(actor, { action: 'open', from: current.versionNumber });
-        await this.repo.addVersion({
-            id: randomUUID(), recordId, versionNumber: n, state: 'draft', revision: 1, schemaVersion: current.schemaVersion, data,
-            derived, checks: checksFor(data, { flags: record.flags, suggested: derived }), changes: [change],
-            createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
-        }).catch((err) => {                                    // a concurrent open fails here (unique version number)
-            throw err instanceof ConflictError ? new ConflictError('The record already has an open draft') : err;
+        // the new draft, the record and the event are committed together (API-613)
+        await this.atomic(async () => {
+            await this.repo.addVersion({
+                id: randomUUID(), recordId, versionNumber: n, state: 'draft', revision: 1, schemaVersion: current.schemaVersion, data,
+                derived, checks: checksFor(data, { flags: record.flags, suggested: derived }), changes: [change],
+                createdAt: now, createdById: actor.id, createdByName: actor.name ?? null, updatedAt: now
+            }).catch((err) => {                                    // a concurrent open fails here (unique version number)
+                throw err instanceof ConflictError ? new ConflictError('The record already has an open draft') : err;
+            });
+            await this.repo.updateRecord(recordId, { draftVersion: n, draftState: 'draft', updatedAt: now });
+            await this.events?.publish('records.draft.changed', { recordId, recordNo: record.recordNo, versionNumber: n, revision: 1, change }, { actor });
         });
-        await this.repo.updateRecord(recordId, { draftVersion: n, draftState: 'draft', updatedAt: now });
-        await this.events?.publish('records.draft.changed', { recordId, recordNo: record.recordNo, versionNumber: n, revision: 1, change }, { actor });
         return this.getRecord(recordId);
     }
 
@@ -282,6 +298,21 @@ export class RecordsService {
 
     // ---------------------------------------------------------------- review and commit (API-647)
 
+    /**
+     * Four-eyes finalization (API-663): with the security policy on, the reviewers who filed the
+     * documents a version pins, the first time they were filed to the EDRMS. A correction (a later
+     * version of a document) adds nobody: the same reviewers may correct their documents. With the
+     * policy off, or no identity service configured, nobody (the submitter is excluded anyway).
+     */
+    async fourEyesExcluded(data) {
+        if (!this.identity) return [];
+        const { fourEyes } = await this.identity.policies();
+        if (!fourEyes) return [];
+        const ids = [...new Set((data.documents || []).map(d => d.edrmsDocumentId))];
+        const docs = await Promise.all(ids.map(id => this.requireDocument(id)));
+        return [...new Set(docs.map(d => d.filedById).filter(Boolean))];
+    }
+
     requireBpm() {
         if (!this.bpm) throw new AppError(503, 'The review process is not configured');
         return this.bpm;
@@ -307,6 +338,8 @@ export class RecordsService {
         if (failing.length) throw new BadRequestError(`${failing.length} check${failing.length > 1 ? 's' : ''} must pass before review: ${failing.map(c => c.message).join('; ')}`, { failing });
 
         const bpm = this.requireBpm();
+        // four-eyes: with the policy on, the reviewers who filed the record's documents may not approve it either
+        const filedBy = await this.fourEyesExcluded(version.data);
         const now = this.clock();
         const frozen = await this.repo.updateVersion(recordId, version.versionNumber, {
             state: 'in_review', revision: revision + 1, checks, reviewComment: null,
@@ -320,7 +353,8 @@ export class RecordsService {
         try {
             instance = await bpm.startReview({
                 record: { id: recordId, recordNo: record.recordNo, label: record.label, versionNumber: version.versionNumber },
-                submittedBy: { id: actor.id, name: actor.name ?? actor.id }
+                submittedBy: { id: actor.id, name: actor.name ?? actor.id },
+                filedBy
             });
         } catch (err) {
             // the review did not start: the draft is editable again, as before
@@ -330,10 +364,13 @@ export class RecordsService {
             await this.repo.updateRecord(recordId, { draftState: 'draft' });
             throw err;
         }
-        await this.repo.updateVersion(recordId, version.versionNumber, { reviewInstanceId: instance.id });
-        await this.events?.publish('records.draft.submitted', {
-            recordId, recordNo: record.recordNo, versionNumber: version.versionNumber, reviewInstanceId: instance.id
-        }, { actor });
+        // the review link and the event are committed together (API-613)
+        await this.atomic(async () => {
+            await this.repo.updateVersion(recordId, version.versionNumber, { reviewInstanceId: instance.id });
+            await this.events?.publish('records.draft.submitted', {
+                recordId, recordNo: record.recordNo, versionNumber: version.versionNumber, reviewInstanceId: instance.id
+            }, { actor });
+        });
         return this.getRecord(recordId);
     }
 
@@ -344,8 +381,11 @@ export class RecordsService {
         const version = await this.repo.getVersion(recordId, record.draftVersion);
         if (version.submittedById !== actor.id) throw new ForbiddenError('Only the person who submitted the version can withdraw it');
         if (version.reviewInstanceId) await this.requireBpm().cancel(version.reviewInstanceId, 'Withdrawn by the submitter');
-        await this.backToDraft(record, version, this.entry(actor, { action: 'withdraw' }));
-        await this.events?.publish('records.draft.withdrawn', { recordId, recordNo: record.recordNo, versionNumber: version.versionNumber }, { actor });
+        // back to draft and the event, committed together (API-613)
+        await this.atomic(async () => {
+            await this.backToDraft(record, version, this.entry(actor, { action: 'withdraw' }));
+            await this.events?.publish('records.draft.withdrawn', { recordId, recordNo: record.recordNo, versionNumber: version.versionNumber }, { actor });
+        });
         return this.getRecord(recordId);
     }
 
@@ -378,6 +418,10 @@ export class RecordsService {
         if (version.state === 'committed' && version.approvedById === by.id) return this.getRecord(recordId);
         if (version.state !== 'in_review') throw new ConflictError(`Version ${versionNumber} is not in review (${version.state})`);
         if (by.id === version.submittedById) throw new ForbiddenError('The submitter cannot approve their own version (four-eyes)');
+        // the policy as it is now: also when it was switched on while the version was in review
+        if ((await this.fourEyesExcluded(version.data)).includes(by.id)) {
+            throw new ForbiddenError('You filed a document of this land record, so another person must approve it (four-eyes)');
+        }
 
         const previous = record.currentVersion ? await this.repo.getVersion(recordId, record.currentVersion) : null;
         const committedAt = this.clock();
@@ -388,23 +432,26 @@ export class RecordsService {
         const flagsNow = (await this.repo.getRecord(recordId)).flags || [];
         const remaining = openFlags(flagsNow, version.data);
         const settledFlags = remaining.length !== flagsNow.length ? { flags: remaining } : {};
-        await this.repo.commit({
-            recordId, versionNumber,
-            versionPatch: {
-                approvedById: by.id, approvedByName: by.name ?? null, committedAt, previousSeal: sealed.previousSeal, seal,
-                reviewComment: comment || null, updatedAt: committedAt,
-                changes: [...(version.changes || []), this.entry(actor, { action: 'commit', via: service, ...(comment ? { comment } : {}) })]
-            },
-            recordPatch: {
-                status: 'committed', currentVersion: versionNumber, draftVersion: null, draftState: null, updatedAt: committedAt,
-                searchText: searchTextOf(record, version.data), ...settledFlags
-            },
-            supersede: previous?.versionNumber
+        // the commit and its event are committed together (API-613)
+        await this.atomic(async () => {
+            await this.repo.commit({
+                recordId, versionNumber,
+                versionPatch: {
+                    approvedById: by.id, approvedByName: by.name ?? null, committedAt, previousSeal: sealed.previousSeal, seal,
+                    reviewComment: comment || null, updatedAt: committedAt,
+                    changes: [...(version.changes || []), this.entry(actor, { action: 'commit', via: service, ...(comment ? { comment } : {}) })]
+                },
+                recordPatch: {
+                    status: 'committed', currentVersion: versionNumber, draftVersion: null, draftState: null, updatedAt: committedAt,
+                    searchText: searchTextOf(record, version.data), ...settledFlags
+                },
+                supersede: previous?.versionNumber
+            });
+            await this.events?.publish('records.record.committed', {
+                recordId, recordNo: record.recordNo, versionNumber, seal, previousSeal: sealed.previousSeal,
+                submittedBy: { id: version.submittedById, name: version.submittedByName }, approvedBy: actor
+            }, { actor });
         });
-        await this.events?.publish('records.record.committed', {
-            recordId, recordNo: record.recordNo, versionNumber, seal, previousSeal: sealed.previousSeal,
-            submittedBy: { id: version.submittedById, name: version.submittedByName }, approvedBy: actor
-        }, { actor });
         return this.getRecord(recordId);
     }
 
@@ -415,10 +462,13 @@ export class RecordsService {
         if (version.state !== 'in_review') throw new ConflictError(`Version ${versionNumber} is not in review (${version.state})`);
         if (!String(comment || '').trim()) throw new BadRequestError('A rejection needs a comment');
         const actor = { id: by.id, name: by.name };
-        await this.backToDraft(record, version, this.entry(actor, { action: 'reject', via: service, comment }), { reviewComment: comment });
-        await this.events?.publish('records.draft.rejected', {
-            recordId, recordNo: record.recordNo, versionNumber, comment, submittedBy: { id: version.submittedById, name: version.submittedByName }
-        }, { actor });
+        // back to draft and the event, committed together (API-613)
+        await this.atomic(async () => {
+            await this.backToDraft(record, version, this.entry(actor, { action: 'reject', via: service, comment }), { reviewComment: comment });
+            await this.events?.publish('records.draft.rejected', {
+                recordId, recordNo: record.recordNo, versionNumber, comment, submittedBy: { id: version.submittedById, name: version.submittedByName }
+            }, { actor });
+        });
         return this.getRecord(recordId);
     }
 
@@ -467,11 +517,14 @@ export class RecordsService {
                 message: `Document updated: ${edrmsNo ?? pinned[0].edrmsNo} v${from} → v${version}. Review needed.`
             };
             const flags = [...(record.flags || []).filter(f => f !== existing), flag];
-            await this.repo.updateRecord(recordId, { flags });
-            // the open draft's checks show it at once (documents_current); its data is unchanged
-            const draft = versions.find(v => v.versionNumber === record.draftVersion && v.state === 'draft');
-            if (draft) await this.repo.updateVersion(recordId, draft.versionNumber, { checks: checksFor(draft.data, { flags }) });
-            await this.events?.publish('records.record.flagged', { recordId, recordNo: record.recordNo, flag });
+            // the flag and its event are committed together (API-613)
+            await this.atomic(async () => {
+                await this.repo.updateRecord(recordId, { flags });
+                // the open draft's checks show it at once (documents_current); its data is unchanged
+                const draft = versions.find(v => v.versionNumber === record.draftVersion && v.state === 'draft');
+                if (draft) await this.repo.updateVersion(recordId, draft.versionNumber, { checks: checksFor(draft.data, { flags }) });
+                await this.events?.publish('records.record.flagged', { recordId, recordNo: record.recordNo, flag });
+            });
             flagged.push(recordId);
         }
         return flagged;
@@ -481,18 +534,22 @@ export class RecordsService {
 
     /**
      * Every committed version, newest first: who submitted and approved it, when, what it changed
-     * against the version before, and whether its seal and chain verify.
+     * against the version before, whether its seal and chain verify, and its anchoring status
+     * (`waiting` for the next anchoring, `anchored`, `confirmed`; null when the audit service cannot say).
      */
     async history(recordId) {
         const record = await this.requireRecord(recordId);
         const committed = (await this.repo.listVersions(recordId)).filter(v => ['committed', 'superseded'].includes(v.state));
         const seals = verifyChain(record, committed);
+        const key = (v) => `record-version:${recordId}:${v.versionNumber}`;
+        const anchoring = this.anchoring ? await this.anchoring.statusOf(committed.map(key)) : {};
         const versions = committed.map((v, i) => ({
             versionNumber: v.versionNumber, state: v.state, current: v.versionNumber === record.currentVersion,
             submittedAt: v.submittedAt ?? null, submittedById: v.submittedById ?? null, submittedByName: v.submittedByName ?? null,
             approvedById: v.approvedById ?? null, approvedByName: v.approvedByName ?? null, committedAt: v.committedAt, reviewComment: v.reviewComment ?? null,
             seal: v.seal, previousSeal: v.previousSeal ?? null, intact: seals[i].intact, linked: seals[i].linked,
-            diff: diffVersions(i ? committed[i - 1].data : null, v.data)
+            diff: diffVersions(i ? committed[i - 1].data : null, v.data),
+            anchoring: anchoring[key(v)] ?? null
         }));
         return { recordId, recordNo: record.recordNo, label: record.label, intact: seals.every(x => x.intact && x.linked), flags: record.flags || [], versions: versions.reverse() };
     }
@@ -590,15 +647,31 @@ export class RecordsService {
         };
     }
 
-    async listRecords({ q, status, limit, offset } = {}) {
+    /** `match: 'parcel'`: `q` against the record number and the parcel label only, never owners (the Anchorings search, API-697). */
+    async listRecords({ q, status, match, limit, offset } = {}) {
         if (status && !['draft', 'committed', 'in_review', 'needs_review'].includes(status)) throw new BadRequestError(`Unknown status "${status}"`);
         // in_review / needs_review filter in the service: small lists, simple repos
         const base = ['draft', 'committed'].includes(status) ? status : undefined;
-        const res = await this.repo.listRecords({ q, status: base, limit: status && !base ? 1000 : limit, offset: status && !base ? 0 : offset });
+        const res = await this.repo.listRecords({ q, status: base, match, limit: status && !base ? 1000 : limit, offset: status && !base ? 0 : offset });
         let items = res.items;
         if (status === 'in_review') items = items.filter(r => r.draftState === 'in_review');
         if (status === 'needs_review') items = items.filter(r => (r.flags || []).length);
         return { items: items.map(r => this.summary(r)), total: status && !base ? items.length : res.total };
+    }
+
+    /** Every committed version's seal, oldest first, a page at a time: the audit service's backfill (API-669). */
+    listSeals({ after = null, limit = 500 } = {}) { return this.repo.listSeals({ after, limit }); }
+
+    /**
+     * For the audit service's Anchorings screens: the documents each committed land record version is
+     * made of (API-696), the committed versions that pin the given documents (API-697), and the
+     * number and label of each land record asked for or named by them.
+     */
+    async lookup({ recordIds = [], versions = [], pinning = [] }) {
+        const [made, pins] = await Promise.all([this.repo.versionDocuments(versions), this.repo.findCommittedPinning(pinning)]);
+        const named = [...recordIds, ...versions.map(v => v.recordId), ...pins.map(p => p.recordId)];
+        const records = await this.repo.recordLabels([...new Set(named)]);
+        return { records, versions: made, pinnedBy: pins };
     }
 
     async getRecord(id) {

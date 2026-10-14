@@ -70,7 +70,7 @@ test('a record filed from an encrypted scan opens as the original and its integr
     await page.getByLabel('Search documents').fill(doc.edrmsNo);
     await page.locator('button.drow', { hasText: doc.edrmsNo }).click();
     await apiIdle();
-    await page.getByRole('button', { name: 'Check integrity' }).click();
+    await page.getByRole('button', { name: 'Check integrity', exact: true }).click();
     await expect(page.locator('.banner.ok')).toContainText('Integrity verified · version 1.0');
     await evidence(page, 'API-640', `Auditor: a record stored encrypted (${MODE === 'real' ? 'keys from OpenBao' : 'test keys'}) opens and its integrity is verified`);
     await page.context().close();

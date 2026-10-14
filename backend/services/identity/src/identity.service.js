@@ -75,8 +75,11 @@ export class IdentityService {
 
     async log(kind, action, target, detail, actor = SYSTEM) {
         const entry = { time: this.clock(), actorId: actor.id ?? null, actor: actor.name, kind, action, target: target || '', detail: detail || '' };
-        await this.repo.addAccessEvent(entry);
-        await this.events.publish(`identity.${kind}`, { action, target: entry.target, detail: entry.detail }, { actor });
+        // the access-log entry and its event are committed together (API-613)
+        await this.events.atomic(async () => {
+            await this.repo.addAccessEvent(entry);
+            await this.events.publish(`identity.${kind}`, { action, target: entry.target, detail: entry.detail }, { actor });
+        });
     }
 
     async requireUser(id) {
@@ -230,7 +233,8 @@ export class IdentityService {
         // a minute of slack for clocks that differ between services
         const expiresAt = new Date(now.getTime() + (this.config.accessTtlSeconds + 60) * 1000);
         try {
-            await this.events?.publish(SESSION_REVOKED, { userId, sid, reason, revokedAt: now.toISOString(), expiresAt: expiresAt.toISOString() });
+            // broadcast only (API-613): every service must hear it now; it is not kept in the event stream
+            await this.events?.publish(SESSION_REVOKED, { userId, sid, reason, revokedAt: now.toISOString(), expiresAt: expiresAt.toISOString() }, { durable: false });
         } catch { /* the event bus logs its own failures */ }
     }
 
@@ -369,10 +373,12 @@ export class IdentityService {
         const roleText = this.roleLabels(roleIds, ctx.roles);
         const mail = await this.emailInvitation(user, token, expiresAt, roleText, actor, false);
         const conflicts = sodConflicts(effectivePerms(roleIds, ctx.roles), ctx.sod);
-        await this.log('user', 'Invited', user.name, `${office ? office.code : 'National'} · Roles: ${roleText}${conflictNote(conflicts)} · ${emailNote(mail)}`, actor);
         // The link is a credential until used: it goes to the user by email, and to the admin only
         // when IDENTITY_EXPOSE_INVITE_LINKS=true (dev). Never into events or logs.
-        await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, emailSent: mail.sent }, { actor });
+        await this.events.atomic(async () => {
+            await this.log('user', 'Invited', user.name, `${office ? office.code : 'National'} · Roles: ${roleText}${conflictNote(conflicts)} · ${emailNote(mail)}`, actor);
+            await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, emailSent: mail.sent }, { actor });
+        });
         return { user: this.publicUser(user, ctx), email: mail, ...(this.config.exposeInviteLinks ? { inviteUrl: this.inviteLink(token) } : {}) };
     }
 
@@ -386,8 +392,10 @@ export class IdentityService {
         await this.repo.updateUser(id, { inviteHash: sha256(token), inviteExpiresAt: expiresAt });
         const ctx = await this.context();
         const mail = await this.emailInvitation(user, token, expiresAt, this.roleLabels(user.roles, ctx.roles), actor, true);
-        await this.log('user', 'Invitation resent', user.name, `${user.email} · ${emailNote(mail)}`, actor);
-        await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, emailSent: mail.sent }, { actor });
+        await this.events.atomic(async () => {
+            await this.log('user', 'Invitation resent', user.name, `${user.email} · ${emailNote(mail)}`, actor);
+            await this.events.publish('identity.user.invited', { userId: user.id, email: user.email, name: user.name, emailSent: mail.sent }, { actor });
+        });
         return { email: mail, ...(this.config.exposeInviteLinks ? { inviteUrl: this.inviteLink(token) } : {}) };
     }
 
@@ -506,6 +514,12 @@ export class IdentityService {
     }
 
     // ---------------------------------------------------------------- policies
+
+    /** The policies other services enforce, read each time they need them (API-663): only those, no settings. */
+    async effectivePolicies() {
+        const { policies } = await this.context();
+        return { fourEyes: policies.fourEyes !== false };
+    }
 
     async getPolicySettings() {
         const { policies, sod } = await this.context();

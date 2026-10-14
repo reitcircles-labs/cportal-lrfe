@@ -14,6 +14,7 @@ nginx and the gateway; testers on a laptop use the SSH tunnel.
 | bpm | 3503 | `bpm` |
 | intake | 3504 | `intake` |
 | land-records | 3505 | `records` |
+| audit | 3506 | `audit` |
 
 Needs: Node ≥ 20 and PostgreSQL 15 on the same machine.
 
@@ -39,6 +40,7 @@ Needs: Node ≥ 20 and PostgreSQL 15 on the same machine.
    CREATE SCHEMA bpm      AUTHORIZATION ladmin;
    CREATE SCHEMA intake   AUTHORIZATION ladmin;
    CREATE SCHEMA records  AUTHORIZATION ladmin;
+   CREATE SCHEMA audit    AUTHORIZATION ladmin;
    ```
 
    For example: `sudo -u postgres psql -d testdb -c "CREATE SCHEMA records AUTHORIZATION ladmin;"`.
@@ -50,11 +52,11 @@ may not create it*.
 ## 2. One `.env` per service
 
 Each service reads the `.env` in its own folder (`services/<name>/.env`), also under `npm run dev`.
-A service without one does not start. Create all six from the template:
+A service without one does not start. Create all seven from the template:
 
 ```bash
 cd backend
-for s in gateway identity edrms bpm intake land-records; do cp -n .env_example services/$s/.env; done
+for s in gateway identity edrms bpm intake land-records audit; do cp -n .env_example services/$s/.env; done
 chmod 600 services/*/.env
 ```
 
@@ -67,12 +69,13 @@ are in `.gitignore` and must never be committed. In each file set:
 | `PORT` | the service's port (table above) | |
 | `JWT_SECRET` | the same new random value in every file (see step 3) | |
 | `DB_CONNECTION_STRING` | `postgres://ladmin:…@localhost:5432/testdb` | All services except the gateway; they share the database, each in its own schema |
-| `<SERVICE>_STORE` | `postgres` | `IDENTITY_STORE`, `EDRMS_STORE`, `BPM_STORE`, `INTAKE_STORE`, `RECORDS_STORE` |
+| `<SERVICE>_STORE` | `postgres` | `IDENTITY_STORE`, `EDRMS_STORE`, `BPM_STORE`, `INTAKE_STORE`, `RECORDS_STORE`, `AUDIT_STORE` |
 | `DB_SYNC` | `true` | Creates the service's tables on start (development and test; real migrations before production) |
 
 Service-specific settings (storage folders, mail, the AI provider, …) are described in the
 template's comments and in each service's README. For land-records, besides the shared ones:
 `RECORDS_COUNTRY_CODE=NA`, `EDRMS_URL=http://localhost:3502`, `BPM_URL=http://localhost:3503`.
+The audit service needs `EVENT_BUS_DRIVER=nats` (it reads every service's events), and the gateway `AUDIT_URL=http://localhost:3506`.
 
 ## 3. The JWT secret: one random value in every service
 
@@ -143,6 +146,88 @@ switched on stay readable as they are; only files stored afterwards are encrypte
 off, set `EDRMS_ENCRYPTION=off` / `INTAKE_ENCRYPTION=off`. `.env_example` keeps encryption off,
 because a service set to `bao` does not start without its login settings.
 
+## 4b. Cardano node for the audit service (optional)
+
+The audit service anchors its proofs on Cardano (design: [`services/audit/README.md`](services/audit/README.md)).
+It talks to the chain either through **Blockfrost** (`CARDANO_PROVIDER=blockfrost`, a project key, no
+node to run) or through the portal's **own node and Ogmios** (`CARDANO_PROVIDER=ogmios`). For the own
+node on a development or test server:
+
+```bash
+cd backend
+npm run cardano -- --dev     # first run: downloads cardano-node and Ogmios, then syncs the preview chain
+npm run cardano:status      # in another terminal: sync, time left, disk, warnings (--log 50, --follow)
+```
+
+The node runs as a client only (it accepts no connections), Ogmios listens on `127.0.0.1:1337`,
+and the chain is kept in `~/data/cportal-lrfe/cardano/preview`, outside git. The first sync took
+10 h 49 min on an 8-core server with 31 GB of RAM, and the chain needs about 16 GB of disk (preview,
+October 2026; it grows). Later starts continue where it stopped, and `npm run dev` starts it when
+the audit service is set to `ogmios`. Production rules (dedicated user, mainnet resources):
+[Cardano node: installation rules](scripts/README.md#cardano-node-installation-rules).
+
+**The anchoring wallet.** Its key is created in OpenBao (`audit-anchor`, ed25519, never exportable)
+by `npm run bao -- --dev`, together with the audit service's AppRole. Copy the printed `audit`
+settings into `services/audit/.env`:
+
+```bash
+CARDANO_PROVIDER=ogmios        # or blockfrost (below)
+CARDANO_NETWORK=preview
+BAO_ADDR=http://127.0.0.1:8200
+BAO_ROLE_ID=…                  # printed by npm run bao -- --dev
+BAO_SECRET_ID_FILE=/home/<user>/data/cportal-lrfe/openbao/approle/audit-secret-id
+```
+
+Then show the wallet's address and fund it from the preview faucet
+(https://docs.cardano.org/cardano-testnets/tools/faucet, network *Preview*), and anchor one test root:
+
+```bash
+npm run anchor:test -w @lrfe/audit                # provider, address, balance
+npm run anchor:test -w @lrfe/audit -- --submit    # anchors a random root, follows it until confirmed
+```
+
+With `ogmios` the node must be in sync first (`npm run cardano:status`); until then anchoring
+waits and says so.
+
+**Earlier records into the audit tree.** On a new installation the audit service puts the seals of
+records and documents that already exist into its tree by itself before its first anchoring. Where
+its tree already has entries (it ran before anchoring was switched on), run it once by hand, with
+land-records and edrms running: `npm run audit:backfill`. Running it again adds nothing.
+
+On a large existing database, create the two indexes the backfill reads by beforehand, without
+blocking writes (the services otherwise create them at start, which locks the table while it builds):
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_version_seal_order" ON edrms.document_version ("createdAt", "documentId", "versionNumber");
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "record_version_seal_order" ON records.record_version ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL;
+```
+
+Once `CARDANO_PROVIDER` is set, the audit service anchors by itself: every hour in which something
+was recorded (`ANCHOR_PERIOD=1h`), followed until it is `ANCHOR_CONFIRMATIONS=10` blocks deep. Its
+log says `root anchored` and `anchoring confirmed`; each anchoring is a row in `audit.anchor`.
+
+**Check that anchoring works** without the logs: sign in as an administrator, **Administration →
+Anchoring health** (the wallet and its funds, whether the blockchain can be reached and is in sync,
+the last and next anchoring, trail gaps, with warnings), and **Anchorings** in the menu (every batch,
+with a link to a public explorer). Anyone given a proof checks it with the public page
+`#/check-a-proof` (no sign-in): it shows this installation's wallet address and offers the offline
+verifier (`GET /api/audit/verifier/lrfe-verify.mjs`).
+
+`CARDANO_PROVIDER=test` is an in-memory test blockchain for the end-to-end tests only: the service
+refuses to start with it unless `NODE_ENV=test`. Never use it on a server.
+
+**Blockfrost instead of the own node.** Create a project for *Cardano preview* on blockfrost.io and
+keep its key in a file only you can read (the service refuses a key file others can read):
+
+```bash
+mkdir -p -m 700 ~/data/cportal-lrfe/blockfrost
+( umask 077; read -rsp 'Blockfrost preview project key: ' k; echo; printf '%s\n' "$k" > ~/data/cportal-lrfe/blockfrost/preview-project-id )
+```
+
+and in `services/audit/.env`: `CARDANO_PROVIDER=blockfrost` and
+`BLOCKFROST_PROJECT_ID_FILE=/home/<user>/data/cportal-lrfe/blockfrost/preview-project-id`.
+No node is needed then. The key never appears on screen or in logs.
+
 ## 5. First start
 
 ```bash
@@ -151,7 +236,8 @@ npm install
 npm run dev          # all services + NATS + OpenBao (edrms and intake encrypt with it); Ctrl+C stops
 ```
 
-On the first start each service creates its tables, and identity creates the roles and the
+On the first start each service creates its tables (including its `outbox` of events waiting to be
+published to NATS's stored event stream), and identity creates the roles and the
 bootstrap administrator (`BOOTSTRAP_ADMIN_*`, see [identity](services/identity/README.md#first-sign-in)).
 
 With `EXTRACTION_PROVIDER=gemini` and `INTAKE_RUN_WORKER=true`, intake starts reading any queued
@@ -162,7 +248,7 @@ not do that.
 
 ```bash
 # every service answers
-for p in 3500 3501 3502 3503 3504 3505; do curl -s http://127.0.0.1:$p/health; echo; done
+for p in 3500 3501 3502 3503 3504 3505 3506; do curl -s http://127.0.0.1:$p/health; echo; done
 
 # every service listens on 127.0.0.1 only (no 0.0.0.0 or public address)
 ss -ltn | grep -E ':350[0-5]\b'
@@ -172,7 +258,7 @@ ss -ltn | grep 8200
 
 # PostgreSQL only on localhost, and each schema has its tables
 ss -ltn | grep 5432
-psql "postgres://ladmin:…@localhost:5432/testdb" -c '\dt identity.*' -c '\dt records.*'
+psql "postgres://ladmin:…@localhost:5432/testdb" -c '\dt identity.*' -c '\dt records.*' -c '\dt audit.*'
 ```
 
 Then sign in to the app as the bootstrap administrator.

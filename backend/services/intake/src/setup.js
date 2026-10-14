@@ -1,5 +1,5 @@
 import dns from 'node:dns';
-import { createEventBus, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck } from '@lrfe/common';
+import { createEventBus, createSequelize, createSequelizeOutbox, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck } from '@lrfe/common';
 import { createEncryptingStore, createLocalStore, createMemoryStore, createS3Store, keyringFromEnv } from '@lrfe/storage';
 import { IntakeService } from './intake.service.js';
 import { createEdrmsClient } from './edrms-client.js';
@@ -17,14 +17,17 @@ export function setupFromEnv({ logger = console } = {}) {
     // over IPv6. NETWORK_PREFER_IPV4=true makes outgoing calls (Gemini, EDRMS) try IPv4 first.
     if (envBool('NETWORK_PREFER_IPV4', false)) dns.setDefaultResultOrder('ipv4first');
     const checks = [];
-    let repo, sequelize;
+    let repo, sequelize, outbox;
     if (envOneOf('INTAKE_STORE', ['postgres', 'memory'], 'postgres') === 'memory') {
         repo = createMemoryRepo();
     } else {
         sequelize = createSequelize();
         repo = createSequelizeRepo(sequelize);
+        // events are written in the same transaction as the change, then published (API-613);
+        // the worker process relays them too: the stream de-duplicates by event id
+        outbox = createSequelizeOutbox(sequelize, SCHEMA);
         checks.push(() => healthCheck(sequelize));
-        if (envBool('DB_SYNC', false)) checks.push(async () => { await ensureSchema(sequelize, SCHEMA); await repo.sync(); });
+        if (envBool('DB_SYNC', false)) checks.push(async () => { await ensureSchema(sequelize, SCHEMA); await repo.sync(); await outbox.sync(); });
     }
 
     const storage = envOneOf('INTAKE_STORAGE', ['s3', 'local', 'memory'], 'local');
@@ -64,7 +67,7 @@ export function setupFromEnv({ logger = console } = {}) {
 
     const service = new IntakeService({
         repo, store, edrms, checker,
-        events: createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'intake', logger }),
+        events: createEventBus({ driver: env('EVENT_BUS_DRIVER', 'log'), source: 'intake', logger, outbox }),
         config: { registry: env('INTAKE_REGISTRY_CODE', 'WDH') }
     });
     const budget = env('EXTRACTION_MONTHLY_BUDGET_USD', '50');

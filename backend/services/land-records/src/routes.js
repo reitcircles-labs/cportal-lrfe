@@ -1,3 +1,5 @@
+import { BadRequestError, ForbiddenError, UnauthorizedError, describeGuard } from '@lrfe/common';
+
 const idParams = (extra = {}) => ({
     params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' }, ...extra } }
 });
@@ -8,17 +10,31 @@ const actorOf = (req) => ({ id: req.user.sub, name: req.user.name });
 
 export async function recordsRoutes(app, { service }) {
     const canView = app.requirePerm('record.view');
+    // users who may view records, and the audit service: verifying a proof (API-658), reading a
+    // version's approver and documents for a sign-off or finding (API-659), the evidence pack (API-660),
+    // the Audit screen's list (API-661)
+    async function canViewOrAudit(req, reply) {
+        try { await req.jwtVerify(); } catch { throw new UnauthorizedError('Invalid or expired token'); }
+        if (req.user.typ === 'service') {
+            if (req.user.sub !== 'audit') throw new ForbiddenError('Not permitted', { service: req.user.sub });
+            return;
+        }
+        return canView(req, reply);
+    }
+    describeGuard(canViewOrAudit, { kind: 'user-or-service', allOf: ['record.view'], services: ['audit'] });
 
     app.get('/records/catalogue', { onRequest: app.authenticate }, async () => service.catalogue());
 
+    // also for the audit service: the land records list of the Audit screen (API-661)
     app.get('/records', {
-        onRequest: canView,
+        onRequest: canViewOrAudit,
         schema: {
             querystring: {
                 type: 'object', additionalProperties: false,
                 properties: {
                     q: { type: 'string', maxLength: 200 },
                     status: { type: 'string', enum: ['draft', 'committed', 'in_review', 'needs_review'] },
+                    match: { type: 'string', enum: ['all', 'parcel'], default: 'all' },
                     limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
                     offset: { type: 'integer', minimum: 0, default: 0 }
                 }
@@ -138,9 +154,45 @@ export async function recordsRoutes(app, { service }) {
 
     // ------------------------------------------------ reading
 
-    app.get('/records/:id', { onRequest: canView, schema: idParams() }, async (req) => service.getRecord(req.params.id));
+    // land record labels, the documents each committed version is made of, and the committed versions
+    // that pin given documents, for the audit service's Anchorings screens (API-696, API-697)
+    app.post('/records/lookup', {
+        onRequest: app.requireService('audit'),
+        schema: {
+            body: {
+                type: 'object', additionalProperties: false,
+                properties: {
+                    recordIds: { type: 'array', maxItems: 1000, items: { type: 'string', format: 'uuid' } },
+                    pinning: { type: 'array', maxItems: 100, items: { type: 'string', format: 'uuid' } },
+                    versions: {
+                        type: 'array', maxItems: 1000,
+                        items: { type: 'object', required: ['recordId', 'versionNumber'], additionalProperties: false, properties: { recordId: { type: 'string', format: 'uuid' }, versionNumber: { type: 'integer', minimum: 1 } } }
+                    }
+                }
+            }
+        }
+    }, async (req) => service.lookup(req.body));
+
+    // every committed version's seal, oldest first, for the audit service's backfill (API-669)
+    app.get('/records/seals', {
+        onRequest: app.requireService('audit'),
+        schema: { querystring: { type: 'object', additionalProperties: false, properties: { after: { type: 'string', maxLength: 300 }, limit: { type: 'integer', minimum: 1, maximum: 1000, default: 500 } } } }
+    }, async (req) => {
+        // `after`/`next`: an opaque cursor, the position of the last seal read (base64url JSON)
+        let after = null;
+        if (req.query.after) {
+            try { after = JSON.parse(Buffer.from(req.query.after, 'base64url').toString()); } catch { after = null; }
+            const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!after || Number.isNaN(Date.parse(after.at)) || !uuid.test(after.id ?? '') || !Number.isInteger(after.version)) throw new BadRequestError('Not a cursor from this list');
+        }
+        const items = await service.listSeals({ after, limit: req.query.limit });
+        const last = items.at(-1);
+        return { items, next: items.length === req.query.limit ? Buffer.from(JSON.stringify({ at: last.at, id: last.recordId, version: last.version })).toString('base64url') : null };
+    });
+
+    app.get('/records/:id', { onRequest: canViewOrAudit, schema: idParams() }, async (req) => service.getRecord(req.params.id));
     app.get('/records/:id/suggestions', { onRequest: canView, schema: idParams() }, async (req) => service.suggestions(req.params.id));
-    app.get('/records/:id/versions', { onRequest: canView, schema: idParams() }, async (req) => service.listVersions(req.params.id));
-    app.get('/records/:id/versions/:n', { onRequest: canView, schema: idParams(versionParam) }, async (req) => service.getVersion(req.params.id, req.params.n));
-    app.get('/records/:id/verify', { onRequest: canView, schema: idParams() }, async (req) => service.verify(req.params.id));
+    app.get('/records/:id/versions', { onRequest: canViewOrAudit, schema: idParams() }, async (req) => service.listVersions(req.params.id));
+    app.get('/records/:id/versions/:n', { onRequest: canViewOrAudit, schema: idParams(versionParam) }, async (req) => service.getVersion(req.params.id, req.params.n));
+    app.get('/records/:id/verify', { onRequest: canViewOrAudit, schema: idParams() }, async (req) => service.verify(req.params.id));
 }

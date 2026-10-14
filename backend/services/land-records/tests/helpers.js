@@ -45,11 +45,13 @@ export function makeClock(start = Date.parse('2026-10-05T08:00:00Z')) {
     return clock;
 }
 
-export function makeService() {
+/** `tap(event)` sees every event of every service in the test (the audit service's tests). */
+export function makeService({ tap } = {}) {
     const repo = createMemoryRepo();
     const events = createEventBus({ driver: 'memory', source: 'land-records' });
     const published = [];
     events.subscribe('*', e => published.push(e));
+    if (tap) events.subscribe('*', tap);
     const clock = makeClock();
     const service = new RecordsService({ repo, events, clock });
     return { repo, service, published, clock };
@@ -86,7 +88,7 @@ export async function makeHttp() {
  * land-records with a real in-process edrms (its routes, its search) holding the testers' sample
  * documents for Erf 1873 and one other parcel (edrms tests/helpers.js fileSamples).
  */
-export async function makeWithEdrms() {
+export async function makeWithEdrms({ tap } = {}) {
     const { createServiceTokenSigner } = await import('@lrfe/common');
     const { createMemoryStore } = await import('@lrfe/storage');
     const { EdrmsService } = await import('../../edrms/src/edrms.service.js');
@@ -96,6 +98,7 @@ export async function makeWithEdrms() {
     const { createEdrmsClient } = await import('../src/edrms-client.js');
 
     const edrmsService = new EdrmsService({ repo: edrmsRepo(), store: createMemoryStore(), events: createEventBus({ driver: 'memory', source: 'edrms' }) });
+    if (tap) edrmsService.events.subscribe('*', tap);
     const docs = await fileSamples(edrmsService);
     const edrmsApp = await buildEdrms({ service: edrmsService, jwtSecret: SECRET });
     await edrmsApp.ready();
@@ -105,7 +108,7 @@ export async function makeWithEdrms() {
         return { status: r.statusCode, text: async () => r.body };
     };
     const edrms = createEdrmsClient({ baseUrl: 'http://edrms', serviceToken: createServiceTokenSigner({ secret: SECRET, service: 'land-records' }), fetchImpl });
-    const ctx = makeService();
+    const ctx = makeService({ tap });
     ctx.service.edrms = edrms;
     /** A document as it is pinned into a record version (README.md section 2). */
     ctx.pin = async (doc) => {
@@ -121,8 +124,8 @@ export async function makeWithEdrms() {
  * "land-record-review" definition), wired both ways over app.inject: land-records starts and
  * withdraws reviews in bpm; bpm's connectors commit or reject in land-records.
  */
-export async function makeWithReview() {
-    const ctx = await makeWithEdrms();
+export async function makeWithReview({ tap } = {}) {
+    const ctx = await makeWithEdrms({ tap });
     const { signServiceToken, createServiceTokenSigner } = await import('@lrfe/common');
     const { BpmEngine } = await import('../../bpm/src/engine/engine.js');
     const { createMemoryRepo: bpmRepo } = await import('../../bpm/src/repo/memory.js');
@@ -134,6 +137,7 @@ export async function makeWithReview() {
     const app = await buildApp({ service: ctx.service, jwtSecret: SECRET });
     await app.ready();
     const engine = new BpmEngine({ repo: bpmRepo(), events: createEventBus({ driver: 'memory', source: 'bpm' }) });
+    if (tap) engine.events.subscribe('*', tap);
     const bpm = await buildBpm({ engine, jwtSecret: SECRET });
     const inject = (target) => async (url, { method, headers, body }) => {
         const u = new URL(url);

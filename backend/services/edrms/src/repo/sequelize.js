@@ -1,5 +1,5 @@
 import { Op, UniqueConstraintError } from 'sequelize';
-import { ConflictError } from '@lrfe/common';
+import { ConflictError, inTransaction } from '@lrfe/common';
 import { defineModels, SCHEMA } from './models.js';
 import { PREFIX_MIN, SIMILARITY, fuzzy, normalizeSearch, searchTextOf } from '../search.js';
 import { normalizeRef } from '../catalogue.js';
@@ -39,6 +39,8 @@ export function createSequelizeRepo(sequelize) {
             // table first existed are added here, idempotently, until real migrations exist.
             await sequelize.query(`ALTER TABLE "${SCHEMA}"."document_version" ADD COLUMN IF NOT EXISTS "provenance" JSONB`);
             await sequelize.query(`ALTER TABLE "${SCHEMA}"."document_version" ADD COLUMN IF NOT EXISTS "encryption" JSONB`);   // API-638
+            // the audit service's backfill reads seals in this order (API-669)
+            await sequelize.query(`CREATE INDEX IF NOT EXISTS "document_version_seal_order" ON "${SCHEMA}"."document_version" ("createdAt", "documentId", "versionNumber")`);
             // Search (API-645): the normalised text, a full-text vector generated from it, their indexes
             const doc = `"${SCHEMA}"."document"`;
             await sequelize.query(`ALTER TABLE ${doc} ADD COLUMN IF NOT EXISTS "searchText" TEXT NOT NULL DEFAULT ''`);
@@ -59,7 +61,7 @@ export function createSequelizeRepo(sequelize) {
         },
 
         async createDocument({ year, build }) {
-            return uniqueToConflict(() => sequelize.transaction(async (transaction) => {
+            return uniqueToConflict(() => inTransaction(sequelize, async (transaction) => {
                 // Row-locked increment: the number is only consumed if the whole insert commits.
                 const [[{ last }]] = await sequelize.query(
                     `INSERT INTO "${SCHEMA}"."counter" ("year", "last") VALUES (:year, 1)
@@ -109,11 +111,20 @@ export function createSequelizeRepo(sequelize) {
         async listVersions(documentId) {
             return (await m.Version.findAll({ where: { documentId }, order: [['versionNumber', 'ASC']] })).map(version);
         },
+        /** Every version's seal, oldest first, after the cursor `after` (API-669): an index range scan, however deep. */
+        async listSeals({ after = null, limit = 500 } = {}) {
+            const where = after ? sequelize.literal(`("createdAt", "documentId", "versionNumber") > (${sequelize.escape(new Date(after.at))}, ${sequelize.escape(after.id)}::uuid, ${Number(after.version)})`) : undefined;
+            const rows = await m.Version.findAll({
+                where, attributes: ['documentId', 'versionNumber', 'seal', 'createdAt'],
+                order: [['createdAt', 'ASC'], ['documentId', 'ASC'], ['versionNumber', 'ASC']], limit
+            });
+            return rows.map(r => ({ documentId: r.documentId, version: r.versionNumber, seal: r.seal, at: r.createdAt }));
+        },
         async getVersion(documentId, versionNumber) {
             return version(await m.Version.findOne({ where: { documentId, versionNumber } }));
         },
         async addVersion(documentId, expectedCurrent, v, patch) {
-            return uniqueToConflict(() => sequelize.transaction(async (transaction) => {
+            return uniqueToConflict(() => inTransaction(sequelize, async (transaction) => {
                 const [count] = await m.Document.update(patch, { where: { id: documentId, currentVersion: expectedCurrent }, transaction });
                 if (count !== 1) throw new ConflictError('The document was changed by someone else. Reload and try again.');
                 await m.Version.create(v, { transaction });

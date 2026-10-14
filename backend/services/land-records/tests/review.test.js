@@ -204,3 +204,74 @@ describe('review and commit (API-647)', () => {
         assert.equal((await ctx.service.getRecord(r.id)).draftState, 'draft');
     });
 });
+
+describe('four-eyes finalization: the reviewer who filed the documents may not approve (API-663)', () => {
+    /** Aina Mwandingi filed the sample documents (edrms tests' REVIEWER) and here can also finalize records. */
+    const aina = { id: 'u3', name: 'Aina Mwandingi', perms: ['record.view', 'record.finalize'] };
+    const policy = { fourEyes: true };
+    const withPolicy = async () => {
+        const ctx = await makeWithReview();
+        ctx.service.identity = { policies: async () => ({ ...policy }) };
+        return ctx;
+    };
+
+    it('with the policy on, the filing reviewer gets no task and cannot approve; another person can', async () => {
+        policy.fourEyes = true;
+        const ctx = await withPolicy();
+        let r = await readyDraft(ctx);
+        r = await ctx.service.submit(r.id, { revision: r.draft.revision }, rec);
+        assert.deepEqual(await ctx.inbox(aina), []);
+        const [task] = await ctx.inbox(users.sup);
+        const refused = await ctx.decide(aina, task.id, { outcome: 'approved' });
+        assert.equal(refused.statusCode, 403);
+        assert.match(refused.json().message, /four-eyes/);
+        assert.equal((await ctx.decide(users.sup, task.id, { outcome: 'approved' })).json().instance.outcome, 'committed');
+    });
+
+    it('with the policy off, the filing reviewer can approve', async () => {
+        policy.fourEyes = false;
+        const ctx = await withPolicy();
+        let r = await readyDraft(ctx);
+        r = await ctx.service.submit(r.id, { revision: r.draft.revision }, rec);
+        const [task] = await ctx.inbox(aina);
+        assert.ok(task, 'the filing reviewer gets the task');
+        assert.equal((await ctx.decide(aina, task.id, { outcome: 'approved' })).json().instance.outcome, 'committed');
+    });
+
+    it('switching the policy takes effect for the next submission, and on approval also for a review already open', async () => {
+        policy.fourEyes = false;
+        const ctx = await withPolicy();
+        let r = await readyDraft(ctx);
+        r = await ctx.service.submit(r.id, { revision: r.draft.revision }, rec);
+        assert.equal((await ctx.inbox(aina)).length, 1);                        // created while the policy was off
+        policy.fourEyes = true;                                                    // switched on during the review
+        await assert.rejects(ctx.service.commitFromReview(r.id, 1, { by: actor(aina) }),
+            e => e.statusCode === 403 && /You filed a document of this land record/.test(e.message));
+        const sup2 = await ctx.inbox(users.sup);
+        assert.equal((await ctx.decide(users.sup, sup2[0].id, { outcome: 'approved' })).json().instance.outcome, 'committed');
+        // the next submission: excluded from the start
+        const changed = await ctx.service.openDraft(r.id, rec);
+        const draft = await ctx.service.updateDraft(r.id, { revision: changed.draft.revision, changes: { attributes: { zoning: 'General Residential 1' } } }, rec);
+        await ctx.service.submit(r.id, { revision: draft.draft.revision }, rec);
+        assert.deepEqual(await ctx.inbox(aina), []);
+    });
+
+    it('a correction of a document adds nobody: only who first filed it is excluded', async () => {
+        policy.fourEyes = true;
+        const ctx = await withPolicy();
+        await ctx.edrmsService.amendDocument({
+            id: ctx.docs.t2019.id, reason: 'Transferee 2 ID corrected from the original deed', changes: [{ k: 'tee2Id', v: '01112500380' }],
+            actor: { id: 'u8', name: 'Tangeni Iita' }, approvedBy: { id: 'u9', name: 'Willem Beukes' }
+        });
+        const r = await readyDraft(ctx);
+        assert.deepEqual(await ctx.service.fourEyesExcluded(r.draft.data), ['u3']);
+        policy.fourEyes = false;
+        assert.deepEqual(await ctx.service.fourEyesExcluded(r.draft.data), []);
+    });
+
+    it('without an identity service configured, only the submitter is excluded (as before)', async () => {
+        const ctx = await makeWithReview();
+        const r = await readyDraft(ctx);
+        assert.deepEqual(await ctx.service.fourEyesExcluded(r.draft.data), []);
+    });
+});

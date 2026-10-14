@@ -74,7 +74,7 @@ import { IntakeApi } from './api/intake.api';
             <span class="av sm" [title]="$safeNavigationMigration(auth.role()?.name)">{{ auth.role()?.initials }}</span>
           </header>
           <main class="content"><router-outlet /></main>
-          <footer class="small muted foot-note">Sign-in, administration, tasks, capture, verify and Documents use the live services. Dashboard, land records and audit still show demo data (fictitious names and deed references) until the land-records and audit services are connected.</footer>
+          <footer class="small muted foot-note">Sign-in, administration, tasks, capture, verify and Documents use the live services. Dashboard and land records still show demo data (fictitious names and deed references) until the land-records service is connected.</footer>
         </div>
       </div>
     }
@@ -146,7 +146,7 @@ export class AppComponent {
   /** Documents waiting for review (intake), refreshed on every navigation. */
   inReview = signal(0);
   drawer = signal(false);
-  isLogin = signal(/^#\/(login|invite)/.test(location.hash));
+  isLogin = signal(/^#\/(login|invite|check-a-proof)/.test(location.hash));
   title = signal('Dashboard');
   crumb = signal('Deeds Registry');
 
@@ -158,7 +158,8 @@ export class AppComponent {
       { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: this.inReview(), mine: role === 'rev', perm: 'verify.view' },
       { path: '/documents', label: 'Documents (EDRMS)', icon: 'file', badge: 0, mine: false, perm: ['capture.view', 'verify.view', 'record.view', 'audit.view'] },
       { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: 0, mine: role === 'rec', perm: 'record.view' },
-      { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud', perm: 'audit.view' }
+      { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud', perm: 'audit.view' },
+      { path: '/anchorings', label: 'Anchorings', icon: 'link', badge: 0, mine: false, perm: 'anchors.view' }
     ].filter(n => this.rbac.canAny(Array.isArray(n.perm) ? n.perm : [n.perm]));
   });
   adminNav = computed(() => {
@@ -168,13 +169,14 @@ export class AppComponent {
       { path: '/admin/offices', label: 'Offices', icon: 'building', perm: 'admin.offices', badge: 0 },
       { path: '/admin/roles', label: 'Roles & permissions', icon: 'lock', perm: 'admin.roles', badge: 0 },
       { path: '/admin/policies', label: 'Security policies', icon: 'shield', perm: 'admin.policies', badge: 0 },
-      { path: '/admin/log', label: 'Access log', icon: 'clock', perm: 'admin.users', badge: 0 }
+      { path: '/admin/log', label: 'Access log', icon: 'clock', perm: 'admin.users', badge: 0 },
+      { path: '/admin/anchoring', label: 'Anchoring health', icon: 'link', perm: 'admin.policies', badge: 0 }
     ].filter(n => this.rbac.can(n.perm));
   });
 
   constructor() {
     this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe((e: any) => {
-      this.isLogin.set(/^\/(login|invite)/.test(e.urlAfterRedirects));
+      this.isLogin.set(/^\/(login|invite|check-a-proof)/.test(e.urlAfterRedirects));
       let r = this.route.firstChild;
       while (r?.firstChild) r = r.firstChild;
       const d = r?.snapshot.data || {};

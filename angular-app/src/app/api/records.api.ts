@@ -1,3 +1,4 @@
+import type { Anchoring } from '../shared/anchoring';
 import { Injectable, inject } from '@angular/core';
 import { ApiService } from './api.service';
 
@@ -50,6 +51,7 @@ export interface HistoryVersion {
   versionNumber: number; state: 'committed' | 'superseded'; current: boolean;
   submittedAt: string | null; submittedByName: string | null; approvedByName: string | null; committedAt: string; reviewComment: string | null;
   seal: string; previousSeal: string | null; intact: boolean; linked: boolean; diff: Diff;
+  anchoring?: Anchoring | null;
 }
 export interface History { recordId: string; recordNo: string; label: string; intact: boolean; flags: Flag[]; versions: HistoryVersion[]; }
 export interface LandRecord extends RecordSummary { current: Version | null; draft: Version | null; draftDiff: Diff | null; }
@@ -79,6 +81,7 @@ export class RecordsApi {
   suggestions(id: string) { return this.api.get<{ items: FoundDocument[] }>(`/records/${id}/suggestions`); }
   review(id: string) { return this.api.get<Review>(`/records/${id}/review`); }
   history(id: string) { return this.api.get<History>(`/records/${id}/history`); }
+  version(id: string, n: number) { return this.api.get<Version>(`/records/${id}/versions/${n}`); }
   comments(id: string) { return this.api.get<{ items: Comment[] }>(`/records/${id}/comments`); }
   comment(id: string, body: string) { return this.api.post<Comment>(`/records/${id}/comments`, { body }); }
   contentLink(edrmsDocumentId: string, version?: number) { return this.api.get<{ url: string }>(`/documents/${edrmsDocumentId}/content`, { version }); }

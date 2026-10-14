@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Start the five backend services for the end-to-end tests: everything in memory (a fresh, known
+ * Start the six backend services for the end-to-end tests: everything in memory (a fresh, known
  * state each run), the AI replaced by its canned answer, emails written to files, the demo users
  * seeded, and a NATS server of its own as the event bus between them (backend/scripts/nats.js).
  * Playwright runs this (see playwright.config.ts); it can also be run by hand to keep a test stack
@@ -27,15 +27,19 @@ const COMMON = {
     HOST: '127.0.0.1',
     LOG_LEVEL: process.env.E2E_LOG_LEVEL || 'warn',
     JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
-    IDENTITY_URL: url('identity'), EDRMS_URL: url('edrms'), BPM_URL: url('bpm'), INTAKE_URL: url('intake'), RECORDS_URL: url('land-records'),
+    IDENTITY_URL: url('identity'), EDRMS_URL: url('edrms'), BPM_URL: url('bpm'), INTAKE_URL: url('intake'), RECORDS_URL: url('land-records'), AUDIT_URL: url('audit'),
     EVENT_BUS_DRIVER: 'nats', NATS_URL: `nats://127.0.0.1:${PORTS.nats}`,
     IDENTITY_STORE: 'memory', EDRMS_STORE: 'memory', EDRMS_STORAGE: 'memory', BPM_STORE: 'memory',
-    INTAKE_STORE: 'memory', RECORDS_STORE: 'memory', INTAKE_STORAGE: 'memory', EXTRACTION_PROVIDER: 'mock',
+    INTAKE_STORE: 'memory', RECORDS_STORE: 'memory', AUDIT_STORE: 'memory', INTAKE_STORAGE: 'memory', EXTRACTION_PROVIDER: 'mock',
     SEED_DEMO_PASSWORD: DEMO_PASSWORD,
     MAIL_TRANSPORT: 'file', MAIL_FILE_DIR: MAIL_DIR, MAIL_FROM: 'Deeds Registry (e2e) <noreply@example.com>',
     IDENTITY_INVITE_URL_BASE: `${WEB_URL}/#/invite`,
     // plain http on localhost: a Secure cookie would not be sent back by every client
-    COOKIE_SECURE: 'false'
+    COOKIE_SECURE: 'false',
+    // the test blockchain, in memory (only with NODE_ENV=test): no anchoring job runs; tests make batches
+    // when they need them (POST /api/audit/test/anchorings, API-698), real transactions on that chain (API-672)
+    CARDANO_PROVIDER: 'test',
+    AUDIT_TEST_ANCHORINGS: 'true'
 };
 // E2E_JEV=fake: the automatic cross-check on, with the fake judge (fixed answers, nothing sent)
 if (process.env.E2E_JEV === 'fake') Object.assign(COMMON, { JEV_ENABLED: 'true', JEV_PROVIDER: 'fake' });
@@ -46,12 +50,12 @@ const E2E_BAO = process.env.E2E_BAO || 'off';
 if (!['off', 'fake', 'real'].includes(E2E_BAO)) throw new Error(`E2E_BAO must be fake or real, got "${E2E_BAO}"`);
 if (E2E_BAO === 'fake') Object.assign(COMMON, { EDRMS_ENCRYPTION: 'fake', INTAKE_ENCRYPTION: 'fake' });
 const SERVICE_ENV = {};
-const SERVICES = ['identity', 'edrms', 'bpm', 'intake', 'land-records'];
+const SERVICES = ['identity', 'edrms', 'bpm', 'intake', 'land-records', 'audit'];
 const POSTGRES = process.env.E2E_DB === 'postgres';
 const pgData = join(STACK_DIR, 'pg');
 if (POSTGRES) {
     Object.assign(COMMON, {
-        IDENTITY_STORE: 'postgres', EDRMS_STORE: 'postgres', BPM_STORE: 'postgres', INTAKE_STORE: 'postgres', RECORDS_STORE: 'postgres',
+        IDENTITY_STORE: 'postgres', EDRMS_STORE: 'postgres', BPM_STORE: 'postgres', INTAKE_STORE: 'postgres', RECORDS_STORE: 'postgres', AUDIT_STORE: 'postgres',
         DB_CONNECTION_STRING: `postgres://lrfe@127.0.0.1:${PORTS.postgres}/e2e`, DB_SYNC: 'true',
         EDRMS_STORAGE: 'local', EDRMS_LOCAL_DIR: join(STACK_DIR, 'files', 'edrms'),
         INTAKE_STORAGE: 'local', INTAKE_LOCAL_DIR: join(STACK_DIR, 'files', 'intake')

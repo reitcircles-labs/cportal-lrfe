@@ -123,6 +123,7 @@ services:
       EDRMS_URL_TTL_SECONDS: "300"
       EDRMS_COUNTRY_CODE: NA
       EDRMS_REGISTRY_CODE: WDH
+      AUDIT_URL: http://audit:3506
       EDRMS_CONTENT_URL_BASE: /api/document-content
     volumes:
       - edrms-files:/data/edrms
@@ -190,12 +191,30 @@ services:
       RECORDS_COUNTRY_CODE: NA
       EDRMS_URL: http://edrms:3502
       BPM_URL: http://bpm:3503
+      AUDIT_URL: http://audit:3506
     ports:
       - "127.0.0.1:3505:3505"
     healthcheck: *healthcheck
     depends_on:
       postgres: { condition: service_healthy }
       edrms: { condition: service_healthy }
+
+  audit:
+    <<: *service
+    working_dir: /app/services/audit
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3506"
+      AUDIT_STORE: postgres
+      RECORDS_URL: http://land-records:3505
+      EDRMS_URL: http://edrms:3502
+      BPM_URL: http://bpm:3503
+    ports:
+      - "127.0.0.1:3506:3506"
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
 
   gateway:
     <<: *service
@@ -210,6 +229,7 @@ services:
       BPM_URL: http://bpm:3503
       INTAKE_URL: http://intake:3504
       RECORDS_URL: http://land-records:3505
+      AUDIT_URL: http://audit:3506
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
     ports:
       - "127.0.0.1:3500:3500"
@@ -220,6 +240,7 @@ services:
       bpm: { condition: service_healthy }
       intake: { condition: service_healthy }
       land-records: { condition: service_healthy }
+      audit: { condition: service_healthy }
 
 volumes:
   pgdata:

@@ -1,5 +1,5 @@
 import { DataTypes, Op, UniqueConstraintError } from 'sequelize';
-import { ConflictError } from '@lrfe/common';
+import { ConflictError, inTransaction } from '@lrfe/common';
 import { defineModels, SCHEMA } from './models.js';
 
 const plain = (row) => (row ? row.get({ plain: true }) : null);
@@ -82,7 +82,7 @@ export function createSequelizeRepo(sequelize) {
         async enqueueJob(j) { return plain(await m.Job.create(j)); },
         async hasOpenJob(documentId) { return (await m.Job.count({ where: { documentId, status: { [Op.in]: ['queued', 'running'] } } })) > 0; },
         async claimJob({ workerId, now, staleMs }) {
-            return sequelize.transaction(async (transaction) => {
+            return inTransaction(sequelize, async (transaction) => {
                 // SKIP LOCKED: several workers can poll the same table without taking the same job.
                 const [rows] = await sequelize.query(
                     `SELECT "id" FROM "${SCHEMA}"."job"

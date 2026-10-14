@@ -5,6 +5,8 @@
 | `dev.js` | `npm run dev` | Starts NATS, all six services and the API docs in one terminal; the services use NATS as their event bus. Starts OpenBao first when edrms or intake encrypts with it (`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION=bao`), or when `bao` is named |
 | `nats.js` | `npm run nats` | Starts a local NATS server (port 4222, monitoring 8222, JetStream on); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256 |
 | `bao.js` | `npm run bao` (asks: development or production?) · `-- --dev` · `-- --prod` | Development: a local OpenBao vault on http://127.0.0.1:8200, data in `~/data/cportal-lrfe/openbao` (outside git); the first run downloads it into `backend/.tools/`, checked against the release's SHA-256, and initialises it. Production: refuses; see [OpenBao: installation rules](#openbao-installation-rules) |
+| `cardano.js` | `npm run cardano` (asks: development or production?) · `-- --dev` · `-- --stop` · `-- --dev --foreground` · `-- --prod` | Development: a local Cardano preview node and Ogmios (http://127.0.0.1:1337) for the audit service's anchoring, run in the background under a supervisor that restarts them, data in `~/data/cportal-lrfe/cardano/preview` (outside git); the first run downloads both into `backend/.tools/`, checked against SHA-256. Production: refuses; see [Cardano node: installation rules](#cardano-node-installation-rules) |
+| `cardano-status.js` | `npm run cardano:status`: how the local Cardano node is doing (sync, time left, disk, warnings; `--log [n]`, `--follow`). Reads only |
 | `openapi.js` | `npm run docs` · `npm run docs:check` | Generates `services/<name>/docs/openapi.yaml` · checks they are up to date |
 | `docs-server.js` | `npm run docs:serve` | Swagger UI for the API docs on http://localhost:3510 |
 | `remoteConnect.sh` | `./scripts/remoteConnect.sh 4200 3510` **on your laptop** | Opens the server's ports on your laptop over SSH, to test the app remotely |
@@ -240,3 +242,59 @@ cluster (`bao operator raft join`), so a single node can grow without starting o
 References: [OpenBao storage](https://openbao.org/docs/configuration/storage/),
 [integrated storage (Raft)](https://openbao.org/docs/configuration/storage/raft/),
 [mlock removal](https://openbao.org/docs/rfcs/mlock-removal).
+
+## Cardano node: installation rules
+
+The audit service anchors the root of its Merkle tree on Cardano (design:
+[`services/audit/README.md`](../services/audit/README.md) §3). With `CARDANO_PROVIDER=ogmios` it
+talks to a Cardano node through Ogmios; with `blockfrost` it uses Blockfrost's hosted API instead
+and needs no node. This section is about the own node.
+
+### Development: `npm run cardano -- --dev`
+
+| What | Where / how |
+|---|---|
+| Programs | `cardano-node` 11.0.1 (with `cardano-cli`) and Ogmios 7.0.0, the pair Ogmios is tested with; downloaded on the first run into `backend/.tools/` (git-ignored). The node is checked against the release's SHA-256 sums, Ogmios against the SHA-256 pinned in `cardano.js` (Ogmios publishes none) |
+| Runs as | Your own user. Fine for development only |
+| Network | `preview` (`CARDANO_NETWORK=preprod` for the other test network); mainnet is refused |
+| Node | A client only (`DiffusionMode: InitiatorOnly`, set in its configuration): it connects out to its peers and runs no server, so nothing on the internet can connect to it. The script also removes the metrics servers (Prometheus, EKG) from the copied configuration's tracing, so the node opens no port at all. Binding it to 127.0.0.1 is not possible: its outgoing connections would use that address too |
+| Ogmios | http://127.0.0.1:1337 (`OGMIOS_PORT`), reachable from this server only |
+| Data | `~/data/cportal-lrfe/cardano/preview` (`CARDANO_DATA_DIR`), folder `0700`: `db/` (the chain), `node.socket`, `config/` (the network's configuration, copied once from the release), `node.log`, `ogmios.log`, `supervisor.log`, `supervisor.json` (the running supervisor: pid, since, restarts) |
+| In the background | `npm run cardano -- --dev` starts a supervisor detached from the terminal (its own session, like `nohup`/`setsid`) and returns; closing the terminal or the SSH session, or stopping `npm run dev`, leaves the node running. A second start says it already runs. `--foreground` runs the same supervisor in the terminal instead (Ctrl+C stops), for debugging |
+| Restarts | The supervisor starts cardano-node again when it exits by itself (after 5 s, then 10 s, 20 s … up to 5 min; back to 5 s after a run of 10 minutes), and when it has had no new block for 10 minutes while Ogmios is connected (`CARDANO_STALL_MINUTES`): a hung node, or one that lost all its peers. It is stopped cleanly first, and by force only if it does not stop within 2 minutes. Ogmios is started again when it exits, or when it has been disconnected from the node (or not answering) for 3 minutes. Each restart is in `supervisor.log` and counted in `npm run cardano:status`. Losing single peers needs no restart: the node finds others by itself |
+| Stop | `npm run cardano -- --stop`: the node shuts down cleanly (usually seconds, at most a few minutes), so the next start needs no check of its stored chain |
+| Sync | From the start of the chain; progress is written every 30 seconds to `supervisor.log` ("syncing 42.13% (slot …)", then "in sync"). `npm run cardano:status` shows the supervisor, the sync, speed, time left, disk and recent warnings at any time; `-- --log 50` adds the node's last log lines, `-- --follow` follows its log |
+| Restart after an unclean stop | When the node was killed (its process killed, the machine restarted, or before API-677 its terminal closed) rather than stopped cleanly, it first checks every chunk of its stored chain (preview: about 26,000 chunks, growing; it can take half an hour), may then replay the ledger, and only then opens its socket; Ogmios starts and syncing resumes from where it was. `npm run cardano:status` shows the phase, its progress and the time left ("the node is checking its stored chain: 48%, about 5 min left"), and `-- --follow` prints it once per percent. Stop it with `--stop` to avoid the check |
+
+The first sync downloads the whole preview chain. On this server (8 cores, 31 GB of RAM) it took
+**10 h 49 min** (10 October 2026, 10:10 to 20:59 UTC, from slot 0 to the tip at slot 125,009,920:
+measured from `node.log`), and the data folder holds **16 GB** (the chain in `db/`; two days later
+`node.log` is 56 MB and `ogmios.log` 8 MB: neither is rotated, so watch them). Preview grows, so a
+new sync takes longer. Later starts continue where it stopped. To start over, stop it and delete
+the data folder. The supervisor does not start on boot: after a restart of
+the machine, run `npm run cardano -- --dev` again (production runs it as a system service, below).
+
+**With `npm run dev`:** once the audit service's `.env` has `CARDANO_PROVIDER=ogmios`, `npm run dev`
+starts the node and Ogmios too, in the background as above (a line prefixed `cardano │` says so);
+Ctrl+C on `npm run dev` leaves them running. If they already run, or Ogmios already answers on its
+port (a node started separately), that one is used. `npm run dev -- cardano …` starts it explicitly.
+
+### Production rules
+
+1. **Not as the portal's user:** an administrator runs `cardano-node` and Ogmios as a dedicated
+   `cardano` user, as system services that start on boot and restart on failure.
+2. **Mainnet needs real resources:** about 24 GB of RAM (in-memory ledger; about 8 GB with the
+   on-disk ledger) and 300 GB or more of disk, growing (Cardano developer documentation, 2026), and
+   about 1 GB of network traffic an hour.
+3. **Still a client only:** `DiffusionMode: InitiatorOnly`, no inbound port opened in the firewall;
+   Ogmios on 127.0.0.1 or a private network only, never public.
+4. **Upgrades follow the tested pair:** upgrade the node and Ogmios together, to versions Ogmios
+   names as tested; a hard fork needs the node upgraded before it.
+5. **Monitor it:** the audit service reports when Ogmios is unreachable or the node is not in sync;
+   alert on it, as on a failed anchoring.
+6. **Backups:** the chain database can always be downloaded again (or restored from a Mithril
+   snapshot); nothing in it is unique to the portal. The anchoring wallet's key is in OpenBao, not
+   here.
+
+Or use `CARDANO_PROVIDER=blockfrost` and run no node at all.
+
