@@ -14,11 +14,9 @@ standard ones:
 | cardano (optional) | `cardanosolutions/cardano-node-ogmios:v7.0.0_11.0.1-<network>` | Blockchain node for anchoring |
 
 The settings of a site and every secret are in one file, `.env`; no secret is in an image, so the
-same images install at every site. One exception for now: the registry's name ("Deeds Registry",
-"Republic of Namibia") is part of the app itself, in its screens, invitation emails, the
-authenticator app's entry and evidence packs, and the offices created on an empty database are
-Namibia's (administrators can change those). Data lives in named volumes, so containers can be
-replaced (for an upgrade) without losing it.
+same images install at every site, also the organisation's name and its offices (`LRFE_ORG_*`,
+`LRFE_OFFICES`, below). Data lives in named volumes, so containers can be replaced (for an
+upgrade) without losing it.
 
 Part A is done once per version by whoever releases it; parts B to G at each site.
 
@@ -80,6 +78,21 @@ Docker, in the folder the bundle is unpacked in.
    | `MAIL_FROM`, `SMTP_*` | the mail server that sends the invitations. No mail server yet: `MAIL_TRANSPORT=none` and `IDENTITY_EXPOSE_INVITE_LINKS=true`, and the administrator passes each invitation link on (identity does not start with `smtp` and no `SMTP_HOST`) |
    | `EXTRACTION_PROVIDER`, `GEMINI_API_KEY` | the AI that reads the scans |
    | `LRFE_REGISTRY_CODE` | the deeds office's code (in batch and document numbers) |
+   | `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE`, `LRFE_ORG_PARENT`, `LRFE_ORG_PLACE` | the organisation running the portal (see below) |
+   | `LRFE_OFFICES` | the offices created on the empty database, e.g. `KGL=Land Titles Office · Kigali;HYE=Land Titles Office · Huye` |
+
+   **The organisation** is shown in the screens (name and subtitle in the side bar, the parent
+   body on the sign-in page, name and place on the dashboard), the invitation emails, the
+   authenticator app's entry and evidence packs. `.env.example` holds the first site's texts:
+   replace them. An empty setting is not shown; without a name, "Deeds Registry" is used; a
+   setting missing from `.env` altogether shows the first site's text. The web
+   container reads them on every start (`docker compose up -d` after a change; users reload the
+   page). These are display texts, readable by anyone who opens the portal: never a secret. A
+   change does not rename the entry already in users' authenticator apps.
+
+   **The offices** (`CODE=Name` pairs, separated by `;`, codes of 2 to 5 capital letters) are
+   created only once, on an empty database; empty means none, and the administrator adds them under
+   Administration → Offices. After that they are managed there, not in `.env`.
 
    Keep `.env` private: it holds every secret of the site. Never change `JWT_SECRET` or
    `POSTGRES_PASSWORD` casually: see "Change a secret" below.
@@ -224,6 +237,10 @@ with its wallet key in OpenBao (part D first), through its own blockchain node:
 compose up -d` in the new folder. The containers are replaced; the volumes stay. `db-setup` brings
 the tables up to date before the new services start. Going back works the same way, with the old
 folder, unless the release notes say a version changed stored data.
+
+From a version without the `LRFE_ORG_*` settings: the portal shows the first site's texts
+until they are set; copy them and `LRFE_OFFICES` from the new `.env.example` into `.env` to change
+them (existing offices are not changed).
 
 From a version without `db-setup` (0.1.0-260dab4 and earlier): the bundled database is now the
 profile `postgres`. Add it to `COMPOSE_PROFILES` in the copied `.env` (e.g.

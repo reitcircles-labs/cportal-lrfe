@@ -42,6 +42,15 @@ x-env: &env
   # the schema and tables are set up by db-setup before the services start, not by each service
   DB_SYNC: "false"
 
+# The organisation running the portal (API-712): shown by the web app, and in identity's emails and
+# audit's evidence packs. Taken from .env as they are (keys without a value): set but empty = not
+# shown; not in .env at all = the first site's text (an older .env shows what it showed before).
+x-org: &org
+  LRFE_ORG_NAME:
+  LRFE_ORG_SUBTITLE:
+  LRFE_ORG_PARENT:
+  LRFE_ORG_PLACE:
+
 x-healthcheck: &healthcheck
   # node:22-slim has no curl; every service answers GET /health
   test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + process.env.PORT + '/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
@@ -105,7 +114,9 @@ services:
     working_dir: /app/services/identity
     command: ["node", "src/index.js"]
     environment:
-      <<: *env
+      <<: [*env, *org]
+      # the offices created on an empty database (README.md); empty: none
+      IDENTITY_OFFICES: ${LRFE_OFFICES:-}
       PORT: "3501"
       IDENTITY_STORE: postgres
       ACCESS_TOKEN_TTL_SECONDS: "900"
@@ -248,7 +259,7 @@ services:
     working_dir: /app/services/audit
     command: *bao-command
     environment:
-      <<: *env
+      <<: [*env, *org]
       PORT: "3506"
       AUDIT_STORE: postgres
       RECORDS_URL: http://land-records:3505
@@ -301,6 +312,8 @@ services:
     image: lrfe-web:${LRFE_VERSION:?set LRFE_VERSION in .env}
     restart: unless-stopped
     logging: *logging
+    # written into /config.json on start (angular-app/docker/site-config.sh)
+    environment: *org
     ports:
       - "${LRFE_BIND:-127.0.0.1}:${LRFE_HTTP_PORT:-8080}:8080"
     healthcheck:

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { AppError, NotFoundError } from '@lrfe/common';
+import { AppError, DEFAULT_ORG_FULL_NAME, NotFoundError } from '@lrfe/common';
 import { zip } from './zip.js';
 
 export const PACK_FORMAT = 'lrfe-evidence-pack/1';
@@ -25,7 +25,8 @@ const safe = (s) => String(s).replace(/[^A-Za-z0-9._-]+/g, '_');
  * The export itself is a trail entry (`audit.evidence.exported`: who, which record, the manifest's hash).
  */
 export class EvidenceService {
-    constructor({ trail, proofs, signoffs, sources, events, cardano = null, clock = () => new Date(), logger = console }) {
+    /** @param organisation who runs the portal, in the pack's README (API-712) */
+    constructor({ trail, proofs, signoffs, sources, events, cardano = null, clock = () => new Date(), logger = console, organisation = DEFAULT_ORG_FULL_NAME }) {
         this.trail = trail;
         this.proofs = proofs;
         this.signoffs = signoffs;
@@ -34,6 +35,7 @@ export class EvidenceService {
         this.cardano = cardano;
         this.clock = clock;
         this.logger = logger;
+        this.organisation = organisation;
     }
 
     async build(recordId, actor) {
@@ -106,7 +108,7 @@ export class EvidenceService {
 
         const exportedAt = this.clock().toISOString();
         const wallet = await this.walletAddress();
-        add('README.txt', readme({ record, summary, entries, signoffs, findings, exportedAt, actor, wallet, network: this.cardano?.network ?? null }));
+        add('README.txt', readme({ record, summary, entries, signoffs, findings, exportedAt, actor, wallet, network: this.cardano?.network ?? null, organisation: this.organisation }));
         const manifest = {
             format: PACK_FORMAT,
             record: { id: record.id, recordNo: record.recordNo, label: record.label },
@@ -161,11 +163,11 @@ function findingLine(f) {
     return `\n  ${status}: ${f.description}${answers}`;
 }
 
-function readme({ record, summary, entries, signoffs, findings, exportedAt, actor, wallet, network }) {
+function readme({ record, summary, entries, signoffs, findings, exportedAt, actor, wallet, network, organisation }) {
     const line = (s = '') => `${s}\n`;
     let t = '';
     t += line(`Evidence pack: land record ${record.recordNo} (${record.label})`);
-    t += line(`Exported ${exportedAt} by ${actor.name ?? actor.id} from the Namibia land records portal.`);
+    t += line(`Exported ${exportedAt} by ${actor.name ?? actor.id} from the land records portal of the ${organisation}.`);
     t += line();
     t += line('Committed versions');
     for (const v of summary.versions) t += line(`  version ${v.version}: committed ${v.committedAt}, approved by ${v.approvedBy ?? '-'}, seal ${v.seal}, proof: ${v.proof}`);

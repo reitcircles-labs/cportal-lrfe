@@ -29,6 +29,8 @@ Settings come from `services/identity/.env` (copy `backend/.env_example`):
 | `IDENTITY_INVITE_URL_BASE` | start of the link in invitation emails: the address users open the app at, e.g. `https://lr.example.com/#/invite` |
 | `IDENTITY_EXPOSE_INVITE_LINKS` | dev only: also show the invitation link to the admin (needed while email is not set up) |
 | `MAIL_TRANSPORT`, `MAIL_FROM`, `SMTP_*` | invitation email, see [Email](#email-invitations) |
+| `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | the organisation, as "name · subtitle" in invitation emails and as the authenticator app's entry; set but empty = left out; not set = "Deeds Registry · Republic of Namibia" (`orgFromEnv` in `@lrfe/common`) |
+| `IDENTITY_OFFICES` | the offices created on an empty database: `CODE=Name;CODE=Name`; set but empty = none; not set = Namibia's two (`DEFAULT_OFFICES`). The containers pass `LRFE_OFFICES` |
 
 ## First sign-in
 

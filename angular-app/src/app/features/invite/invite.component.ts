@@ -2,6 +2,7 @@ import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@a
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../api/api.service';
 import { IconComponent } from '../../shared/icon.component';
+import { SiteConfigService } from '../../state/site-config.service';
 
 const MIN_LENGTH = 12;
 
@@ -14,7 +15,7 @@ const MIN_LENGTH = 12;
       <form class="card" (submit)="$event.preventDefault(); submit()">
         <div class="flag" aria-hidden="true"></div>
         <div class="stack" style="gap:4px">
-          <span class="card-kicker">Deeds Registry · Republic of Namibia</span>
+          <span class="card-kicker">{{ site.fullName() }}</span>
           <h2 style="margin:0">Activate your account</h2>
           <span class="muted" style="font-size:14px">Choose a password. You will set up an authenticator app when you first sign in.</span>
         </div>
@@ -41,6 +42,7 @@ const MIN_LENGTH = 12;
 })
 export class InviteComponent {
   private api = inject(ApiService);
+  site = inject(SiteConfigService);
   private router = inject(Router);
   token = inject(ActivatedRoute).snapshot.queryParamMap.get('token');
   min = MIN_LENGTH;

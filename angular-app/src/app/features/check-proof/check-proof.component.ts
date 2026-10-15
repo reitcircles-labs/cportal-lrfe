@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 
 import { AuditApi } from '../../api/audit.api';
+import { SiteConfigService } from '../../state/site-config.service';
 
 /** Where the offline verifier is downloaded from (the audit service, no sign-in). */
 const VERIFIER_URL = '/api/audit/verifier/lrfe-verify.mjs';
@@ -30,9 +31,9 @@ interface Wallet {
     <main class="wrap">
       <header>
         <div class="flag" aria-hidden="true"></div>
-        <p class="kicker">Deeds Registry · Republic of Namibia</p>
+        <p class="kicker">{{ site.fullName() }}</p>
         <h1>Check a proof yourself</h1>
-        <p class="lead">Were you given a proof file by the Deeds Registry? You can check it yourself, without an account and without trusting the registry’s systems.</p>
+        <p class="lead">Were you given a proof file by the {{ site.config().orgName }}? You can check it yourself, without an account and without trusting the registry’s systems.</p>
       </header>
 
       <section class="card">
@@ -132,6 +133,7 @@ interface Wallet {
 })
 export class CheckProofComponent {
   private readonly audit = inject(AuditApi);
+  protected readonly site = inject(SiteConfigService);
 
   protected readonly verifierUrl = VERIFIER_URL;
   protected readonly wallet = signal<Wallet | null>(null);

@@ -15,7 +15,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
-import { DEMO_PASSWORD, MAIL_DIR, PORTS, REPO_DIR, STACK_DIR, WEB_URL } from './config.mjs';
+import { DEMO_PASSWORD, E2E_ORG, MAIL_DIR, PORTS, REPO_DIR, STACK_DIR, WEB_URL } from './config.mjs';
 
 const DEPLOY_DIR = join(REPO_DIR, 'deploy');
 const version = process.env.E2E_DOCKER_VERSION || 'e2e';
@@ -35,6 +35,12 @@ const env = {
     JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
     POSTGRES_PASSWORD: 'e2e-only-postgres-password',
     COMPOSE_PROFILES: 'postgres',
+    // the organisation (API-712): test texts; Namibia's two offices, which the tests use
+    LRFE_ORG_NAME: E2E_ORG.name,
+    LRFE_ORG_SUBTITLE: E2E_ORG.subtitle,
+    LRFE_ORG_PARENT: E2E_ORG.parent,
+    LRFE_ORG_PLACE: E2E_ORG.place,
+    LRFE_OFFICES: 'WDH=Deeds Registry · Windhoek;REH=Deeds Registry · Rehoboth',
     SEED_DEMO_PASSWORD: DEMO_PASSWORD,
     E2E_UID: String(mailUser.uid),
     E2E_GID: String(mailUser.gid),

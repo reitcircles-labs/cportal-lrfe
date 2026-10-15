@@ -89,7 +89,7 @@ export async function audited() {
     const job = new AnchorService({ repo, tree, cardano, logger: quiet, clock, config: { confirmations: 10 } });
     const proofs = new ProofService({ repo, tree, cardano, clock, logger: quiet, sources: createVerifySources({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', serviceToken: asService('audit'), fetchImpl: routed }) });
     signoffs = new SignoffService({ repo, events, proofs, clock, logger: quiet, ...createSignoffClients({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', bpmUrl: 'http://bpm', serviceToken: asService('audit'), fetchImpl: routed }) });
-    const evidence = new EvidenceService({ trail, proofs, signoffs, events, cardano, clock, logger: quiet, sources: createEvidenceSources({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', serviceToken: asService('audit'), fetchImpl: routed }) });
+    const evidence = new EvidenceService({ trail, proofs, signoffs, events, cardano, clock, logger: quiet, organisation: 'Land Titles Office · Testland', sources: createEvidenceSources({ recordsUrl: 'http://records', edrmsUrl: 'http://edrms', serviceToken: asService('audit'), fetchImpl: routed }) });
     /** Run the hourly job until an anchoring is confirmed (a block a minute). */
     const anchor = async () => {
         clock.advance(3_600_000);

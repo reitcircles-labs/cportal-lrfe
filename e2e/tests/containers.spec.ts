@@ -5,9 +5,11 @@
  * cached and the build files cached for good; and a user signs in and works through it.
  */
 import { expect, test } from '@playwright/test';
+import { adminApi, appPath, invitationEmail, unique } from '../support/admin';
 import { signInAs } from '../support/auth';
 import { userByRole } from '../support/catalogue';
 import { evidence } from '../support/evidence';
+import { E2E_ORG } from '../stack/config.mjs';
 
 test.skip(!process.env.E2E_DOCKER, 'only against the containers (npm run test:docker)');
 
@@ -57,5 +59,59 @@ test('a user signs in through the containers and works in the portal', { tag: ['
     await expect(page.getByRole('heading', { level: 1, name: 'Anchoring health' }).last()).toBeVisible();
     await expect(page.getByText('Connected', { exact: true })).toBeVisible();
     await evidence(page, 'API-700', 'Anchoring health from the audit container: the wallet, the blockchain connection, the next anchoring');
+    await context.close();
+});
+
+test("the organisation's name and texts come from the site's settings, everywhere they are shown", { tag: ['@API-712'] }, async ({ browser, playwright, request }) => {
+    const fullName = `${E2E_ORG.name} · ${E2E_ORG.subtitle}`;
+
+    // written by the web container from the settings when it started, escaped, never cached
+    const config = await request.get('/config.json');
+    expect(config.headers()['cache-control']).toBe('no-store');
+    expect(await config.json()).toEqual({ orgName: E2E_ORG.name, orgSubtitle: E2E_ORG.subtitle, orgParent: E2E_ORG.parent, orgPlace: E2E_ORG.place });
+
+    const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    await page.goto('/#/login');
+    await expect(page.locator('.brand')).toContainText(E2E_ORG.name);
+    await expect(page.locator('.brand')).toContainText(E2E_ORG.parent);
+    await expect(page).toHaveTitle(`${E2E_ORG.name} · Land records intake`);
+    await expect(page.getByText(/Namibia/)).toHaveCount(0);
+    await evidence(page, 'API-712', "Sign-in: the organisation's name and parent body from the site's settings");
+
+    await page.goto('/#/check-a-proof');
+    await expect(page.getByText(fullName, { exact: true })).toBeVisible();
+    await expect(page.getByText(`Were you given a proof file by the ${E2E_ORG.name}?`)).toBeVisible();
+
+    // an invitation: the email and the activation page
+    const admin = await adminApi(playwright, test.info().project.use.baseURL!);
+    const email = `e2e.org.${unique()}@example.com`;
+    const { offices } = await (await admin.api.get('/api/offices', { headers: admin.headers })).json();
+    const invited = await admin.api.post('/api/users', { headers: admin.headers, data: { name: 'E2E Org Invitee', email, officeId: offices[0].id, roles: ['rec'] } });
+    expect(invited.status(), await invited.text()).toBe(201);
+    const mail = await invitationEmail(email);
+    expect(mail.text).toContain(E2E_ORG.name);
+    expect(mail.text).toContain(E2E_ORG.subtitle);
+    expect(mail.text).not.toContain('Namibia');
+    await page.goto(appPath(mail.link));
+    await expect(page.getByText(fullName, { exact: true })).toBeVisible();
+    await evidence(page, 'API-712', 'Invitation: the activation page with the full name from the settings');
+
+    // the authenticator app's entry, offered at the first sign-in
+    const accepted = await admin.api.post('/api/invitations/accept', { data: { token: new URL(mail.link.replace('/#/', '/')).searchParams.get('token'), password: 'e2e org invitee password 2026' } });
+    expect(accepted.status(), await accepted.text()).toBe(200);
+    const login = await (await admin.api.post('/api/auth/login', { data: { email, password: 'e2e org invitee password 2026' } })).json();
+    expect(login.next).toBe('mfa-enroll');
+    expect(new URL(login.otpauthUrl).searchParams.get('issuer')).toBe(fullName);
+    await admin.dispose();
+
+    // signed in: the side bar and the dashboard's crumb
+    const signedIn = await context.newPage();
+    await signInAs(signedIn, userByRole('sup').email, '/');
+    const brand = signedIn.getByRole('complementary', { name: 'Main navigation' }).locator('.brand');
+    await expect(brand).toContainText(E2E_ORG.name);
+    await expect(brand).toContainText(E2E_ORG.subtitle);
+    await expect(signedIn.getByText(`${E2E_ORG.name} · ${E2E_ORG.place}`).first()).toBeVisible();
+    await evidence(signedIn, 'API-712', "Signed in: the side bar and the dashboard with the site's organisation");
     await context.close();
 });

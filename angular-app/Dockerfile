@@ -8,6 +8,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY angular.json tsconfig.json tsconfig.app.json ./
 COPY src ./src
+COPY public ./public
 ENV NG_CLI_ANALYTICS=false
 RUN npx ng build --configuration production
 
@@ -15,6 +16,8 @@ RUN npx ng build --configuration production
 # nginx as a non-root user, listening on 8080
 FROM nginxinc/nginx-unprivileged:1.28.2-alpine
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+# writes /config.json from the site's settings on every start, before nginx starts (API-712)
+COPY --chmod=0755 docker/site-config.sh /docker-entrypoint.d/40-lrfe-site-config.sh
 COPY --from=build /app/dist/cportal-lrfe/browser /usr/share/nginx/html
 
 ARG VERSION=dev

@@ -1,4 +1,4 @@
-import { createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, createServiceTokenSigner, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, orgFromEnv, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { TrailService } from './trail.service.js';
 import { TreeService } from './tree.service.js';
@@ -52,7 +52,7 @@ const proofs = new ProofService({ repo, tree, cardano, logger: log, sources: cre
 const signoffs = new SignoffService({ repo, events, proofs, logger: log, ...createSignoffClients({ recordsUrl, edrmsUrl, bpmUrl: env('BPM_URL', 'http://localhost:3503'), serviceToken }) });
 
 // the evidence pack (README.md section 6): versions, documents and files read from land-records and edrms
-const evidence = new EvidenceService({ trail: service, proofs, signoffs, events, cardano, logger: log, sources: createEvidenceSources({ recordsUrl, edrmsUrl, serviceToken }) });
+const evidence = new EvidenceService({ trail: service, proofs, signoffs, events, cardano, logger: log, organisation: orgFromEnv().fullName, sources: createEvidenceSources({ recordsUrl, edrmsUrl, serviceToken }) });
 
 // the land records list of the Audit screen (API-661)
 const auditList = new AuditListService({ repo, proofs, sources: createListSources({ recordsUrl, serviceToken }) });

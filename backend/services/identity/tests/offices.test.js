@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { makeService, makeApp } from './helpers.js';
 import { createMemoryRepo } from '../src/repo/memory.js';
 import { seedIdentity } from '../src/seed.js';
-import { ROLES, DEFAULT_OFFICES } from '../src/catalogue.js';
+import { ROLES, DEFAULT_OFFICES, parseOffices } from '../src/catalogue.js';
 
 const ADMIN = 'p.hamutenya@deeds.gov.na';
 
@@ -119,6 +119,19 @@ describe('offices', () => {
         await existing.createOffice({ code: 'KMP', name: 'Somewhere else' });
         await seedIdentity(existing, { offices: DEFAULT_OFFICES });
         expect((await existing.listOffices()).map(o => o.code)).to.deep.equal(['KMP']);
+    });
+
+    it("reads the site's offices for an empty database from its setting (API-712)", () => {
+        expect(parseOffices(' WDH=Deeds Registry · Windhoek ; REH = Rehoboth office;', 'LRFE_OFFICES')).to.deep.equal([
+            { code: 'WDH', name: 'Deeds Registry · Windhoek', type: 'registry', address: '', contact: '' },
+            { code: 'REH', name: 'Rehoboth office', type: 'registry', address: '', contact: '' }
+        ]);
+        expect(parseOffices('', 'LRFE_OFFICES')).to.deep.equal([]);
+        // a name may itself hold "=": only the first one separates
+        expect(parseOffices('KGL=Lands = Titles', 'LRFE_OFFICES')[0].name).to.equal('Lands = Titles');
+        for (const bad of ['Windhoek', 'wdh=Windhoek', 'TOOLONG=X', 'WDH=', 'WDH=A;WDH=B']) {
+            expect(() => parseOffices(bad, 'LRFE_OFFICES'), bad).to.throw(/^LRFE_OFFICES: /);
+        }
     });
 
     it('HTTP: anyone who invites may list offices; only admin.offices may change them', async () => {

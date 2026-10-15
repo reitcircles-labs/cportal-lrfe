@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { envOneOf, ensureSchema } from '../src/index.js';
+import { DEFAULT_ORG, envOneOf, ensureSchema, orgFromEnv } from '../src/index.js';
 
 describe('envOneOf', () => {
     afterEach(() => { delete process.env.TEST_STORE; });
@@ -63,5 +63,17 @@ describe('ensureSchema', () => {
         } catch (err) {
             expect(err.message).to.include('Invalid schema name');
         }
+    });
+});
+
+describe('orgFromEnv', () => {
+    it("takes the site's organisation, trimmed, with the one-line full name", () => {
+        const org = orgFromEnv({ LRFE_ORG_NAME: ' Land Titles Office ', LRFE_ORG_SUBTITLE: 'Republic of Testland', LRFE_ORG_PARENT: 'Ministry', LRFE_ORG_PLACE: 'Testville' });
+        expect(org).to.deep.equal({ name: 'Land Titles Office', subtitle: 'Republic of Testland', parent: 'Ministry', place: 'Testville', fullName: 'Land Titles Office · Republic of Testland' });
+    });
+
+    it('a setting set but empty stays empty; an empty name and unset settings get the defaults', () => {
+        expect(orgFromEnv({ LRFE_ORG_NAME: '', LRFE_ORG_SUBTITLE: '' })).to.deep.equal({ ...DEFAULT_ORG, subtitle: '', fullName: 'Deeds Registry' });
+        expect(orgFromEnv({}).fullName).to.equal('Deeds Registry · Republic of Namibia');
     });
 });

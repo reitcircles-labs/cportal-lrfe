@@ -4,6 +4,7 @@ import { provideHttpClient, withInterceptors, withXhr } from '@angular/common/ht
 import { routes } from './app.routes';
 import { authInterceptor } from './api/auth.interceptor';
 import { AuthService } from './state/auth.service';
+import { SiteConfigService } from './state/site-config.service';
 
 /** Before the first route resolves: resume the session from the refresh cookie, if any. */
 function restoreSession() {
@@ -19,6 +20,8 @@ export const appConfig: ApplicationConfig = {
     provideAppInitializer(() => {
         const initializerFn = (restoreSession)();
         return initializerFn();
-      })
+      }),
+    // the organisation's name and texts, from the site's settings (API-712)
+    provideAppInitializer(() => inject(SiteConfigService).load())
   ]
 };

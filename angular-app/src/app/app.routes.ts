@@ -28,7 +28,7 @@ export const routes: Routes = [
   { path: 'invite', component: InviteComponent },
   // public, no sign-in: for anyone given a proof (API-676)
   { path: 'check-a-proof', component: CheckProofComponent, data: { title: 'Check a proof yourself' } },
-  { path: '', component: DashboardComponent, canActivate: g, data: { perm: 'dashboard.view', title: 'Dashboard', crumb: 'Deeds Registry · Windhoek' } },
+  { path: '', component: DashboardComponent, canActivate: g, data: { perm: 'dashboard.view', title: 'Dashboard' } },
   { path: 'flow', component: FlowComponent, canActivate: g, data: { perm: 'dashboard.view', title: 'Process & metadata schema', crumb: 'Programme · Phase 1' } },
   { path: 'capture', component: CaptureComponent, canActivate: g, data: { perm: 'capture.view', title: 'Capture', crumb: 'Workspace · Scan station' } },
   { path: 'verify', component: VerifyComponent, canActivate: g, data: { perm: 'verify.view', title: 'Verify metadata', crumb: 'Workspace · Review desk' } },
@@ -47,6 +47,6 @@ export const routes: Routes = [
   { path: 'admin/log', component: AdminComponent, canActivate: g, data: { perm: 'admin.users', tab: 'log', title: 'Access log', crumb: 'Administration' } },
   { path: 'admin/anchoring', component: AnchoringHealthComponent, canActivate: g, data: { perm: 'admin.policies', title: 'Anchoring health', crumb: 'Administration' } },
   { path: 'admin', redirectTo: 'admin/users', pathMatch: 'full' },
-  { path: 'denied', component: DeniedComponent, canActivate: [authGuard], data: { title: 'Access denied', crumb: 'Deeds Registry' } },
+  { path: 'denied', component: DeniedComponent, canActivate: [authGuard], data: { title: 'Access denied' } },
   { path: '**', redirectTo: '' }
 ];

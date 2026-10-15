@@ -6,6 +6,7 @@ import { RbacService } from '../../state/rbac.service';
 import { RegistryStore } from '../../state/registry.store';
 import { AuthService } from '../../state/auth.service';
 import { IconComponent } from '../../shared/icon.component';
+import { SiteConfigService } from '../../state/site-config.service';
 
 const WEEK = [
   { d: 'Mon', pages: 1840, docs: 412 }, { d: 'Tue', pages: 2210, docs: 498 }, { d: 'Wed', pages: 1975, docs: 451 },
@@ -20,7 +21,7 @@ const WEEK = [
       <section class="welcome">
         <div>
           <h2 style="margin:0 0 4px">Good morning, {{ firstName() }}</h2>
-          <span class="muted">Windhoek Deeds Registry · Monday 28 September 2026 · back-scanning programme, week 38</span>
+          <span class="muted">{{ site.nameAndPlace() }} · Monday 28 September 2026 · back-scanning programme, week 38</span>
         </div>
         <div class="row">
           <a class="btn btn-secondary" routerLink="/flow"><app-icon name="flow" [size]="16" />How the process works</a>
@@ -277,6 +278,7 @@ export class DashboardComponent {
 
 
   auth = inject(AuthService);
+  site = inject(SiteConfigService);
   Math = Math;
   week = WEEK;
   maxPages = Math.max(...WEEK.map(w => w.pages));

@@ -4,6 +4,7 @@ import { AppUser, PERMS, PERM_GROUPS, Policies, RbacService, SodRule, UserStatus
 import { ConfirmService } from '../../state/confirm.service';
 import { ToastService } from '../../state/toast.service';
 import { IconComponent } from '../../shared/icon.component';
+import { SiteConfigService } from '../../state/site-config.service';
 
 type Tab = 'users' | 'offices' | 'roles' | 'policies' | 'log';
 const KIND: Record<AccessKind, [string, string]> = {
@@ -286,7 +287,7 @@ const KIND: Record<AccessKind, [string, string]> = {
           <div class="dialog-body">They get an email with an activation link, set a password and set up an authenticator app. The link expires after 3 days.</div>
           <div class="fg">
             <div class="field"><label>Full name</label><input class="input" [value]="inv().name" (input)="setInv('name', $any($event.target).value)" required></div>
-            <div class="field"><label>Work email</label><input class="input" type="email" placeholder="name@deeds.gov.na" [value]="inv().email" (input)="setInv('email', $any($event.target).value)" required></div>
+            <div class="field"><label>Work email</label><input class="input" type="email" placeholder="name@example.org" [value]="inv().email" (input)="setInv('email', $any($event.target).value)" required></div>
             <div class="field" style="grid-column:1/-1"><label>Office</label><select class="input" (change)="setInv('officeId', $any($event.target).value)">
               @for (o of rbac.activeOffices(); track o.id) { <option [value]="o.id" [selected]="o.id === inv().officeId">{{ o.code }} · {{ o.name }}</option> }
               @if (isNational([inv().role])) { <option value="" [selected]="!inv().officeId">National (no office)</option> }
@@ -307,7 +308,7 @@ const KIND: Record<AccessKind, [string, string]> = {
           <div class="fg">
             <div class="field"><label>Code</label><input class="input mono" [value]="f.code" [readonly]="!!f.id" maxlength="5" placeholder="WDH" (input)="setOffice('code', $any($event.target).value); $any($event.target).value = officeForm()!.code" required></div>
             <div class="field"><label>Type</label><select class="input" (change)="setOffice('type', $any($event.target).value)">@for (t of officeTypes; track t) { <option [value]="t" [selected]="t === f.type">{{ typeLabel(t) }}</option> }</select></div>
-            <div class="field" style="grid-column:1/-1"><label>Name</label><input class="input" [value]="f.name" placeholder="Deeds Registry · Windhoek" (input)="setOffice('name', $any($event.target).value)" required></div>
+            <div class="field" style="grid-column:1/-1"><label>Name</label><input class="input" [value]="f.name" [placeholder]="site.nameAndPlace()" (input)="setOffice('name', $any($event.target).value)" required></div>
             <div class="field" style="grid-column:1/-1"><label>Address (optional)</label><input class="input" [value]="f.address" (input)="setOffice('address', $any($event.target).value)"></div>
             <div class="field" style="grid-column:1/-1"><label>Contact (optional)</label><input class="input" [value]="f.contact" placeholder="Phone or email" (input)="setOffice('contact', $any($event.target).value)"></div>
           </div>
@@ -402,6 +403,7 @@ const KIND: Record<AccessKind, [string, string]> = {
 })
 export class AdminComponent {
   rbac = inject(RbacService);
+  site = inject(SiteConfigService);
   private confirm = inject(ConfirmService);
   private toast = inject(ToastService);
   tab = signal<Tab>('users');
