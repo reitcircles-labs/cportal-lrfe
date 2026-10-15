@@ -1,10 +1,45 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 import { ANGULAR_DIR, E2E_DIR, GATEWAY_URL, PORTS, WEB_URL } from './stack/config.mjs';
 
 // E2E_REUSE=1: use a test stack that is already running (node stack/start-backend.mjs, and ng
 // serve on the web port) instead of starting one. Without it, a busy port is an error, so a
 // developer's own copy is never tested by mistake.
 const reuse = !!process.env.E2E_REUSE;
+
+/** The tests' own stack: the services as node processes, and ng serve. */
+const ownStack: PlaywrightTestConfig['webServer'] = [
+    {
+        command: 'node stack/start-backend.mjs',
+        cwd: E2E_DIR,
+        url: `${GATEWAY_URL}/health`,
+        reuseExistingServer: reuse,
+        timeout: 120_000,
+        // let it stop the services and its PostgreSQL (E2E_DB=postgres), which runs detached
+        gracefulShutdown: { signal: 'SIGTERM', timeout: 15_000 },
+        stdout: 'pipe'
+    },
+    {
+        command: `npx ng serve --port ${PORTS.web} --proxy-config ${E2E_DIR}/stack/proxy.e2e.mjs`,
+        cwd: ANGULAR_DIR,
+        url: WEB_URL,
+        reuseExistingServer: reuse,
+        timeout: 180_000,
+        env: { NG_CLI_ANALYTICS: 'false' }
+    }
+];
+
+// E2E_DOCKER=1 (npm run test:docker): the application in containers instead, built from this
+// checkout, on the same ports (stack/start-docker.mjs; the first build takes several minutes).
+const containers: PlaywrightTestConfig['webServer'] = {
+    command: 'node stack/start-docker.mjs',
+    cwd: E2E_DIR,
+    url: WEB_URL,
+    reuseExistingServer: false,
+    timeout: 900_000,
+    // let it remove the containers and their volumes
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 60_000 },
+    stdout: 'pipe'
+};
 
 export default defineConfig({
     testDir: './tests',
@@ -25,24 +60,5 @@ export default defineConfig({
         // has the PDF viewer, so scans show on Verify and Documents as they do for users
         { name: 'chromium', use: { ...devices['Desktop Chrome'], channel: 'chromium' }, dependencies: ['setup'] }
     ],
-    webServer: [
-        {
-            command: 'node stack/start-backend.mjs',
-            cwd: E2E_DIR,
-            url: `${GATEWAY_URL}/health`,
-            reuseExistingServer: reuse,
-            timeout: 120_000,
-            // let it stop the services and its PostgreSQL (E2E_DB=postgres), which runs detached
-            gracefulShutdown: { signal: 'SIGTERM', timeout: 15_000 },
-            stdout: 'pipe'
-        },
-        {
-            command: `npx ng serve --port ${PORTS.web} --proxy-config ${E2E_DIR}/stack/proxy.e2e.mjs`,
-            cwd: ANGULAR_DIR,
-            url: WEB_URL,
-            reuseExistingServer: reuse,
-            timeout: 180_000,
-            env: { NG_CLI_ANALYTICS: 'false' }
-        }
-    ]
+    webServer: process.env.E2E_DOCKER ? containers : ownStack
 });

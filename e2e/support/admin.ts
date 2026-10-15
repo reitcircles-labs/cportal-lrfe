@@ -34,19 +34,24 @@ export async function adminApi(playwright: PlaywrightWorkerArgs['playwright'], b
 const decodeQuotedPrintable = (s: string) =>
     s.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
 
-/** The activation link from the newest invitation email to `email`; waits up to 10 s for it. */
-export async function inviteLink(email: string): Promise<string> {
+/** The newest invitation email to `email` with its activation link, decoded; waits up to 10 s for it. */
+export async function invitationEmail(email: string): Promise<{ text: string; link: string }> {
     const until = Date.now() + 10_000;
     while (Date.now() < until) {
         const files = existsSync(MAIL_DIR) ? readdirSync(MAIL_DIR).filter(f => f.endsWith(`-${email}.eml`)).sort() : [];
         if (files.length) {
             const text = decodeQuotedPrintable(readFileSync(join(MAIL_DIR, files[files.length - 1]), 'utf8'));
             const link = text.match(/https?:\/\/[^\s"<]+\/#\/invite\?token=[A-Za-z0-9_-]+/)?.[0];
-            if (link) return link;
+            if (link) return { text, link };
         }
         await new Promise(r => setTimeout(r, 200));
     }
     throw new Error(`No invitation email to ${email} in ${MAIL_DIR}`);
+}
+
+/** The activation link from the newest invitation email to `email`; waits up to 10 s for it. */
+export async function inviteLink(email: string): Promise<string> {
+    return (await invitationEmail(email)).link;
 }
 
 /** The path and query of a full app link, for page.goto with the test's base URL. */

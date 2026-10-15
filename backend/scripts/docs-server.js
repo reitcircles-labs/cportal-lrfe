@@ -8,6 +8,10 @@
  *   /direct/<name>/...  → a service on its own port (identity 3501 … intake 3504)
  * Sign in with POST /api/auth/login (+ /api/auth/mfa), copy `accessToken`, then "Authorize".
  * Swagger UI itself is loaded from the jsDelivr CDN, so the browser needs internet access.
+ *
+ * In the containers (deploy/docker-compose.yml, profile docs; API-714) it listens on every address
+ * of its container (DOCS_HOST=0.0.0.0) and reaches each service by its container's name
+ * (DOCS_SERVICE_HOSTS=names, e.g. http://identity:3501) instead of localhost.
  */
 import { createServer, request as httpRequest } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -16,14 +20,17 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.DOCS_PORT || 3510);
+const HOST = process.env.DOCS_HOST || '127.0.0.1';
 const GATEWAY = new URL(process.env.GATEWAY_URL || 'http://localhost:3500');
 const SPECS = { gateway: 3500, identity: 3501, edrms: 3502, bpm: 3503, intake: 3504 };
+/** Where a service answers direct calls: on this machine, or (in the containers) its container. */
+const serviceUrl = (name) => new URL(`http://${process.env.DOCS_SERVICE_HOSTS === 'names' ? name : 'localhost'}:${SPECS[name]}`);
 
 /** The spec with its server pointed at this origin, so requests come back here to be forwarded. */
 function spec(name) {
     const text = readFileSync(join(ROOT, 'services', name, 'docs', 'openapi.yaml'), 'utf8');
     const url = name === 'gateway' ? '/' : `/direct/${name}`;
-    return text.replace(/^servers:\n(?:\s+.*\n)+?(?=\S)/m, `servers:\n  - url: ${url}\n    description: through the docs server (npm run docs:serve)\n`);
+    return text.replace(/^servers:\n(?:\s+.*\n)+?(?=\S)/m, `servers:\n  - url: ${url}\n    description: through the docs server\n`);
 }
 
 const page = `<!doctype html>
@@ -68,11 +75,11 @@ createServer((req, res) => {
         if (url.pathname === '/' ) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(page); }
         if (specMatch && SPECS[specMatch[1]]) { res.writeHead(200, { 'content-type': 'text/yaml; charset=utf-8', 'cache-control': 'no-store' }); return res.end(spec(specMatch[1])); }
         if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return forward(req, res, GATEWAY, req.url);
-        if (direct && SPECS[direct[1]] && direct[1] !== 'gateway') return forward(req, res, new URL(`http://localhost:${SPECS[direct[1]]}`), direct[2] + url.search);
+        if (direct && SPECS[direct[1]] && direct[1] !== 'gateway') return forward(req, res, serviceUrl(direct[1]), direct[2] + url.search);
         res.writeHead(404, { 'content-type': 'text/plain' }); res.end('Not found');
     } catch (err) {
         res.writeHead(500, { 'content-type': 'text/plain' }); res.end(`${err.message}\nRun \`npm run docs\` in backend/ first?`);
     }
-}).listen(PORT, '127.0.0.1', () => {
+}).listen(PORT, HOST, () => {
     console.log(`API docs: http://localhost:${PORT}   ("Try it out" goes to ${GATEWAY.origin} for /api; Ctrl+C stops)`);
 });

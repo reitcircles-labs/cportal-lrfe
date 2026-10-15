@@ -81,20 +81,26 @@ npm run dev:gateway
 # With Postgres from docker compose (published on localhost:5433;
 # DB_CONNECTION_STRING=postgres://lrfe:lrfe@localhost:5433/lrfe)
 docker compose up -d postgres
+npm run db:setup                           # every service's schema and tables (or DB_SYNC=true per service)
 npm run seed:identity                      # creates schema "identity", tables, roles, admin
 npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password: see services/identity/README.md
 npm run dev:identity
 ```
 
-Everything in containers (Postgres + all seven services, one image built from `Dockerfile`):
+`docker-compose.yml` here holds only these development helpers (PostgreSQL, and NATS with
+`docker compose up -d nats`). The whole application in containers (the web app, every service,
+the image built from `Dockerfile`), as installed at a site: [`../deploy/README.md`](../deploy/README.md).
 
-```bash
-JWT_SECRET=… SEED_DEMO_PASSWORD='demo-password-2026' docker compose up -d --build
-# gateway on http://localhost:3500 (what the frontend's proxy.conf.json points at)
-```
+Its compose project is `lrfe-dev`. It was `lrfe` before, a name the site install now uses: data kept
+in the old volumes `lrfe_pgdata` and `lrfe_natsdata` does not appear here. Move what you need, then
+remove them (`docker volume rm lrfe_pgdata lrfe_natsdata`), so that a site install on the same
+machine does not pick them up.
 
-Settings come from the shell or `./.env`; see the header of `docker-compose.yml`. Stop any
-`npm run dev:*` services first: they use the same ports.
+`npm run db:setup` (`scripts/db-setup.js`) sets up every service's schema and tables in one step,
+in whatever database `DB_CONNECTION_STRING` names, also an existing server where a DBA has created
+the schemas first (`../deploy/README.md`, "An existing PostgreSQL server"). It is safe to run again:
+it only adds what is missing. The containers run it before the services start, which then run with
+`DB_SYNC=false`; a service started with `DB_SYNC=true` still does the same for its own schema.
 
 Tests (no database or network needed): `npm test` at the root, or `npm test -w @lrfe/identity`.
 
@@ -105,6 +111,7 @@ the browser can call, at its `/api/...` path** (start there when debugging the f
 
 ```bash
 npm run docs:serve     # Swagger UI on http://localhost:3510 (also started by `npm run dev`)
+                       # in the containers: the profile docs (../deploy/README.md, "API docs")
 npm run docs           # regenerate the files after changing routes
 npm run docs:check     # fails if a file is out of date (for CI)
 ```

@@ -99,6 +99,8 @@ describe('evidence pack (API-660)', () => {
         const readme = files.get('README.txt').toString();
         assert.match(readme, new RegExp(`Evidence pack: land record ${a.record.recordNo}`));
         assert.match(readme, /node lrfe-verify\.mjs <this-pack>\.zip --address/);
+        // who runs the portal, from the site's settings (API-712)
+        assert.match(readme, /from the land records portal of the Land Titles Office · Testland\.\n/);
 
         // the export is a trail entry: who, which record, the manifest's hash
         const exported = (await a.trail.list({ type: 'audit.evidence.exported' })).entries;

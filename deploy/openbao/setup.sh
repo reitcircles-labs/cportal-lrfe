@@ -1,0 +1,67 @@
+#!/bin/sh
+# Prepares OpenBao for the portal (deploy/docker-compose.yml, service openbao-setup):
+#
+#   docker compose run --rm openbao-setup
+#
+# Asks for a token allowed to configure OpenBao (the root token right after initialising), then,
+# without changing what already works:
+#   - the transit engine and AppRole logins;
+#   - one key per service, never exportable: edrms-files and intake-files (stored files),
+#     audit-anchor (ed25519, the audit service's blockchain wallet key);
+#   - a policy per key that allows only what its service needs on that key;
+#   - an AppRole per service (1 h tokens), whose role ID and secret ID go into that service's
+#     own volume, readable only by the service (the node user, uid 1000).
+# The same steps as backend/scripts/bao.js (in the source repository) for a development machine.
+set -eu
+
+# where the services' volumes are mounted (deploy/docker-compose.yml)
+APPROLE_DIR=${APPROLE_DIR:-/approle}
+
+if [ -z "${BAO_TOKEN:-}" ]; then
+    printf 'OpenBao token (not shown): '
+    stty -echo 2>/dev/null || true
+    read -r BAO_TOKEN
+    stty echo 2>/dev/null || true
+    echo
+fi
+export BAO_TOKEN
+
+if ! bao status >/dev/null 2>&1; then
+    echo "OpenBao at $BAO_ADDR is not running, not initialised or sealed: initialise and unseal it first (README.md)." >&2
+    exit 1
+fi
+
+bao secrets list | grep -q '^transit/' || bao secrets enable transit >/dev/null
+bao auth list | grep -q '^approle/' || bao auth enable approle >/dev/null
+
+# service  key  key type  policy lines
+prepare() {
+    service=$1 key=$2 type=$3 policy=$4
+    bao read "transit/keys/$key" >/dev/null 2>&1 || bao write -f "transit/keys/$key" type="$type" exportable=false >/dev/null
+    printf '# %s: only what it needs, on its own key only (written by setup.sh)\n%s\n' "$service" "$policy" | bao policy write "$key" - >/dev/null
+    bao write "auth/approle/role/$service" token_policies="$key" token_ttl=1h token_max_ttl=24h >/dev/null
+
+    dir="$APPROLE_DIR/$service"
+    bao read -field=role_id "auth/approle/role/$service/role-id" > "$dir/role-id.new"
+    mv -f "$dir/role-id.new" "$dir/role-id"
+    # keep a secret ID that still logs in; otherwise issue a new one
+    if [ -s "$dir/secret-id" ] && BAO_TOKEN= bao write auth/approle/login role_id="$(cat "$dir/role-id")" secret_id="$(cat "$dir/secret-id")" >/dev/null 2>&1; then
+        :
+    else
+        (umask 077; bao write -f -field=secret_id "auth/approle/role/$service/secret-id" > "$dir/secret-id.new")
+        mv -f "$dir/secret-id.new" "$dir/secret-id"
+    fi
+    # the services run as the node user (uid 1000); setup runs as root in its container
+    if [ "$(id -u)" = 0 ]; then chown 1000:1000 "$dir/role-id" "$dir/secret-id"; fi
+    chmod 400 "$dir/role-id" "$dir/secret-id"
+    echo "  $service: key $key, login ready"
+}
+
+prepare edrms edrms-files aes256-gcm96 'path "transit/datakey/plaintext/edrms-files" { capabilities = ["update"] }
+path "transit/decrypt/edrms-files" { capabilities = ["update"] }'
+prepare intake intake-files aes256-gcm96 'path "transit/datakey/plaintext/intake-files" { capabilities = ["update"] }
+path "transit/decrypt/intake-files" { capabilities = ["update"] }'
+prepare audit audit-anchor ed25519 'path "transit/sign/audit-anchor" { capabilities = ["update"] }
+path "transit/keys/audit-anchor" { capabilities = ["read"] }'
+
+echo "OpenBao is ready for the portal. Set EDRMS_ENCRYPTION=bao and INTAKE_ENCRYPTION=bao in .env, then: docker compose up -d"

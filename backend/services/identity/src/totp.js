@@ -61,6 +61,8 @@ export function verifyTotp(secret, code, at = Date.now(), window = 1) {
 }
 
 export function otpauthUrl(secret, account, issuer) {
-    const label = encodeURIComponent(`${issuer}:${account}`);
-    return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=${DIGITS}&period=${STEP}`;
+    // the label is "issuer:account": a colon in the site's name (API-712) would split it wrongly
+    const safeIssuer = issuer.replace(/:/g, ' ');
+    const label = encodeURIComponent(`${safeIssuer}:${account}`);
+    return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(safeIssuer)}&algorithm=SHA1&digits=${DIGITS}&period=${STEP}`;
 }

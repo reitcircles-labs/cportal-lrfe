@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * lrfe-verify: check an audit proof of the Namibia land records portal without the portal.
+ * lrfe-verify: check an audit proof of the land records portal without the portal.
  *
  *   node lrfe-verify.mjs proof.json                       reads the anchoring from Koios (free, no key)
  *   node lrfe-verify.mjs proof.json --source blockfrost   from Blockfrost: the project key in

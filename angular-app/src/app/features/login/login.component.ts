@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../state/auth.service';
 import { ThemeService } from '../../state/theme.service';
 import { IconComponent } from '../../shared/icon.component';
+import { SiteConfigService } from '../../state/site-config.service';
 
 @Component({
     selector: 'app-login',
@@ -14,7 +15,7 @@ import { IconComponent } from '../../shared/icon.component';
         <div class="hero-in">
           <div class="brand">
             <span class="arms">Coat of<br>arms</span>
-            <span class="stack" style="gap:0"><b>Deeds Registry</b><span>Ministry of Agriculture, Fisheries, Water and Land Reform</span></span>
+            <span class="stack" style="gap:0"><b>{{ site.config().orgName }}</b>@if (site.config().orgParent) { <span>{{ site.config().orgParent }}</span> }</span>
           </div>
           <div class="pitch">
             <span class="eyebrow">National land records programme</span>
@@ -56,7 +57,7 @@ import { IconComponent } from '../../shared/icon.component';
           <form class="card" (submit)="$event.preventDefault(); submitCode()">
             <div class="stack" style="gap:4px">
               <h2 style="margin:0">{{ step() === 'mfa-enroll' ? 'Set up your authenticator' : 'Enter your code' }}</h2>
-              <span class="muted" style="font-size:14px">{{ step() === 'mfa-enroll' ? 'Multi-factor authentication is required. Add this account to an authenticator app (Google Authenticator, Microsoft Authenticator, …), then enter the 6-digit code it shows.' : 'Open your authenticator app and enter the 6-digit code for the Deeds Registry.' }}</span>
+              <span class="muted" style="font-size:14px">{{ step() === 'mfa-enroll' ? 'Multi-factor authentication is required. Add this account to an authenticator app (Google Authenticator, Microsoft Authenticator, …), then enter the 6-digit code it shows.' : 'Open your authenticator app and enter the 6-digit code for the ' + site.config().orgName + '.' }}</span>
             </div>
             @if (step() === 'mfa-enroll') {
               <div class="enrol">
@@ -133,6 +134,7 @@ import { IconComponent } from '../../shared/icon.component';
 export class LoginComponent {
   auth = inject(AuthService);
   theme = inject(ThemeService);
+  site = inject(SiteConfigService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 

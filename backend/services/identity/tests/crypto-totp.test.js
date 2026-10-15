@@ -51,5 +51,7 @@ describe('TOTP (RFC 6238)', () => {
         const s = generateSecret();
         expect(s).to.match(/^[A-Z2-7]{32}$/);
         expect(otpauthUrl(s, 'a@b.na', 'Deeds Registry')).to.equal(`otpauth://totp/Deeds%20Registry%3Aa%40b.na?secret=${s}&issuer=Deeds%20Registry&algorithm=SHA1&digits=6&period=30`);
+        // a colon in the site's name would split the "issuer:account" label wrongly (API-712)
+        expect(otpauthUrl(s, 'a@b.na', 'Lands: Kigali')).to.match(/^otpauth:\/\/totp\/Lands%20%20Kigali%3Aa%40b\.na\?.*&issuer=Lands%20%20Kigali&/);
     });
 });

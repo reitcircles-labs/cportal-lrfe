@@ -14,6 +14,16 @@ npm run build      # production build in dist/cportal-lrfe
 
 Requires Node 22.22+ or 24.15+ (Angular 22).
 
+### The organisation's name (site settings)
+
+The app has no build-time environment files: the same build serves every site. The organisation
+running the portal (name, subtitle, parent body, place: API-712) is read once at start from
+`config.json` (`state/site-config.ts`, `SiteConfigService`). With `ng serve` that is
+`public/config.json`, which holds the defaults; edit it locally to try other texts. In the
+container, `docker/site-config.sh` writes it on every start from the site's `LRFE_ORG_*` settings
+(`deploy/README.md`). A missing or broken file means the defaults. Tests: `npm run
+test:site-config`.
+
 ## Running against the backend (localhost)
 
 The app talks to the backend services in `../backend` through their gateway. In development,

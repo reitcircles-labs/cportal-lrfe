@@ -1,4 +1,4 @@
-import { createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, startService } from '@lrfe/common';
+import { createEventBus, createSequelizeOutbox, createRevocationList, createSequelize, ensureSchema, env, envBool, envInt, envOneOf, healthCheck, orgFromEnv, startService } from '@lrfe/common';
 import { buildApp } from './app.js';
 import { IdentityService } from './identity.service.js';
 import { createMailer } from './mailer.js';
@@ -6,7 +6,7 @@ import { createMemoryRepo } from './repo/memory.js';
 import { createSequelizeRepo } from './repo/sequelize.js';
 import { SCHEMA } from './repo/models.js';
 import { seedIdentity } from './seed.js';
-import { DEFAULT_OFFICES } from './catalogue.js';
+import { DEFAULT_OFFICES, parseOffices } from './catalogue.js';
 
 const store = envOneOf('IDENTITY_STORE', ['postgres', 'memory'], 'postgres');
 const checks = [];
@@ -30,7 +30,10 @@ if (store === 'memory') {
 const admin = process.env.BOOTSTRAP_ADMIN_EMAIL
     ? { name: env('BOOTSTRAP_ADMIN_NAME', 'System administrator'), email: env('BOOTSTRAP_ADMIN_EMAIL'), password: env('BOOTSTRAP_ADMIN_PASSWORD') }
     : undefined;
-checks.push(() => seedIdentity(repo, { admin, demoPassword: process.env.SEED_DEMO_PASSWORD || undefined, offices: DEFAULT_OFFICES }));
+// The offices created on an empty database: the site's (IDENTITY_OFFICES; set but empty: none), or
+// Namibia's two when not set at all (development)
+const offices = process.env.IDENTITY_OFFICES === undefined ? DEFAULT_OFFICES : parseOffices(process.env.IDENTITY_OFFICES, 'IDENTITY_OFFICES');
+checks.push(() => seedIdentity(repo, { admin, demoPassword: process.env.SEED_DEMO_PASSWORD || undefined, offices }));
 
 // Outgoing email (invitations): MAIL_TRANSPORT=smtp | file | none. See the identity README.
 const mailer = createMailer({
@@ -55,6 +58,8 @@ const service = new IdentityService({
     events,
     config: {
         accessTtlSeconds,
+        // in invitation emails and as the authenticator app's entry (API-712)
+        issuer: orgFromEnv().fullName,
         exposeInviteLinks: envBool('IDENTITY_EXPOSE_INVITE_LINKS', false),
         inviteUrlBase: env('IDENTITY_INVITE_URL_BASE', 'http://localhost:4200/#/invite')
     }

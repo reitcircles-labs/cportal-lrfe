@@ -9,6 +9,7 @@ import { AuthService } from './state/auth.service';
 import { RbacService } from './state/rbac.service';
 import { ThemeService } from './state/theme.service';
 import { IntakeApi } from './api/intake.api';
+import { SiteConfigService } from './state/site-config.service';
 
 @Component({
     selector: 'app-root',
@@ -23,8 +24,8 @@ import { IntakeApi } from './api/intake.api';
           <a routerLink="/" class="brand" (click)="drawer.set(false)">
             <span class="arms" title="Coat of arms placeholder">Coat of<br>arms</span>
             <span class="stack" style="gap:0">
-              <b>Deeds Registry</b>
-              <span>Republic of Namibia</span>
+              <b>{{ site.config().orgName }}</b>
+              @if (site.config().orgSubtitle) { <span>{{ site.config().orgSubtitle }}</span> }
             </span>
           </a>
 
@@ -140,6 +141,7 @@ export class AppComponent {
   auth = inject(AuthService);
   rbac = inject(RbacService);
   theme = inject(ThemeService);
+  site = inject(SiteConfigService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private intake = inject(IntakeApi);
@@ -148,7 +150,7 @@ export class AppComponent {
   drawer = signal(false);
   isLogin = signal(/^#\/(login|invite|check-a-proof)/.test(location.hash));
   title = signal('Dashboard');
-  crumb = signal('Deeds Registry');
+  crumb = signal('');
 
   nav = computed(() => {
     const role = this.auth.roleId();
@@ -181,7 +183,8 @@ export class AppComponent {
       while (r?.firstChild) r = r.firstChild;
       const d = r?.snapshot.data || {};
       this.title.set(d['title'] || 'Dashboard');
-      this.crumb.set(d['crumb'] || 'Deeds Registry · Windhoek');
+      // pages without their own crumb (the dashboard) show where the portal is
+      this.crumb.set(d['crumb'] || this.site.nameAndPlace());
       window.scrollTo(0, 0);
       this.countReview();
     });

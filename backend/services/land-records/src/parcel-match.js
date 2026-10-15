@@ -18,16 +18,24 @@ export function propertyMatches(parcel, property) {
     return true;
 }
 
+/** "KLEIN WINDHOEK" → "Klein Windhoek": a name written in capitals, as deeds do; others as they are. */
+function nameCase(name) {
+    if (name !== name.toUpperCase()) return name;
+    return name.toLowerCase().replace(/(^|[\s\-(/])(\p{L})/gu, (_, gap, letter) => gap + letter.toUpperCase());
+}
+
 /**
  * The parcel a document's property field names, for creating a record from a filed document:
- * "Erf 1873, Klein Windhoek", "Portion 2 of Erf 51, Eros", "Portion 3 of the Farm Okapuka No. 64".
- * The registration division and region come from the document's own fields. Null when unclear.
+ * "Erf 1873, Klein Windhoek", "Portion 2 of Erf 51, Eros", "Portion 3 of the Farm Okapuka No. 64",
+ * and as title deeds write it, "ERF NO. 2417 OLYMPIA" (API-718). The registration division and
+ * region come from the document's own fields. Null when unclear.
  */
 export function parcelFromProperty(property, fields = {}) {
     const text = String(property ?? '').trim().replace(/\s+/g, ' ');
     const extra = { ...(fields.regDiv ? { regDiv: fields.regDiv } : {}), ...(fields.region ? { region: fields.region } : {}) };
-    let m = /^(?:portion (\w+) of )?erf (?:no\.? ?)?(\d+[a-z]?)\s*,\s*(.+)$/i.exec(text);
-    if (m) return { kind: 'erf', number: m[2], township: m[3].trim(), ...(m[1] ? { portion: m[1] } : {}), ...extra };
+    // the township after the number: after a comma, or (with "No.") after a space
+    let m = /^(?:portion (\w+) of )?erf (?:no\.? ?(\d+[a-z]?)(?:\s*,\s*|\s+)|(\d+[a-z]?)\s*,\s*)(.+)$/i.exec(text);
+    if (m) return { kind: 'erf', number: m[2] ?? m[3], township: nameCase(m[4].trim()), ...(m[1] ? { portion: m[1] } : {}), ...extra };
     m = /^(?:portion (\w+) of )?(?:the )?farm (.+?),? no\.? ?(\d+)\b/i.exec(text);
     if (m) return { kind: 'farm_portion', farmName: m[2].trim(), farmNumber: m[3], ...(m[1] ? { portion: m[1] } : {}), ...extra };
     return null;

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, SESSION_REVOKED } from '@lrfe/common';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, SESSION_REVOKED, DEFAULT_ORG_FULL_NAME } from '@lrfe/common';
 import {
     PERMS, PERM_GROUPS, ROLE_IDS, ACCESS_KINDS, DEFAULT_POLICIES, effectivePerms, sodConflicts, isKnownPerm, normalizePerms, permLabel,
     OFFICE_TYPES, OFFICE_CODE_PATTERN, NATIONAL_ROLES
@@ -31,7 +31,7 @@ export class IdentityService {
         this.mailer = mailer;
         this.clock = clock;
         this.config = {
-            issuer: 'Deeds Registry Namibia',
+            issuer: DEFAULT_ORG_FULL_NAME,
             inviteTtlHours: 72,
             minPasswordLength: 12,
             exposeInviteLinks: false,

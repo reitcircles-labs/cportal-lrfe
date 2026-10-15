@@ -1,0 +1,3 @@
+# the site settings hold secrets; export bundles are build output
+.env
+dist/

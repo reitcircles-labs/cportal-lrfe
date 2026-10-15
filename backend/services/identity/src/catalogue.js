@@ -88,6 +88,30 @@ export const DEFAULT_OFFICES = [
     { code: 'REH', name: 'Deeds Registry · Rehoboth', type: 'registry', address: '', contact: '' }
 ];
 
+/**
+ * The offices to create on an empty database, from the site's setting (API-712), e.g.
+ * `WDH=Deeds Registry · Windhoek;REH=Deeds Registry · Rehoboth`: code=name pairs separated by
+ * semicolons, each a registry office. Empty: none (the administrator adds them). Addresses and
+ * contacts are added in Administration. Throws on a malformed entry, naming the setting.
+ * @param {string} text
+ * @param {string} setting the setting's name, for the error message
+ * @return {!Array<{code: string, name: string, type: string, address: string, contact: string}>}
+ */
+export function parseOffices(text, setting) {
+    const offices = [];
+    for (const entry of text.split(';').map(s => s.trim()).filter(Boolean)) {
+        const separator = entry.indexOf('=');
+        const code = entry.slice(0, separator).trim();
+        const name = entry.slice(separator + 1).trim();
+        if (separator < 0 || !new RegExp(OFFICE_CODE_PATTERN).test(code) || !name) {
+            throw new Error(`${setting}: "${entry}" is not CODE=Name (a code of 2 to 5 capital letters, then the office's name)`);
+        }
+        if (offices.some(o => o.code === code)) throw new Error(`${setting}: the code ${code} appears twice`);
+        offices.push({ code, name, type: 'registry', address: '', contact: '' });
+    }
+    return offices;
+}
+
 export const DEFAULT_POLICIES ={ mfa: true, eid: true, ipAllow: false, timeout: 30, fourEyes: true };
 
 /** Union of the permissions granted by `roleIds`, given the current role definitions. */
