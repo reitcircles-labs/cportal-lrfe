@@ -34,7 +34,9 @@ const env = {
     COOKIE_SECURE: 'false',
     JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
     POSTGRES_PASSWORD: 'e2e-only-postgres-password',
-    COMPOSE_PROFILES: 'postgres',
+    // the bundled database, and the API docs (API-714)
+    COMPOSE_PROFILES: 'postgres,docs',
+    LRFE_DOCS_PORT: String(PORTS.docs),
     // the organisation (API-712): test texts; Namibia's two offices, which the tests use
     LRFE_ORG_NAME: E2E_ORG.name,
     LRFE_ORG_SUBTITLE: E2E_ORG.subtitle,

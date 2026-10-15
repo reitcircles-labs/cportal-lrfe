@@ -111,6 +111,7 @@ the browser can call, at its `/api/...` path** (start there when debugging the f
 
 ```bash
 npm run docs:serve     # Swagger UI on http://localhost:3510 (also started by `npm run dev`)
+                       # in the containers: the profile docs (../deploy/README.md, "API docs")
 npm run docs           # regenerate the files after changing routes
 npm run docs:check     # fails if a file is out of date (for CI)
 ```

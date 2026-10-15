@@ -23,6 +23,8 @@ COPY packages ./packages
 COPY services ./services
 # the one-shot database setup the services wait for (deploy/docker-compose.yml: db-setup)
 COPY scripts/db-setup.js ./scripts/
+# the API docs (Swagger UI), the optional docs container (deploy/docker-compose.yml, profile docs)
+COPY scripts/docs-server.js ./scripts/
 
 # Local blob storage (EDRMS_STORAGE=local / INTAKE_STORAGE=local); compose mounts volumes here
 RUN mkdir -p /data/edrms /data/intake && chown -R node:node /data

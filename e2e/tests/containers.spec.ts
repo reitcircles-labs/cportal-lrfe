@@ -9,7 +9,7 @@ import { adminApi, appPath, invitationEmail, unique } from '../support/admin';
 import { signInAs } from '../support/auth';
 import { userByRole } from '../support/catalogue';
 import { evidence } from '../support/evidence';
-import { E2E_ORG } from '../stack/config.mjs';
+import { E2E_ORG, PORTS } from '../stack/config.mjs';
 
 test.skip(!process.env.E2E_DOCKER, 'only against the containers (npm run test:docker)');
 
@@ -113,5 +113,35 @@ test("the organisation's name and texts come from the site's settings, everywher
     await expect(brand).toContainText(E2E_ORG.subtitle);
     await expect(signedIn.getByText(`${E2E_ORG.name} · ${E2E_ORG.place}`).first()).toBeVisible();
     await evidence(signedIn, 'API-712', "Signed in: the side bar and the dashboard with the site's organisation");
+    await context.close();
+});
+
+test('the API docs container serves Swagger UI and passes "Try it out" to the gateway and to a service', { tag: ['@API-714'] }, async ({ playwright, browser }) => {
+    const docs = await playwright.request.newContext({ baseURL: `http://localhost:${PORTS.docs}` });
+    const page = await docs.get('/');
+    expect(page.status()).toBe(200);
+    expect(await page.text()).toContain('SwaggerUIBundle');
+
+    // the specs, pointed back at the docs server
+    const all = await docs.get('/specs/gateway.yaml');
+    expect(all.status()).toBe(200);
+    expect(await all.text()).toMatch(/^servers:\n  - url: \/\n/m);
+    expect(await (await docs.get('/specs/identity.yaml')).text()).toMatch(/^servers:\n  - url: \/direct\/identity\n/m);
+
+    // through the gateway container, and straight to a service's container
+    const wallet = await docs.get('/api/audit/anchoring/wallet');
+    expect(wallet.status()).toBe(200);
+    expect(await wallet.json()).toHaveProperty('address');
+    // an address no user has: identity answers 401, and no real account counts a failed sign-in
+    const login = await docs.post('/direct/identity/auth/login', { data: { email: 'nobody.docs-check@example.org', password: 'not a password' } });
+    expect(login.status(), 'identity answers straight from its container').toBe(401);
+    await docs.dispose();
+
+    // the page itself (Swagger UI comes from a public CDN; shown only when this machine reaches it)
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const ui = await context.newPage();
+    await ui.goto(`http://localhost:${PORTS.docs}/`);
+    const loaded = await ui.locator('.swagger-ui .info .title').first().waitFor({ timeout: 15_000 }).then(() => true, () => false);
+    if (loaded) await evidence(ui, 'API-714', 'The API docs container: Swagger UI with every endpoint through the gateway');
     await context.close();
 });

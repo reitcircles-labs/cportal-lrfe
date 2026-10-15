@@ -297,6 +297,14 @@ openbao`, have three key holders unseal it (part D, step 3), and only then run `
 | Stop / start everything | `docker compose stop` / `docker compose up -d` |
 | Which version runs | `docker image inspect lrfe-backend:<version> --format '{{index .Config.Labels "org.opencontainers.image.version"}}'` |
 
+**API docs (Swagger UI).** For a demo or the site's developers: add `docs` to `COMPOSE_PROFILES`
+(e.g. `COMPOSE_PROFILES=postgres,docs`) and run `docker compose up -d`. The docs answer on
+`127.0.0.1:3510` by default (`LRFE_DOCS_PORT`, on `LRFE_BIND` like the web app). "Try it out" goes through the
+gateway (all endpoints, `/api/...`) or straight to one service (`/direct/<name>/...`). For calls that
+need a user, sign in with `POST /api/auth/login` and `POST /api/auth/mfa`, copy `accessToken`, and
+choose **Authorize**. The page loads Swagger UI from a public CDN, so the browser needs internet
+access. It shows every endpoint of the installation; leave the profile off where that is not wanted.
+
 **Change a secret.** `JWT_SECRET`: change it in `.env` and run `docker compose up -d`; everyone
 signs in again. `POSTGRES_PASSWORD`: the database keeps the password it was created with, so change
 it there first, then in `.env`, then run `docker compose up -d`. In the bundled database: `docker

@@ -7,16 +7,17 @@
 #                                            it, an existing server (POSTGRES_HOST, README.md)
 #   COMPOSE_PROFILES=postgres,bao            (in .env) also OpenBao: stored files encrypted, the audit wallet key
 #   COMPOSE_PROFILES=postgres,bao,blockchain (in .env) also a blockchain node for anchoring
+#   COMPOSE_PROFILES=postgres,docs           (in .env) also the API docs (Swagger UI) on LRFE_DOCS_PORT
 #
 # On every start the one-shot db-setup creates or completes every service's schema and tables
 # first; the services start only once it has finished.
 #
 # Every setting comes from .env next to this file (template: .env.example), and no secret is in an
-# image (the registry's name is still part of the app: README.md). Data lives in named volumes (bottom), so containers
-# can be replaced without losing it. Only the web app is published on the host (LRFE_BIND:
-# LRFE_HTTP_PORT); the services, the database and the event bus are reachable only from the other
-# containers. The images come from the export bundle (docker load) or are built from source with
-# scripts/build.sh.
+# image. Data lives in named volumes (bottom), so containers can be replaced without losing it. Only
+# the web app is published on the host (LRFE_BIND:LRFE_HTTP_PORT), and with the profile docs the API
+# docs (LRFE_DOCS_PORT), which also pass calls straight to the services; otherwise the services, the
+# database and the event bus are reachable only from the other containers. The images come from the
+# export bundle (docker load) or are built from source with scripts/build.sh.
 
 name: lrfe
 
@@ -318,6 +319,28 @@ services:
       - "${LRFE_BIND:-127.0.0.1}:${LRFE_HTTP_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      gateway: { condition: service_healthy }
+
+  # ---- optional: the API docs, Swagger UI (profile docs) ----
+  # Published like the web app (LRFE_BIND); "Try it out" goes to the gateway (/api/...) or straight
+  # to one service (/direct/<name>/...). The page loads Swagger UI from a public CDN.
+  docs:
+    profiles: ["docs"]
+    <<: *backend
+    command: ["node", "scripts/docs-server.js"]
+    environment:
+      DOCS_HOST: 0.0.0.0
+      DOCS_PORT: "3510"
+      GATEWAY_URL: http://gateway:3500
+      DOCS_SERVICE_HOSTS: names
+    ports:
+      - "${LRFE_BIND:-127.0.0.1}:${LRFE_DOCS_PORT:-3510}:3510"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3510/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6
