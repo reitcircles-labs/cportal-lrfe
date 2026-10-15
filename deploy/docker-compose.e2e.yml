@@ -1,0 +1,36 @@
+# The end-to-end tests against the containers (e2e: npm run test:docker, e2e/stack/start-docker.mjs).
+# Never for a site: on top of docker-compose.yml it turns on what the tests need, as their own
+# stack does (e2e/stack/start-backend.mjs): the demo users, invitation emails written to files the
+# tests read, the canned AI, and the test blockchain with its test-only routes (NODE_ENV=test).
+# Published on the test ports: the web app on 4300, the gateway on 3600 (the tests call it).
+
+services:
+  postgres:
+    # the data is thrown away after the run: no waiting for the disk on each commit, as in the
+    # tests' own PostgreSQL (start-backend.mjs). A site keeps the safe defaults.
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off"]
+
+  identity:
+    # writes the emails into the tests' folder as the user running the tests, so they can read them
+    user: "${E2E_UID:?}:${E2E_GID:?}"
+    environment:
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:?}
+      MAIL_TRANSPORT: file
+      MAIL_FILE_DIR: /mail
+      MAIL_FROM: Deeds Registry (e2e) <noreply@example.com>
+    volumes:
+      - ${E2E_MAIL_DIR:?}:/mail
+
+  intake:
+    environment:
+      EXTRACTION_PROVIDER: mock
+
+  audit:
+    environment:
+      NODE_ENV: test
+      CARDANO_PROVIDER: test
+      AUDIT_TEST_ANCHORINGS: "true"
+
+  gateway:
+    ports:
+      - "127.0.0.1:${E2E_API_PORT:-3600}:3500"

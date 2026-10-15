@@ -1,0 +1,356 @@
+# The whole application in containers, from images: the web app, the gateway, the six backend
+# services, PostgreSQL and NATS. How to install it at a site: README.md (next to this file).
+#
+#   docker compose up -d                     start (or upgrade to the LRFE_VERSION in .env)
+#   docker compose ps                        every container and its health
+#   COMPOSE_PROFILES=bao                     (in .env) also OpenBao: stored files encrypted, the audit wallet key
+#   COMPOSE_PROFILES=bao,blockchain          (in .env) also a blockchain node for anchoring
+#
+# Every setting comes from .env next to this file (template: .env.example), and no secret is in an
+# image (the registry's name is still part of the app: README.md). Data lives in named volumes (bottom), so containers
+# can be replaced without losing it. Only the web app is published on the host (LRFE_BIND:
+# LRFE_HTTP_PORT); the services, the database and the event bus are reachable only from the other
+# containers. The images come from the export bundle (docker load) or are built from source with
+# scripts/build.sh.
+
+name: lrfe
+
+x-logging: &logging
+  # bounded logs: a site's disk must not fill up with container logs
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+x-backend: &backend
+  image: lrfe-backend:${LRFE_VERSION:?set LRFE_VERSION in .env (the version to run, e.g. 0.1.0-5dc1dae)}
+  restart: unless-stopped
+  logging: *logging
+
+x-env: &env
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (48+ random characters, see README.md)}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  HOST: 0.0.0.0
+  # the services connect to NATS in the background and retry until it is up
+  EVENT_BUS_DRIVER: nats
+  NATS_URL: nats://nats:4222
+  DB_CONNECTION_STRING: postgres://${POSTGRES_USER:-lrfe}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-lrfe}
+  DB_POOL_SIZE: "5"
+  # each service creates its own schema and tables on start (there are no separate migrations yet)
+  DB_SYNC: "true"
+
+x-healthcheck: &healthcheck
+  # node:22-slim has no curl; every service answers GET /health
+  test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + process.env.PORT + '/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 30s
+
+# edrms, intake and audit: their OpenBao login (role ID and secret ID), written by the openbao-setup
+# service into the service's own volume. Without OpenBao the files are not there and nothing is read.
+x-bao-command: &bao-command
+  ["sh", "-c", "if [ -r /run/lrfe/bao/role-id ]; then BAO_ROLE_ID=$$(cat /run/lrfe/bao/role-id); export BAO_ROLE_ID; fi; exec node src/index.js"]
+
+services:
+  postgres:
+    image: postgres:16.15
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lrfe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-lrfe}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # The event bus between the services, with JetStream for the durable events of the audit trail
+  nats:
+    image: nats:2.15.1-alpine
+    restart: unless-stopped
+    logging: *logging
+    command: ["-js", "-sd", "/data", "-m", "8222", "-n", "lrfe"]
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  identity:
+    <<: *backend
+    working_dir: /app/services/identity
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3501"
+      IDENTITY_STORE: postgres
+      ACCESS_TOKEN_TTL_SECONDS: "900"
+      REFRESH_COOKIE_PATH: /api/auth
+      # true behind HTTPS (the normal case); false only for a test install opened over plain http
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-System administrator}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
+      IDENTITY_EXPOSE_INVITE_LINKS: ${IDENTITY_EXPOSE_INVITE_LINKS:-false}
+      IDENTITY_INVITE_URL_BASE: ${LRFE_PUBLIC_URL:?set LRFE_PUBLIC_URL in .env (the address users open, e.g. https://deeds.example.gov)}/#/invite
+      # invitation email: smtp | file | none (backend/services/identity/README.md in the source repository)
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-none}
+      MAIL_FILE_DIR: /data/mail
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-true}
+      SMTP_HELO_NAME: ${SMTP_HELO_NAME:-}
+      SMTP_FAMILY: ${SMTP_FAMILY:-}
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+
+  edrms:
+    <<: *backend
+    working_dir: /app/services/edrms
+    command: *bao-command
+    environment:
+      <<: *env
+      PORT: "3502"
+      EDRMS_STORE: postgres
+      # local = files in the edrms-files volume; s3 needs the AWS_* settings
+      EDRMS_STORAGE: ${EDRMS_STORAGE:-local}
+      EDRMS_LOCAL_DIR: /data/edrms
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME:-}
+      AWS_BUCKET_REGION: ${AWS_BUCKET_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      EDRMS_MAX_FILE_MB: "200"
+      EDRMS_URL_TTL_SECONDS: "300"
+      EDRMS_COUNTRY_CODE: ${LRFE_COUNTRY_CODE:-NA}
+      EDRMS_REGISTRY_CODE: ${LRFE_REGISTRY_CODE:-WDH}
+      AUDIT_URL: http://audit:3506
+      EDRMS_CONTENT_URL_BASE: /api/document-content
+      # bao = stored files encrypted with keys from OpenBao (profile bao, README.md)
+      EDRMS_ENCRYPTION: ${EDRMS_ENCRYPTION:-off}
+      BAO_ADDR: http://openbao:8200
+      BAO_KEY_NAME: edrms-files
+      BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
+    volumes:
+      - edrms-files:/data/edrms
+      - bao-edrms:/run/lrfe/bao:ro
+    networks: [default, bao]
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+
+  bpm:
+    <<: *backend
+    working_dir: /app/services/bpm
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3503"
+      BPM_STORE: postgres
+      EDRMS_URL: http://edrms:3502
+      # called only when a land record review is decided (no start-up dependency)
+      RECORDS_URL: http://land-records:3505
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      edrms: { condition: service_healthy }
+
+  intake:
+    <<: *backend
+    working_dir: /app/services/intake
+    command: *bao-command
+    environment:
+      <<: *env
+      PORT: "3504"
+      INTAKE_STORE: postgres
+      INTAKE_STORAGE: local
+      INTAKE_LOCAL_DIR: /data/intake
+      INTAKE_MAX_FILE_MB: "50"
+      INTAKE_REGISTRY_CODE: ${LRFE_REGISTRY_CODE:-WDH}
+      EDRMS_URL: http://edrms:3502
+      # mock = canned answer, no API key, no cost (testing only); gemini needs GEMINI_API_KEY
+      EXTRACTION_PROVIDER: ${EXTRACTION_PROVIDER:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite}
+      GEMINI_ESCALATION_MODEL: ${GEMINI_ESCALATION_MODEL:-gemini-3.1-pro-preview}
+      EXTRACTION_MONTHLY_BUDGET_USD: ${EXTRACTION_MONTHLY_BUDGET_USD:-50}
+      # the automatic cross-check of extracted fields (backend/services/intake/README.md in the source repository)
+      JEV_ENABLED: ${JEV_ENABLED:-false}
+      JEV_PROVIDER: ${JEV_PROVIDER:-}
+      JEV_MODEL: ${JEV_MODEL:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      INTAKE_RUN_WORKER: "true"
+      INTAKE_ENCRYPTION: ${INTAKE_ENCRYPTION:-off}
+      BAO_ADDR: http://openbao:8200
+      BAO_KEY_NAME: intake-files
+      BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
+    volumes:
+      - intake-files:/data/intake
+      - bao-intake:/run/lrfe/bao:ro
+    networks: [default, bao]
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      edrms: { condition: service_healthy }
+
+  land-records:
+    <<: *backend
+    working_dir: /app/services/land-records
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3505"
+      RECORDS_STORE: postgres
+      RECORDS_COUNTRY_CODE: ${LRFE_COUNTRY_CODE:-NA}
+      IDENTITY_URL: http://identity:3501
+      EDRMS_URL: http://edrms:3502
+      BPM_URL: http://bpm:3503
+      AUDIT_URL: http://audit:3506
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      identity: { condition: service_healthy }
+      edrms: { condition: service_healthy }
+
+  audit:
+    <<: *backend
+    working_dir: /app/services/audit
+    command: *bao-command
+    environment:
+      <<: *env
+      PORT: "3506"
+      AUDIT_STORE: postgres
+      RECORDS_URL: http://land-records:3505
+      EDRMS_URL: http://edrms:3502
+      BPM_URL: http://bpm:3503
+      # anchoring on the blockchain: empty = off; ogmios = through the node of the profile blockchain,
+      # with the wallet key in OpenBao (profile bao). README.md, "Blockchain anchoring".
+      CARDANO_PROVIDER: ${CARDANO_PROVIDER:-}
+      CARDANO_NETWORK: ${CARDANO_NETWORK:-preview}
+      OGMIOS_URL: http://cardano:1337
+      ANCHOR_PERIOD: ${ANCHOR_PERIOD:-1h}
+      ANCHOR_MIN_BALANCE_ADA: ${ANCHOR_MIN_BALANCE_ADA:-5}
+      ANCHOR_BAO_KEY: audit-anchor
+      BAO_ADDR: http://openbao:8200
+      BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
+    volumes:
+      - bao-audit:/run/lrfe/bao:ro
+    networks: [default, bao]
+    healthcheck: *healthcheck
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+
+  gateway:
+    <<: *backend
+    working_dir: /app/services/gateway
+    command: ["node", "src/index.js"]
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HOST: 0.0.0.0
+      PORT: "3500"
+      IDENTITY_URL: http://identity:3501
+      EDRMS_URL: http://edrms:3502
+      BPM_URL: http://bpm:3503
+      INTAKE_URL: http://intake:3504
+      RECORDS_URL: http://land-records:3505
+      AUDIT_URL: http://audit:3506
+      CORS_ORIGINS: ${LRFE_PUBLIC_URL}
+    healthcheck: *healthcheck
+    depends_on:
+      identity: { condition: service_healthy }
+      edrms: { condition: service_healthy }
+      bpm: { condition: service_healthy }
+      intake: { condition: service_healthy }
+      land-records: { condition: service_healthy }
+      audit: { condition: service_healthy }
+
+  # The web app, and /api/... passed to the gateway: the only container published on the host
+  web:
+    image: lrfe-web:${LRFE_VERSION:?set LRFE_VERSION in .env}
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "${LRFE_BIND:-127.0.0.1}:${LRFE_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      gateway: { condition: service_healthy }
+
+  # ---- optional: OpenBao (profile bao) ----
+  # Keys for stored files (edrms, intake) and the audit service's blockchain wallet key. Started
+  # sealed: an administrator initialises it once and unseals it after every start (README.md).
+  openbao:
+    profiles: ["bao"]
+    image: openbao/openbao:2.7.1
+    restart: unless-stopped
+    logging: *logging
+    command: ["server"]
+    environment:
+      # OpenBao 2.x never locks memory: nothing to grant
+      SKIP_SETCAP: "true"
+    volumes:
+      - ./openbao/openbao.hcl:/openbao/config/openbao.hcl:ro
+      - bao-data:/openbao/file
+    networks: [bao]
+
+  # Run once after initialising OpenBao (and again at any time: it changes nothing that works):
+  #   docker compose run --rm openbao-setup
+  # Creates the keys, a policy and a login per service, and puts each login into that service's volume.
+  openbao-setup:
+    profiles: ["bao-setup"]
+    image: openbao/openbao:2.7.1
+    user: "0"
+    entrypoint: ["sh", "/setup/setup.sh"]
+    environment:
+      BAO_ADDR: http://openbao:8200
+    volumes:
+      - ./openbao/setup.sh:/setup/setup.sh:ro
+      - bao-edrms:/approle/edrms
+      - bao-intake:/approle/intake
+      - bao-audit:/approle/audit
+    networks: [bao]
+
+  # ---- optional: blockchain node with Ogmios (profile blockchain) ----
+  # The audit service anchors through it (CARDANO_PROVIDER=ogmios). The first sync of the preview
+  # network takes about 11 hours and 16 GB.
+  cardano:
+    profiles: ["blockchain"]
+    image: cardanosolutions/cardano-node-ogmios:v7.0.0_11.0.1-${CARDANO_NETWORK:-preview}
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - cardano-db:/db
+
+networks:
+  default:
+  # OpenBao's network: only OpenBao, its setup and the services that use it (edrms, intake, audit)
+  # reach it; no way out of the machine (internal)
+  bao:
+    internal: true
+
+volumes:
+  pgdata:
+  natsdata:
+  edrms-files:
+  intake-files:
+  bao-data:
+  bao-edrms:
+  bao-intake:
+  bao-audit:
+  cardano-db:

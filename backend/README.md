@@ -86,15 +86,14 @@ npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password: se
 npm run dev:identity
 ```
 
-Everything in containers (Postgres + all seven services, one image built from `Dockerfile`):
+`docker-compose.yml` here holds only these development helpers (PostgreSQL, and NATS with
+`docker compose up -d nats`). The whole application in containers (the web app, every service,
+the image built from `Dockerfile`), as installed at a site: [`../deploy/README.md`](../deploy/README.md).
 
-```bash
-JWT_SECRET=… SEED_DEMO_PASSWORD='demo-password-2026' docker compose up -d --build
-# gateway on http://localhost:3500 (what the frontend's proxy.conf.json points at)
-```
-
-Settings come from the shell or `./.env`; see the header of `docker-compose.yml`. Stop any
-`npm run dev:*` services first: they use the same ports.
+Its compose project is `lrfe-dev`. It was `lrfe` before, a name the site install now uses: data kept
+in the old volumes `lrfe_pgdata` and `lrfe_natsdata` does not appear here. Move what you need, then
+remove them (`docker volume rm lrfe_pgdata lrfe_natsdata`), so that a site install on the same
+machine does not pick them up.
 
 Tests (no database or network needed): `npm test` at the root, or `npm test -w @lrfe/identity`.
 

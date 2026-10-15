@@ -77,6 +77,20 @@ throwaway PostgreSQL instance under `.stack/pg` with the server binaries already
 (`PG_BIN`, or the newest `/usr/lib/postgresql/<version>/bin`), on port 3606, TCP only, and stops and
 removes it at the end. It never touches another database on the machine. No Docker needed.
 
+## Against the containers
+
+`npm run test:docker` (or `E2E_DOCKER=1` with any Playwright command) runs the same tests against
+the application in containers, as a site runs it ([deploy/README.md](../deploy/README.md)). It
+builds the images from this checkout as it is (`deploy/scripts/build.sh --worktree e2e`; several
+minutes the first time), starts them with `deploy/docker-compose.yml` plus
+`deploy/docker-compose.e2e.yml` (the demo users, emails written to `.stack/mail`, the canned AI, the
+test blockchain, a PostgreSQL that does not wait for the disk) as the compose project `lrfe-e2e`, on
+the same ports, and removes the containers and their volumes at the end; their logs stay in
+`.stack/containers.log` until the next run. The web app is the nginx container, the data in
+PostgreSQL. `E2E_DOCKER_VERSION=<version>` tests images already built or loaded from a bundle
+instead. Needs Docker with the compose plugin, and a user allowed to use it; `deploy/.env` is never
+read.
+
 ## With stored files encrypted
 
 `E2E_BAO=fake` (with any Playwright command, also with `E2E_DB=postgres`) encrypts the files the

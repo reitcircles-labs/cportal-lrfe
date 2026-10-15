@@ -259,8 +259,8 @@ No nginx reload is needed. Backend changes need only the services restarted. If 
 site file, copy it again and run `sudo nginx -t && sudo systemctl reload nginx`.
 
 The services must keep running for the site to work: `npm run dev` in a tmux session is fine for
-a test server; a production server would run them as system services (systemd) or with
-`docker compose` (see `backend/README.md`).
+a test server; a production server would run them as system services (systemd) or in containers (see
+`deploy/README.md`).
 
 ## Setting up MFA (the 6-digit code)
 

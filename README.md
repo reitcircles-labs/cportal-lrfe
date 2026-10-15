@@ -132,6 +132,6 @@ when the database has no offices).
 | Regenerate the API docs after changing routes | `npm run docs` (`npm run docs:check` fails if they are out of date) |
 | Browse the API docs | `npm run docs:serve`, http://localhost:3510 (also part of `npm run dev`) |
 | One service only | `npm run dev:identity`, `dev:edrms`, `dev:bpm`, `dev:intake`, `dev:gateway` |
-| Everything in containers | `docker compose up -d --build` (see [backend/README.md](backend/README.md)) |
+| Everything in containers (build, run, export for a site) | see [deploy/README.md](deploy/README.md) |
 
 Frontend: `npm start` (development server), `npm run build` (production build), in `angular-app/`.

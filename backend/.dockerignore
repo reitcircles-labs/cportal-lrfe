@@ -1,8 +1,12 @@
 **/node_modules
 **/.env
+**/.env~
+**/*~
 **/tmp
 **/tests
 **/coverage
 .git
+.tools
+nohup.out
 Dockerfile
 docker-compose.yml
