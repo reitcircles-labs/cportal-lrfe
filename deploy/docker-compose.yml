@@ -3,8 +3,13 @@
 #
 #   docker compose up -d                     start (or upgrade to the LRFE_VERSION in .env)
 #   docker compose ps                        every container and its health
-#   COMPOSE_PROFILES=bao                     (in .env) also OpenBao: stored files encrypted, the audit wallet key
-#   COMPOSE_PROFILES=bao,blockchain          (in .env) also a blockchain node for anchoring
+#   COMPOSE_PROFILES=postgres                (in .env, the default) the bundled PostgreSQL; without
+#                                            it, an existing server (POSTGRES_HOST, README.md)
+#   COMPOSE_PROFILES=postgres,bao            (in .env) also OpenBao: stored files encrypted, the audit wallet key
+#   COMPOSE_PROFILES=postgres,bao,blockchain (in .env) also a blockchain node for anchoring
+#
+# On every start the one-shot db-setup creates or completes every service's schema and tables
+# first; the services start only once it has finished.
 #
 # Every setting comes from .env next to this file (template: .env.example), and no secret is in an
 # image (the registry's name is still part of the app: README.md). Data lives in named volumes (bottom), so containers
@@ -32,10 +37,10 @@ x-env: &env
   # the services connect to NATS in the background and retry until it is up
   EVENT_BUS_DRIVER: nats
   NATS_URL: nats://nats:4222
-  DB_CONNECTION_STRING: postgres://${POSTGRES_USER:-lrfe}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-lrfe}
+  DB_CONNECTION_STRING: &db-url postgres://${POSTGRES_USER:-lrfe}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-lrfe}${POSTGRES_URL_OPTIONS:-}
   DB_POOL_SIZE: "5"
-  # each service creates its own schema and tables on start (there are no separate migrations yet)
-  DB_SYNC: "true"
+  # the schema and tables are set up by db-setup before the services start, not by each service
+  DB_SYNC: "false"
 
 x-healthcheck: &healthcheck
   # node:22-slim has no curl; every service answers GET /health
@@ -51,7 +56,10 @@ x-bao-command: &bao-command
   ["sh", "-c", "if [ -r /run/lrfe/bao/role-id ]; then BAO_ROLE_ID=$$(cat /run/lrfe/bao/role-id); export BAO_ROLE_ID; fi; exec node src/index.js"]
 
 services:
+  # The bundled database (profile postgres, on by default in .env). Without it, the services use an
+  # existing PostgreSQL server: POSTGRES_HOST and the other POSTGRES_* settings (README.md).
   postgres:
+    profiles: ["postgres"]
     image: postgres:16.15
     restart: unless-stopped
     logging: *logging
@@ -66,6 +74,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+
+  # Run on every start, before the services: creates every service's schema and tables, or adds
+  # what a newer version needs, and exits. Waits up to 2 minutes for the database to answer (the
+  # bundled one or an existing server); a wrong password or database name fails at once. Run again
+  # while the services are up, it changes nothing and holds each table only for a moment.
+  db-setup:
+    <<: *backend
+    restart: "no"
+    command: ["node", "scripts/db-setup.js"]
+    environment:
+      DB_CONNECTION_STRING: *db-url
 
   # The event bus between the services, with JetStream for the durable events of the audit trail
   nats:
@@ -113,7 +132,7 @@ services:
       SMTP_FAMILY: ${SMTP_FAMILY:-}
     healthcheck: *healthcheck
     depends_on:
-      postgres: { condition: service_healthy }
+      db-setup: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
 
   edrms:
@@ -148,7 +167,7 @@ services:
     networks: [default, bao]
     healthcheck: *healthcheck
     depends_on:
-      postgres: { condition: service_healthy }
+      db-setup: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
 
   bpm:
@@ -164,7 +183,7 @@ services:
       RECORDS_URL: http://land-records:3505
     healthcheck: *healthcheck
     depends_on:
-      postgres: { condition: service_healthy }
+      db-setup: { condition: service_completed_successfully }
       edrms: { condition: service_healthy }
 
   intake:
@@ -202,7 +221,7 @@ services:
     networks: [default, bao]
     healthcheck: *healthcheck
     depends_on:
-      postgres: { condition: service_healthy }
+      db-setup: { condition: service_completed_successfully }
       edrms: { condition: service_healthy }
 
   land-records:
@@ -220,7 +239,7 @@ services:
       AUDIT_URL: http://audit:3506
     healthcheck: *healthcheck
     depends_on:
-      postgres: { condition: service_healthy }
+      db-setup: { condition: service_completed_successfully }
       identity: { condition: service_healthy }
       edrms: { condition: service_healthy }
 
@@ -250,7 +269,7 @@ services:
     networks: [default, bao]
     healthcheck: *healthcheck
     depends_on:
-      postgres: { condition: service_healthy }
+      db-setup: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
 
   gateway:

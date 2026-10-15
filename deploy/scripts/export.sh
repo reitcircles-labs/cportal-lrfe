@@ -25,7 +25,8 @@ if [[ $version == *-dirty ]]; then
     echo "Not exported: $version was built from uncommitted changes. Commit, then build a release: deploy/scripts/build.sh" >&2
     exit 2
 fi
-profiles=()
+# the bundled PostgreSQL always goes along: a site may use it even if it starts with its own server
+profiles=(--profile postgres)
 for arg in "$@"; do
     case $arg in
         --bao) profiles+=(--profile bao) ;;

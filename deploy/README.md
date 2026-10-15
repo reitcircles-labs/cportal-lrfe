@@ -7,7 +7,8 @@ standard ones:
 |---|---|---|
 | web | `lrfe-web:<version>` | The web app, and `/api/...` passed to the gateway. The only one reachable from outside |
 | gateway, identity, edrms, bpm, intake, land-records, audit | `lrfe-backend:<version>` | The backend services (one image, each container runs one service) |
-| postgres | `postgres:16.15` | The database |
+| db-setup | `lrfe-backend:<version>` | Runs on every start before the services: sets up the database's schemas and tables, then exits |
+| postgres (the default) | `postgres:16.15` | The database. Or an existing PostgreSQL server instead: part B, "An existing PostgreSQL server" |
 | nats | `nats:2.15.1-alpine` | The event bus between the services |
 | openbao (optional) | `openbao/openbao:2.7.1` | Keys for encrypted files and the audit wallet |
 | cardano (optional) | `cardanosolutions/cardano-node-ogmios:v7.0.0_11.0.1-<network>` | Blockchain node for anchoring |
@@ -90,6 +91,10 @@ Docker, in the folder the bundle is unpacked in.
    docker compose ps          # every container "healthy" after about a minute
    ```
 
+   First `db-setup` sets up the database and exits (`docker compose ps -a`: "Exited (0)"); the
+   services start only after it. If it fails, nothing else starts and `docker compose logs db-setup`
+   says why (for example a wrong database password).
+
    The web app answers on `127.0.0.1:8080` (`LRFE_BIND`, `LRFE_HTTP_PORT`). Put HTTPS in front of it
    (part C) before anyone signs in: with `COOKIE_SECURE=true` sign-in needs HTTPS.
 
@@ -97,6 +102,33 @@ Docker, in the folder the bundle is unpacked in.
    invite the users: `docs/inviting-users-and-assigning-roles.md` in the bundle (in the source
    repository: `angular-app/docs/user-guide/`). The bootstrap administrator is created only once, on
    an empty database; afterwards `BOOTSTRAP_ADMIN_PASSWORD` can be removed from `.env`.
+
+### An existing PostgreSQL server
+
+By default the portal brings its own PostgreSQL (profile `postgres`, data in the `pgdata` volume).
+A site that already runs a PostgreSQL server (16, the version of the bundled one) can use it
+instead; no database container runs then.
+
+1. **On the server** (its administrator): a database and a user for the portal, e.g.
+   `CREATE USER lrfe PASSWORD '…'; CREATE DATABASE lrfe OWNER lrfe;`. As the owner of the database
+   the user creates its schemas itself. A user who may not create schemas needs them created first,
+   in that database: `CREATE SCHEMA identity AUTHORIZATION lrfe;`, the same for `edrms`, `bpm`,
+   `intake`, `records` and `audit`, and `CREATE EXTENSION IF NOT EXISTS pg_trgm;` (search for
+   spelling variants; without it search works, only without them). The server must accept the
+   containers' connections (`listen_addresses` and `pg_hba.conf`): a server on another machine by
+   its name or address; a server on this machine on an address the containers reach, not
+   `127.0.0.1`.
+2. **In `.env`**: remove `postgres` from `COMPOSE_PROFILES`, and set `POSTGRES_HOST` (and
+   `POSTGRES_PORT`), `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` to the server's.
+   `POSTGRES_URL_OPTIONS=?sslmode=require` when the server requires TLS. The password goes into a
+   connection address: letters and digits only, or each other character percent-encoded (`@` as
+   `%40`).
+3. `docker compose up -d`: `db-setup` waits for the server for up to 2 minutes and sets up the
+   schemas and tables; run again, it only adds what is missing.
+
+Back up such a database with the server's own backup (part F covers the volumes). Without containers
+at all, the same setup runs from the source repository: `npm run db:setup` in `backend/`, with
+`DB_CONNECTION_STRING` set (`backend/README.md`).
 
 ## C. HTTPS
 
@@ -134,7 +166,8 @@ edrms and intake can encrypt the files they store with keys held by OpenBao; the
 its blockchain wallet key there. OpenBao starts **sealed**: it cannot be used until enough key
 holders have unsealed it, after every restart of its container.
 
-1. In `.env`: `COMPOSE_PROFILES=bao`. Then `docker compose up -d`.
+1. In `.env`: `COMPOSE_PROFILES=postgres,bao` (without `postgres` with an existing database
+   server). Then `docker compose up -d`.
 2. **Initialise it once**, with the key holders present:
 
    ```bash
@@ -177,7 +210,7 @@ the `bao-data` volume with the rest (part F): without it encrypted files cannot 
 The audit service writes the fingerprints of the records to a public blockchain once an hour, signed
 with its wallet key in OpenBao (part D first), through its own blockchain node:
 
-1. In `.env`: `COMPOSE_PROFILES=bao,blockchain` and `CARDANO_NETWORK=preview` (the public test
+1. In `.env`: `COMPOSE_PROFILES=postgres,bao,blockchain` and `CARDANO_NETWORK=preview` (the public test
    network; the production network is not enabled yet). `docker compose up -d`.
 2. The node syncs first: about 11 hours and 16 GB for preview. Follow it with `docker compose logs
    -f cardano`.
@@ -188,9 +221,15 @@ with its wallet key in OpenBao (part D first), through its own blockchain node:
 
 **Upgrade** to a newer bundle: unpack it next to the current one and load its images (part B, step
 1), copy `.env` over from the current folder, set `LRFE_VERSION` to the new version, and run `docker
-compose up -d` in the new folder. The containers are replaced; the volumes stay. Each service brings
-its own tables up to date on start. Going back works the same way, with the old folder, unless the
-release notes say a version changed stored data.
+compose up -d` in the new folder. The containers are replaced; the volumes stay. `db-setup` brings
+the tables up to date before the new services start. Going back works the same way, with the old
+folder, unless the release notes say a version changed stored data.
+
+From a version without `db-setup` (0.1.0-260dab4 and earlier): the bundled database is now the
+profile `postgres`. Add it to `COMPOSE_PROFILES` in the copied `.env` (e.g.
+`COMPOSE_PROFILES=postgres` or `postgres,bao`) before `docker compose up -d`; otherwise `db-setup`
+stops with "The bundled database is not running". Those versions always use the bundled database, so
+going back to one works only with it, not with an existing server.
 
 **Backup**: stop the services (the database keeps running), save the database and every volume,
 start again. In the bundle's folder:
@@ -205,8 +244,9 @@ done
 docker compose up -d
 ```
 
-With OpenBao, stop it too before saving (`docker compose stop openbao`), so its data is saved
-consistently; after `docker compose up -d` the key holders unseal it again. `bao-data` is OpenBao's
+With an existing database server, leave out the `pg_dump` line and back up the database with the
+server's own backup while the services are stopped. With OpenBao, stop it too before saving
+(`docker compose stop openbao`), so its data is saved consistently; after `docker compose up -d` the key holders unseal it again. `bao-data` is OpenBao's
 (sealed) data; `bao-edrms`, `bao-intake` and `bao-audit` hold each service's OpenBao login. Without
 OpenBao they are empty and cost nothing. Keep the backup and a copy of `.env` safely, readable only
 by those who run the site: together they hold every secret.
@@ -225,7 +265,8 @@ done
 docker compose up -d
 ```
 
-With OpenBao (profile `bao`): after the restore loop, start it alone with `docker compose up -d
+With an existing database server, restore its backup there instead of the first two lines. With
+OpenBao (profile `bao`): after the restore loop, start it alone with `docker compose up -d
 openbao`, have three key holders unseal it (part D, step 3), and only then run `docker compose up
 -d`. Otherwise edrms and intake wait for it and restart until it is unsealed.
 
@@ -240,9 +281,10 @@ openbao`, have three key holders unseal it (part D, step 3), and only then run `
 | Which version runs | `docker image inspect lrfe-backend:<version> --format '{{index .Config.Labels "org.opencontainers.image.version"}}'` |
 
 **Change a secret.** `JWT_SECRET`: change it in `.env` and run `docker compose up -d`; everyone
-signs in again. `POSTGRES_PASSWORD`: the database keeps the password it was created with, so first
-change it inside (`docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`,
-then `ALTER USER <user> PASSWORD '…';`), then in `.env`, then `docker compose up -d`.
+signs in again. `POSTGRES_PASSWORD`: the database keeps the password it was created with, so change
+it there first, then in `.env`, then run `docker compose up -d`. In the bundled database: `docker
+compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`, then `ALTER USER <user>
+PASSWORD '…';`. On an existing server, its administrator changes it.
 
 **Volumes** are named after the compose project, `lrfe`: `lrfe_pgdata`, `lrfe_edrms-files`, … .
 `docker compose down` keeps them; **`docker compose down -v` deletes every record and document**.

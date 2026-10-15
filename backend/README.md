@@ -81,6 +81,7 @@ npm run dev:gateway
 # With Postgres from docker compose (published on localhost:5433;
 # DB_CONNECTION_STRING=postgres://lrfe:lrfe@localhost:5433/lrfe)
 docker compose up -d postgres
+npm run db:setup                           # every service's schema and tables (or DB_SYNC=true per service)
 npm run seed:identity                      # creates schema "identity", tables, roles, admin
 npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password: see services/identity/README.md
 npm run dev:identity
@@ -94,6 +95,12 @@ Its compose project is `lrfe-dev`. It was `lrfe` before, a name the site install
 in the old volumes `lrfe_pgdata` and `lrfe_natsdata` does not appear here. Move what you need, then
 remove them (`docker volume rm lrfe_pgdata lrfe_natsdata`), so that a site install on the same
 machine does not pick them up.
+
+`npm run db:setup` (`scripts/db-setup.js`) sets up every service's schema and tables in one step,
+in whatever database `DB_CONNECTION_STRING` names, also an existing server where a DBA has created
+the schemas first (`../deploy/README.md`, "An existing PostgreSQL server"). It is safe to run again:
+it only adds what is missing. The containers run it before the services start, which then run with
+`DB_SYNC=false`; a service started with `DB_SYNC=true` still does the same for its own schema.
 
 Tests (no database or network needed): `npm test` at the root, or `npm test -w @lrfe/identity`.
 

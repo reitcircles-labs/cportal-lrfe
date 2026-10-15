@@ -22,6 +22,7 @@
     "dev:land-records": "npm run dev -w @lrfe/land-records",
     "dev:audit": "npm run dev -w @lrfe/audit",
     "audit:backfill": "npm run backfill -w @lrfe/audit",
+    "db:setup": "node scripts/db-setup.js",
     "seed:identity": "npm run seed -w @lrfe/identity",
     "reset-password": "npm run reset-password -w @lrfe/identity --",
     "docs": "node scripts/openapi.js",

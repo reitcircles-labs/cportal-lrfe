@@ -34,6 +34,7 @@ const env = {
     COOKIE_SECURE: 'false',
     JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
     POSTGRES_PASSWORD: 'e2e-only-postgres-password',
+    COMPOSE_PROFILES: 'postgres',
     SEED_DEMO_PASSWORD: DEMO_PASSWORD,
     E2E_UID: String(mailUser.uid),
     E2E_GID: String(mailUser.gid),
