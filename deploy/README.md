@@ -297,6 +297,9 @@ openbao`, have three key holders unseal it (part D, step 3), and only then run `
 | Stop / start everything | `docker compose stop` / `docker compose up -d` |
 | Which version runs | `docker image inspect lrfe-backend:<version> --format '{{index .Config.Labels "org.opencontainers.image.version"}}'` |
 
+**Before a demo** (on the development server): `node demo/check-readiness.mjs` checks the containers, the apps,
+the demo users, the AI, the demo documents and the data, and says what is not ready (`demo/README.md`).
+
 **API docs (Swagger UI).** For a demo or the site's developers: add `docs` to `COMPOSE_PROFILES`
 (e.g. `COMPOSE_PROFILES=postgres,docs`) and run `docker compose up -d`. The docs answer on
 `127.0.0.1:3510` by default (`LRFE_DOCS_PORT`, on `LRFE_BIND` like the web app). "Try it out" goes through the
