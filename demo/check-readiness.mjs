@@ -241,7 +241,7 @@ console.log(JSON.stringify({ users, counts }));
 function checkUsersAndData(env) {
     const freshStart = profilesOf(env).includes('postgres')
         ? `${composeCmd} rm -sf ${APP_SERVICES}, then docker volume rm ${project}_pgdata ${project}_edrms-files ${project}_intake-files ${project}_natsdata, `
-          + `then ${composeCmd} up -d. OpenBao and the blockchain node keep running (not down -v: that deletes their volumes too)`
+          + `then ${composeCmd} up -d. OpenBao and the blockchain node keep running and keep their data (not down -v: it deletes the services' OpenBao logins)`
         : 'the database is an existing server: empty it there (its administrator), and the edrms-files and intake-files volumes';
     const answer = inContainer('identity', IDENTITY_PROGRAM, { DEMO_PW: env.SEED_DEMO_PASSWORD ?? '', DEMO_EMAILS: JSON.stringify(DEMO_USERS.map(u => u.email)) });
     if (answer.error) {
@@ -339,13 +339,46 @@ async function checkAnchoring(env) {
     } catch {
         // reported below
     }
-    if (res.status === 200 && wallet?.address) {
-        report('Anchoring', OK, 'wallet', `readable (${wallet.address.slice(0, 16)}…); its funds: Administration → Anchoring health`);
-    } else {
+    if (res.status !== 200 || !wallet?.address) {
         report('Anchoring', FAIL, 'wallet', `cannot be read${res.status ? ` (HTTP ${res.status})` : ''}`,
-            `${composeCmd} logs --tail 50 audit (with OpenBao: is it unsealed?)`);
+            `${composeCmd} logs --tail 50 audit (with OpenBao: is it unsealed? README.md, "Anchoring for the demo")`);
+        return;
+    }
+    report('Anchoring', OK, 'wallet', `readable: ${wallet.address}`);
+    const chain = inContainer('audit', AUDIT_PROGRAM, { LRFE_CHECK_ADDRESS: wallet.address });
+    if (chain.error) {
+        report('Anchoring', FAIL, 'blockchain node', `not reachable from audit: ${chain.error}`, `${composeCmd} logs --tail 50 cardano`);
+        return;
+    }
+    // the audit service's own rule for "synced" (backend/services/audit/src/cardano/drivers.js)
+    const synced = Math.floor(chain.synchronization * 10000) / 100;
+    if (chain.synchronization < 0.9999) {
+        report('Anchoring', FAIL, 'blockchain node', `syncing: ${synced} %`, `Wait until it reaches 100 % (${composeCmd} logs -f cardano)`);
+    } else {
+        report('Anchoring', OK, 'blockchain node', `synced (${chain.network})`);
+    }
+    const minimum = Number(env.ANCHOR_MIN_BALANCE_ADA || 5);
+    const funds = `${chain.ada.toLocaleString('en', { maximumFractionDigits: 2 })} ADA`;
+    if (chain.ada < minimum) {
+        report('Anchoring', FAIL, 'funds', `${funds}, at least ${minimum} needed`, `Send test ADA (${chain.network}) to ${wallet.address}`);
+    } else {
+        report('Anchoring', OK, 'funds', `${funds} (at least ${minimum} needed; each batch costs about 0.2 ADA)`);
     }
 }
+
+/** Runs in the audit container: the node's sync state and the wallet's funds, from Ogmios. */
+const AUDIT_PROGRAM = `
+const url = process.env.OGMIOS_URL;
+const health = await (await fetch(url + '/health', { signal: AbortSignal.timeout(8000) })).json();
+const res = await fetch(url, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(15000),
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'queryLedgerState/utxo', params: { addresses: [process.env.LRFE_CHECK_ADDRESS] }, id: 1 })
+});
+const { result, error } = await res.json();
+if (error) throw new Error(error.message);
+const lovelace = result.reduce((sum, u) => sum + BigInt(u.value.ada.lovelace), 0n);
+console.log(JSON.stringify({ synchronization: health.networkSynchronization, network: health.network, ada: Number(lovelace) / 1e6 }));
+`;
 
 // ------------------------------------------------------------------------------------------ output
 

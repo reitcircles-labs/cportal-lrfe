@@ -1,0 +1,14 @@
+# The demo install's lock on the two volumes that must survive everything (API-723): the
+# blockchain node's data (without it the node syncs again for hours) and OpenBao's (the wallet
+# key: without it the wallet and its funds are lost). Declared external, compose never deletes
+# them, not even with `docker compose down -v`; it also never creates them, so they must exist.
+#
+# Switched on in deploy/.env:  COMPOSE_FILE=docker-compose.yml:../demo/compose.keep-volumes.yml
+# The names are those of the project lrfe (deploy/docker-compose.yml, `name: lrfe`).
+volumes:
+  cardano-db:
+    external: true
+    name: lrfe_cardano-db
+  bao-data:
+    external: true
+    name: lrfe_bao-data

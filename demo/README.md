@@ -35,8 +35,13 @@ and scanned documents, the event stream), the third starts again: the database i
 created again with the demo password of `.env`. OpenBao and the blockchain node, when switched on, keep running
 (OpenBao stays unsealed, the node stays synced).
 
-Do not use `docker compose down -v` for this: it also deletes the OpenBao and blockchain volumes (the vault would have
-to be initialised again, the node would sync for hours). With an existing database server instead of the bundled one,
+**Kept, whatever happens:** `lrfe_cardano-db` (the blockchain node's data: without it the node syncs again for hours)
+and `lrfe_bao-data` (OpenBao with the wallet key: without it the wallet and its funds are lost). The demo install
+declares them external (`compose.keep-volumes.yml`, switched on by `COMPOSE_FILE` in `deploy/.env`), so compose never
+deletes them, not even `docker compose down -v`. Only `docker volume rm` with their names, or `docker volume prune
+--all` while the portal is stopped, would. The services' OpenBao logins (`lrfe_bao-audit`, `lrfe_bao-edrms`,
+`lrfe_bao-intake`) are not locked: `down -v` deletes them, and the setup of "Anchoring for the demo" (step 2, the
+last command) makes them again. With an existing database server instead of the bundled one,
 its administrator empties the database; then remove only the volumes `lrfe_edrms-files` and `lrfe_intake-files`.
 
 ### 2. Readiness check
@@ -76,8 +81,90 @@ Only sign in and set up the authenticator; do not upload anything, or the instal
 node demo/check-readiness.mjs
 ```
 
-**READY**, still 0 data, and the users you will show marked "authenticator set up". The remaining "!" lines are
-expected: users you will not show, and anchoring when it is off.
+**READY**, still 0 data, and the users you will show marked "authenticator set up". Under Anchoring: the wallet
+readable, the blockchain node synced, enough funds. The remaining "!" lines are expected: users you will not show.
+
+## Anchoring for the demo
+
+The auditor signs off only what is on the blockchain, so the demo install anchors (API-723). It runs the bundled
+OpenBao (the wallet key) and blockchain node: `COMPOSE_PROFILES=postgres,docs,bao,blockchain`,
+`CARDANO_PROVIDER=ogmios` and `ANCHOR_PERIOD=5m` in `deploy/.env`. Five minutes instead of an hour, so that a record
+approved in the demo is on the blockchain before the auditor signs off. A batch goes out only when something new
+happened, so an idle install spends nothing.
+
+**After every restart of the server or of OpenBao's container**, OpenBao is sealed and the audit service cannot sign;
+the readiness check then says the wallet cannot be read. Unseal it, in `deploy/`:
+
+```bash
+python3 -c "import json,os,sys; sys.stdout.write(json.load(open(os.path.expanduser('~/lrfe-demo-openbao-init.json')))['unseal_keys_b64'][0])" \
+  | docker compose exec -T openbao bao write -address=http://127.0.0.1:8200 sys/unseal key=-
+```
+
+`~/lrfe-demo-openbao-init.json` (outside the repository, readable by this user only) holds the unseal key and the
+root token. That is a demo shortcut: a real site splits the unseal key among key holders and keeps none on the
+server (`deploy/README.md`, part D).
+
+**Funds:** the readiness check shows the wallet's address and funds. Below `ANCHOR_MIN_BALANCE_ADA` (5), send test
+ADA (preview) to that address; each batch costs about 0.2 ADA.
+
+**How it was set up** (once; to do it again, for example on another server), in `deploy/`:
+
+1. **The node's data**, copied from a synced preview node of the same version (cardano-node 11.0.1), instead of the
+   first sync of about 11 hours. `docker compose --profile blockchain create cardano`, then copy the other node's `db`
+   folder into the volume, without its `lock` file:
+
+   ```bash
+   rsync -a --exclude=/lock <other node>/db/ "$(docker volume inspect lrfe_cardano-db --format '{{.Mountpoint}}')/"
+   ```
+
+   With rootless Docker (as here) the folder belongs to you; with Docker run as root, prefix `sudo`. The other node
+   keeps running; it is only read. Because its data is copied while it runs, the bundled node checks the whole copy
+   on its first start (it logs "Validating chunk … Progress"), then catches up: on this server the copy took about
+   45 minutes and the check about 1.5 hours, against 11 hours for a first sync. Later starts are quick.
+2. **OpenBao**: `docker compose --profile bao up -d openbao`, then initialise it with a single key, written into the
+   file (nothing is shown). Only once, on a new OpenBao: the command refuses to overwrite an existing file, which
+   holds the only unseal key.
+
+   ```bash
+   (set -o noclobber; umask 077; docker compose exec -T openbao bao operator init -address=http://127.0.0.1:8200 \
+     -key-shares=1 -key-threshold=1 -format=json > ~/lrfe-demo-openbao-init.json)
+   ```
+
+   If it failed (for example OpenBao was not up yet), it leaves an empty file that blocks the next try: remove it
+   only if it is empty, `test -s ~/lrfe-demo-openbao-init.json || rm ~/lrfe-demo-openbao-init.json`, and run it again.
+
+   Unseal it (above), then prepare it; this creates a new wallet key (`audit-anchor`):
+
+   ```bash
+   BAO_TOKEN=$(python3 -c "import json,os,sys; sys.stdout.write(json.load(open(os.path.expanduser('~/lrfe-demo-openbao-init.json')))['root_token'])") \
+     docker compose --profile bao-setup run --rm -T -e BAO_TOKEN openbao-setup
+   ```
+3. **The settings** above in `.env`, then `docker compose up -d --wait`, and fund the wallet.
+
+4. **The lock and a backup:** `COMPOSE_FILE=docker-compose.yml:../demo/compose.keep-volumes.yml` in `.env` (see "Kept,
+   whatever happens" above), and a snapshot of OpenBao in `~/lrfe-backups/` (this user only), made again whenever
+   the setup is run again:
+
+   ```bash
+   F=~/lrfe-backups/openbao-snapshot-$(date +%Y%m%d-%H%M).snap
+   (umask 077; BAO_TOKEN=$(python3 -c "import json,os,sys; sys.stdout.write(json.load(open(os.path.expanduser('~/lrfe-demo-openbao-init.json')))['root_token'])") \
+     docker compose exec -T -e BAO_TOKEN openbao sh -c 'bao operator raft snapshot save -address=http://127.0.0.1:8200 /tmp/s.snap && cat /tmp/s.snap && rm /tmp/s.snap' \
+     > "$F.part") && test -s "$F.part" && mv "$F.part" "$F" && ls -l "$F"
+   ```
+
+   The snapshot is encrypted: it is of use only with the unseal key of `~/lrfe-demo-openbao-init.json`, so keep a copy
+   of both off the server. Restoring it (not tried on this install): into a running, initialised and unsealed OpenBao,
+   with a root token of that OpenBao in `BAO_TOKEN`:
+
+   ```bash
+   docker compose cp ~/lrfe-backups/<snapshot>.snap openbao:/tmp/s.snap
+   docker compose exec -T -e BAO_TOKEN openbao bao operator raft snapshot restore -force -address=http://127.0.0.1:8200 /tmp/s.snap
+   ```
+
+   It then has the snapshot's keys: unseal it with the unseal key that belongs to the snapshot.
+
+The fresh start (step 1 of "Before every demo") keeps OpenBao, its wallet key and the node: only the portal's data
+goes. Each fresh install numbers its batches from 1 again; the wallet's earlier transactions stay on the blockchain.
 
 ## Rehearsing without spoiling the demo install
 
@@ -87,13 +174,15 @@ Rehearse on a second install of its own, on other ports, with its own data. Its 
 ```bash
 sed -e 's/^LRFE_HTTP_PORT=.*/LRFE_HTTP_PORT=8716/' -e 's#^LRFE_PUBLIC_URL=.*#LRFE_PUBLIC_URL=http://localhost:8716#' \
     -e 's/^LRFE_DOCS_PORT=.*/LRFE_DOCS_PORT=3716/' -e 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=postgres,docs/' \
+    -e 's/^CARDANO_PROVIDER=.*/CARDANO_PROVIDER=/' -e '/^COMPOSE_FILE=/d' \
     deploy/.env > ~/lrfe-rehearsal.env
 chmod 600 ~/lrfe-rehearsal.env
 cd deploy && docker compose -p lrfe-rehearsal --env-file ~/lrfe-rehearsal.env up -d --wait
 ```
 
-It runs only the portal, its database and the API docs (never an OpenBao or a blockchain node of its own, whatever the
-demo install has switched on). It is reached on port 8716 (`./remoteConnect.sh 8716` on the laptop) and checked with
+It runs only the portal, its database and the API docs, with anchoring off (never an OpenBao or a blockchain node of
+its own, whatever the demo install has switched on). It is reached on port 8716 (`./remoteConnect.sh 8716` on the
+laptop) and checked with
 `node demo/check-readiness.mjs --env ~/lrfe-rehearsal.env --project lrfe-rehearsal`. The fresh start of step 1 works
 for it the same way with `-p lrfe-rehearsal --env-file ~/lrfe-rehearsal.env` and the volumes named `lrfe-rehearsal_…`.
 Remove it when no longer needed: `docker compose -p lrfe-rehearsal --env-file ~/lrfe-rehearsal.env down -v` (in
@@ -111,7 +200,7 @@ It reads `deploy/.env` (never printing a secret) and checks:
 | Reading scans | the AI is set up and accepts its key (checked from the intake container, without spending); the cross-check on or off |
 | Demo documents | the set is complete and unchanged (`documents/SHA256SUMS`) |
 | Data | what is already in the install (batches, scanned and filed documents, land records), with the fresh-start commands when there is any |
-| Anchoring | on or off, and whether the wallet can be read when on |
+| Anchoring | on or off; when on: the wallet can be read (its address), the blockchain node is synced, the wallet has at least `ANCHOR_MIN_BALANCE_ADA` |
 
 Each item is ✓ (ready), ! (worth a look) or ✗ (not ready), with what to do. It exits 0 when nothing is ✗, else 1.
 `--json` gives the same as JSON; `--env <file> --project <name>` checks another install of the same compose file. It
