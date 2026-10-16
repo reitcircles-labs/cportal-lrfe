@@ -46,9 +46,9 @@ Johannes Tuhafeni Shipanga ½ each, extent 1 487 m², chain of title T 1659/1987
    and extent, and submit it for review. Do the same for Erf 815 with 07–10.
 4. **Review** (another records officer or supervisor): approve; the record is committed and sealed.
 
-Intake refuses a file it has seen before. To give the demo again on the same install, start from an empty install
-(`docker compose down -v`, then `docker compose up -d`, in `deploy/`). Regenerating gives byte-identical files, which
-intake would refuse as already seen.
+Intake refuses a file it has seen before. Before every demo, bring the install to a known starting state, normally a
+fresh, empty install: `../README.md`, "Before every demo" (it keeps OpenBao and the blockchain node; not
+`docker compose down -v`). Regenerating gives byte-identical files, which intake would refuse as already seen.
 
 The documents from before independence (March 1990) are headed "South West Africa", and only those from 1992 on name
 the Khomas Region, as real documents of their time would.
