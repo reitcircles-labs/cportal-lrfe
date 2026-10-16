@@ -6,6 +6,7 @@ What a demo of the portal needs, next to the install in `deploy/`.
 |---|---|
 | `documents/` | The demo document set (API-716): fictitious scans of two chains of title, to scan in, verify, file and build land records from. Its README has the story, the suggested demo flow and what the AI reads. |
 | `check-readiness.mjs` | The readiness check (API-717): run it before every demo (below). |
+| `STORYLINE.md` | The storyline (API-720): what the demo giver does, role by role, from scanning to the audit. |
 
 ## Before every demo: a known starting state
 
@@ -56,7 +57,7 @@ user you will show (`http://localhost:8088`, through the SSH tunnel) and set up 
 removes the earlier set-ups: delete the old entries for the portal in the authenticator app first, or there are two per
 user. The demo password: `grep SEED_DEMO_PASSWORD deploy/.env`.
 
-The users of the suggested demo flow (`documents/README.md`):
+The users of the storyline ([STORYLINE.md](STORYLINE.md)):
 
 | Step | User | Role |
 |---|---|---|
@@ -64,7 +65,8 @@ The users of the suggested demo flow (`documents/README.md`):
 | Verify, file | `a.mwandingi@deeds.gov.na` | reviewer |
 | Land record | `j.gawaseb@deeds.gov.na` | records officer |
 | Approve | `e.shivute@deeds.gov.na` | supervisor, or another records officer such as `h.haimbodi@deeds.gov.na`: four-eyes, so neither the officer who submitted the record nor the reviewer who filed its documents |
-| Optional | `m.nakale@oag.gov.na`, `p.hamutenya@deeds.gov.na` | auditor, administrator |
+| Audit | `m.nakale@oag.gov.na` | auditor |
+| Optional | `p.hamutenya@deeds.gov.na` | administrator |
 
 Only sign in and set up the authenticator; do not upload anything, or the install is no longer empty.
 
