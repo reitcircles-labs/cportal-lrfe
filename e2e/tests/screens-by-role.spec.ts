@@ -7,6 +7,7 @@ import { expect, test, type Response } from '@playwright/test';
 import { MATRIX_USERS, SCREENS, can } from '../support/catalogue';
 import { signInAs } from '../support/auth';
 import { trackApi } from '../support/api-idle';
+import { evidence } from '../support/evidence';
 
 const hrefOf = (path: string) => `#/${path}`;
 /** The screen's URL, optionally with a query: Verify and Documents add the open document (?doc=, ?id=). */
@@ -54,3 +55,18 @@ for (const user of MATRIX_USERS) {
         expect.soft(pageErrors, 'uncaught errors in the page').toEqual([]);
     });
 }
+
+test('only the Dashboard says it shows sample data; no other screen carries a note about demo data', { tag: ['@API-722'] }, async ({ page }) => {
+    const user = MATRIX_USERS.find(u => can(u, ['dashboard.view']) && can(u, ['record.link']))!;
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await signInAs(page, user.email, '/');
+    const note = page.getByRole('note');
+    await expect(note).toHaveText('The figures and records on this page are sample data. The other screens use live data.');
+    await expect(page.getByText(/demo data|until the land-records service is connected/)).toHaveCount(0);
+    await evidence(page, 'API-722', 'Dashboard: the note says this page shows sample data and the other screens use live data');
+
+    await page.goto('/#/link');
+    await expect(page.locator('header.topbar')).toContainText('Land record');
+    await expect(page.getByText(/sample data|demo data/)).toHaveCount(0);
+    await evidence(page, 'API-722', 'Land record: no note about demo data at the foot of the page');
+});

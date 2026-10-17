@@ -47,12 +47,9 @@ see and may do depends on their role: watch the menu change with each person."
 ### Do not show
 
 - **The Dashboard**: its figures and parcels (Erf 1873, "29 documents awaiting review", the throughput chart) are
-  sample data, not this install's. Leave it at once for the act's menu item, also before opening the bell.
+  sample data, not this install's, and a note under the greeting says so. Leave it at once for the act's menu item,
+  also before opening the bell. If asked: "The Dashboard is a preview with sample figures; every other screen is live."
 - **Uploading a file a second time**: intake refuses it as already captured (fine to show deliberately, see Act 1).
-
-The note at the foot of each page ("Dashboard and land records still show demo data … until the land-records service
-is connected") is out of date (API-722): only the Dashboard is sample data; the Land record screen is live. If asked:
-"That note is from before the land records went live; everything you see outside the Dashboard is real."
 
 ## Act 1 · Scan operator: the deeds come in (5 min)
 

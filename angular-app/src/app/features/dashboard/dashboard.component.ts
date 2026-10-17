@@ -28,6 +28,7 @@ const WEEK = [
           <a class="btn btn-primary" [routerLink]="auth.role()?.home || '/verify'">Open my queue<app-icon name="arrowRight" [size]="16" /></a>
         </div>
       </section>
+      <p class="small muted sample-note" role="note">The figures and records on this page are sample data. The other screens use live data.</p>
 
       <section class="kpis">
         @for (k of kpis(); track k.label) {
@@ -180,6 +181,7 @@ const WEEK = [
   `,
     changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
+    .sample-note { margin: -12px 0 0; }
     .welcome { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
     .kpi { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; gap: 2px 14px; padding: 18px; text-decoration: none; color: inherit; transition: box-shadow .15s, transform .15s, border-color .15s; }

@@ -75,7 +75,6 @@ import { SiteConfigService } from './state/site-config.service';
             <span class="av sm" [title]="$safeNavigationMigration(auth.role()?.name)">{{ auth.role()?.initials }}</span>
           </header>
           <main class="content"><router-outlet /></main>
-          <footer class="small muted foot-note">Sign-in, administration, tasks, capture, verify and Documents use the live services. Dashboard and land records still show demo data (fictitious names and deed references) until the land-records service is connected.</footer>
         </div>
       </div>
     }
@@ -125,7 +124,6 @@ import { SiteConfigService } from './state/site-config.service';
     .bell i { position: absolute; top: 8px; right: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--nam-red); box-shadow: 0 0 0 2px var(--color-surface); }
     .burger { display: none; }
     .content { flex: 1; }
-    .foot-note { padding: 0 28px 20px; }
     @media (max-width: 960px) {
       .app { grid-template-columns: minmax(0, 1fr); }
       .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 280px; transform: translateX(-100%); transition: transform .22s ease; box-shadow: var(--shadow-lg); }
