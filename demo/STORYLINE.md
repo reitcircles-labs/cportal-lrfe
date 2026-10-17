@@ -169,7 +169,7 @@ out the owners and the chain of title from the deeds; the officer decides."
 | 3.3 | **+ Add** on each of them | "… added to Erf 2417, Olympia" each time; **Documents 6** |
 | 3.4 | **Registered owners** (on the right, or below the tab on a laptop screen: scroll down): "From the documents: SIMON HAUFIKU 1/2, FRIEDA HAUFIKU 1/2". Click **Use these owners** | "Owners taken from the documents": both owners with ID number, share and "Under T 2876/2014". Frieda's ID is the corrected 81071100562 |
 | 3.5 | **Details** tab: **Use 1 050 m² from the documents**, **Tenure** Freehold | Extent 1050 m², "From EDR-NA-2026-000001" (the SG diagram) |
-| 3.6 | Still in **Details**, under **Encumbrances**: **+ Add encumbrance**, type **Bond**, reference **B 1944/2014**, in favour of **Omaruru Building Society Limited**; **Save details** | "Details saved"; the header shows Extent 1 050 m², Freehold, 6 linked documents |
+| 3.6 | Still in **Details**, under **Encumbrances**: **Use B 1944/2014 from the documents**, then **Save details** | "Encumbrances taken from the documents": Bond, B 1944/2014, Omaruru Building Society Limited. Then "Details saved"; the header shows Extent 1 050 m², Freehold, 6 linked documents |
 | 3.7 | **Chain of title** tab | 1991 Deed of grant G 64/1991: Government → Municipal Council of Windhoek; 1998 T 3120/1998: Municipal Council → Andreas Kambonde; 2014 T 2876/2014: Andreas Kambonde → Simon and Frieda Haufiku, "held under T 3120/1998" |
 | 3.8 | **Record checks** (under **Registered owners**) | **5 / 5 required**: Shares add up to 1 · Chain of title (G 64/1991 → T 3120/1998 → T 2876/2014) · Extent matches the SG diagram (A 318/1989) · ID numbers · Documents describe this parcel. Also ✓ Documents are current, Values from the documents |
 | 3.9 | **Submit for review**, then **Submit for review** in the box | "Erf 2417, Olympia submitted for review": status **In review**, "Waiting for approval by a second person". Nothing can be changed now |
@@ -178,8 +178,8 @@ out the owners and the chain of title from the deeds; the officer decides."
 seller was the previous owner, the area matches the survey, every ID number is valid. A misread name or a wrong ID
 number stops the record here."
 
-*Say, at the bond:* "The officer adds the bond by hand, from the filed mortgage bond: the record shows the property
-is mortgaged."
+*Say, at the bond:* "The bond comes from the filed mortgage bond, like the owners and the extent: the record shows the
+property is mortgaged, and to whom."
 
 ### Erf 815, Ludwigsdorf (quickly)
 

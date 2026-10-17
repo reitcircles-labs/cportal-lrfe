@@ -8,6 +8,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test:audit": "node --test src/app/features/audit/*.test.ts src/app/features/anchorings/*.test.ts src/app/features/admin/*.test.ts",
+    "test:link": "node --test src/app/features/link/*.test.ts",
     "test:site-config": "node --test src/app/state/site-config.test.ts docker/site-config.test.mjs"
   },
   "private": true,

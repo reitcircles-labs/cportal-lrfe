@@ -12,6 +12,7 @@ import { RecordDiffComponent } from '../../shared/record-diff.component';
 import { anchoringLabel, anchoringTag } from '../../shared/anchoring';
 import { ProofDownloadComponent } from '../../shared/proof-download.component';
 import { ProofLinkComponent } from '../../shared/proof-link.component';
+import { EncumbranceOffer, encumbranceKey, encumbranceOffer } from './encumbrance-suggestion';
 
 type Tab = 'documents' | 'chain' | 'details' | 'history' | 'comments';
 type SFilter = 'all' | 'draft' | 'in_review' | 'committed' | 'needs_review';
@@ -241,6 +242,9 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                           @if (editable()) { <button type="button" class="btn btn-ghost btn-icon danger" title="Remove" aria-label="Remove" (click)="removeEnc(i)"><app-icon name="x" [size]="16" /></button> }
                         </div>
                       } @empty { <span class="small muted">None</span> }
+                      @if (editable() && offeredEncumbrances(); as o) {
+                        <button type="button" class="btn btn-ghost" style="min-height:30px;align-self:flex-start" appCan="record.link" (click)="acceptEncumbrances(o)">{{ o.label }}</button>
+                      }
                       @if (editable()) { <button type="button" class="btn btn-ghost" style="min-height:30px;align-self:flex-start" (click)="addEnc()">+ Add encumbrance</button> }
                     </div>
                     <div class="stack" style="gap:6px">
@@ -580,6 +584,8 @@ export class LinkComponent {
   suggestedOwnersDiffer = computed(() => { const s = this.shown()?.derived?.owners; return !!s?.length && ownerKey(s) !== ownerKey(this.owners()); });
   suggestedOwnersText = computed(() => (this.shown()?.derived?.owners || []).map(o => `${o.name} ${o.share}`).join(', '));
   suggestedExtentDiffers = computed(() => { const s = this.shown()?.derived?.extent, e = this.data()?.extent; return !!s && (!e || s.value !== e.value || s.unit !== e.unit); });
+  /** Bonds the linked mortgage bonds suggest that the saved draft does not have yet. */
+  offeredEncumbrances = computed(() => encumbranceOffer(this.shown()?.derived?.encumbrances, this.data()?.encumbrances));
   extentByHand = computed(() => {
     const f = this.df(), s = this.shown()?.derived?.extent, e = this.data()?.extent;
     const v = Number(String(f.extent).replace(/\s/g, '').replace(',', '.'));
@@ -722,6 +728,18 @@ export class LinkComponent {
   async accept(field: 'owners' | 'extent') {
     const done = await this.act(r => this.records$.edit(r.id, { revision: r.draft!.revision, accept: [field] }), field === 'owners' ? 'Owners taken from the documents' : 'Extent taken from the documents');
     if (done && field === 'extent') this.df.update(f => ({ ...f, extent: String(done.draft?.data.extent?.value ?? ''), unit: done.draft?.data.extent?.unit ?? 'm2', reason: '' }));
+  }
+  /** Take the offered bonds from the documents; encumbrances entered by hand, saved or not, stay. */
+  async acceptEncumbrances(o: EncumbranceOffer) {
+    const done = await this.act(r => this.records$.edit(r.id, o.accept
+      ? { revision: r.draft!.revision, accept: ['encumbrances'] }
+      : { revision: r.draft!.revision, changes: { encumbrances: o.encumbrances } }), 'Encumbrances taken from the documents');
+    if (!done) return;
+    // add them to the form without losing rows the officer has not saved yet
+    this.df.update(f => {
+      const have = new Set(f.encumbrances.map(encumbranceKey));
+      return { ...f, encumbrances: [...f.encumbrances, ...o.missing.filter(e => !have.has(encumbranceKey(e))).map(e => ({ ...e }))] };
+    });
   }
   editOwners() { this.ownerForm.set({ owners: structuredClone(this.owners().length ? this.owners() : this.shown()?.derived?.owners ?? []), reason: '' }); }
   setOwner(i: number, k: 'name' | 'idNo' | 'share', v: string) { this.ownerForm.update(f => f && ({ ...f, owners: f.owners.map((o, j) => (j === i ? { ...o, [k]: v } : o)) })); }

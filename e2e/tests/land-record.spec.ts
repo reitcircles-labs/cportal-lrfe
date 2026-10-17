@@ -1036,3 +1036,62 @@ test('Land record dropdowns show the value the record holds, not their first opt
     await expect(dialog.getByLabel(/^Farm name/)).toBeVisible();
     await evidence(page, 'API-614', 'New record: the Kind of parcel dropdown keeps Farm portion');
 });
+
+// ------------------------------------------------ Encumbrances from the documents (API-721): the Details tab offers the bond
+// a linked mortgage bond suggests, and taking it keeps an encumbrance entered by hand.
+
+test('the Details tab offers the bond from a linked mortgage bond, and taking it keeps a servitude entered by hand', { tag: ['@API-721'] }, async ({ browser, playwright, baseURL }) => {
+    test.slow();
+    // the canned AI reads a file named after a bond number as a bond over Erf 1873 in favour of Omaruru Building Society Limited
+    const bondNo = await fileSample(playwright, baseURL!, '04-T-2210-2008-deed-of-transfer.pdf', {}, { as: 'B-77-2019-mortgage-bond.pdf' });
+
+    // a records officer and a record of their own, so the Erf 1873 tests above (and their trail of the demo officer) are
+    // untouched; the record has a servitude entered by hand and the bond linked
+    const admin = await adminApi(playwright, baseURL!);
+    const officer = await createUser(admin, ['rec'], 'bond officer');
+    await admin.dispose();
+    const rec = await apiAsNewUser(playwright, baseURL!, officer.email);
+    const h = { headers: rec.headers };
+    const created = await rec.api.post('/api/records', { ...h, data: { parcel: { kind: 'erf', number: '9721', township: 'Klein Windhoek', regDiv: 'K' } } });
+    expect(created.status(), await created.text()).toBe(201);
+    let record = await created.json();
+    const found = await (await rec.api.get(`/api/records/document-search?q=${encodeURIComponent('B 77/2019')}&recordId=${record.id}`, h)).json();
+    const bond = found.items.find((d: { edrmsNo: string }) => d.edrmsNo === bondNo);
+    expect(bond, 'the filed bond in the document search').toBeTruthy();
+    const linked = await rec.api.post(`/api/records/${record.id}/draft/documents`, { ...h, data: { revision: record.draft.revision, edrmsDocumentId: bond.edrmsDocumentId } });
+    expect(linked.status(), await linked.text()).toBe(200);
+    record = await linked.json();
+    const servitude = await rec.api.patch(`/api/records/${record.id}/draft`, { ...h, data: { revision: record.draft.revision, changes: { encumbrances: [{ type: 'servitude', ref: 'K 12/1988', inFavourOf: 'City of Windhoek' }] } } });
+    expect(servitude.status(), await servitude.text()).toBe(200);
+    await rec.dispose();
+
+    const page = await as(browser, officer.email, `/link?record=${record.id}`, NEW_USER_PASSWORD);
+    await expect(page.locator('header.panel.head')).toContainText('Erf 9721, Klein Windhoek');
+    await page.getByRole('tab', { name: 'Details' }).click();
+    const encumbrances = page.locator('form.panel .stack', { has: page.locator('b', { hasText: 'Encumbrances' }) });
+    const offer = encumbrances.getByRole('button', { name: 'Use B 77/2019 from the documents' });
+    await expect(offer).toBeVisible();
+    await expect(encumbrances.getByLabel('Reference')).toHaveCount(1);
+    await offer.scrollIntoViewIfNeeded();
+    await evidence(page, 'API-721', 'Details tab: the bond from the linked mortgage bond is offered next to the servitude entered by hand');
+
+    await offer.click();
+    await expect(page.locator('.toast', { hasText: 'Encumbrances taken from the documents' }).last()).toBeVisible();
+    await expect(offer).toHaveCount(0);
+    const refs = encumbrances.getByLabel('Reference');
+    await expect(refs).toHaveCount(2);
+    await expect(refs.nth(0)).toHaveValue('K 12/1988');
+    await expect(refs.nth(1)).toHaveValue('B 77/2019');
+    await expect(encumbrances.getByLabel('In favour of').nth(1)).toHaveValue('Omaruru Building Society Limited');
+    for (const b of await page.locator('.toast button').all()) await b.click({ timeout: 1000 }).catch(() => {});
+    await evidence(page, 'API-721', 'Details tab: the bond taken from the documents, the servitude kept, and no offer left');
+
+    // saved on the draft, not only in the form
+    const check = await apiAsNewUser(playwright, baseURL!, officer.email);
+    const saved = await (await check.api.get(`/api/records/${record.id}`, { headers: check.headers })).json();
+    expect(saved.draft.data.encumbrances).toEqual([
+        { type: 'servitude', ref: 'K 12/1988', inFavourOf: 'City of Windhoek' },
+        { type: 'bond', ref: 'B 77/2019', inFavourOf: 'Omaruru Building Society Limited' }
+    ]);
+    await check.dispose();
+});

@@ -44,9 +44,8 @@ The full script, screen by screen and role by role, is [`../STORYLINE.md`](../ST
    The automatic cross-check reads each document a second time and flags a field where the two readings disagree
    (for example a name read with a letter missing). Compare it with the scan and correct it: the land record's chain
    check refuses a transferor who was not the previous owner, so a misread name shows up there at the latest.
-3. **Land record** (records officer): create the record for Erf 2417, link documents 01–06, accept the suggested owners
-   and extent, add the bond B 1944/2014 as an encumbrance (by hand: the screen does not offer it from the documents
-   yet, API-721), and submit it for review. Do the same for Erf 815 with 07–10.
+3. **Land record** (records officer): create the record for Erf 2417, link documents 01–06, accept the suggested owners,
+   extent and bond B 1944/2014 (Details: "Use … from the documents"), and submit it for review. Do the same for Erf 815 with 07–10.
 4. **Review** (another records officer or supervisor): approve; the record is committed and sealed.
 
 Intake refuses a file it has seen before. Before every demo, bring the install to a known starting state, normally a
