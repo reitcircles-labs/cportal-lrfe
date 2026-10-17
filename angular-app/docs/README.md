@@ -12,6 +12,7 @@ says so.
 | [Records officer](user-guide/roles/records-officer.md) | Records desk | Building a parcel's land record from its filed documents, submitting it for review, changing it later, taking over corrected documents |
 | [Registrar (supervisor)](user-guide/roles/registrar.md) | Registry supervisors | Following the work, approving or returning land records, audit evidence, managing users |
 | [Auditor · read-only](user-guide/roles/auditor.md) | Office of the Auditor-General | Auditing land records against the blockchain, sign-off, findings, trail search, evidence packs, checking a proof outside the portal |
+| [What is on the blockchain](user-guide/what-is-on-the-blockchain.md) | Auditors, the registry, outside checkers | The anchoring record on the blockchain field by field, exactly how its fingerprint is computed from the documents and land records (with a worked example and a script to recompute it), how a proof reaches it, what it proves and what it does not |
 | [System administrator](user-guide/roles/system-administrator.md) | ICT | Test accounts, offices, the permission matrix, security policies, the access log |
 | [Inviting users and assigning roles](user-guide/inviting-users-and-assigning-roles.md) | Administrators | Inviting someone by email, what they do to activate their account, the six roles, changing roles, suspending, and a step-by-step check that it all works |
 

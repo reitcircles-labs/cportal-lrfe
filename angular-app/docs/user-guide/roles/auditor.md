@@ -42,6 +42,9 @@ they approved: another auditor must.
 Every status names its batch, for example "Confirmed in batch 1,412 →", and links to it. Every term
 on the audit screens has an **(i)**: click it for a short explanation.
 
+What a batch puts on the blockchain, and exactly how its fingerprint is computed from the documents
+and land records, is explained step by step in [What is on the blockchain](../what-is-on-the-blockchain.md).
+
 ## Audit a land record, start to finish
 
 Live: this audits the real Erf 1873, Klein Windhoek, once the records officer and the registrar have
@@ -109,6 +112,9 @@ lawyer.
    the evidence pack's zip file. **VALID** means the item is exactly as sealed, in its batch, and the
    batch was written to the blockchain by the registry's wallet. The page also links the transaction
    on a public blockchain explorer, a website run independently of the registry.
+
+To read the batch's record on the explorer (label 8890: `batch`, `root`, `size`, `prev`) and see how
+a proof leads to its `root`, see [What is on the blockchain](../what-is-on-the-blockchain.md).
 
 ## Search the whole trail
 

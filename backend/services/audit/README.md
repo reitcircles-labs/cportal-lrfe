@@ -181,6 +181,26 @@ anchoring to the one before, so the anchorings themselves form a chain on the ch
 the job's anchorings, including those given up (they never reached the chain), so the numbers on
 chain can have gaps: a checker follows `prev`, not the numbering.
 
+**How each value is arrived at** (API-728; `maybeAnchor` in `src/anchor.service.js`, `anchorMetadata`
+in `src/cardano/tx.js`):
+
+| Field | Value |
+|---|---|
+| `v`, `sys` | Constants: `1`, `"lrfe-audit"`. The verifier and `POST /audit/verify` accept only `sys = "lrfe-audit"` |
+| `batch` | The last anchoring's number + 1, whatever became of it (given-up ones included) |
+| `root`, `size` | Taken at the moment of the batch, **after** the batch's trail checkpoint (§1) was appended when there are trail entries after the last anchored checkpoint: `size` = every leaf since the first (land record versions, document versions, checkpoints), `root` = `SHA-256(0x02 ‖ size as u64 BE ‖ peaks, largest first)` over the tree of §2. A checkpoint is appended before `prepare`, so one from an attempt that is given up or fails to prepare stays in the tree |
+| `prev` | The root of the last anchoring that is confirmed or in flight (`ON_CHAIN_OR_GOING`), not of a given-up one; left out when there is none (the first anchoring, or every earlier one given up). Rare: if that anchoring was later rolled back and expired, `prev` names a root that never stayed on chain |
+
+Each seal is the owning service's: a document version's from edrms (`src/seal.js`: SHA-256 of the
+canonical JSON of the document id and number, version number, the file's SHA-256, the fields, the
+record metadata, created at and by, approved by, provenance), a land record version's from
+land-records (its README §7), a checkpoint's the trail head `hash` (§1).
+
+The user guide [What is on the blockchain](../../../angular-app/docs/user-guide/what-is-on-the-blockchain.md)
+explains this to auditors and outside checkers, with a worked example whose every hash is computed by
+this code and a standalone script that recomputes a root from its leaves;
+`tests/metadata-guide.test.js` recomputes both, so the guide fails the build if it drifts.
+
 **Measured** (built with the real library, priced with the current parameters, which are the same on
 preview and mainnet: 44 lovelace per byte + 155,381): **427 bytes, fee 174,169 lovelace
 (0.174 ADA)**; with only `root` and `size`, 330 bytes and 0.170 ADA. The fee does not depend on how
