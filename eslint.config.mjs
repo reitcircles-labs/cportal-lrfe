@@ -91,7 +91,11 @@ export default tseslint.config(
       ],
       'no-unused-vars': [
         'error',
-        {argsIgnorePattern: '^_', caughtErrors: 'none'},
+        {
+          argsIgnorePattern: '^_',
+          caughtErrors: 'none',
+          ignoreRestSiblings: true,
+        },
       ],
     },
   },
@@ -110,7 +114,11 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
-        {argsIgnorePattern: '^_', caughtErrors: 'none'},
+        {
+          argsIgnorePattern: '^_',
+          caughtErrors: 'none',
+          ignoreRestSiblings: true,
+        },
       ],
       // T[] for simple types, Array<T> for complex ones.
       '@typescript-eslint/array-type': ['error', {default: 'array-simple'}],

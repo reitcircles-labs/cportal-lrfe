@@ -1,9 +1,9 @@
-import { createSequelize, ensureSchema } from './db.js';
-import { createSequelizeOutbox } from './outbox.js';
+import {createSequelize, ensureSchema} from './db.js';
+import {createSequelizeOutbox} from './outbox.js';
 
 /** @param {number} ms */
 function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -13,8 +13,8 @@ function sleep(ms) {
  * @return {boolean}
  */
 function isPermanent(error) {
-    const code = error.original?.code ?? '';
-    return code.startsWith('28') || code === '3D000';
+  const code = error.original?.code ?? '';
+  return code.startsWith('28') || code === '3D000';
 }
 
 /**
@@ -26,20 +26,25 @@ function isPermanent(error) {
  *     onRetry is called with the error before each new try
  * @return {!Promise<void>}
  */
-export async function waitForDatabase(sequelize, { timeoutMs = 120_000, intervalMs = 2_000, onRetry = () => {} } = {}) {
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-        try {
-            await sequelize.authenticate();
-            return;
-        } catch (error) {
-            if (isPermanent(error) || Date.now() + intervalMs > deadline) {
-                throw new Error(`Database connection failed: ${error.message}`, { cause: error });
-            }
-            onRetry(error);
-            await sleep(intervalMs);
-        }
+export async function waitForDatabase(
+  sequelize,
+  {timeoutMs = 120_000, intervalMs = 2_000, onRetry = () => {}} = {},
+) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      await sequelize.authenticate();
+      return;
+    } catch (error) {
+      if (isPermanent(error) || Date.now() + intervalMs > deadline) {
+        throw new Error(`Database connection failed: ${error.message}`, {
+          cause: error,
+        });
+      }
+      onRetry(error);
+      await sleep(intervalMs);
     }
+  }
 }
 
 /**
@@ -53,35 +58,44 @@ export async function waitForDatabase(sequelize, { timeoutMs = 120_000, interval
  *     waitForDatabase; log: progress messages
  * @return {!Promise<void>}
  */
-export async function setUpDatabase(services, { connect = () => createSequelize({ poolSize: 1 }), wait = {}, log = () => {} } = {}) {
-    const probe = connect();
-    let lastRetry = '';
-    try {
-        await waitForDatabase(probe, {
-            ...wait,
-            // the same message every few seconds is logged once
-            onRetry: (error) => {
-                if (error.message !== lastRetry) log(`waiting for the database: ${error.message}`);
-                lastRetry = error.message;
-            }
-        });
-    } finally {
-        await probe.close();
-    }
-
-    for (const { name, schema, createRepo } of services) {
-        const sequelize = connect();
-        try {
-            const repo = createRepo(sequelize);
-            const outbox = createSequelizeOutbox(sequelize, schema);
-            await ensureSchema(sequelize, schema);
-            await repo.sync();
-            await outbox.sync();
-            log(`${name}: schema "${schema}" ready`);
-        } catch (error) {
-            throw new Error(`${name}: ${error.message}`, { cause: error });
-        } finally {
-            await sequelize.close();
+export async function setUpDatabase(
+  services,
+  {
+    connect = () => createSequelize({poolSize: 1}),
+    wait = {},
+    log = () => {},
+  } = {},
+) {
+  const probe = connect();
+  let lastRetry = '';
+  try {
+    await waitForDatabase(probe, {
+      ...wait,
+      // the same message every few seconds is logged once
+      onRetry: error => {
+        if (error.message !== lastRetry) {
+          log(`waiting for the database: ${error.message}`);
         }
+        lastRetry = error.message;
+      },
+    });
+  } finally {
+    await probe.close();
+  }
+
+  for (const {name, schema, createRepo} of services) {
+    const sequelize = connect();
+    try {
+      const repo = createRepo(sequelize);
+      const outbox = createSequelizeOutbox(sequelize, schema);
+      await ensureSchema(sequelize, schema);
+      await repo.sync();
+      await outbox.sync();
+      log(`${name}: schema "${schema}" ready`);
+    } catch (error) {
+      throw new Error(`${name}: ${error.message}`, {cause: error});
+    } finally {
+      await sequelize.close();
     }
+  }
 }
