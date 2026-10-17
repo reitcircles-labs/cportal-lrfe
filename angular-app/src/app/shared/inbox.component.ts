@@ -7,10 +7,12 @@ import { fmtTime } from '../state/rbac.service';
 import { IconComponent } from './icon.component';
 import { RecordDiffComponent } from './record-diff.component';
 import { Review, RecordsApi } from '../api/records.api';
+import { DiscussionEvent, discussionEvents } from '../features/link/discussion';
 
 /**
  * Top-bar bell: the workflow inbox (bpm tasks), and the dialog to approve or reject a task: a
- * correction to a filed document, or a land record version (with its checks and what it changes).
+ * correction to a filed document, or a land record version (with its checks, what it changes, the
+ * latest of its discussion, and a link to review it on the record page: API-729).
  */
 @Component({
     selector: 'app-inbox',
@@ -70,16 +72,24 @@ import { Review, RecordsApi } from '../api/records.api';
                 <app-record-diff [diff]="rv.diff" />
               </div>
             } @else if (!error()) { <div class="small muted">Loading the record…</div> }
+            @if (latest().length) {
+              <div class="latest" role="group" aria-label="Latest in the discussion">
+                <div class="row" style="justify-content:space-between"><b class="small">Latest in the discussion</b>@if (earlier()) { <span class="small muted">{{ earlier() }} earlier</span> }</div>
+                @for (e of latest(); track e.key) {
+                  <span class="small"><b>{{ e.byName }}</b>{{ e.what ? ' ' + e.what : '' }} <span class="muted">· {{ fmt(e.at) }}</span>@if (e.text) { <br><span style="white-space:pre-wrap">{{ e.text }}</span> }</span>
+                }
+              </div>
+            }
+            <button type="button" class="go" (click)="openRecord(d.input.record.id, true)"><span>Review on the record page: documents, chain of title, details</span><app-icon name="arrowRight" [size]="17" /></button>
           }
           @if (isFinding(d)) { <div class="small muted" style="margin:0 0 10px">The finding stays open until a newer reviewed version resolves it, or the auditor closes it. Acknowledge it to show you have seen it.</div> }
-          <div class="field"><label for="cm">Comment {{ outcome() === 'rejected' ? '(required to reject)' : '(optional)' }}</label>
+          <div class="field"><label for="cm">Comment {{ isRecord(d) ? '(needed to return it, optional to approve · kept in the Discussion)' : outcome() === 'rejected' ? '(required to reject)' : '(optional)' }}</label>
             <textarea id="cm" class="input" rows="3" [value]="comment()" (input)="comment.set($any($event.target).value)"></textarea></div>
           @if (error()) { <div class="err" role="alert">{{ error() }}</div> }
           <div class="dialog-actions">
             @if (d.input.document) { <button type="button" class="btn btn-ghost" style="margin-right:auto" (click)="openDoc(d.input.document!.id)"><app-icon name="file" [size]="15" />Open document</button> }
-            @if (d.input.record) { <button type="button" class="btn btn-ghost" style="margin-right:auto" (click)="openRecord(d.input.record.id)"><app-icon name="layers" [size]="15" />Open record</button> }
-            <button type="button" class="btn btn-secondary" (click)="close()">Later</button>
-            @if (d.outcomes?.includes('rejected')) { <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="decide('rejected')">Reject</button> }
+            <button type="button" class="btn btn-secondary" [style.margin-right]="isRecord(d) ? 'auto' : null" (click)="close()">Later</button>
+            @if (d.outcomes?.includes('rejected')) { <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="decide('rejected')">{{ isRecord(d) ? 'Return to records officer' : 'Reject' }}</button> }
             @if (d.outcomes?.includes('approved')) { <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="decide('approved')">Approve</button> }
             @if (d.outcomes?.includes('acknowledged')) { <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="decide('acknowledged')">Acknowledge</button> }
           </div>
@@ -105,6 +115,11 @@ import { Review, RecordsApi } from '../api/records.api';
     .rv { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; padding: 12px; border: 1px solid var(--color-divider); border-radius: 10px; max-height: 42vh; overflow-y: auto; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     .rchk { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; }
+    /* the land record review is taller than a small screen: the dialog scrolls, so its buttons can always be reached */
+    .dialog { max-height: calc(100vh - 32px); overflow-y: auto; }
+    .latest { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; padding: 12px; border: 1px solid var(--color-divider); border-radius: 10px; }
+    .go { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 46px; margin: 0 0 12px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--color-accent-100); color: var(--color-accent-700); font: inherit; font-weight: 600; font-size: 14px; text-align: left; cursor: pointer; }
+    .go:hover { background: var(--color-accent-200, var(--color-accent-100)); text-decoration: underline; }
     .check-mark.bad { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-bd); }
   `]
 })
@@ -115,6 +130,10 @@ export class InboxComponent {
   private records = inject(RecordsApi);
   open = signal(false);
   recordReview = signal<Review | null>(null);
+  /** The version's discussion (decisions and comments), oldest first. */
+  discussion = signal<DiscussionEvent[]>([]);
+  latest = computed(() => this.discussion().slice(-2));
+  earlier = computed(() => Math.max(0, this.discussion().length - 2));
   detail = signal<TaskDetail | null>(null);
   comment = signal('');
   outcome = signal<string | null>(null);
@@ -132,12 +151,13 @@ export class InboxComponent {
     this.open.set(false);
     try {
       const d = await this.tasks.get(t.id);
-      this.recordReview.set(null);
+      this.recordReview.set(null); this.discussion.set([]);
       this.detail.set(d);
       this.comment.set(''); this.outcome.set(null); this.error.set('');
       if (this.isRecord(d) && d.input['record']?.id) {
         this.records.review(d.input['record'].id).then(r => { if (this.detail()?.id === d.id) this.recordReview.set(r); })
           .catch(e => this.detail()?.id === d.id && this.error.set('Could not load the record: ' + (e instanceof ApiError ? e.message : String(e))));
+        this.loadDiscussion(d);
       }
     } catch (e) {
       this.toast.show('danger', 'Could not open the task', e instanceof ApiError ? e.message : String(e));
@@ -163,7 +183,17 @@ export class InboxComponent {
     } finally { this.busy.set(false); }
   }
 
-  openRecord(id: string) { this.detail.set(null); this.router.navigate(['/link'], { queryParams: { record: id } }); }
+  /** The latest of the version's discussion; without it the dialog works as before. */
+  private async loadDiscussion(d: TaskDetail) {
+    const rec = d.input['record'];
+    try {
+      const [versions, comments] = await Promise.all([this.records.versions(rec.id), this.records.comments(rec.id)]);
+      if (this.detail()?.id !== d.id) return;
+      this.discussion.set(discussionEvents(versions, comments.items).filter(e => e.versionNumber === rec.versionNumber));
+    } catch { /* not shown */ }
+  }
+
+  openRecord(id: string, review = false) { this.detail.set(null); this.router.navigate(['/link'], { queryParams: review ? { record: id, tab: 'review' } : { record: id } }); }
   openDoc(id: string) { this.detail.set(null); this.router.navigate(['/documents'], { queryParams: { id } }); }
   close() { this.detail.set(null); }
 

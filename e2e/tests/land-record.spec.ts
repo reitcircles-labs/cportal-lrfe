@@ -215,11 +215,11 @@ test('the registrar reviews it: a reject returns it with the comment, an approva
     await expect(officer.getByRole('button', { name: 'Tasks' }).locator('.count')).toHaveCount(0);
 
     // 2: reject: a comment is required
-    await dialog.getByRole('button', { name: 'Reject' }).click();
+    await dialog.getByRole('button', { name: 'Return to records officer' }).click();
     await expect(dialog).toContainText('Say what the records officer should fix.');
     await dialog.getByLabel(/Comment/).fill('Add the zoning from the town planning scheme.');
     await evidence(registrar, 'API-650', 'Review: the registrar sees the checks and the contents, and returns it with a comment');
-    await dialog.getByRole('button', { name: 'Reject' }).click();
+    await dialog.getByRole('button', { name: 'Return to records officer' }).click();
     await expect(toast(registrar, 'Erf 1873, Klein Windhoek returned to the records officer')).toBeVisible();
 
     // 3: the officer sees the comment, fixes it and submits again
@@ -974,6 +974,121 @@ test('four-eyes finalization: a registrar who filed one of the record\'s documen
     expect(approved.status(), await approved.text()).toBe(200);
     await Promise.all([registrar.dispose(), admin.dispose()]);
 });
+
+// ------------------------------------------------ Review & approve on the record page (API-729): the registrar returns
+// a version of Erf 1873 and then approves it on the record itself; the Discussion shows the comments and decisions together
+
+test('the registrar reviews on the record page: returns a version with a reason, approves it there, and the Discussion shows it all', { tag: ['@API-729'] }, async ({ browser, playwright, baseURL }) => {
+    test.slow();
+    const erf = await erf1873(playwright, baseURL!);
+    // a records officer of its own, so the demo officer's trail is untouched
+    const admin = await adminApi(playwright, baseURL!);
+    const officer = await createUser(admin, ['rec'], 'review officer');
+    await admin.dispose();
+    const rec = await apiAsNewUser(playwright, baseURL!, officer.email);
+    const h = { headers: rec.headers };
+    /** The officer changes the zoning on the open draft (opening one first) and submits it. */
+    async function changeAndSubmit(zoning: string) {
+        let record = await (await rec.api.get(`/api/records/${erf.id}`, h)).json();
+        if (!record.draft) {
+            const opened = await rec.api.post(`/api/records/${erf.id}/draft`, h);
+            expect(opened.status(), await opened.text()).toBe(201);
+            record = await opened.json();
+        }
+        const edited = await rec.api.patch(`/api/records/${erf.id}/draft`, { ...h, data: { revision: record.draft.revision, changes: { attributes: { ...record.draft.data.attributes, zoning } } } });
+        expect(edited.status(), await edited.text()).toBe(200);
+        const submitted = await rec.api.post(`/api/records/${erf.id}/draft/submit`, { ...h, data: { revision: (await edited.json()).draft.revision } });
+        expect(submitted.status(), await submitted.text()).toBe(200);
+        return (await submitted.json()).draft.versionNumber as number;
+    }
+    const version = await changeAndSubmit('Business 1');
+
+    // records officers may finalize too (another officer's records): the one who submitted it sees why they cannot approve it
+    const officerPage = await as(browser, officer.email, `/link?record=${erf.id}&tab=review`, NEW_USER_PASSWORD);
+    await expect(officerPage.getByRole('heading', { name: `Version ${version} is in review` })).toBeVisible();
+    await expect(officerPage.getByRole('status').filter({ hasText: 'You submitted this version.' })).toContainText('Another person who can finalize records must approve it (four-eyes).');
+    await expect(officerPage.getByRole('button', { name: `Approve version ${version}` })).toHaveCount(0);
+    await officerPage.context().close();
+    // whoever may not finalize records (the auditor) has no such tab: the link opens the record's documents
+    const auditorPage = await as(browser, userByRole('aud').email, `/link?record=${erf.id}&tab=review`);
+    await expect(auditorPage.locator('header.panel.head')).toContainText('Erf 1873, Klein Windhoek');
+    await expect(auditorPage.getByRole('tab', { name: /Discussion/ })).toBeVisible();
+    await expect(auditorPage.getByRole('tab', { name: /Documents/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(auditorPage.getByRole('tab', { name: /Review & approve/ })).toHaveCount(0);
+    await auditorPage.context().close();
+
+    // the registrar opens the task from the bell: the latest of the discussion, and the way to the record page
+    const page = await as(browser, userByRole('sup').email, '/');
+    const toast = (text: string) => page.locator('.toast', { hasText: text }).last();
+    const title = `(Erf 1873, Klein Windhoek) version ${version}`;
+    await page.getByRole('button', { name: 'Tasks' }).click();
+    await page.locator('.menu .item', { hasText: title }).click();
+    const dialog = page.locator('form.dialog');
+    await expect(dialog.getByLabel('Latest in the discussion')).toContainText(`submitted version ${version} for review`);
+    await expect(dialog.getByRole('button', { name: 'Return to records officer' })).toBeVisible();
+    await evidence(page, 'API-729', 'The task in the bell: the latest of the discussion, and Review on the record page');
+    await dialog.getByRole('button', { name: /Review on the record page/ }).click();
+
+    // the Review & approve tab: waiting for this registrar, with the review and the discussion on this version
+    const tab = page.getByRole('tab', { name: /Review & approve/ });
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/tab=review/);
+    await expect(page.getByRole('heading', { name: `Version ${version} is waiting for your approval` })).toBeVisible();
+    await expect(page.locator('.panel', { hasText: 'Checks' }).first()).toContainText('Shares add up to 1');
+    await expect(page.locator('app-record-diff')).toContainText('Business 1');
+    await expect(page.locator('.panel', { hasText: `Discussion on version ${version}` })).toContainText(`submitted version ${version} for review`);
+
+    // return it: a reason is needed
+    await page.getByRole('button', { name: 'Return to records officer' }).click();
+    await expect(page.getByRole('alert')).toHaveText('Say what the records officer should fix.');
+    await page.getByLabel(/^Comment/).fill('Business 1 needs the rezoning approval: link it, or keep General Residential 1.');
+    await evidence(page, 'API-729', 'Review & approve tab: the registrar returns the version with a reason, from the record page');
+    await page.getByRole('button', { name: 'Return to records officer' }).click();
+    await expect(toast('Erf 1873, Klein Windhoek returned to the records officer')).toBeVisible();
+    await expect(page.getByText(`Version ${version} is a draft with the records officer`)).toBeVisible();
+
+    // the officer answers in the Discussion and submits again
+    const said = await rec.api.post(`/api/records/${erf.id}/comments`, { ...h, data: { body: 'Kept General Residential 1 until the rezoning is approved.' } });
+    expect(said.status(), await said.text()).toBe(201);
+    await changeAndSubmit('General Residential 1');
+
+    // approve on the record page, with a comment, after a confirmation
+    await page.reload();
+    await expect(page.getByRole('heading', { name: `Version ${version} is waiting for your approval` })).toBeVisible();
+    await expect(page.locator('.kv')).toContainText('(submission 2)');
+    await page.getByLabel(/^Comment/).fill('Checked against T 4521/2019.');
+    await page.getByRole('button', { name: `Approve version ${version}` }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: `Approve version ${version}` }).click();
+    await expect(toast(`Erf 1873, Klein Windhoek approved: version ${version} is now current`)).toBeVisible();
+    await expect(page.getByText(`Version ${version} approved: nothing is waiting for approval`)).toBeVisible();
+    await expect(page.locator('.kv')).toContainText(new RegExp(`Approved by\\s*${userByRole('sup').name}`));
+    await expect(page.locator('.kv')).toContainText('Checked against T 4521/2019.');
+    for (const b of await page.locator('.toast button').all()) await b.click({ timeout: 1000 }).catch(() => {});
+    await evidence(page, 'API-729', 'Review & approve tab after approving: who submitted, who approved, and the comment');
+    // the same approval task as in the bell: it is gone from there
+    await page.getByRole('button', { name: 'Tasks' }).click();
+    await expect(page.locator('.menu')).not.toContainText(title);
+
+    // the Discussion: comments and decisions together, by version, oldest first
+    await page.getByRole('tab', { name: /Discussion/ }).click();
+    const show = page.getByRole('group', { name: 'Show' });
+    const group = page.locator('.thread').first();
+    await expect(page.locator('.vh').first()).toContainText(`Version ${version}`);
+    await expect(group.locator('li')).toHaveText([
+        new RegExp(`submitted version ${version} for review`),
+        /returned it to the records officer.*Business 1 needs the rezoning approval/s,
+        /Kept General Residential 1 until the rezoning is approved\./,
+        new RegExp(`submitted version ${version} again`),
+        new RegExp(`approved version ${version}.*Checked against T 4521/2019\\.`, 's')
+    ]);
+    await show.getByRole('button', { name: /^Decisions/ }).click();
+    await expect(group.locator('li')).toHaveCount(4);
+    await show.getByRole('button', { name: /^Comments/ }).click();
+    await expect(page.locator('.thread').first().locator('li')).toHaveCount(1);
+    await show.getByRole('button', { name: /^All/ }).click();
+    await evidence(page, 'API-729', 'Discussion tab: the comments and the review decisions together, by version');
+    await rec.dispose();
+});
 });
 
 test('the Land record screen respects permissions: the registrar reads and comments, but does not edit', { tag: ['@API-649'] }, async ({ page, playwright, baseURL }) => {
@@ -994,7 +1109,7 @@ test('the Land record screen respects permissions: the registrar reads and comme
     await expect(add).toHaveAttribute('title', /Requires/);
     await expect(page.getByRole('button', { name: 'New record' })).toHaveAttribute('aria-disabled', 'true');
 
-    await page.getByRole('tab', { name: /Comments/ }).click();
+    await page.getByRole('tab', { name: /Discussion/ }).click();
     await page.getByLabel('Comment').fill('Please link the SG diagram first.');
     await page.getByRole('button', { name: 'Post comment' }).click();
     await expect(page.locator('.thread li', { hasText: 'Please link the SG diagram first.' })).toContainText(userByRole('sup').name);
@@ -1035,4 +1150,63 @@ test('Land record dropdowns show the value the record holds, not their first opt
     expect.soft(await shown(dialog.getByLabel('Kind of parcel')), 'kind of parcel after reopening').toBe('Farm portion');
     await expect(dialog.getByLabel(/^Farm name/)).toBeVisible();
     await evidence(page, 'API-614', 'New record: the Kind of parcel dropdown keeps Farm portion');
+});
+
+// ------------------------------------------------ Encumbrances from the documents (API-721): the Details tab offers the bond
+// a linked mortgage bond suggests, and taking it keeps an encumbrance entered by hand.
+
+test('the Details tab offers the bond from a linked mortgage bond, and taking it keeps a servitude entered by hand', { tag: ['@API-721'] }, async ({ browser, playwright, baseURL }) => {
+    test.slow();
+    // the canned AI reads a file named after a bond number as a bond over Erf 1873 in favour of Omaruru Building Society Limited
+    const bondNo = await fileSample(playwright, baseURL!, '04-T-2210-2008-deed-of-transfer.pdf', {}, { as: 'B-77-2019-mortgage-bond.pdf' });
+
+    // a records officer and a record of their own, so the Erf 1873 tests above (and their trail of the demo officer) are
+    // untouched; the record has a servitude entered by hand and the bond linked
+    const admin = await adminApi(playwright, baseURL!);
+    const officer = await createUser(admin, ['rec'], 'bond officer');
+    await admin.dispose();
+    const rec = await apiAsNewUser(playwright, baseURL!, officer.email);
+    const h = { headers: rec.headers };
+    const created = await rec.api.post('/api/records', { ...h, data: { parcel: { kind: 'erf', number: '9721', township: 'Klein Windhoek', regDiv: 'K' } } });
+    expect(created.status(), await created.text()).toBe(201);
+    let record = await created.json();
+    const found = await (await rec.api.get(`/api/records/document-search?q=${encodeURIComponent('B 77/2019')}&recordId=${record.id}`, h)).json();
+    const bond = found.items.find((d: { edrmsNo: string }) => d.edrmsNo === bondNo);
+    expect(bond, 'the filed bond in the document search').toBeTruthy();
+    const linked = await rec.api.post(`/api/records/${record.id}/draft/documents`, { ...h, data: { revision: record.draft.revision, edrmsDocumentId: bond.edrmsDocumentId } });
+    expect(linked.status(), await linked.text()).toBe(200);
+    record = await linked.json();
+    const servitude = await rec.api.patch(`/api/records/${record.id}/draft`, { ...h, data: { revision: record.draft.revision, changes: { encumbrances: [{ type: 'servitude', ref: 'K 12/1988', inFavourOf: 'City of Windhoek' }] } } });
+    expect(servitude.status(), await servitude.text()).toBe(200);
+    await rec.dispose();
+
+    const page = await as(browser, officer.email, `/link?record=${record.id}`, NEW_USER_PASSWORD);
+    await expect(page.locator('header.panel.head')).toContainText('Erf 9721, Klein Windhoek');
+    await page.getByRole('tab', { name: 'Details' }).click();
+    const encumbrances = page.locator('form.panel .stack', { has: page.locator('b', { hasText: 'Encumbrances' }) });
+    const offer = encumbrances.getByRole('button', { name: 'Use B 77/2019 from the documents' });
+    await expect(offer).toBeVisible();
+    await expect(encumbrances.getByLabel('Reference')).toHaveCount(1);
+    await offer.scrollIntoViewIfNeeded();
+    await evidence(page, 'API-721', 'Details tab: the bond from the linked mortgage bond is offered next to the servitude entered by hand');
+
+    await offer.click();
+    await expect(page.locator('.toast', { hasText: 'Encumbrances taken from the documents' }).last()).toBeVisible();
+    await expect(offer).toHaveCount(0);
+    const refs = encumbrances.getByLabel('Reference');
+    await expect(refs).toHaveCount(2);
+    await expect(refs.nth(0)).toHaveValue('K 12/1988');
+    await expect(refs.nth(1)).toHaveValue('B 77/2019');
+    await expect(encumbrances.getByLabel('In favour of').nth(1)).toHaveValue('Omaruru Building Society Limited');
+    for (const b of await page.locator('.toast button').all()) await b.click({ timeout: 1000 }).catch(() => {});
+    await evidence(page, 'API-721', 'Details tab: the bond taken from the documents, the servitude kept, and no offer left');
+
+    // saved on the draft, not only in the form
+    const check = await apiAsNewUser(playwright, baseURL!, officer.email);
+    const saved = await (await check.api.get(`/api/records/${record.id}`, { headers: check.headers })).json();
+    expect(saved.draft.data.encumbrances).toEqual([
+        { type: 'servitude', ref: 'K 12/1988', inFavourOf: 'City of Windhoek' },
+        { type: 'bond', ref: 'B 77/2019', inFavourOf: 'Omaruru Building Society Limited' }
+    ]);
+    await check.dispose();
 });

@@ -28,6 +28,8 @@ export interface Version {
   data: VersionData; derived: Derived | null; checks: Check[]; changes: Change[];
   reviewComment: string | null; submittedById: string | null; submittedByName: string | null; submittedAt: string | null;
   approvedByName: string | null; committedAt: string | null; seal: string | null;
+  /** The bpm review of this version, while (or since) it was submitted. */
+  reviewInstanceId?: string | null;
 }
 export interface Flag { type: string; edrmsDocumentId: string; edrmsNo: string; ref: string | null; from: number; to: number; reason?: string; message: string; at: string; }
 export interface RecordSummary {
@@ -59,6 +61,12 @@ export interface FoundDocument {
   edrmsDocumentId: string; edrmsNo: string; docType: string; title: string; ref: string | null; property: string | null;
   currentVersion: number; filedAt: string; inThisRecord: boolean; linkedTo: { recordId: string; recordNo: string; label: string }[]; reasons?: string[];
 }
+/** A version as GET /records/:id/versions lists it, with its change log. */
+export interface VersionSummary {
+  versionNumber: number; state: Version['state']; createdAt: string; createdByName: string | null;
+  submittedAt: string | null; submittedByName: string | null; approvedByName: string | null; committedAt: string | null;
+  seal: string | null; changes: Change[];
+}
 export interface Comment { id: string; body: string; authorName: string | null; createdAt: string; versionNumber: number | null; }
 export interface ParcelKind { id: string; label: string; schemaVersion: string; schema: any; draftSchema: any; }
 
@@ -81,6 +89,7 @@ export class RecordsApi {
   suggestions(id: string) { return this.api.get<{ items: FoundDocument[] }>(`/records/${id}/suggestions`); }
   review(id: string) { return this.api.get<Review>(`/records/${id}/review`); }
   history(id: string) { return this.api.get<History>(`/records/${id}/history`); }
+  versions(id: string) { return this.api.get<VersionSummary[]>(`/records/${id}/versions`); }
   version(id: string, n: number) { return this.api.get<Version>(`/records/${id}/versions/${n}`); }
   comments(id: string) { return this.api.get<{ items: Comment[] }>(`/records/${id}/comments`); }
   comment(id: string, body: string) { return this.api.post<Comment>(`/records/${id}/comments`, { body }); }

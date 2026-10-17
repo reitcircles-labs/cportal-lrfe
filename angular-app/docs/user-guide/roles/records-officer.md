@@ -34,7 +34,10 @@ reviewed version, never edited.
   - **Chain of title**: the deeds in date order, who transferred to whom.
   - **Details**: parcel, tenure, extent, encumbrances, other attributes.
   - **History**: every approved version.
-  - **Comments**: a discussion for reviewers, the registrar and auditors.
+  - **Discussion**: the comments for reviewers, the registrar and auditors, and the review decisions
+    (submitted, returned with the reason, approved), by version.
+  - **Review & approve** (when your role may finalize records): approve or return a version another
+    officer submitted. On a version you submitted it explains that another person must approve it.
 - Side panels:
   - **Registered owners**: names, ID numbers, shares, and where each came from.
   - **Record checks**: five required checks, which must all pass before you can submit, and two
@@ -113,7 +116,7 @@ uses it is flagged. Nothing in the record changes by itself.
 | **Registered owners** → **Edit**: change an ID number to 10 digits and **Save owners** without a reason | "Give a reason for the values entered by hand: owner …". With a reason it saves, the owner shows **Entered by hand**, the check **ID numbers** fails, and **Values from the documents** warns |
 | **New record** → **For a parcel**: Erf, number "2291", township "Eros", registration division "K" | "Erf 2291, Eros created": an empty draft. **Search** finds documents by deed number, party name or EDRMS number |
 | **New record** for Erf 1873 again | "Could not create the record: Erf 1873, Klein Windhoek already has a land record (LR-NA-…)", and the existing record opens: one land record per parcel |
-| **Comments** tab: write a note, **Post comment** (or Ctrl + Enter) | Your comment with your name, the time and the version it was written on |
+| **Discussion** tab: write a note, **Post comment** (or Ctrl + Enter) | Your comment with your name, the time and the version it was written on |
 | Click the eye on a document | The document opens in a new tab, at the version linked in the record |
 
 ## Common problems

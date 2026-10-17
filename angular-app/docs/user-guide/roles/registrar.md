@@ -37,9 +37,30 @@ default), for one whose documents you filed as a reviewer: another registrar app
 |---|---|---|
 | 1 | Click the bell | "Approve land record LR-NA-2026-… (Erf 1873, Klein Windhoek) version 1", labelled **Land record** |
 | 2 | Click it | The review: **Submitted by** (the records officer), **Land record** (number, parcel, version), **Due**, then **Checks**, each with its result (shares add up to 1, the chain T 2210/2008 → T 4521/2019, extent matches A 412/2007, ID numbers valid, documents describe this parcel…), any values **Entered by hand** with the officer's reason, and **What this version contains**: the parcel fields, the three owners and the three documents |
-| 3 | To return it: **Reject** without a comment | "Say what the records officer should fix." |
-| 4 | Type a comment, e.g. "Add the zoning from the town planning scheme.", **Reject** | "Erf 1873, Klein Windhoek returned to the records officer". The officer sees your comment on the record |
-| 5 | When it comes back, open the task again and **Approve** | "Erf 1873, Klein Windhoek approved: version 1 is now current". In **Land record**, the record now shows **Committed**, **Version 1**. (Before deciding, **Open record** in the review takes you to the record) |
+| 3 | To return it: **Return to records officer** without a comment | "Say what the records officer should fix." |
+| 4 | Type a comment, e.g. "Add the zoning from the town planning scheme.", **Return to records officer** | "Erf 1873, Klein Windhoek returned to the records officer". The officer sees your comment on the record, and it is kept in the record's **Discussion** |
+| 5 | When it comes back, open the task again | **Latest in the discussion**: your comment, and the officer submitting it again |
+| 6 | **Approve** | "Erf 1873, Klein Windhoek approved: version 1 is now current". In **Land record**, the record now shows **Committed**, **Version 1** |
+
+### On the record page
+
+You can also review and approve on the land record itself, with its documents, chain of title and
+details at hand. In the task, **Review on the record page** opens the record on its **Review &
+approve** tab, or open the record in **Land record** and click the tab. The tab is there for whoever
+may finalize records.
+
+| # | Do | You should see |
+|---|---|---|
+| 1 | **Review & approve** tab of a record in review | "Version 1 is waiting for your approval": who submitted it and when, the **Checks**, what the version contains (or the changes since the current version), and the **Discussion on version 1** |
+| 2 | **Return to records officer** with a comment, or **Approve version 1** and confirm | The same as from the task: it is the same approval task, which leaves your bell |
+| 3 | After approving | "Version 1 approved": who submitted it, who approved it, and your comment |
+
+If you submitted the version, or filed one of its documents while Four-eyes finalization is on, the tab
+explains that another person must approve it; you can still read the review and comment.
+
+The **Discussion** tab shows the comments on the record and every review decision together, by version:
+submitted, returned (with the reason), submitted again, approved (with the comment). **Comments** and
+**Decisions** show one kind only.
 
 A later change to the record arrives the same way, as version 2. The review then shows **Changes
 since version 1**: each changed field with its old and new value, and any owners or documents added,
@@ -54,7 +75,7 @@ who submitted can withdraw it before you decide; the task then disappears from y
 |---|---|
 | Open **Land record (create/finalize)**, point at **New record**, and on a draft record at **Add documents** (on a committed one, **Change record**) | Faded: "Requires …". Building records is the records officer's job |
 | Open a record, **History** tab | Every approved version: who submitted it, who approved it, when, your comment if you left one, what it changed, and **Seal verified**; above them "Seal chain intact" |
-| **Comments** tab | The discussion on the record; you can add to it |
+| **Discussion** tab | The comments on the record and the review decisions, by version; you can add to it |
 | A record with status **Needs review** | One of its documents was corrected in the EDRMS: the banner says which and why. The records officer takes over the correction in a new version, which comes to you for approval |
 
 ## Look at the audit

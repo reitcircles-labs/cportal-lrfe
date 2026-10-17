@@ -123,11 +123,14 @@ const DEMO_PAGE = 'DEED OF TRANSFER No. T 2210/2008, registered at the Deeds Reg
 /**
  * The demo's T 2210/2008, or the same deed under another number when the file name carries one
  * ("deed-T4821-2008.pdf" → T 4821/2008). The EDRMS files each instrument once, so the end-to-end
- * tests use this to file several distinct deeds on one stack.
+ * tests use this to file several distinct deeds on one stack. A file name with an SG number reads
+ * as the parcel's diagram, one with a bond number ("B-77-2019-mortgage-bond.pdf") as a bond over it.
  */
 export function mockAnswer(file) {
     const sg = /SG[ _-]?A[ _-]?(\d{1,6})[ _-](\d{4})/i.exec(file?.fileName || '');
     if (sg) return sgAnswer(`A ${Number(sg[1])}/${sg[2]}`);
+    const bond = /(?:^|[^a-z])B[ _-]?(\d{1,6})[ _-]((?:19|20)\d{2})(?!\d)/i.exec(file?.fileName || '');
+    if (bond) return bondAnswer(`B ${Number(bond[1])}/${bond[2]}`);
     const m = /T[ _-]?(\d{1,6})[ _-](\d{4})/i.exec(file?.fileName || '');
     if (!m) return DEMO_ANSWER;
     const deedNo = `T ${Number(m[1])}/${m[2]}`;
@@ -157,6 +160,33 @@ function sgAnswer(sgNo) {
             ['surveyDate', '22 October 2007', 'Surveyed on 22 October 2007'],
             ['surveyor', 'L. Hamutenya, PLS 0417', 'L. Hamutenya, Professional Land Surveyor, PLS 0417'],
             ['approved', '30 November 2007', 'Approved by the Surveyor-General on 30 November 2007']
+        ].map(([k, value, evidence]) => ({ k, value, page: 1, evidence, legible: true })),
+        pages: [{ page: 1, text: page }]
+    };
+}
+
+/**
+ * A mortgage bond over the demo parcel (always Erf 1873), under the given bond number, in favour of a
+ * fictitious lender. A test that links it to another parcel sees the parcel check fail for it.
+ */
+function bondAnswer(bondNo) {
+    const page = `MORTGAGE BOND No. ${bondNo}. Maria Nghishidi, Identity No. 75060200418, the registered owner of Erf 1873, Klein Windhoek, ` +
+        'Registration Division "K", Khomas Region, held under Deed of Transfer No. T 2210/2008, hereby binds the property in favour of ' +
+        'Omaruru Building Society Limited for the capital sum of N$ 450 000,00. Registered at Windhoek on 2 May 2010.';
+    return {
+        docType: 'mortgage_bond',
+        docTypeReason: 'Titled "Mortgage Bond" with a B-series number.',
+        languages: ['en'],
+        handwritingPresent: false,
+        fields: [
+            ['bondNo', bondNo, `MORTGAGE BOND No. ${bondNo}`],
+            ['regDate', '2 May 2010', 'Registered at Windhoek on 2 May 2010'],
+            ['property', 'Erf 1873, Klein Windhoek', 'owner of Erf 1873, Klein Windhoek'],
+            ['mortgagor', 'Maria Nghishidi', 'Maria Nghishidi, Identity No.'],
+            ['mortgagorId', '75060200418', 'Identity No. 75060200418'],
+            ['mortgagee', 'Omaruru Building Society Limited', 'in favour of Omaruru Building Society Limited'],
+            ['amount', 'N$ 450 000,00', 'capital sum of N$ 450 000,00'],
+            ['priorTitle', 'T 2210/2008', 'Deed of Transfer No. T 2210/2008']
         ].map(([k, value, evidence]) => ({ k, value, page: 1, evidence, legible: true })),
         pages: [{ page: 1, text: page }]
     };

@@ -36,14 +36,16 @@ Johannes Tuhafeni Shipanga ½ each, extent 1 487 m², chain of title T 1659/1987
 
 ## Suggested demo flow
 
+The full script, screen by screen and role by role, is [`../STORYLINE.md`](../STORYLINE.md). In short:
+
 1. **Capture** (scan operator): upload 01–06 as one batch for Erf 2417, then 07–10 as a second batch.
 2. **Verify** (reviewer): go through the AI's reading. In 05, Frieda Haufiku's ID number is flagged: correct it from
    the deed of sale (04). In 06, the poor scan, check the lower-confidence fields. File each document.
    The automatic cross-check reads each document a second time and flags a field where the two readings disagree
    (for example a name read with a letter missing). Compare it with the scan and correct it: the land record's chain
    check refuses a transferor who was not the previous owner, so a misread name shows up there at the latest.
-3. **Land record** (records officer): create the record for Erf 2417, link documents 01–06, accept the suggested owners
-   and extent, and submit it for review. Do the same for Erf 815 with 07–10.
+3. **Land record** (records officer): create the record for Erf 2417, link documents 01–06, accept the suggested owners,
+   extent and bond B 1944/2014 (Details: "Use … from the documents"), and submit it for review. Do the same for Erf 815 with 07–10.
 4. **Review** (another records officer or supervisor): approve; the record is committed and sealed.
 
 Intake refuses a file it has seen before. Before every demo, bring the install to a known starting state, normally a

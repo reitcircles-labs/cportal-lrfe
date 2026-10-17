@@ -1,10 +1,11 @@
 import { Component, computed, effect, inject, signal, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiError, ApiService } from '../../api/api.service';
-import { Check, Comment, Encumbrance, FoundDocument, History, LandRecord, Owner, ParcelKind, PinnedDocument, RecordSummary, RecordsApi } from '../../api/records.api';
+import { Check, Comment, Encumbrance, FoundDocument, History, LandRecord, Owner, ParcelKind, PinnedDocument, RecordSummary, RecordsApi, Review } from '../../api/records.api';
 import { ConfirmService } from '../../state/confirm.service';
 import { ToastService } from '../../state/toast.service';
 import { AuthService } from '../../state/auth.service';
+import { TasksService } from '../../state/tasks.service';
 import { RbacService, fmtTime } from '../../state/rbac.service';
 import { IconComponent } from '../../shared/icon.component';
 import { CanDirective } from '../../shared/can.directive';
@@ -12,8 +13,11 @@ import { RecordDiffComponent } from '../../shared/record-diff.component';
 import { anchoringLabel, anchoringTag } from '../../shared/anchoring';
 import { ProofDownloadComponent } from '../../shared/proof-download.component';
 import { ProofLinkComponent } from '../../shared/proof-link.component';
+import { EncumbranceOffer, encumbranceKey, encumbranceOffer } from './encumbrance-suggestion';
+import { DiscussionEvent, DiscussionVersion, discussionEvents, groupByVersion, isDecision } from './discussion';
 
-type Tab = 'documents' | 'chain' | 'details' | 'history' | 'comments';
+type Tab = 'documents' | 'chain' | 'details' | 'history' | 'discussion' | 'review';
+type DFilter = 'all' | 'comments' | 'decisions';
 type SFilter = 'all' | 'draft' | 'in_review' | 'committed' | 'needs_review';
 
 const PARCEL_LABELS: Record<string, string> = {
@@ -27,7 +31,9 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
  * Land records (#/link) on the land-records service: list and search records; a record's documents
  * (pinned EDRMS versions), chain of title, details, owners and checks; build a draft from filed
  * documents, accept or override the suggested owners and extent, submit it for review, withdraw it,
- * and open a change on a committed record. The review itself happens in the task inbox.
+ * and open a change on a committed record. Whoever may finalize records reviews and approves a
+ * submitted version on its Review & approve tab, or from the task inbox; the Discussion shows the
+ * comments and the review decisions together (API-729).
  */
 @Component({
     selector: 'app-link',
@@ -110,7 +116,10 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                 <button role="tab" [attr.aria-selected]="tab() === 'chain'" [class.on]="tab() === 'chain'" (click)="tab.set('chain')">Chain of title</button>
                 <button role="tab" [attr.aria-selected]="tab() === 'details'" [class.on]="tab() === 'details'" (click)="tab.set('details')">Details</button>
                 <button role="tab" [attr.aria-selected]="tab() === 'history'" [class.on]="tab() === 'history'" (click)="tab.set('history'); loadHistory()">History</button>
-                <button role="tab" [attr.aria-selected]="tab() === 'comments'" [class.on]="tab() === 'comments'" (click)="tab.set('comments'); loadComments()">Comments <span>{{ comments().length }}</span></button>
+                <button role="tab" [attr.aria-selected]="tab() === 'discussion'" [class.on]="tab() === 'discussion'" (click)="tab.set('discussion'); loadDiscussion()">Discussion <span>{{ events().length }}</span></button>
+                @if (rbac.can('record.finalize')) {
+                  <button role="tab" [attr.aria-selected]="tab() === 'review'" [class.on]="tab() === 'review'" (click)="openReview()">Review &amp; approve @if (myTask()) { <span class="due" aria-hidden="true">1</span><span class="sr-only">(waiting for you)</span> }</button>
+                }
               </nav>
 
               @if (tab() === 'documents') {
@@ -241,6 +250,9 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                           @if (editable()) { <button type="button" class="btn btn-ghost btn-icon danger" title="Remove" aria-label="Remove" (click)="removeEnc(i)"><app-icon name="x" [size]="16" /></button> }
                         </div>
                       } @empty { <span class="small muted">None</span> }
+                      @if (editable() && offeredEncumbrances(); as o) {
+                        <button type="button" class="btn btn-ghost" style="min-height:30px;align-self:flex-start" appCan="record.link" (click)="acceptEncumbrances(o)">{{ o.label }}</button>
+                      }
                       @if (editable()) { <button type="button" class="btn btn-ghost" style="min-height:30px;align-self:flex-start" (click)="addEnc()">+ Add encumbrance</button> }
                     </div>
                     <div class="stack" style="gap:6px">
@@ -287,19 +299,30 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                 </div>
               }
 
-              @if (tab() === 'comments') {
+              @if (tab() === 'discussion') {
                 <div class="panel">
-                  <ul class="thread">
-                    @for (c of comments(); track c.id) {
-                      <li>
-                        <span class="av">{{ initials(c.authorName || '?') }}</span>
+                  <div class="panel-head">
+                    <div class="chips" role="group" aria-label="Show">
+                      @for (f of dfilters(); track f.id) {
+                        <button class="chip" [class.on]="dfilter() === f.id" [attr.aria-pressed]="dfilter() === f.id" (click)="dfilter.set(f.id)">{{ f.label }} <b>{{ f.n }}</b></button>
+                      }
+                    </div>
+                    <span class="small muted">Comments and review decisions, by version</span>
+                  </div>
+                  @for (g of groups(); track g.versionNumber) {
+                    <div class="vh"><b>{{ g.versionNumber ? 'Version ' + g.versionNumber : 'Before the first version' }}</b><i></i>
+                      @if (g.versionNumber && g.versionNumber === r.currentVersion) { <span class="tag tag-accent">Current</span> }
+                      @else if (g.versionNumber && g.versionNumber === r.draftVersion) { <span class="tag tag-neutral">{{ r.draftState === 'in_review' ? 'In review' : 'Draft' }}</span> }</div>
+                    <ul class="thread" [attr.aria-label]="g.versionNumber ? 'Version ' + g.versionNumber : 'Before the first version'">
+                      @for (e of g.events; track e.key) { <li [class]="'dev ' + e.kind">
+                        <span class="av">{{ initials(e.byName) }}</span>
                         <div class="stack" style="gap:3px;min-width:0">
-                          <span class="row" style="gap:8px"><b>{{ c.authorName }}</b><span class="small muted">{{ fmt(c.createdAt) }}{{ c.versionNumber ? ' · version ' + c.versionNumber : '' }}</span></span>
-                          <span style="font-size:14px;white-space:pre-wrap">{{ c.body }}</span>
+                          <span class="row" style="gap:8px;flex-wrap:wrap"><b>{{ e.byName }}</b>@if (e.what) { <span class="what">{{ e.what }}</span> }<span class="small muted">{{ fmt(e.at) }}</span></span>
+                          @if (e.text) { <span style="font-size:14px;white-space:pre-wrap">{{ e.text }}</span> }
                         </div>
-                      </li>
-                    } @empty { <li class="muted small" style="justify-content:center">No comments yet. Start the discussion for this record.</li> }
-                  </ul>
+                      </li> }
+                    </ul>
+                  } @empty { <ul class="thread"><li class="muted small" style="justify-content:center">{{ dfilter() === 'all' ? 'No comments yet. Start the discussion for this record.' : 'Nothing of this kind yet.' }}</li></ul> }
                   <div class="composer">
                     <span class="av">{{ auth.role()?.initials }}</span>
                     <div class="stack" style="gap:8px;flex:1;min-width:0">
@@ -308,6 +331,88 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
                     </div>
                   </div>
                 </div>
+              }
+
+              @if (tab() === 'review') {
+                @if (r.draftState === 'in_review' && r.draft; as d) {
+                  <div class="panel">
+                    <div class="panel-head"><h4>{{ myTask() ? 'Version ' + d.versionNumber + ' is waiting for your approval' : 'Version ' + d.versionNumber + ' is in review' }}</h4>
+                      @if (myTask(); as t) { @if (t.dueAt) { <span class="small" [class.muted]="!t.overdue" [style.color]="t.overdue ? 'var(--danger)' : null">Due {{ fmt(t.dueAt) }}</span> } }</div>
+                    <div class="panel-body stack" style="gap:14px">
+                      <div class="kv">
+                        <span>Submitted by</span><span>{{ d.submittedByName || '—' }} · {{ fmt(d.submittedAt) }}{{ submissions() > 1 ? ' (submission ' + submissions() + ')' : '' }}</span>
+                      </div>
+                      @if (review(); as rv) {
+                        <div class="stack" style="gap:8px">
+                          <b class="small">Checks</b>
+                          @for (c of rv.checks; track c.id) {
+                            <div class="chk"><span class="check-mark" aria-hidden="true" [class.ok]="c.ok" [class.bad]="!c.ok && c.level === 'error'">{{ c.ok ? '✓' : c.level === 'error' ? '✕' : '!' }}</span><span class="small"><span class="sr-only">{{ c.ok ? 'Passed: ' : c.level === 'error' ? 'Failed: ' : 'Warning: ' }}</span>{{ c.message }}</span></div>
+                          }
+                          @if (rv.overrides.length) {
+                            <b class="small">Entered by hand</b>
+                            @for (o of rv.overrides; track o.what) { <span class="small">{{ o.what }}{{ o.by ? ' (' + o.by + ')' : '' }}: {{ o.reason || 'no reason given' }}</span> }
+                          }
+                          <b class="small">{{ rv.currentVersion ? 'Changes since version ' + rv.currentVersion.versionNumber : 'What this version contains' }}</b>
+                          <app-record-diff [diff]="rv.diff" />
+                        </div>
+                      } @else { <span class="small muted">{{ reviewFailed() ? 'The review could not be loaded.' : 'Loading the review…' }}</span> }
+                    </div>
+                  </div>
+
+                  <div class="panel">
+                    <div class="panel-head"><h4>Discussion on version {{ d.versionNumber }}</h4><button class="btn btn-ghost" style="min-height:30px" (click)="tab.set('discussion'); loadDiscussion()">Open the whole discussion</button></div>
+                    <ul class="thread">
+                      @for (e of versionEvents(); track e.key) { <li [class]="'dev ' + e.kind">
+                        <span class="av">{{ initials(e.byName) }}</span>
+                        <div class="stack" style="gap:3px;min-width:0">
+                          <span class="row" style="gap:8px;flex-wrap:wrap"><b>{{ e.byName }}</b>@if (e.what) { <span class="what">{{ e.what }}</span> }<span class="small muted">{{ fmt(e.at) }}</span></span>
+                          @if (e.text) { <span style="font-size:14px;white-space:pre-wrap">{{ e.text }}</span> }
+                        </div>
+                      </li> }
+                    </ul>
+                  </div>
+
+                  @if (myTask()) {
+                    <form class="panel decide" (submit)="$event.preventDefault()">
+                      <div class="panel-head"><h4>Your decision</h4></div>
+                      <div class="panel-body stack" style="gap:10px">
+                        <div class="field"><label for="dc">Comment <span class="muted">(needed to return it, optional to approve · kept in the Discussion)</span></label>
+                          <textarea id="dc" class="input" rows="3" [value]="decisionText()" (input)="decisionText.set($any($event.target).value)"></textarea></div>
+                        @if (decisionError()) { <div class="err" role="alert">{{ decisionError() }}</div> }
+                        <div class="row" style="justify-content:flex-end;gap:10px;flex-wrap:wrap">
+                          <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="decide('rejected')">Return to records officer</button>
+                          <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="decide('approved')">Approve version {{ d.versionNumber }}</button>
+                        </div>
+                      </div>
+                    </form>
+                  } @else if (checkingTasks()) {
+                    <div class="small muted">Checking your tasks…</div>
+                  } @else {
+                    <div class="note info" role="status">
+                      @if (isSubmitter()) { <b>You submitted this version.</b> Another person who can finalize records must approve it (four-eyes). }
+                      @else { <b>Another person must approve this version.</b> It is not among your tasks: with four-eyes finalization on, whoever filed one of its documents may not approve it, or someone else has the task. }
+                      You can still read the review and comment in the Discussion.
+                    </div>
+                  }
+                } @else if (r.draft) {
+                  <div class="panel"><div class="panel-body stack" style="gap:6px">
+                    <b>Version {{ r.draft.versionNumber }} is a draft with the records officer</b>
+                    <span class="small muted">It comes here for approval once it is submitted.</span>
+                    @if (lastReturn(); as ret) { <span class="small">Returned by {{ ret.byName }}: {{ ret.text }}</span> }
+                  </div></div>
+                } @else if (lastApproval(); as a) {
+                  <div class="panel"><div class="panel-body stack" style="gap:10px">
+                    <b>Version {{ a.versionNumber }} approved: nothing is waiting for approval</b>
+                    <div class="kv">
+                      <span>Submitted by</span><span>{{ a.submittedBy }}</span>
+                      <span>Approved by</span><span>{{ a.approvedBy }}</span>
+                      @if (a.comment) { <span>Comment</span><span style="white-space:pre-wrap">{{ a.comment }}</span> }
+                    </div>
+                    <button class="btn btn-ghost" style="align-self:flex-start;min-height:30px" (click)="tab.set('discussion'); loadDiscussion()">Open the whole discussion</button>
+                  </div></div>
+                } @else {
+                  <div class="panel"><div class="panel-body small muted">Nothing is waiting for approval.</div></div>
+                }
               }
             </div>
 
@@ -446,7 +551,8 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
     .note.warn { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-bd); }
     .body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
     .side { position: sticky; top: calc(var(--topbar-h) + 16px); }
-    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-divider); overflow-x: auto; }
+    /* six tabs: they wrap rather than hide the last one behind a scroll on narrow screens */
+    .tabs { display: flex; flex-wrap: wrap; gap: 0 4px; border-bottom: 1px solid var(--color-divider); }
     .tabs button { border: 0; background: transparent; padding: 10px 14px; font-weight: 600; font-size: 14px; color: var(--color-neutral-700); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex; gap: 8px; align-items: center; white-space: nowrap; }
     .tabs button span { font-size: 11.5px; background: var(--color-neutral-200); color: var(--color-neutral-700); padding: 1px 7px; border-radius: 99px; }
     .tabs button:hover { color: var(--color-text); }
@@ -478,6 +584,16 @@ const ownerKey = (list: Owner[] | null | undefined) => JSON.stringify((list || [
     .hv:last-child { border-bottom: 0; padding-bottom: 0; }
     .thread { list-style: none; margin: 0; padding: 6px 18px; }
     .thread li { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-divider); }
+    .vh { display: flex; align-items: center; gap: 10px; padding: 14px 18px 0; font-size: 13.5px; color: var(--color-neutral-700); }
+    .vh i { flex: 1; height: 1px; background: var(--color-divider); }
+    .dev .what { font-size: 13.5px; font-weight: 600; color: var(--color-neutral-700); }
+    .dev.returned .what { color: var(--danger); }
+    .dev.approved .what { color: var(--success); }
+    .tabs button span.due { background: var(--color-accent); color: #fff; }
+    .note.info { background: var(--color-accent-100); color: var(--color-accent-700); border: 1px solid var(--color-accent-300); }
+    .err { padding: 10px 12px; border-radius: 8px; background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-bd); font-size: 13.5px; }
+    .decide textarea.input { min-height: 72px; resize: vertical; font: inherit; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     .composer { display: flex; gap: 12px; padding: 16px 18px; background: var(--color-surface-2); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
     .av { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--color-accent-500); color: #fff; }
     .av.sm { width: 30px; height: 30px; font-size: 11px; }
@@ -509,6 +625,7 @@ export class LinkComponent {
   private toast = inject(ToastService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private tasks = inject(TasksService);
 
   records = signal<RecordSummary[]>([]);
   loading = signal(true);
@@ -526,8 +643,16 @@ export class LinkComponent {
   dq = signal('');
   found = signal<FoundDocument[]>([]);
   finding = signal(false);
-  // comments
+  // discussion: comments, and the decisions in each version's change log
   comments = signal<Comment[]>([]);
+  versions = signal<DiscussionVersion[]>([]);
+  dfilter = signal<DFilter>('all');
+  // review & approve
+  review = signal<Review | null>(null);
+  reviewFailed = signal(false);
+  decisionText = signal('');
+  decisionError = signal('');
+  checkingTasks = signal(false);
   history = signal<History | null>(null);
   historyFailed = signal(false);
   draftText = signal('');
@@ -555,12 +680,26 @@ export class LinkComponent {
   anchoringTag = anchoringTag;
 
   constructor() {
-    this.route.queryParamMap.subscribe(p => { const r = p.get('record'); if (r && r !== this.selId()) this.select(r); });
+    // ?record=…&tab=review opens the record's Review & approve tab (the task inbox links there)
+    this.route.queryParamMap.subscribe(p => {
+      const r = p.get('record'), review = p.get('tab') === 'review';
+      if (r && r !== this.selId()) this.select(r, review ? 'review' : 'documents');
+      else if (r && review && this.tab() !== 'review') this.openReview();
+    });
     this.api.get<{ docTypes: { id: string; label: string }[] }>('/document-catalogue').then(c => this.docTypes.set(c.docTypes)).catch(() => {});
     this.loadList();
     // keep the details form in step with the record shown
     // (not on every change: unsaved details survive adding a document or saving owners)
     effect(() => { const v = this.shownKey(); untracked(() => this.resetDetails()); void v; });
+    // once the address names a record (a link, e.g. from the task inbox), it follows the record and the Review & approve
+    // tab shown, so following such a link again always opens them; a plain #/link stays as it is
+    effect(() => {
+      const record = this.selId(), review = this.tab() === 'review';
+      untracked(() => {
+        if (!record || !this.route.snapshot.queryParamMap.has('record')) return;
+        this.router.navigate([], { queryParams: { record, tab: review ? 'review' : null }, queryParamsHandling: 'merge', replaceUrl: true });
+      });
+    });
   }
 
   // ---------------------------------------------------------------- derived state
@@ -580,12 +719,46 @@ export class LinkComponent {
   suggestedOwnersDiffer = computed(() => { const s = this.shown()?.derived?.owners; return !!s?.length && ownerKey(s) !== ownerKey(this.owners()); });
   suggestedOwnersText = computed(() => (this.shown()?.derived?.owners || []).map(o => `${o.name} ${o.share}`).join(', '));
   suggestedExtentDiffers = computed(() => { const s = this.shown()?.derived?.extent, e = this.data()?.extent; return !!s && (!e || s.value !== e.value || s.unit !== e.unit); });
+  /** Bonds the linked mortgage bonds suggest that the saved draft does not have yet. */
+  offeredEncumbrances = computed(() => encumbranceOffer(this.shown()?.derived?.encumbrances, this.data()?.encumbrances));
   extentByHand = computed(() => {
     const f = this.df(), s = this.shown()?.derived?.extent, e = this.data()?.extent;
     const v = Number(String(f.extent).replace(/\s/g, '').replace(',', '.'));
     if (!f.extent || (e && e.value === v && e.unit === f.unit)) return false;
     return !s || s.value !== v || s.unit !== f.unit;
   });
+  events = computed(() => discussionEvents(this.versions(), this.comments()));
+  dfilters = computed(() => {
+    const all = this.events(), decisions = all.filter(isDecision).length;
+    return [
+      { id: 'all' as DFilter, label: 'All', n: all.length },
+      { id: 'comments' as DFilter, label: 'Comments', n: all.length - decisions },
+      { id: 'decisions' as DFilter, label: 'Decisions', n: decisions }
+    ];
+  });
+  groups = computed(() => {
+    const f = this.dfilter();
+    return groupByVersion(this.events().filter(e => f === 'all' || (f === 'decisions') === isDecision(e)));
+  });
+  /** The approval task of the version in review, when it is among the signed-in user's tasks. */
+  myTask = computed(() => {
+    const id = this.rec()?.draftState === 'in_review' ? this.rec()?.draft?.reviewInstanceId : null;
+    return id ? this.tasks.tasks().find(t => t.instanceId === id) ?? null : null;
+  });
+  versionEvents = computed<DiscussionEvent[]>(() => { const n = this.rec()?.draft?.versionNumber; return this.events().filter(e => e.versionNumber === n); });
+  submissions = computed(() => this.versionEvents().filter(e => e.kind === 'submitted').length);
+  /** Who submitted and approved the current version, and the approver's comment. */
+  lastApproval = computed(() => {
+    const c = this.rec()?.current; if (!c) return null;
+    return {
+      versionNumber: c.versionNumber,
+      submittedBy: `${c.submittedByName || '—'} · ${this.fmt(c.submittedAt)}`,
+      approvedBy: `${c.approvedByName || '—'} · ${this.fmt(c.committedAt)}`,
+      comment: c.reviewComment
+    };
+  });
+  /** Who returned the open draft, and why, when that was the last decision on it. */
+  lastReturn = computed(() => { const last = this.versionEvents().filter(isDecision).at(-1); return last?.kind === 'returned' ? last : null; });
   versionLabel = computed(() => {
     const r = this.rec(); if (!r) return '';
     if (r.draft) return `${r.draft.state === 'in_review' ? 'Version' : 'Draft version'} ${r.draft.versionNumber}${r.current ? ' · current is version ' + r.current.versionNumber : ''}`;
@@ -648,15 +821,17 @@ export class LinkComponent {
   }
   search(v: string) { this.q.set(v); this.debounce('list', () => this.loadList()); }
 
-  async select(id: string) {
+  async select(id: string, tab: Tab = 'documents') {
     this.selId.set(id);
-    this.tab.set('documents'); this.dq.set(''); this.draftText.set(''); this.comments.set([]); this.history.set(null);
+    this.tab.set('documents'); this.dq.set(''); this.draftText.set(''); this.comments.set([]); this.versions.set([]); this.history.set(null);
+    this.review.set(null); this.decisionText.set(''); this.decisionError.set('');
     try {
       const r = await this.records$.get(id);
       if (this.selId() !== id) return;             // another record was picked meanwhile
       this.rec.set(r);
       this.loadFound();
-      this.loadComments();
+      this.loadDiscussion();
+      if (tab === 'review') this.openReview();
     } catch (e) { this.fail('Could not open the land record', e); }
   }
   /** The record changed (an action, or someone else): show it, and its row in the list. */
@@ -723,6 +898,18 @@ export class LinkComponent {
     const done = await this.act(r => this.records$.edit(r.id, { revision: r.draft!.revision, accept: [field] }), field === 'owners' ? 'Owners taken from the documents' : 'Extent taken from the documents');
     if (done && field === 'extent') this.df.update(f => ({ ...f, extent: String(done.draft?.data.extent?.value ?? ''), unit: done.draft?.data.extent?.unit ?? 'm2', reason: '' }));
   }
+  /** Take the offered bonds from the documents; encumbrances entered by hand, saved or not, stay. */
+  async acceptEncumbrances(o: EncumbranceOffer) {
+    const done = await this.act(r => this.records$.edit(r.id, o.accept
+      ? { revision: r.draft!.revision, accept: ['encumbrances'] }
+      : { revision: r.draft!.revision, changes: { encumbrances: o.encumbrances } }), 'Encumbrances taken from the documents');
+    if (!done) return;
+    // add them to the form without losing rows the officer has not saved yet
+    this.df.update(f => {
+      const have = new Set(f.encumbrances.map(encumbranceKey));
+      return { ...f, encumbrances: [...f.encumbrances, ...o.missing.filter(e => !have.has(encumbranceKey(e))).map(e => ({ ...e }))] };
+    });
+  }
   editOwners() { this.ownerForm.set({ owners: structuredClone(this.owners().length ? this.owners() : this.shown()?.derived?.owners ?? []), reason: '' }); }
   setOwner(i: number, k: 'name' | 'idNo' | 'share', v: string) { this.ownerForm.update(f => f && ({ ...f, owners: f.owners.map((o, j) => (j === i ? { ...o, [k]: v } : o)) })); }
   addOwner() { this.ownerForm.update(f => f && ({ ...f, owners: [...f.owners, { name: '', share: '' }] })); }
@@ -772,12 +959,12 @@ export class LinkComponent {
     const r = this.rec()!;
     const owners = this.owners().map(o => `${o.name} ${o.share}`).join(', ') || 'none';
     if (!(await this.confirm.ask({ title: `Submit ${r.label} for review?`, body: `Owners: ${owners}. A second person who can finalize records approves or returns it. It cannot be edited while in review.`, confirmLabel: 'Submit for review' }))) return;
-    await this.act(x => this.records$.submit(x.id, x.draft!.revision), `${r.label} submitted for review`);
+    if (await this.act(x => this.records$.submit(x.id, x.draft!.revision), `${r.label} submitted for review`)) { this.loadDiscussion(); this.refreshReview(); }
   }
   async withdraw() {
     const r = this.rec()!;
     if (!(await this.confirm.ask({ title: `Withdraw ${r.label} from review?`, body: 'The approval task is removed and the draft can be edited again.', confirmLabel: 'Withdraw' }))) return;
-    if (await this.act(x => this.records$.withdraw(x.id), 'Withdrawn from review')) this.loadFound();
+    if (await this.act(x => this.records$.withdraw(x.id), 'Withdrawn from review')) { this.loadFound(); this.loadDiscussion(); this.refreshReview(); }
   }
   async change() {
     if (await this.act(r => this.records$.openDraft(r.id), 'A new draft is open; the committed version stays current until the change is approved')) { this.addOpen.set(true); this.loadFound(); }
@@ -794,15 +981,67 @@ export class LinkComponent {
 
   // ---------------------------------------------------------------- comments
 
-  async loadComments() {
+  async loadDiscussion() {
     const id = this.selId(); if (!id) return;
-    try { this.comments.set((await this.records$.comments(id)).items); } catch { /* shown as empty */ }
+    const [comments, versions] = await Promise.allSettled([this.records$.comments(id), this.records$.versions(id)]);
+    if (this.selId() !== id) return;
+    // either part missing is shown as empty
+    if (comments.status === 'fulfilled') this.comments.set(comments.value.items);
+    if (versions.status === 'fulfilled') this.versions.set(versions.value);
   }
   async post() {
     const t = this.draftText().trim(), id = this.selId();
     if (!t || !id || !this.rbac.can('record.comment')) return;
     try { const c = await this.records$.comment(id, t); this.comments.update(l => [...l, c]); this.draftText.set(''); }
     catch (e) { this.fail('Could not post the comment', e); }
+  }
+
+  // ---------------------------------------------------------------- review & approve
+
+  /** The Review & approve tab, for whoever may finalize records; anyone else stays on the tab they are on. */
+  async openReview() {
+    if (!this.rbac.can('record.finalize')) return;
+    this.tab.set('review');
+    this.loadReview();
+    this.checkingTasks.set(true);
+    try { await this.tasks.refresh(); } finally { this.checkingTasks.set(false); }
+  }
+  /** After the record changed state (submitted, withdrawn, decided): the review shown is that of the new state. */
+  private refreshReview() {
+    this.review.set(null);
+    if (this.tab() === 'review') this.loadReview();
+  }
+  private async loadReview() {
+    const id = this.selId(); if (!id || this.rec()?.draftState !== 'in_review') return;
+    this.reviewFailed.set(false);
+    try { const rv = await this.records$.review(id); if (this.selId() === id) this.review.set(rv); }
+    catch (e) { if (this.selId() === id) this.reviewFailed.set(true); this.fail('Could not load the review', e); }
+  }
+
+  /** Approve or return the version in review: the same approval task as in the task inbox. */
+  async decide(outcome: 'approved' | 'rejected') {
+    const t = this.myTask(), r = this.rec(); if (!t || !r?.draft || this.busy()) return;
+    const comment = this.decisionText().trim(), version = r.draft.versionNumber;
+    if (outcome === 'rejected' && !comment) { this.decisionError.set('Say what the records officer should fix.'); return; }
+    if (outcome === 'approved' && !(await this.confirm.ask({
+      title: `Approve version ${version} of ${r.label}?`, body: 'It becomes the current version of the land record and is sealed.', confirmLabel: `Approve version ${version}`
+    }))) return;
+    this.busy.set(true); this.decisionError.set('');
+    try {
+      const inst = await this.tasks.complete(t.id, outcome, comment || undefined);
+      if (inst.status === 'error') this.toast.show('warn', 'Decision recorded, but the change could not be applied', inst.errorMessage || 'See the process for details.', 9000);
+      else if (outcome === 'approved') this.toast.show('success', `${r.label} approved: version ${version} is now current`, r.recordNo);
+      else this.toast.show('info', `${r.label} returned to the records officer`, r.recordNo);
+      this.decisionText.set('');
+    } catch (e) {
+      // e.g. decided meanwhile in the bell or by someone else, or withdrawn: the error, and the record as it is now
+      this.decisionError.set(e instanceof ApiError ? e.message : String(e));
+      this.fail('Could not record the decision', e);   // the form, and the error in it, may be gone after the reload
+      this.tasks.refresh();
+    } finally { this.busy.set(false); }
+    await this.reload().catch(e => this.fail('Could not reload the land record', e));
+    this.refreshReview();
+    this.loadDiscussion();
   }
 
   // ---------------------------------------------------------------- new record
@@ -832,7 +1071,7 @@ export class LinkComponent {
       }
       const r = await this.records$.create(body);
       this.createOpen.set(false); this.sf.set('all');
-      this.show(r); this.selId.set(r.id); this.tab.set('documents'); this.mode.set('match'); this.addOpen.set(true); this.loadFound(); this.comments.set([]);
+      this.show(r); this.selId.set(r.id); this.tab.set('documents'); this.mode.set('match'); this.addOpen.set(true); this.loadFound(); this.comments.set([]); this.versions.set([]);
       this.router.navigate([], { queryParams: { record: r.id }, replaceUrl: true });
       this.toast.show('success', `${r.label} created`, r.recordNo);
     } catch (e) {

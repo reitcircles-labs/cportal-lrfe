@@ -226,7 +226,13 @@ with its wallet key in OpenBao (part D first), through its own blockchain node:
 1. In `.env`: `COMPOSE_PROFILES=postgres,bao,blockchain` and `CARDANO_NETWORK=preview` (the public test
    network; the production network is not enabled yet). `docker compose up -d`.
 2. The node syncs first: about 11 hours and 16 GB for preview. Follow it with `docker compose logs
-   -f cardano`.
+   -f cardano`. With another synced node of the same version at hand (cardano-node 11.0.1, the same
+   network), copy its data instead: `docker compose --profile blockchain create cardano`, then
+   `rsync -a --exclude=/lock <other node>/db/ "$(docker volume inspect lrfe_cardano-db --format
+   '{{.Mountpoint}}')/"` before starting it (the volume's name begins with the compose project's
+   name; with Docker run as root, prefix `sudo`). The other node may keep running: its data is only read,
+   but then this node checks the whole copy on its first start (about 1.5 hours for preview), before it
+   catches up. Copied from a node that was shut down cleanly, it starts at once.
 3. Once synced: `CARDANO_PROVIDER=ogmios` in `.env`, `docker compose up -d`. The wallet's address is
    shown to administrators under **Administration → Anchoring health**; send it funds there.
 
