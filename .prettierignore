@@ -1,0 +1,20 @@
+# Generated, installed or vendored files; Markdown and YAML keep their hand-written layout.
+**/node_modules/
+**/dist/
+**/.angular/
+**/out-tsc/
+**/package-lock.json
+**/*.md
+**/*.yml
+**/*.yaml
+backend/.tools/
+backend/services/*/docs/openapi.json
+e2e/.stack/
+e2e/.auth/
+**/coverage/
+e2e/evidence/
+e2e/playwright-report/
+e2e/test-results/
+deploy/
+demo/documents/
+angular-app/public/
