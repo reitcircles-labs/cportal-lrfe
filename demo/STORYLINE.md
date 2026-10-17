@@ -201,14 +201,17 @@ Sign in as **`e.shivute@deeds.gov.na`**, then **Land record (create/finalize)** 
 approval box). The work comes to the bell.
 
 *Say:* "The registrar approves. Not the officer who built the record, and not the reviewer who filed its documents."
+"From the bell for a quick decision, or on the record page, with the documents and the chain of title at hand."
 
 | # | Do | They see |
 |---|---|---|
 | 4.1 | Click the bell (top right) | Two tasks: "Approve land record LR-NA-2026-000001 (Erf 2417, Olympia) version 1" and the same for Erf 815 |
 | 4.2 | Click the Erf 2417 task | **Submitted by** Johannes !Gawaseb, the **Checks**, each ✓ (shares, G 64/1991 → T 3120/1998 → T 2876/2014, extent matches A 318/1989, ID numbers, documents describe this parcel, current, from the documents), and **What this version contains**: every field, both owners, the six documents |
 | 4.3 | **Approve** | "Erf 2417, Olympia approved: version 1 is now current" |
-| 4.4 | The same for Erf 815 | "Erf 815, Ludwigsdorf approved: version 1 is now current" |
-| 4.5 | **Land record (create/finalize)**, click **Erf 2417, Olympia**, **History** tab | **Committed**, **Version 1 · current**: committed, submitted by Johannes !Gawaseb, approved by Elina Shivute, **Seal verified**, **Seal chain intact**, and everything the version contains |
+| 4.4 | Now from the record page: bell → the Erf 815 task → **Review on the record page** | Erf 815, Ludwigsdorf, on its **Review & approve** tab: "Version 1 is waiting for your approval", who submitted it, the checks, what it contains, and the discussion on this version |
+| 4.5 | Look at **Documents** or **Chain of title** if asked, then **Review & approve** → **Approve version 1** → **Approve version 1** | "Erf 815, Ludwigsdorf approved: version 1 is now current". The tab now says who submitted and who approved it |
+| 4.6 | **Discussion** tab | Everything said and decided about the record, by version: submitted for review, approved |
+| 4.7 | Click **Erf 2417, Olympia**, **History** tab | **Committed**, **Version 1 · current**: committed, submitted by Johannes !Gawaseb, approved by Elina Shivute, **Seal verified**, **Seal chain intact**, and everything the version contains |
 
 *Say:* "The record is now sealed. It is never edited: a change is a new version that goes through the same review,
 and every version is kept. 'Waiting for next batch' is the blockchain step: the seal goes to a public blockchain
