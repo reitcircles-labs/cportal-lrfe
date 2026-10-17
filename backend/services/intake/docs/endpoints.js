@@ -4,7 +4,7 @@
 //   'METHOD /path': { summary, description?, tag, status? (success code), auth? (routes without a guard), upload? }
 //   auth: 'public' | 'refresh-cookie' | 'signed-link'
 
-export default {
+export const ENDPOINTS = {
     title: 'intake',
     description: 'Capture of scans into batches, AI extraction of their metadata as proposals, field-by-field review against ' +
         'evidence and checks, and filing of the verified values into the EDRMS. ' +

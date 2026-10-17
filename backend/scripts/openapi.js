@@ -185,7 +185,7 @@ const gatewayPaths = {};
 const gatewayTags = {};
 
 for (const name of SERVICES) {
-    const meta = (await load(join(ROOT, 'services', name, 'docs', 'endpoints.js'))).default;
+    const meta = (await load(join(ROOT, 'services', name, 'docs', 'endpoints.js'))).ENDPOINTS;
     const routes = await collectRoutes(name);
     const paths = {};
     const seen = new Set();

@@ -4,7 +4,7 @@
 //   'METHOD /path': { summary, description?, tag, status? (success code), auth? (routes without a guard) }
 //   auth: 'public' | 'refresh-cookie' | 'signed-link'
 
-export default {
+export const ENDPOINTS = {
     title: 'identity',
     description: 'Sign-in with MFA, sessions, users, roles, security policies and the admin access log.',
     tags: {

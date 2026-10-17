@@ -1,7 +1,7 @@
 // What the generated openapi.yaml says about each route; paths, parameters, request bodies and
 // access rules come from the routes themselves. Regenerate with `npm run docs` in backend/.
 
-export default {
+export const ENDPOINTS = {
     title: 'audit',
     description: 'Audit: a tamper-evident trail with one hash-chained entry per domain event of every service. A growing Merkle tree whose root is anchored on Cardano, and proofs anyone can check; sign-off and evidence packs follow. Design: services/audit/README.md.',
     tags: {

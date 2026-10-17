@@ -1,122 +1,249 @@
-import { createEventBus } from '@lrfe/common';
-import { RecordsService } from '../src/records.service.js';
-import { createMemoryRepo } from '../src/repo/memory.js';
-import { sealOf } from '../src/seal.js';
-import { buildApp } from '../src/app.js';
+import {createEventBus} from '@lrfe/common';
+import {RecordsService} from '../src/records.service.js';
+import {createMemoryRepo} from '../src/repo/memory.js';
+import {sealOf} from '../src/seal.js';
+import {buildApp} from '../src/app.js';
 
 export const SECRET = 'records-test-secret-records-test-secret';
 export const users = {
-    rec: { id: 'u7', name: 'Josef Gawaseb', perms: ['dashboard.view', 'record.view', 'record.create', 'record.link', 'record.unlink', 'record.comment', 'record.finalize'] },
-    sup: { id: 'u1', name: 'Elina Shivute', perms: ['dashboard.view', 'record.view', 'record.comment', 'record.finalize'] },
-    scan: { id: 'u2', name: 'Kristofina Iipinge', perms: ['dashboard.view', 'capture.view', 'capture.scan'] }
+  rec: {
+    id: 'u7',
+    name: 'Josef Gawaseb',
+    perms: [
+      'dashboard.view',
+      'record.view',
+      'record.create',
+      'record.link',
+      'record.unlink',
+      'record.comment',
+      'record.finalize',
+    ],
+  },
+  sup: {
+    id: 'u1',
+    name: 'Elina Shivute',
+    perms: [
+      'dashboard.view',
+      'record.view',
+      'record.comment',
+      'record.finalize',
+    ],
+  },
+  scan: {
+    id: 'u2',
+    name: 'Kristofina Iipinge',
+    perms: ['dashboard.view', 'capture.view', 'capture.scan'],
+  },
 };
-export const actor = (u) => ({ id: u.id, name: u.name });
+/** The actor (id and name) a service call is made as. */
+export const actor = u => ({id: u.id, name: u.name});
 
-export const erf1873 = () => ({ kind: 'erf', number: '1873', township: 'Klein Windhoek', regDiv: 'K', region: 'Khomas' });
+/** The parcel of Erf 1873, Klein Windhoek, used across the tests. */
+export const erf1873 = () => ({
+  kind: 'erf',
+  number: '1873',
+  township: 'Klein Windhoek',
+  regDiv: 'K',
+  region: 'Khomas',
+});
+/** A made-up 64-character seal (SHA-256 hex) of one repeated character. */
 export const seal64 = (c = 'a') => c.repeat(64);
 
 /** Version data for Erf 1873 as committed after T 4521/2019 (README.md section 2). */
 export function erf1873Data(overrides = {}) {
-    return {
-        schemaVersion: 'erf/1',
-        parcel: erf1873(),
-        extent: { value: 1214, unit: 'm2', source: { from: 'document', edrmsNo: 'EDR-NA-2026-000003' } },
-        tenure: 'freehold',
-        owners: [
-            { name: 'Maria Nghishidi', idNo: '75060200418', share: '1/2', since: 'T 4521/2019', source: { from: 'document', edrmsNo: 'EDR-NA-2026-000005' } },
-            { name: 'Ndapewa Nghishidi', idNo: '98030100562', share: '1/4', since: 'T 4521/2019', source: { from: 'document', edrmsNo: 'EDR-NA-2026-000005' } },
-            { name: 'Tomas Nghishidi', idNo: '01112500379', share: '1/4', since: 'T 4521/2019', source: { from: 'document', edrmsNo: 'EDR-NA-2026-000005' } }
-        ],
-        encumbrances: [],
-        attributes: { zoning: 'Residential' },
-        documents: [{
-            edrmsDocumentId: '6f1c2b0e-4d3a-4c1b-9a8e-1b2c3d4e5f60', edrmsNo: 'EDR-NA-2026-000005', version: 1, seal: seal64('b'),
-            docType: 'deed_of_transfer', ref: 'T 4521/2019', addedBy: 'u7', addedAt: '2026-10-05T09:12:00.000Z',
-            fields: { deedNo: 'T 4521/2019', priorTitle: 'T 2210/2008' }
-        }],
-        ...overrides
-    };
+  return {
+    schemaVersion: 'erf/1',
+    parcel: erf1873(),
+    extent: {
+      value: 1214,
+      unit: 'm2',
+      source: {from: 'document', edrmsNo: 'EDR-NA-2026-000003'},
+    },
+    tenure: 'freehold',
+    owners: [
+      {
+        name: 'Maria Nghishidi',
+        idNo: '75060200418',
+        share: '1/2',
+        since: 'T 4521/2019',
+        source: {from: 'document', edrmsNo: 'EDR-NA-2026-000005'},
+      },
+      {
+        name: 'Ndapewa Nghishidi',
+        idNo: '98030100562',
+        share: '1/4',
+        since: 'T 4521/2019',
+        source: {from: 'document', edrmsNo: 'EDR-NA-2026-000005'},
+      },
+      {
+        name: 'Tomas Nghishidi',
+        idNo: '01112500379',
+        share: '1/4',
+        since: 'T 4521/2019',
+        source: {from: 'document', edrmsNo: 'EDR-NA-2026-000005'},
+      },
+    ],
+    encumbrances: [],
+    attributes: {zoning: 'Residential'},
+    documents: [
+      {
+        edrmsDocumentId: '6f1c2b0e-4d3a-4c1b-9a8e-1b2c3d4e5f60',
+        edrmsNo: 'EDR-NA-2026-000005',
+        version: 1,
+        seal: seal64('b'),
+        docType: 'deed_of_transfer',
+        ref: 'T 4521/2019',
+        addedBy: 'u7',
+        addedAt: '2026-10-05T09:12:00.000Z',
+        fields: {deedNo: 'T 4521/2019', priorTitle: 'T 2210/2008'},
+      },
+    ],
+    ...overrides,
+  };
 }
 
+/** A test clock that starts at `start` and moves only when advanced. */
 export function makeClock(start = Date.parse('2026-10-05T08:00:00Z')) {
-    let now = start;
-    const clock = () => new Date(now);
-    clock.advance = (ms) => { now += ms; };
-    return clock;
+  let now = start;
+  const clock = () => new Date(now);
+  clock.advance = ms => {
+    now += ms;
+  };
+  return clock;
 }
 
 /** `tap(event)` sees every event of every service in the test (the audit service's tests). */
-export function makeService({ tap } = {}) {
-    const repo = createMemoryRepo();
-    const events = createEventBus({ driver: 'memory', source: 'land-records' });
-    const published = [];
-    events.subscribe('*', e => published.push(e));
-    if (tap) events.subscribe('*', tap);
-    const clock = makeClock();
-    const service = new RecordsService({ repo, events, clock });
-    return { repo, service, published, clock };
+export function makeService({tap} = {}) {
+  const repo = createMemoryRepo();
+  const events = createEventBus({driver: 'memory', source: 'land-records'});
+  const published = [];
+  events.subscribe('*', e => published.push(e));
+  if (tap) events.subscribe('*', tap);
+  const clock = makeClock();
+  const service = new RecordsService({repo, events, clock});
+  return {repo, service, published, clock};
 }
 
 /**
  * Commit a version directly through the repo, as the review step will (API-647): put it in review
  * with `data`, then commit it with its seal chained to the previous current version.
  */
-export async function commitVersion({ repo, clock }, recordId, versionNumber, data, { submitter = users.rec, approver = users.sup } = {}) {
-    const record = await repo.getRecord(recordId);
-    const previous = record.currentVersion ? await repo.getVersion(recordId, record.currentVersion) : null;
-    await repo.updateVersion(recordId, versionNumber, { data, state: 'in_review', submittedAt: clock(), submittedById: submitter.id, submittedByName: submitter.name });
-    clock.advance(60_000);
-    const v = { ...(await repo.getVersion(recordId, versionNumber)), approvedById: approver.id, approvedByName: approver.name, committedAt: clock(), previousSeal: previous?.seal ?? null };
-    const seal = sealOf(record, v);
-    return repo.commit({
-        recordId, versionNumber,
-        versionPatch: { approvedById: approver.id, approvedByName: approver.name, committedAt: v.committedAt, previousSeal: v.previousSeal, seal },
-        recordPatch: { status: 'committed', currentVersion: versionNumber, draftVersion: null, draftState: null, updatedAt: clock() },
-        supersede: previous?.versionNumber
-    });
+export async function commitVersion(
+  {repo, clock},
+  recordId,
+  versionNumber,
+  data,
+  {submitter = users.rec, approver = users.sup} = {},
+) {
+  const record = await repo.getRecord(recordId);
+  const previous = record.currentVersion
+    ? await repo.getVersion(recordId, record.currentVersion)
+    : null;
+  await repo.updateVersion(recordId, versionNumber, {
+    data,
+    state: 'in_review',
+    submittedAt: clock(),
+    submittedById: submitter.id,
+    submittedByName: submitter.name,
+  });
+  clock.advance(60_000);
+  const v = {
+    ...(await repo.getVersion(recordId, versionNumber)),
+    approvedById: approver.id,
+    approvedByName: approver.name,
+    committedAt: clock(),
+    previousSeal: previous?.seal ?? null,
+  };
+  const seal = sealOf(record, v);
+  return repo.commit({
+    recordId,
+    versionNumber,
+    versionPatch: {
+      approvedById: approver.id,
+      approvedByName: approver.name,
+      committedAt: v.committedAt,
+      previousSeal: v.previousSeal,
+      seal,
+    },
+    recordPatch: {
+      status: 'committed',
+      currentVersion: versionNumber,
+      draftVersion: null,
+      draftState: null,
+      updatedAt: clock(),
+    },
+    supersede: previous?.versionNumber,
+  });
 }
 
+/** The service behind its HTTP app, with `as(user)` giving that user's auth header. */
 export async function makeHttp() {
-    const ctx = makeService();
-    const app = await buildApp({ service: ctx.service, jwtSecret: SECRET });
-    await app.ready();
-    const as = (u) => ({ authorization: `Bearer ${app.jwt.sign({ typ: 'access', sub: u.id, name: u.name, perms: u.perms })}` });
-    return { ...ctx, app, as };
+  const ctx = makeService();
+  const app = await buildApp({service: ctx.service, jwtSecret: SECRET});
+  await app.ready();
+  const as = u => ({
+    authorization: `Bearer ${app.jwt.sign({typ: 'access', sub: u.id, name: u.name, perms: u.perms})}`,
+  });
+  return {...ctx, app, as};
 }
 
 /**
  * land-records with a real in-process edrms (its routes, its search) holding the testers' sample
  * documents for Erf 1873 and one other parcel (edrms tests/helpers.js fileSamples).
  */
-export async function makeWithEdrms({ tap } = {}) {
-    const { createServiceTokenSigner } = await import('@lrfe/common');
-    const { createMemoryStore } = await import('@lrfe/storage');
-    const { EdrmsService } = await import('../../edrms/src/edrms.service.js');
-    const { createMemoryRepo: edrmsRepo } = await import('../../edrms/src/repo/memory.js');
-    const { buildApp: buildEdrms } = await import('../../edrms/src/app.js');
-    const { fileSamples } = await import('../../edrms/tests/helpers.js');
-    const { createEdrmsClient } = await import('../src/edrms-client.js');
+export async function makeWithEdrms({tap} = {}) {
+  const {createServiceTokenSigner} = await import('@lrfe/common');
+  const {createMemoryStore} = await import('@lrfe/storage');
+  const {EdrmsService} = await import('../../edrms/src/edrms.service.js');
+  const {createMemoryRepo: edrmsRepo} =
+    await import('../../edrms/src/repo/memory.js');
+  const {buildApp: buildEdrms} = await import('../../edrms/src/app.js');
+  const {fileSamples} = await import('../../edrms/tests/helpers.js');
+  const {createEdrmsClient} = await import('../src/edrms-client.js');
 
-    const edrmsService = new EdrmsService({ repo: edrmsRepo(), store: createMemoryStore(), events: createEventBus({ driver: 'memory', source: 'edrms' }) });
-    if (tap) edrmsService.events.subscribe('*', tap);
-    const docs = await fileSamples(edrmsService);
-    const edrmsApp = await buildEdrms({ service: edrmsService, jwtSecret: SECRET });
-    await edrmsApp.ready();
-    const fetchImpl = async (url, { method, headers }) => {
-        const u = new URL(url);
-        const r = await edrmsApp.inject({ method, url: u.pathname + u.search, headers });
-        return { status: r.statusCode, text: async () => r.body };
+  const edrmsService = new EdrmsService({
+    repo: edrmsRepo(),
+    store: createMemoryStore(),
+    events: createEventBus({driver: 'memory', source: 'edrms'}),
+  });
+  if (tap) edrmsService.events.subscribe('*', tap);
+  const docs = await fileSamples(edrmsService);
+  const edrmsApp = await buildEdrms({service: edrmsService, jwtSecret: SECRET});
+  await edrmsApp.ready();
+  const fetchImpl = async (url, {method, headers}) => {
+    const u = new URL(url);
+    const r = await edrmsApp.inject({
+      method,
+      url: u.pathname + u.search,
+      headers,
+    });
+    return {status: r.statusCode, text: async () => r.body};
+  };
+  const edrms = createEdrmsClient({
+    baseUrl: 'http://edrms',
+    serviceToken: createServiceTokenSigner({
+      secret: SECRET,
+      service: 'land-records',
+    }),
+    fetchImpl,
+  });
+  const ctx = makeService({tap});
+  ctx.service.edrms = edrms;
+  /** A document as it is pinned into a record version (README.md section 2). */
+  ctx.pin = async doc => {
+    const full = await edrmsService.getDocument(doc.id);
+    const v = full.versions.find(x => x.versionNumber === full.currentVersion);
+    return {
+      edrmsDocumentId: full.id,
+      edrmsNo: full.edrmsNo,
+      version: v.versionNumber,
+      seal: v.seal,
+      docType: full.docType,
+      ref: full.instrumentRef,
+      fields: full.props,
     };
-    const edrms = createEdrmsClient({ baseUrl: 'http://edrms', serviceToken: createServiceTokenSigner({ secret: SECRET, service: 'land-records' }), fetchImpl });
-    const ctx = makeService({ tap });
-    ctx.service.edrms = edrms;
-    /** A document as it is pinned into a record version (README.md section 2). */
-    ctx.pin = async (doc) => {
-        const full = await edrmsService.getDocument(doc.id);
-        const v = full.versions.find(x => x.versionNumber === full.currentVersion);
-        return { edrmsDocumentId: full.id, edrmsNo: full.edrmsNo, version: v.versionNumber, seal: v.seal, docType: full.docType, ref: full.instrumentRef, fields: full.props };
-    };
-    return { ...ctx, edrmsService, docs };
+  };
+  return {...ctx, edrmsService, docs};
 }
 
 /**
@@ -124,36 +251,71 @@ export async function makeWithEdrms({ tap } = {}) {
  * "land-record-review" definition), wired both ways over app.inject: land-records starts and
  * withdraws reviews in bpm; bpm's connectors commit or reject in land-records.
  */
-export async function makeWithReview({ tap } = {}) {
-    const ctx = await makeWithEdrms({ tap });
-    const { signServiceToken, createServiceTokenSigner } = await import('@lrfe/common');
-    const { BpmEngine } = await import('../../bpm/src/engine/engine.js');
-    const { createMemoryRepo: bpmRepo } = await import('../../bpm/src/repo/memory.js');
-    const { createConnectors } = await import('../../bpm/src/connectors/index.js');
-    const { loadDefinitions } = await import('../../bpm/src/definitions/index.js');
-    const { buildApp: buildBpm } = await import('../../bpm/src/app.js');
-    const { createBpmClient } = await import('../src/bpm-client.js');
+export async function makeWithReview({tap} = {}) {
+  const ctx = await makeWithEdrms({tap});
+  const {signServiceToken, createServiceTokenSigner} =
+    await import('@lrfe/common');
+  const {BpmEngine} = await import('../../bpm/src/engine/engine.js');
+  const {createMemoryRepo: bpmRepo} =
+    await import('../../bpm/src/repo/memory.js');
+  const {createConnectors} = await import('../../bpm/src/connectors/index.js');
+  const {loadDefinitions} = await import('../../bpm/src/definitions/index.js');
+  const {buildApp: buildBpm} = await import('../../bpm/src/app.js');
+  const {createBpmClient} = await import('../src/bpm-client.js');
 
-    const app = await buildApp({ service: ctx.service, jwtSecret: SECRET });
-    await app.ready();
-    const engine = new BpmEngine({ repo: bpmRepo(), events: createEventBus({ driver: 'memory', source: 'bpm' }) });
-    if (tap) engine.events.subscribe('*', tap);
-    const bpm = await buildBpm({ engine, jwtSecret: SECRET });
-    const inject = (target) => async (url, { method, headers, body }) => {
-        const u = new URL(url);
-        const r = await target.inject({ method, url: u.pathname + u.search, headers, payload: body });
-        return { ok: r.statusCode < 400, status: r.statusCode, text: async () => r.body };
+  const app = await buildApp({service: ctx.service, jwtSecret: SECRET});
+  await app.ready();
+  const engine = new BpmEngine({
+    repo: bpmRepo(),
+    events: createEventBus({driver: 'memory', source: 'bpm'}),
+  });
+  if (tap) engine.events.subscribe('*', tap);
+  const bpm = await buildBpm({engine, jwtSecret: SECRET});
+  const inject =
+    target =>
+    async (url, {method, headers, body}) => {
+      const u = new URL(url);
+      const r = await target.inject({
+        method,
+        url: u.pathname + u.search,
+        headers,
+        payload: body,
+      });
+      return {
+        ok: r.statusCode < 400,
+        status: r.statusCode,
+        text: async () => r.body,
+      };
     };
-    engine.connectors = createConnectors({ urls: { edrms: 'http://edrms', records: 'http://records' }, serviceToken: () => signServiceToken(bpm, 'bpm'), fetchImpl: inject(app) });
-    for (const d of await loadDefinitions()) await engine.deployDefinition(d);
-    await bpm.ready();
-    ctx.service.bpm = createBpmClient({ baseUrl: 'http://bpm', serviceToken: createServiceTokenSigner({ secret: SECRET, service: 'land-records' }), fetchImpl: inject(bpm) });
+  engine.connectors = createConnectors({
+    urls: {edrms: 'http://edrms', records: 'http://records'},
+    serviceToken: () => signServiceToken(bpm, 'bpm'),
+    fetchImpl: inject(app),
+  });
+  for (const d of await loadDefinitions()) await engine.deployDefinition(d);
+  await bpm.ready();
+  ctx.service.bpm = createBpmClient({
+    baseUrl: 'http://bpm',
+    serviceToken: createServiceTokenSigner({
+      secret: SECRET,
+      service: 'land-records',
+    }),
+    fetchImpl: inject(bpm),
+  });
 
-    const token = (u) => app.jwt.sign({ typ: 'access', sub: u.id, name: u.name, perms: u.perms });
-    const as = (u) => ({ authorization: `Bearer ${token(u)}` });
-    /** The user's bpm inbox. */
-    const inbox = async (u) => (await bpm.inject({ url: '/tasks', headers: as(u) })).json().tasks;
-    /** Complete a bpm task as `u`: the raw response. */
-    const decide = (u, taskId, output) => bpm.inject({ method: 'POST', url: `/tasks/${taskId}/complete`, headers: as(u), payload: { output } });
-    return { ...ctx, app, bpm, engine, as, inbox, decide };
+  const token = u =>
+    app.jwt.sign({typ: 'access', sub: u.id, name: u.name, perms: u.perms});
+  const as = u => ({authorization: `Bearer ${token(u)}`});
+  /** The user's bpm inbox. */
+  const inbox = async u =>
+    (await bpm.inject({url: '/tasks', headers: as(u)})).json().tasks;
+  /** Complete a bpm task as `u`: the raw response. */
+  const decide = (u, taskId, output) =>
+    bpm.inject({
+      method: 'POST',
+      url: `/tasks/${taskId}/complete`,
+      headers: as(u),
+      payload: {output},
+    });
+  return {...ctx, app, bpm, engine, as, inbox, decide};
 }

@@ -4,7 +4,7 @@
 //   'METHOD /path': { summary, description?, tag, status? (success code), auth? (routes without a guard), upload? }
 //   auth: 'public' | 'refresh-cookie' | 'signed-link'
 
-export default {
+export const ENDPOINTS = {
     title: 'edrms',
     description: 'Sealed, versioned documents of record. Read by anyone who works with documents; written only by services (intake files, bpm applies approved amendments).',
     tags: {

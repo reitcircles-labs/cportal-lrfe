@@ -2,9 +2,9 @@
   "key": "audit-rereview",
   "name": "Audit: changed since review",
   "description": "A land record version or a document version in it no longer matches the blockchain: the land record changed since it was reviewed and submitted, so it cannot be audited as true. The records officers and the registrars see it in their task inbox and acknowledge it; the records office then opens a new draft, corrects what changed and submits it for review. Started by the audit service once per changed item (API-680).",
-  "start": { "services": ["audit"] },
+  "start": {"services": ["audit"]},
   "managePerm": "audit.signoff",
-  "businessKey": { "var": "alert.key" },
+  "businessKey": {"var": "alert.key"},
   "variables": {
     "type": "object",
     "additionalProperties": false,
@@ -15,9 +15,9 @@
         "additionalProperties": false,
         "required": ["key", "about", "message"],
         "properties": {
-          "key": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "about": { "type": "string" },
-          "message": { "type": "string" }
+          "key": {"type": "string", "minLength": 1, "maxLength": 200},
+          "about": {"type": "string"},
+          "message": {"type": "string"}
         }
       },
       "record": {
@@ -25,21 +25,23 @@
         "additionalProperties": false,
         "required": ["id", "recordNo", "label"],
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "recordNo": { "type": "string" },
-          "label": { "type": "string" }
+          "id": {"type": "string", "format": "uuid"},
+          "recordNo": {"type": "string"},
+          "label": {"type": "string"}
         }
       }
     }
   },
   "startAt": "start",
   "nodes": {
-    "start": { "type": "start", "next": "notify" },
-    "notify": { "type": "parallelGateway", "next": ["officer", "registrar"] },
+    "start": {"type": "start", "next": "notify"},
+    "notify": {"type": "parallelGateway", "next": ["officer", "registrar"]},
     "officer": {
       "type": "humanTask",
-      "title": { "cat": ["Re-review: changed since review, ", { "var": "alert.about" }] },
-      "assignee": { "role": "rec" },
+      "title": {
+        "cat": ["Re-review: changed since review, ", {"var": "alert.about"}]
+      },
+      "assignee": {"role": "rec"},
       "outcomes": ["acknowledged"],
       "outputVar": "officerAck",
       "dueInHours": 120,
@@ -47,14 +49,16 @@
     },
     "registrar": {
       "type": "humanTask",
-      "title": { "cat": ["Re-review: changed since review, ", { "var": "alert.about" }] },
-      "assignee": { "role": "sup" },
+      "title": {
+        "cat": ["Re-review: changed since review, ", {"var": "alert.about"}]
+      },
+      "assignee": {"role": "sup"},
       "outcomes": ["acknowledged"],
       "outputVar": "registrarAck",
       "dueInHours": 120,
       "next": "acknowledged"
     },
-    "acknowledged": { "type": "join", "next": "done" },
-    "done": { "type": "end", "outcome": "acknowledged" }
+    "acknowledged": {"type": "join", "next": "done"},
+    "done": {"type": "end", "outcome": "acknowledged"}
   }
 }
