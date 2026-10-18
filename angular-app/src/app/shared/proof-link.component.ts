@@ -1,5 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  input,
+} from '@angular/core';
+import {RouterLink} from '@angular/router';
 
 /**
  * A proof status that names its batch and links to it (API-699, design API-688 board 4). A status
@@ -19,12 +24,14 @@ import { RouterLink } from '@angular/router';
       <span class="where">{{ where() }}</span>
     </a>
   `,
-  styles: [`
+  styles: [
+    `
     .proof { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 32px; text-decoration: none; }
     .proof.stacked { flex-direction: column; align-items: flex-start; gap: 2px; }
     .where { font-size: 13px; color: var(--color-accent-700); text-decoration: underline; }
     .stacked .where { font-size: 12px; }
-  `]
+  `,
+  ],
 })
 export class ProofLinkComponent {
   /** The status in words, as the screen shows it. */
@@ -34,9 +41,13 @@ export class ProofLinkComponent {
   /** The batch the item is in; null or undefined while it waits for the next batch. */
   readonly batch = input<number | null | undefined>(null);
   /** The batch under the status instead of after it (table cells). */
-  readonly stacked = input(false, { transform: (v: boolean | string) => v !== false });
+  readonly stacked = input(false, {
+    transform: (v: boolean | string) => v !== false,
+  });
 
-  protected readonly target = computed(() => (this.batch() ? ['/anchorings', this.batch()] : ['/anchorings']));
+  protected readonly target = computed(() =>
+    this.batch() ? ['/anchorings', this.batch()] : ['/anchorings'],
+  );
 
   protected readonly where = computed(() => {
     const batch = this.batch();

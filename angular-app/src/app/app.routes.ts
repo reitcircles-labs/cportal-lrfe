@@ -1,28 +1,36 @@
-import { Routes } from '@angular/router';
-import { authGuard } from './state/auth.service';
-import { permGuard } from './state/rbac.service';
-import { LoginComponent } from './features/login/login.component';
-import { InviteComponent } from './features/invite/invite.component';
-import { DashboardComponent } from './features/dashboard/dashboard.component';
-import { FlowComponent } from './features/flow/flow.component';
-import { CaptureComponent } from './features/capture/capture.component';
-import { VerifyComponent } from './features/verify/verify.component';
-import { LinkComponent } from './features/link/link.component';
-import { AuditListComponent } from './features/audit/audit-list.component';
-import { AuditRecordComponent } from './features/audit/audit-record.component';
-import { AuditTrailSearchComponent } from './features/audit/audit-trail-search.component';
-import { AnchoringsListComponent } from './features/anchorings/anchorings-list.component';
-import { AnchoringBatchComponent } from './features/anchorings/anchoring-batch.component';
-import { DocumentsComponent } from './features/documents/documents.component';
-import { AdminComponent } from './features/admin/admin.component';
-import { AnchoringHealthComponent } from './features/admin/anchoring-health.component';
-import { DeniedComponent } from './features/denied/denied.component';
-import { CheckProofComponent } from './features/check-proof/check-proof.component';
+import {Routes} from '@angular/router';
+import {authGuard} from './state/auth.service';
+import {permGuard} from './state/rbac.service';
+import {LoginComponent} from './features/login/login.component';
+import {InviteComponent} from './features/invite/invite.component';
+import {DashboardComponent} from './features/dashboard/dashboard.component';
+import {FlowComponent} from './features/flow/flow.component';
+import {CaptureComponent} from './features/capture/capture.component';
+import {VerifyComponent} from './features/verify/verify.component';
+import {LinkComponent} from './features/link/link.component';
+import {AuditListComponent} from './features/audit/audit-list.component';
+import {AuditRecordComponent} from './features/audit/audit-record.component';
+import {AuditTrailSearchComponent} from './features/audit/audit-trail-search.component';
+import {AnchoringsListComponent} from './features/anchorings/anchorings-list.component';
+import {AnchoringBatchComponent} from './features/anchorings/anchoring-batch.component';
+import {DocumentsComponent} from './features/documents/documents.component';
+import {AdminComponent} from './features/admin/admin.component';
+import {AnchoringHealthComponent} from './features/admin/anchoring-health.component';
+import {DeniedComponent} from './features/denied/denied.component';
+import {CheckProofComponent} from './features/check-proof/check-proof.component';
 
 const g = [authGuard, permGuard];
 /** Anyone who works with documents in any stage may browse the EDRMS (same rule as the edrms service). */
-const DOC_READERS = ['capture.view', 'verify.view', 'record.view', 'audit.view'];
+const DOC_READERS = [
+  'capture.view',
+  'verify.view',
+  'record.view',
+  'audit.view',
+];
 
+// One route per line, as a table: the e2e tests read this file line by line to learn every
+// screen, its permission and title (e2e/support/catalogue.ts), so the formatter leaves it as is.
+// prettier-ignore
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
   { path: 'invite', component: InviteComponent },

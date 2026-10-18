@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
+import {ChangeDetectionStrategy, Component, input, signal} from '@angular/core';
 
 /**
  * An (i) button that opens a short explanation on click or keyboard focus and closes when focus
@@ -18,7 +18,8 @@ import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core
       }
     </span>
   `,
-  styles: [`
+  styles: [
+    `
     .tip { position: relative; display: inline-flex; vertical-align: middle; }
     .dot { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; cursor: pointer; display: inline-grid; place-items: center; }
     .ring { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--color-accent); background: var(--color-surface);
@@ -28,7 +29,8 @@ import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core
            background: var(--color-neutral-900, #0e1a2b); color: #fff; font: 400 13px/1.45 var(--font-body, inherit);
            text-align: left; text-transform: none; letter-spacing: 0; white-space: pre-line; box-shadow: var(--shadow-md); }
     .box.right { left: auto; right: -4px; }
-  `]
+  `,
+  ],
 })
 export class InfoTipComponent {
   /** The term explained, for screen readers ("Explain: …"). */

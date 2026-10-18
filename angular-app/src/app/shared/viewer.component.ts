@@ -1,19 +1,27 @@
-import { Component, HostListener, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { Router } from '@angular/router';
-import { DOCS, VIEWDOCS, NEW, hash, docYear } from '../data/mock-data';
-import { LandDoc } from '../data/models';
-import { RegistryStore } from '../state/registry.store';
-import { ViewerService } from '../state/viewer.service';
-import { DocPageComponent } from './doc-page.component';
-import { IconComponent } from './icon.component';
-import { CanDirective } from './can.directive';
+import {
+  Component,
+  HostListener,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {Router} from '@angular/router';
+import {DOCS, VIEWDOCS, NEW, hash, docYear} from '../data/mock-data';
+import {LandDoc} from '../data/models';
+import {RegistryStore} from '../state/registry.store';
+import {ViewerService} from '../state/viewer.service';
+import {DocPageComponent} from './doc-page.component';
+import {IconComponent} from './icon.component';
+import {CanDirective} from './can.directive';
 
 const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
 
+/** The document viewer, opened over the current screen. */
 @Component({
-    selector: 'app-viewer',
-    imports: [DocPageComponent, IconComponent, CanDirective],
-    template: `
+  selector: 'app-viewer',
+  imports: [DocPageComponent, IconComponent, CanDirective],
+  template: `
     @if (doc(); as d) {
       <div class="dialog-backdrop" (click)="vs.close()">
         <div class="blueprint frame" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" [attr.aria-label]="d.title + ' ' + d.ref">
@@ -93,8 +101,9 @@ const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
       </div>
     }
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .dialog-backdrop { z-index: 50; padding: 24px; }
     .frame { width: min(1240px, 100%); height: min(880px, calc(100vh - 48px)); overflow: hidden; background: var(--color-surface); box-shadow: var(--shadow-lg); display: grid; grid-template-rows: auto minmax(0, 1fr); }
     .v-bar { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--color-divider); flex-wrap: wrap; }
@@ -116,7 +125,8 @@ const RECORD_ORDER = ['g1', 'g2', 'b', 'a', 'c'];
     .side { border-left: 1px solid var(--color-divider); overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 16px; }
     .actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
     @media (max-width: 900px) { .body { grid-template-columns: 110px minmax(0, 1fr); } .side { display: none; } }
-  `]
+  `,
+  ],
 })
 export class ViewerComponent {
   vs = inject(ViewerService);
@@ -133,64 +143,160 @@ export class ViewerComponent {
     let docs: LandDoc[];
     if (s.ctx === 'batch') docs = DOCS.filter(d => store.gotPages(d) > 0);
     else if (s.ctx === 'pool') docs = [store.doc(s.docId)!].filter(Boolean);
-    else if (s.ctx === 'record') docs = store.recordDocIds(s.recordId || 'erf1873').map(id => store.doc(id)!).filter(Boolean).sort((a, b) => docYear(a).localeCompare(docYear(b)));
-    else docs = RECORD_ORDER.map(id => VIEWDOCS.find(v => v.id === id)!)
-      .filter(d => d.isBase || store.filed()[d.id] || store.gotPages(d) === d.pages);
+    else if (s.ctx === 'record') {
+      docs = store
+        .recordDocIds(s.recordId || 'erf1873')
+        .map(id => store.doc(id)!)
+        .filter(Boolean)
+        .sort((a, b) => docYear(a).localeCompare(docYear(b)));
+    } else {
+      docs = RECORD_ORDER.map(id => VIEWDOCS.find(v => v.id === id)!).filter(
+        d => d.isBase || store.filed()[d.id] || store.gotPages(d) === d.pages,
+      );
+    }
     return docs.map(doc => {
       const got = s.ctx === 'batch' ? store.gotPages(doc) : doc.pages;
-      return { doc, got, pageList: Array.from({ length: got }, (_, i) => i), suffix: s.ctx === 'record' ? ' · ' + docYear(doc) : '' };
+      return {
+        doc,
+        got,
+        pageList: Array.from({length: got}, (_, i) => i),
+        suffix: s.ctx === 'record' ? ' · ' + docYear(doc) : '',
+      };
     });
   });
   doc = computed(() => {
-    const s = this.vs.state(), a = this.avail();
+    const s = this.vs.state();
+    const a = this.avail();
     if (!s || !a.length) return null;
     return (a.find(x => x.doc.id === s.docId) || a[0]).doc;
   });
-  got = computed(() => this.avail().find(x => x.doc.id === this.doc()?.id)?.got ?? 0);
-  page = computed(() => Math.max(0, Math.min(this.vs.state()?.page ?? 0, this.got() - 1)));
-  flat = computed(() => this.avail().flatMap(x => x.pageList.map(p => [x.doc.id, p] as [string, number])));
-  flatIndex = computed(() => this.flat().findIndex(([id, p]) => id === this.doc()?.id && p === this.page()));
-  linkState = computed(() => this.doc() ? this.store.linkState(this.doc()!.id) : 'pending');
-  rec = computed(() => this.store.record(this.vs.state()?.recordId || 'erf1873'));
-  stripTitle = computed(() => this.ctx() === 'audit' ? 'Erf 1873 · audit evidence' : this.ctx() === 'record' ? (this.rec()?.erf || '') + ' · linked documents' : this.ctx() === 'pool' ? 'EDRMS search result' : 'Batch WDH-B017');
+  got = computed(
+    () => this.avail().find(x => x.doc.id === this.doc()?.id)?.got ?? 0,
+  );
+  page = computed(() =>
+    Math.max(0, Math.min(this.vs.state()?.page ?? 0, this.got() - 1)),
+  );
+  flat = computed(() =>
+    this.avail().flatMap(x =>
+      x.pageList.map(p => [x.doc.id, p] as [string, number]),
+    ),
+  );
+  flatIndex = computed(() =>
+    this.flat().findIndex(
+      ([id, p]) => id === this.doc()?.id && p === this.page(),
+    ),
+  );
+  linkState = computed(() =>
+    this.doc() ? this.store.linkState(this.doc()!.id) : 'pending',
+  );
+  rec = computed(() =>
+    this.store.record(this.vs.state()?.recordId || 'erf1873'),
+  );
+  stripTitle = computed(() =>
+    this.ctx() === 'audit'
+      ? 'Erf 1873 · audit evidence'
+      : this.ctx() === 'record'
+        ? (this.rec()?.erf || '') + ' · linked documents'
+        : this.ctx() === 'pool'
+          ? 'EDRMS search result'
+          : 'Batch WDH-B017',
+  );
   fileName = computed(() => {
     const d = this.doc()!;
     const ext = d.isDiagram ? '.tif' : '.pdf';
-    return d.isBase ? 'PILOT-2025_' + d.ref.replace(/\W+/g, '') + '.pdf' : DOCS.includes(d) ? 'WDH-B017_' + String(DOCS.indexOf(d) + 1).padStart(4, '0') + ext : (d.batch || 'EDRMS') + '_' + d.id.toUpperCase() + ext;
+    return d.isBase
+      ? 'PILOT-2025_' + d.ref.replace(/\W+/g, '') + '.pdf'
+      : DOCS.includes(d)
+        ? 'WDH-B017_' + String(DOCS.indexOf(d) + 1).padStart(4, '0') + ext
+        : (d.batch || 'EDRMS') + '_' + d.id.toUpperCase() + ext;
   });
   statusLabel = computed(() => {
     const d = this.doc()!;
-    if (this.ctx() === 'batch') return this.store.filed()[d.id] ? 'Filed' : this.got() < d.pages ? 'Receiving' : 'Ingested · awaiting review';
-    if (this.ctx() === 'record') return 'Linked to ' + (this.rec()?.erf || 'record');
-    if (this.ctx() === 'pool') return this.store.isFiled(d) ? 'Filed · not linked' : 'In metadata review';
+    if (this.ctx() === 'batch') {
+      return this.store.filed()[d.id]
+        ? 'Filed'
+        : this.got() < d.pages
+          ? 'Receiving'
+          : 'Ingested · awaiting review';
+    }
+    if (this.ctx() === 'record') {
+      return 'Linked to ' + (this.rec()?.erf || 'record');
+    }
+    if (this.ctx() === 'pool') {
+      return this.store.isFiled(d)
+        ? 'Filed · not linked'
+        : 'In metadata review';
+    }
     return this.store.isFiled(d) ? 'Filed' : 'In review';
   });
   statusTag = computed(() => {
     const s = this.statusLabel();
-    return 'tag ' + (s.startsWith('Linked') || s === 'Filed' ? 'tag-accent' : s.startsWith('Suggested') ? 'tag-outline' : 'tag-neutral');
+    return (
+      'tag ' +
+      (s.startsWith('Linked') || s === 'Filed'
+        ? 'tag-accent'
+        : s.startsWith('Suggested')
+          ? 'tag-outline'
+          : 'tag-neutral')
+    );
   });
   fileProps = computed(() => {
     const d = this.doc()!;
     return [
-      { k: 'Source', v: d.isBase ? 'Pilot back-scan 2025 · Vault 1' : this.store.src() === 'hot' ? '\\\\wdh-deeds\\scan\\hot\\B017\\' + this.fileName() : 'SC-02 · patch-code split' },
-      { k: 'Format', v: d.isDiagram ? 'TIFF · 600 dpi' : 'PDF/A-2b · 300 dpi' },
-      { k: 'Pages', v: this.got() + ' of ' + d.pages },
-      { k: 'Batch', v: d.isBase ? 'PILOT-2025' : d.batch || 'WDH-B017' },
-      { k: 'EDRMS ID', v: this.store.isFiled(d) ? d.edrms : 'Assigned on filing' },
-      { k: 'SHA-256', v: hash(d.ref + 'file') }
+      {
+        k: 'Source',
+        v: d.isBase
+          ? 'Pilot back-scan 2025 · Vault 1'
+          : this.store.src() === 'hot'
+            ? '\\\\wdh-deeds\\scan\\hot\\B017\\' + this.fileName()
+            : 'SC-02 · patch-code split',
+      },
+      {k: 'Format', v: d.isDiagram ? 'TIFF · 600 dpi' : 'PDF/A-2b · 300 dpi'},
+      {k: 'Pages', v: this.got() + ' of ' + d.pages},
+      {k: 'Batch', v: d.isBase ? 'PILOT-2025' : d.batch || 'WDH-B017'},
+      {
+        k: 'EDRMS ID',
+        v: this.store.isFiled(d) ? d.edrms : 'Assigned on filing',
+      },
+      {k: 'SHA-256', v: hash(d.ref + 'file')},
     ];
   });
 
-  pct(n: number) { return Math.round(n * 100) + '%'; }
-  zoomBy(dz: number) { this.zoom.set(Math.min(2, Math.max(0.5, +(this.zoom() + dz).toFixed(2)))); }
+  pct(n: number) {
+    return Math.round(n * 100) + '%';
+  }
+  zoomBy(dz: number) {
+    this.zoom.set(Math.min(2, Math.max(0.5, +(this.zoom() + dz).toFixed(2))));
+  }
   step(dir: number) {
     const t = this.flat()[this.flatIndex() + dir];
-    if (t) { this.vs.go(t[0], t[1]); this.rot.set(0); }
+    if (t) {
+      this.vs.go(t[0], t[1]);
+      this.rot.set(0);
+    }
   }
-  removeFromRecord(id: string) { const r = this.rec(); if (r) { this.store.removeDocFromRecord(r.id, id); if (!this.avail().length) this.vs.close(); } }
-  addToRecord(id: string) { const r = this.rec(); if (r) { this.store.addDocToRecord(r.id, id); this.vs.open('record', id, 0, r.id); } }
-  matchText(d: LandDoc) { const n = NEW[d.id]; return n ? n.match + ' match · ' + n.reasons : ''; }
-  openReview(d: LandDoc) { this.vs.close(); this.router.navigate(['/verify'], { queryParams: { doc: d.id } }); }
+  removeFromRecord(id: string) {
+    const r = this.rec();
+    if (r) {
+      this.store.removeDocFromRecord(r.id, id);
+      if (!this.avail().length) this.vs.close();
+    }
+  }
+  addToRecord(id: string) {
+    const r = this.rec();
+    if (r) {
+      this.store.addDocToRecord(r.id, id);
+      this.vs.open('record', id, 0, r.id);
+    }
+  }
+  matchText(d: LandDoc) {
+    const n = NEW[d.id];
+    return n ? n.match + ' match · ' + n.reasons : '';
+  }
+  openReview(d: LandDoc) {
+    this.vs.close();
+    this.router.navigate(['/verify'], {queryParams: {doc: d.id}});
+  }
 
   @HostListener('document:keydown', ['$event'])
   onKey(e: KeyboardEvent) {

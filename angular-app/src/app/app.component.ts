@@ -1,20 +1,42 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { filter } from 'rxjs/operators';
-import { ViewerComponent } from './shared/viewer.component';
-import { OverlaysComponent } from './shared/overlays.component';
-import { InboxComponent } from './shared/inbox.component';
-import { IconComponent } from './shared/icon.component';
-import { AuthService } from './state/auth.service';
-import { RbacService } from './state/rbac.service';
-import { ThemeService } from './state/theme.service';
-import { IntakeApi } from './api/intake.api';
-import { SiteConfigService } from './state/site-config.service';
+import {
+  Component,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {
+  ActivatedRoute,
+  NavigationEnd,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+  RouterOutlet,
+} from '@angular/router';
+import {filter} from 'rxjs/operators';
+import {ViewerComponent} from './shared/viewer.component';
+import {OverlaysComponent} from './shared/overlays.component';
+import {InboxComponent} from './shared/inbox.component';
+import {IconComponent} from './shared/icon.component';
+import {AuthService} from './state/auth.service';
+import {RbacService} from './state/rbac.service';
+import {ThemeService} from './state/theme.service';
+import {IntakeApi} from './api/intake.api';
+import {SiteConfigService} from './state/site-config.service';
 
+/** The app shell: side menu, top bar, and the screen of the current route. */
 @Component({
-    selector: 'app-root',
-    imports: [RouterOutlet, RouterLink, RouterLinkActive, ViewerComponent, OverlaysComponent, IconComponent, InboxComponent],
-    template: `
+  selector: 'app-root',
+  imports: [
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    ViewerComponent,
+    OverlaysComponent,
+    IconComponent,
+    InboxComponent,
+  ],
+  template: `
     @if (isLogin()) {
       <router-outlet />
     } @else {
@@ -81,8 +103,9 @@ import { SiteConfigService } from './state/site-config.service';
     <app-viewer />
     <app-overlays />
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
     .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: linear-gradient(180deg, var(--sidebar-bg), var(--sidebar-bg-2)); color: var(--sidebar-fg); z-index: 40; }
     .flag { height: 6px; background: linear-gradient(100deg, var(--nam-blue) 0 38%, #fff 38% 41%, var(--nam-red) 41% 59%, #fff 59% 62%, var(--nam-green) 62% 100%); }
@@ -133,7 +156,8 @@ import { SiteConfigService } from './state/site-config.service';
       .search { display: none; }
       .topbar { padding: 0 12px; }
     }
-  `]
+  `,
+  ],
 })
 export class AppComponent {
   auth = inject(AuthService);
@@ -153,43 +177,142 @@ export class AppComponent {
   nav = computed(() => {
     const role = this.auth.roleId();
     return [
-      { path: '/', label: 'Dashboard', icon: 'home', badge: 0, mine: false, perm: 'dashboard.view' },
-      { path: '/capture', label: 'Capture', icon: 'scan', badge: 0, mine: role === 'scan', perm: 'capture.view' },
-      { path: '/verify', label: 'Verify metadata', icon: 'inbox', badge: this.inReview(), mine: role === 'rev', perm: 'verify.view' },
-      { path: '/documents', label: 'Documents (EDRMS)', icon: 'file', badge: 0, mine: false, perm: ['capture.view', 'verify.view', 'record.view', 'audit.view'] },
-      { path: '/link', label: 'Land record (create/finalize)', icon: 'layers', badge: 0, mine: role === 'rec', perm: 'record.view' },
-      { path: '/audit', label: 'Audit', icon: 'shield', badge: 0, mine: role === 'aud', perm: 'audit.view' },
-      { path: '/anchorings', label: 'Anchorings', icon: 'link', badge: 0, mine: false, perm: 'anchors.view' }
+      {
+        path: '/',
+        label: 'Dashboard',
+        icon: 'home',
+        badge: 0,
+        mine: false,
+        perm: 'dashboard.view',
+      },
+      {
+        path: '/capture',
+        label: 'Capture',
+        icon: 'scan',
+        badge: 0,
+        mine: role === 'scan',
+        perm: 'capture.view',
+      },
+      {
+        path: '/verify',
+        label: 'Verify metadata',
+        icon: 'inbox',
+        badge: this.inReview(),
+        mine: role === 'rev',
+        perm: 'verify.view',
+      },
+      {
+        path: '/documents',
+        label: 'Documents (EDRMS)',
+        icon: 'file',
+        badge: 0,
+        mine: false,
+        perm: ['capture.view', 'verify.view', 'record.view', 'audit.view'],
+      },
+      {
+        path: '/link',
+        label: 'Land record (create/finalize)',
+        icon: 'layers',
+        badge: 0,
+        mine: role === 'rec',
+        perm: 'record.view',
+      },
+      {
+        path: '/audit',
+        label: 'Audit',
+        icon: 'shield',
+        badge: 0,
+        mine: role === 'aud',
+        perm: 'audit.view',
+      },
+      {
+        path: '/anchorings',
+        label: 'Anchorings',
+        icon: 'link',
+        badge: 0,
+        mine: false,
+        perm: 'anchors.view',
+      },
     ].filter(n => this.rbac.canAny(Array.isArray(n.perm) ? n.perm : [n.perm]));
   });
   adminNav = computed(() => {
-    const conflicts = this.rbac.users().filter(u => u.status !== 'Suspended' && this.rbac.userConflicts(u).length).length;
+    const conflicts = this.rbac
+      .users()
+      .filter(
+        u => u.status !== 'Suspended' && this.rbac.userConflicts(u).length,
+      ).length;
     return [
-      { path: '/admin/users', label: 'Users', icon: 'users', perm: 'admin.users', badge: conflicts },
-      { path: '/admin/offices', label: 'Offices', icon: 'building', perm: 'admin.offices', badge: 0 },
-      { path: '/admin/roles', label: 'Roles & permissions', icon: 'lock', perm: 'admin.roles', badge: 0 },
-      { path: '/admin/policies', label: 'Security policies', icon: 'shield', perm: 'admin.policies', badge: 0 },
-      { path: '/admin/log', label: 'Access log', icon: 'clock', perm: 'admin.users', badge: 0 },
-      { path: '/admin/anchoring', label: 'Anchoring health', icon: 'link', perm: 'admin.policies', badge: 0 }
+      {
+        path: '/admin/users',
+        label: 'Users',
+        icon: 'users',
+        perm: 'admin.users',
+        badge: conflicts,
+      },
+      {
+        path: '/admin/offices',
+        label: 'Offices',
+        icon: 'building',
+        perm: 'admin.offices',
+        badge: 0,
+      },
+      {
+        path: '/admin/roles',
+        label: 'Roles & permissions',
+        icon: 'lock',
+        perm: 'admin.roles',
+        badge: 0,
+      },
+      {
+        path: '/admin/policies',
+        label: 'Security policies',
+        icon: 'shield',
+        perm: 'admin.policies',
+        badge: 0,
+      },
+      {
+        path: '/admin/log',
+        label: 'Access log',
+        icon: 'clock',
+        perm: 'admin.users',
+        badge: 0,
+      },
+      {
+        path: '/admin/anchoring',
+        label: 'Anchoring health',
+        icon: 'link',
+        perm: 'admin.policies',
+        badge: 0,
+      },
     ].filter(n => this.rbac.can(n.perm));
   });
 
   constructor() {
-    this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe((e: any) => {
-      this.isLogin.set(/^\/(login|invite|check-a-proof)/.test(e.urlAfterRedirects));
-      let r = this.route.firstChild;
-      while (r?.firstChild) r = r.firstChild;
-      const d = r?.snapshot.data || {};
-      this.title.set(d['title'] || 'Dashboard');
-      // pages without their own crumb (the dashboard) show where the portal is
-      this.crumb.set(d['crumb'] || this.site.nameAndPlace());
-      window.scrollTo(0, 0);
-      this.countReview();
-    });
+    this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe(e => {
+        this.isLogin.set(
+          /^\/(login|invite|check-a-proof)/.test(e.urlAfterRedirects),
+        );
+        let r = this.route.firstChild;
+        while (r?.firstChild) r = r.firstChild;
+        const d = r?.snapshot.data || {};
+        this.title.set(d['title'] || 'Dashboard');
+        // pages without their own crumb (the dashboard) show where the portal is
+        this.crumb.set(d['crumb'] || this.site.nameAndPlace());
+        window.scrollTo(0, 0);
+        this.countReview();
+      });
   }
 
   private countReview() {
-    if (!this.auth.signedIn() || !this.rbac.can('verify.view')) { this.inReview.set(0); return; }
-    this.intake.documents({ status: ['ready'], limit: 1 }).then(r => this.inReview.set(r.total)).catch(() => {});
+    if (!this.auth.signedIn() || !this.rbac.can('verify.view')) {
+      this.inReview.set(0);
+      return;
+    }
+    this.intake
+      .documents({status: ['ready'], limit: 1})
+      .then(r => this.inReview.set(r.total))
+      .catch(() => {});
   }
 }

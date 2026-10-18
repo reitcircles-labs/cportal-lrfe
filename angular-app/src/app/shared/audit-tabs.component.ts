@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
+import {RouterLink, RouterLinkActive} from '@angular/router';
 
-import { RbacService } from '../state/rbac.service';
+import {RbacService} from '../state/rbac.service';
 
 /**
  * The "Land records | Trail | Anchorings" tabs of the Audit screens (API-698, API-673). Shown only
@@ -21,11 +21,13 @@ import { RbacService } from '../state/rbac.service';
       </nav>
     }
   `,
-  styles: [`
+  styles: [
+    `
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-divider); }
     .tabs a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; color: var(--color-neutral-700); text-decoration: none; font-weight: 500; border-bottom: 3px solid transparent; }
     .tabs a.on { color: var(--color-accent-800); font-weight: 700; border-bottom-color: var(--color-accent); }
-  `]
+  `,
+  ],
 })
 export class AuditTabsComponent {
   protected readonly rbac = inject(RbacService);

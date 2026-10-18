@@ -1,10 +1,20 @@
-import { Component, ChangeDetectionStrategy, input } from '@angular/core';
-import { Diff } from '../api/records.api';
+import {Component, ChangeDetectionStrategy, input} from '@angular/core';
+import {Diff, OwnerTerms} from '../api/records.api';
 
 const FIELD_LABELS: Record<string, string> = {
-  tenure: 'Tenure', 'extent.value': 'Extent', 'extent.unit': 'Extent unit',
-  'parcel.number': 'Erf number', 'parcel.portion': 'Portion', 'parcel.township': 'Township', 'parcel.regDiv': 'Registration division', 'parcel.region': 'Region',
-  'parcel.farmName': 'Farm name', 'parcel.farmNumber': 'Farm number', 'parcel.schemeName': 'Scheme name', 'parcel.schemeNumber': 'Scheme number', 'parcel.unit': 'Unit'
+  tenure: 'Tenure',
+  'extent.value': 'Extent',
+  'extent.unit': 'Extent unit',
+  'parcel.number': 'Erf number',
+  'parcel.portion': 'Portion',
+  'parcel.township': 'Township',
+  'parcel.regDiv': 'Registration division',
+  'parcel.region': 'Region',
+  'parcel.farmName': 'Farm name',
+  'parcel.farmNumber': 'Farm number',
+  'parcel.schemeName': 'Scheme name',
+  'parcel.schemeNumber': 'Scheme number',
+  'parcel.unit': 'Unit',
 };
 
 /**
@@ -38,7 +48,8 @@ const FIELD_LABELS: Record<string, string> = {
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [`
+  styles: [
+    `
     .diff { font-size: 13.5px; margin-bottom: 6px; }
     .strike { text-decoration: line-through; color: var(--color-neutral-600); }
     .chg { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
@@ -47,16 +58,29 @@ const FIELD_LABELS: Record<string, string> = {
     .chg .rem::before { content: '−'; color: var(--danger); }
     .chg .mod::before { content: '~'; color: var(--warn); }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  `]
+  `,
+  ],
 })
 export class RecordDiffComponent {
   diff = input<Diff | null>(null);
-  label(path: string) { return FIELD_LABELS[path] || path.replace(/^attributes\./, ''); }
-  text(v: any) { return v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v); }
-  ownerChange(o: { before: any; after: any }) {
+  label(path: string) {
+    return FIELD_LABELS[path] || path.replace(/^attributes\./, '');
+  }
+  text(v: unknown) {
+    return v === null || v === undefined || v === ''
+      ? '—'
+      : typeof v === 'object'
+        ? JSON.stringify(v)
+        : String(v);
+  }
+  ownerChange(o: {before: OwnerTerms; after: OwnerTerms}) {
     const parts = [];
-    if (o.before.share !== o.after.share) parts.push(`share ${o.before.share} → ${o.after.share}`);
-    if (o.before.idNo !== o.after.idNo) parts.push(`ID ${o.before.idNo ?? '—'} → ${o.after.idNo ?? '—'}`);
+    if (o.before.share !== o.after.share) {
+      parts.push(`share ${o.before.share} → ${o.after.share}`);
+    }
+    if (o.before.idNo !== o.after.idNo) {
+      parts.push(`ID ${o.before.idNo ?? '—'} → ${o.after.idNo ?? '—'}`);
+    }
     return parts.join(', ');
   }
 }

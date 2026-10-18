@@ -1,11 +1,16 @@
-import { Injectable, effect, signal } from '@angular/core';
+import {Injectable, effect, signal} from '@angular/core';
 
 const KEY = 'lr-demo-theme';
 
-@Injectable({ providedIn: 'root' })
+/** The light or dark theme, remembered in the browser. */
+@Injectable({providedIn: 'root'})
 export class ThemeService {
-  readonly theme = signal<'light' | 'dark'>((localStorage.getItem(KEY) as 'light' | 'dark') ||
-    (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  readonly theme = signal<'light' | 'dark'>(
+    (localStorage.getItem(KEY) as 'light' | 'dark') ||
+      (window.matchMedia?.('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'),
+  );
   constructor() {
     effect(() => {
       const t = this.theme();
@@ -13,5 +18,7 @@ export class ThemeService {
       localStorage.setItem(KEY, t);
     });
   }
-  toggle() { this.theme.set(this.theme() === 'dark' ? 'light' : 'dark'); }
+  toggle() {
+    this.theme.set(this.theme() === 'dark' ? 'light' : 'dark');
+  }
 }
