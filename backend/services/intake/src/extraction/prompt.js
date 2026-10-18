@@ -1,17 +1,21 @@
-import { ALL_FIELD_KEYS, DOC_TYPES, DOC_TYPE_IDS } from '../doc-types.js';
+import {ALL_FIELD_KEYS, DOC_TYPES, DOC_TYPE_IDS} from '../doc-types.js';
 
 /** Bump whenever the prompt or schema changes; stored with every extraction for traceability. */
-export const PROMPT_VERSION = 'lr-extract-2026-10-03.1';   // marital regime: whose (API-621); 09-29.2: deed of sale
+export const PROMPT_VERSION = 'lr-extract-2026-10-03.1'; // marital regime: whose (API-621); 09-29.2: deed of sale
 
 /** The instruction sent with each document. Generated from doc-types.js. */
-export function buildPrompt({ transcribe = true } = {}) {
-    const types = DOC_TYPES.map(t => [
-        `### ${t.id} — ${t.label}`,
-        t.desc,
-        ...t.fields.map(x => `- ${x.k}${x.required ? ' (required)' : ''}: ${x.desc}`)
-    ].join('\n')).join('\n\n');
+export function buildPrompt({transcribe = true} = {}) {
+  const types = DOC_TYPES.map(t =>
+    [
+      `### ${t.id} — ${t.label}`,
+      t.desc,
+      ...t.fields.map(
+        x => `- ${x.k}${x.required ? ' (required)' : ''}: ${x.desc}`,
+      ),
+    ].join('\n'),
+  ).join('\n\n');
 
-    return `You read scanned instruments from the Deeds Registry of the Republic of Namibia (deeds of transfer, deeds of sale, deeds of grant, Surveyor-General diagrams, mortgage bonds and supporting documents) and return their metadata as JSON.
+  return `You read scanned instruments from the Deeds Registry of the Republic of Namibia (deeds of transfer, deeds of sale, deeds of grant, Surveyor-General diagrams, mortgage bonds and supporting documents) and return their metadata as JSON.
 
 The documents may be old, faded, partly handwritten, or hand-corrected, and may be in English, Afrikaans or German.
 
@@ -32,32 +36,47 @@ ${types}`;
 
 /** JSON schema for the answer (the subset Gemini's structured output supports). */
 export function buildResponseSchema() {
-    return {
-        type: 'object',
-        properties: {
-            docType: { type: 'string', enum: [...DOC_TYPE_IDS, 'unknown'] },
-            docTypeReason: { type: 'string', description: 'One sentence: why this document type' },
-            languages: { type: 'array', items: { type: 'string' }, description: 'ISO 639-1 codes of the languages used, e.g. ["en"] or ["af", "en"]' },
-            handwritingPresent: { type: 'boolean' },
-            fields: {
-                type: 'array',
-                items: {
-                    type: 'object',
-                    properties: {
-                        k: { type: 'string', enum: ALL_FIELD_KEYS },
-                        value: { type: 'string' },
-                        page: { type: 'integer', minimum: 1 },
-                        evidence: { type: 'string' },
-                        legible: { type: 'boolean' }
-                    },
-                    required: ['k', 'value', 'page', 'evidence', 'legible']
-                }
-            },
-            pages: {
-                type: 'array',
-                items: { type: 'object', properties: { page: { type: 'integer', minimum: 1 }, text: { type: 'string' } }, required: ['page', 'text'] }
-            }
+  return {
+    type: 'object',
+    properties: {
+      docType: {type: 'string', enum: [...DOC_TYPE_IDS, 'unknown']},
+      docTypeReason: {
+        type: 'string',
+        description: 'One sentence: why this document type',
+      },
+      languages: {
+        type: 'array',
+        items: {type: 'string'},
+        description:
+          'ISO 639-1 codes of the languages used, e.g. ["en"] or ["af", "en"]',
+      },
+      handwritingPresent: {type: 'boolean'},
+      fields: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            k: {type: 'string', enum: ALL_FIELD_KEYS},
+            value: {type: 'string'},
+            page: {type: 'integer', minimum: 1},
+            evidence: {type: 'string'},
+            legible: {type: 'boolean'},
+          },
+          required: ['k', 'value', 'page', 'evidence', 'legible'],
         },
-        required: ['docType', 'languages', 'handwritingPresent', 'fields', 'pages']
-    };
+      },
+      pages: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            page: {type: 'integer', minimum: 1},
+            text: {type: 'string'},
+          },
+          required: ['page', 'text'],
+        },
+      },
+    },
+    required: ['docType', 'languages', 'handwritingPresent', 'fields', 'pages'],
+  };
 }

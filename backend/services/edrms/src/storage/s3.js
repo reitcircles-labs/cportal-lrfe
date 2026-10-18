@@ -1,1 +1,1 @@
-export { createS3Store } from '@lrfe/storage';
+export {createS3Store} from '@lrfe/storage';

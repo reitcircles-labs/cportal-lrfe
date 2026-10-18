@@ -1,1 +1,1 @@
-export { hashingStream } from '@lrfe/storage';
+export {hashingStream} from '@lrfe/storage';

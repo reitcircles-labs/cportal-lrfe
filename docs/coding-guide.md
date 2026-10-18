@@ -36,7 +36,9 @@ fail on them, until the existing code has been brought in line area by area (epi
 - Descriptive names, without unclear abbreviations: `recordVersion`, not `rv` *(review)*.
 - `lowerCamelCase` for variables, functions and methods; `UpperCamelCase` for classes, interfaces,
   types and enums; `CONSTANT_CASE` for module-level constants that never change and for enum
-  values. No `_` at the start or end of a name, except for a parameter that is deliberately unused.
+  values. No `_` at the start or end of a name, except for a parameter that is deliberately unused,
+  or `_` alone for a loop variable that is never read (`for await (const _ of stream) {}` drains a
+  stream).
 - Data keeps its own names. Database columns and API payloads may use `snake_case`, and we don't
   rename them.
 
@@ -48,7 +50,8 @@ fail on them, until the existing code has been brought in line area by area (epi
   *(review)*.
 
 **Variables and comparisons**
-- `const` by default, `let` when the value changes, never `var`.
+- `const` by default, `let` when the value changes, never `var`. A destructuring stays `let` when
+  one of its names changes later.
 - `===` and `!==`. The one exception is `== null`, which covers both `null` and `undefined`.
 - TypeScript: no `any` without a reason (a warning). When `any` is needed, add a comment saying
   why *(review)*.

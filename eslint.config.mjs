@@ -13,7 +13,8 @@ import tseslint from 'typescript-eslint';
 const COMMON_RULES = {
   // Variables: const and let only, const where the value never changes.
   'no-var': 'error',
-  'prefer-const': 'error',
+  // `let {a, b} = ...` stays let when one of them changes later.
+  'prefer-const': ['error', {destructuring: 'all'}],
   // === everywhere; the guide allows == null, which covers null and undefined at once.
   eqeqeq: ['error', 'always', {null: 'ignore'}],
   // Braces on every block; an if that fits on one line may leave them out, as the guide
@@ -95,6 +96,7 @@ export default tseslint.config(
           argsIgnorePattern: '^_',
           caughtErrors: 'none',
           ignoreRestSiblings: true,
+          varsIgnorePattern: '^_$',
         },
       ],
     },
@@ -118,6 +120,7 @@ export default tseslint.config(
           argsIgnorePattern: '^_',
           caughtErrors: 'none',
           ignoreRestSiblings: true,
+          varsIgnorePattern: '^_$',
         },
       ],
       // T[] for simple types, Array<T> for complex ones.

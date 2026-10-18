@@ -6,38 +6,44 @@
  * extension is available, for similarity (spelling variants of names); the memory repo mirrors it.
  */
 
-import { normalizeSearch } from '@lrfe/common';
+import {normalizeSearch} from '@lrfe/common';
 
 // normalisation is shared with land-records (@lrfe/common)
-export { normalizeSearch };
+export {normalizeSearch};
 
-export function searchTextOf({ title, instrumentRef, edrmsNo, fields = [] }) {
-    return normalizeSearch([title, instrumentRef, edrmsNo, ...fields.map(f => f.v)].filter(Boolean).join(' '));
+/** The text a filed document is found by: title, instrument, EDRMS number and field values. */
+export function searchTextOf({title, instrumentRef, edrmsNo, fields = []}) {
+  return normalizeSearch(
+    [title, instrumentRef, edrmsNo, ...fields.map(f => f.v)]
+      .filter(Boolean)
+      .join(' '),
+  );
 }
 
 /** A spelling variant still matches from this word similarity (0 to 1), e.g. "ngishidi" ~ "nghishidi". */
 export const SIMILARITY = 0.5;
 
-const trigrams = (word) => {
-    const w = `  ${word} `;
-    const set = new Set();
-    for (let i = 0; i < w.length - 2; i++) set.add(w.slice(i, i + 3));
-    return set;
+const trigrams = word => {
+  const w = `  ${word} `;
+  const set = new Set();
+  for (let i = 0; i < w.length - 2; i++) set.add(w.slice(i, i + 3));
+  return set;
 };
 
 /** Trigram similarity of two words (like pg_trgm's similarity). */
 export function wordSimilarity(a, b) {
-    const x = trigrams(a), y = trigrams(b);
-    let common = 0;
-    for (const t of x) if (y.has(t)) common++;
-    return common / (x.size + y.size - common);
+  const x = trigrams(a);
+  const y = trigrams(b);
+  let common = 0;
+  for (const t of x) if (y.has(t)) common++;
+  return common / (x.size + y.size - common);
 }
 
 /**
  * Spelling variants only for words with letters (names): numbers (ID numbers, deed and erf numbers)
  * must match exactly or as the start of a number, so "9999" never finds "1873".
  */
-export const fuzzy = (word) => /[a-z]/.test(word) && word.length >= 4;
+export const fuzzy = word => /[a-z]/.test(word) && word.length >= 4;
 
 /** Query words of 3 or more letters also match as the start of a word ("wind" finds "windhoek"). */
 export const PREFIX_MIN = 3;
@@ -47,15 +53,21 @@ export const PREFIX_MIN = 3;
  * as a word of the text, start one, or be similar enough to one. Returns a score (higher is better) or 0.
  */
 export function matchScore(query, text) {
-    const words = text.split(' ');
-    let score = 0;
-    for (const q of query.split(' ').filter(Boolean)) {
-        if (words.includes(q)) { score += 2; continue; }
-        if (q.length >= PREFIX_MIN && words.some(w => w.startsWith(q))) { score += 1.5; continue; }
-        if (!fuzzy(q)) return 0;
-        const best = Math.max(0, ...words.map(w => wordSimilarity(q, w)));
-        if (best < SIMILARITY) return 0;
-        score += best;
+  const words = text.split(' ');
+  let score = 0;
+  for (const q of query.split(' ').filter(Boolean)) {
+    if (words.includes(q)) {
+      score += 2;
+      continue;
     }
-    return score;
+    if (q.length >= PREFIX_MIN && words.some(w => w.startsWith(q))) {
+      score += 1.5;
+      continue;
+    }
+    if (!fuzzy(q)) return 0;
+    const best = Math.max(0, ...words.map(w => wordSimilarity(q, w)));
+    if (best < SIMILARITY) return 0;
+    score += best;
+  }
+  return score;
 }

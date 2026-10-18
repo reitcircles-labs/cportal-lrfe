@@ -1,1 +1,1 @@
-export { createLocalStore } from '@lrfe/storage';
+export {createLocalStore} from '@lrfe/storage';
