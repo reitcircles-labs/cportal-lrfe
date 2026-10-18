@@ -29,13 +29,20 @@
  * Production: OpenBao must not run as the same user as the portal. An administrator installs it
  * as a dedicated user and service; the script only points to the rules.
  */
-import { spawn, execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { arch, homedir, platform } from 'node:os';
-import { dirname, join, relative } from 'node:path';
-import { createInterface } from 'node:readline/promises';
-import { fileURLToPath } from 'node:url';
+import {spawn, execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import {arch, homedir, platform} from 'node:os';
+import {dirname, join, relative} from 'node:path';
+import {createInterface} from 'node:readline/promises';
+import {fileURLToPath} from 'node:url';
 
 const VERSION = '2.7.1';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -43,86 +50,113 @@ const TOOLS = join(ROOT, '.tools');
 const README = join(ROOT, 'scripts', 'README.md');
 const RULES = `${relative(process.cwd(), README) || README} → "OpenBao: installation rules"`;
 const port = Number(process.env.BAO_PORT || 8200);
-const dataDir = process.env.BAO_DATA_DIR || join(homedir(), 'data', 'cportal-lrfe', 'openbao');
+const dataDir =
+  process.env.BAO_DATA_DIR ||
+  join(homedir(), 'data', 'cportal-lrfe', 'openbao');
 const addr = `http://127.0.0.1:${port}`;
 const args = process.argv.slice(2);
 
 // ---------------------------------------------------------------- development or production?
 
 async function systemKind() {
-    if (args.includes('--prod')) return 'prod';
-    if (args.includes('--dev')) return 'dev';
-    if (!process.stdin.isTTY) {
-        console.error('Say which system this is: npm run bao -- --dev (development) or --prod (production).');
-        process.exit(2);
+  if (args.includes('--prod')) return 'prod';
+  if (args.includes('--dev')) return 'dev';
+  if (!process.stdin.isTTY) {
+    console.error(
+      'Say which system this is: npm run bao -- --dev (development) or --prod (production).',
+    );
+    process.exit(2);
+  }
+  const rl = createInterface({input: process.stdin, output: process.stdout});
+  try {
+    for (;;) {
+      const a = (
+        await rl.question(
+          'Is this a development or a production system? [dev/prod] ',
+        )
+      )
+        .trim()
+        .toLowerCase();
+      if (['dev', 'development', 'd'].includes(a)) return 'dev';
+      if (['prod', 'production', 'p'].includes(a)) return 'prod';
     }
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    try {
-        for (;;) {
-            const a = (await rl.question('Is this a development or a production system? [dev/prod] ')).trim().toLowerCase();
-            if (['dev', 'development', 'd'].includes(a)) return 'dev';
-            if (['prod', 'production', 'p'].includes(a)) return 'prod';
-        }
-    } catch {
-        console.error('\nNo answer: nothing installed.');      // Ctrl+C / Ctrl+D at the question
-        process.exit(2);
-    } finally { rl.close(); }
+  } catch {
+    console.error('\nNo answer: nothing installed.'); // Ctrl+C / Ctrl+D at the question
+    process.exit(2);
+  } finally {
+    rl.close();
+  }
 }
 
-if (await systemKind() === 'prod') {
-    console.error([
-        'Not installed: on a production system OpenBao must not run as the same user as the portal.',
-        'An administrator installs it as a dedicated "openbao" user and system service, with TLS,',
-        'unseal keys held by named people (or an HSM), and snapshot backups.',
-        `Read: ${RULES}`
-    ].join('\n'));
-    process.exit(2);
+if ((await systemKind()) === 'prod') {
+  console.error(
+    [
+      'Not installed: on a production system OpenBao must not run as the same user as the portal.',
+      'An administrator installs it as a dedicated "openbao" user and system service, with TLS,',
+      'unseal keys held by named people (or an HSM), and snapshot backups.',
+      `Read: ${RULES}`,
+    ].join('\n'),
+  );
+  process.exit(2);
 }
 
 // ---------------------------------------------------------------- install (first run)
 
-const OS = { linux: 'linux' }[platform()];
-const CPU = { x64: 'amd64', arm64: 'arm64' }[arch()];
+const OS = {linux: 'linux'}[platform()];
+const CPU = {x64: 'amd64', arm64: 'arm64'}[arch()];
 if (!OS || !CPU) {
-    console.error(`No OpenBao download for ${platform()}/${arch()} here: install OpenBao yourself (https://openbao.org/downloads).`);
-    process.exit(1);
+  console.error(
+    `No OpenBao download for ${platform()}/${arch()} here: install OpenBao yourself (https://openbao.org/downloads).`,
+  );
+  process.exit(1);
 }
 const name = `openbao_${VERSION}_${OS}_${CPU}`;
 const installDir = join(TOOLS, `openbao-${VERSION}`);
 const binary = join(installDir, 'bao');
 
 async function download(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-    return Buffer.from(await res.arrayBuffer());
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
 }
 
 async function install() {
-    const base = `https://github.com/openbao/openbao/releases/download/v${VERSION}`;
-    console.log(`Downloading ${name} (first run only)…`);
-    const [archive, sums] = await Promise.all([download(`${base}/${name}.tar.gz`), download(`${base}/checksums.txt`)]);
-    const expected = sums.toString().split('\n').find(l => l.trim().endsWith(`${name}.tar.gz`))?.split(/\s+/)[0];
-    const actual = createHash('sha256').update(archive).digest('hex');
-    if (!expected || expected !== actual) throw new Error(`Checksum mismatch for ${name}.tar.gz (expected ${expected}, got ${actual}): not installed`);
-    mkdirSync(installDir, { recursive: true });
-    const file = join(TOOLS, `${name}.tar.gz`);
-    writeFileSync(file, archive);
-    try {
-        execFileSync('tar', ['-xzf', file, '-C', installDir]);
-    } finally {
-        rmSync(file, { force: true });
-    }
-    if (!existsSync(binary)) throw new Error(`${binary} missing after unpacking`);
-    console.log(`Installed ${binary}`);
+  const base = `https://github.com/openbao/openbao/releases/download/v${VERSION}`;
+  console.log(`Downloading ${name} (first run only)…`);
+  const [archive, sums] = await Promise.all([
+    download(`${base}/${name}.tar.gz`),
+    download(`${base}/checksums.txt`),
+  ]);
+  const expected = sums
+    .toString()
+    .split('\n')
+    .find(l => l.trim().endsWith(`${name}.tar.gz`))
+    ?.split(/\s+/)[0];
+  const actual = createHash('sha256').update(archive).digest('hex');
+  if (!expected || expected !== actual) {
+    throw new Error(
+      `Checksum mismatch for ${name}.tar.gz (expected ${expected}, got ${actual}): not installed`,
+    );
+  }
+  mkdirSync(installDir, {recursive: true});
+  const file = join(TOOLS, `${name}.tar.gz`);
+  writeFileSync(file, archive);
+  try {
+    execFileSync('tar', ['-xzf', file, '-C', installDir]);
+  } finally {
+    rmSync(file, {force: true});
+  }
+  if (!existsSync(binary)) throw new Error(`${binary} missing after unpacking`);
+  console.log(`Installed ${binary}`);
 }
 
 if (!existsSync(binary)) {
-    try {
-        await install();
-    } catch (err) {
-        console.error(`Could not install OpenBao: ${err.message}`);
-        process.exit(1);
-    }
+  try {
+    await install();
+  } catch (err) {
+    console.error(`Could not install OpenBao: ${err.message}`);
+    process.exit(1);
+  }
 }
 if (args.includes('--install')) process.exit(0);
 
@@ -130,25 +164,46 @@ if (args.includes('--install')) process.exit(0);
 
 // Initialising waits for the first Raft leader election (about 5 s): allow a minute per call
 const api = async (path, init = {}, timeoutMs = 60_000) => {
-    const { token, ...rest } = init;
-    const res = await fetch(`${addr}/v1/${path}`, {
-        ...rest, headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Vault-Token': token } : {}) }, signal: AbortSignal.timeout(timeoutMs)
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(`${path}: HTTP ${res.status} ${JSON.stringify(body.errors || body)}`), { status: res.status });
-    return body;
+  const {token, ...rest} = init;
+  const res = await fetch(`${addr}/v1/${path}`, {
+    ...rest,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? {'X-Vault-Token': token} : {}),
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw Object.assign(
+      new Error(
+        `${path}: HTTP ${res.status} ${JSON.stringify(body.errors || body)}`,
+      ),
+      {status: res.status},
+    );
+  }
+  return body;
 };
 const sealStatus = () => api('sys/seal-status', undefined, 2000);
 
-if (await sealStatus().then(() => true, () => false)) {
-    console.error(`Something already answers on ${addr} (another OpenBao?). Stop it, or use another port: BAO_PORT=8210 npm run bao -- --dev`);
-    process.exit(1);
+if (
+  await sealStatus().then(
+    () => true,
+    () => false,
+  )
+) {
+  console.error(
+    `Something already answers on ${addr} (another OpenBao?). Stop it, or use another port: BAO_PORT=8210 npm run bao -- --dev`,
+  );
+  process.exit(1);
 }
 
-mkdirSync(join(dataDir, 'raft'), { recursive: true, mode: 0o700 });
+mkdirSync(join(dataDir, 'raft'), {recursive: true, mode: 0o700});
 chmodSync(dataDir, 0o700);
 const config = join(dataDir, 'openbao.hcl');
-writeFileSync(config, `# Written by backend/scripts/bao.js: development only (no TLS, single node).
+writeFileSync(
+  config,
+  `# Written by backend/scripts/bao.js: development only (no TLS, single node).
 storage "raft" {
   path    = "${join(dataDir, 'raft')}"
   node_id = "bao-dev"
@@ -160,107 +215,220 @@ listener "tcp" {
 api_addr     = "${addr}"
 cluster_addr = "http://127.0.0.1:${port + 1}"
 # No disable_mlock: OpenBao 2.x never locks memory (mlock removed in 2.0, the setting is obsolete).
-`, { mode: 0o600 });
+`,
+  {mode: 0o600},
+);
 
-const server = spawn(binary, ['server', `-config=${config}`], { stdio: ['ignore', 'inherit', 'inherit'] });
-server.on('exit', (code, signal) => process.exit(signal ? 0 : code ?? 0));
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => server.kill(sig));
+const server = spawn(binary, ['server', `-config=${config}`], {
+  stdio: ['ignore', 'inherit', 'inherit'],
+});
+server.on('exit', (code, signal) => process.exit(signal ? 0 : (code ?? 0)));
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => server.kill(sig));
+}
 
 // ---------------------------------------------------------------- initialise (first start), unseal
 
 const initFile = join(dataDir, 'dev-init.json');
 try {
-    let status;
-    for (let i = 0; ; i++) {
-        status = await sealStatus().catch(() => null);
-        if (status) break;
-        if (i >= 50) throw new Error(`OpenBao did not answer on ${addr}`);
-        await new Promise(r => setTimeout(r, 200));
+  let status;
+  for (let i = 0; ; i++) {
+    status = await sealStatus().catch(() => null);
+    if (status) break;
+    if (i >= 50) throw new Error(`OpenBao did not answer on ${addr}`);
+    await new Promise(r => setTimeout(r, 200));
+  }
+  if (!status.initialized) {
+    const init = await api('sys/init', {
+      method: 'PUT',
+      body: JSON.stringify({secret_shares: 1, secret_threshold: 1}),
+    });
+    writeFileSync(
+      initFile,
+      JSON.stringify(
+        {
+          warning:
+            'DEVELOPMENT ONLY. Unseal key and root token of the local OpenBao; never use this setup in production.',
+          addr,
+          unsealKey: init.keys_base64[0],
+          rootToken: init.root_token,
+          createdAt: new Date().toISOString(),
+        },
+        null,
+        1,
+      ) + '\n',
+      {mode: 0o600},
+    );
+    console.log(
+      `Initialised the vault; unseal key and root token in ${initFile} (this user only)`,
+    );
+    status = await sealStatus();
+  }
+  if (status.sealed) {
+    if (!existsSync(initFile)) {
+      throw new Error(
+        `The vault is initialised but ${initFile} is missing (e.g. the first start was interrupted before the keys were saved), so it cannot be unsealed. Unseal it with its key (bao operator unseal), or, on a development system, delete ${dataDir} to start over`,
+      );
     }
-    if (!status.initialized) {
-        const init = await api('sys/init', { method: 'PUT', body: JSON.stringify({ secret_shares: 1, secret_threshold: 1 }) });
-        writeFileSync(initFile, JSON.stringify({
-            warning: 'DEVELOPMENT ONLY. Unseal key and root token of the local OpenBao; never use this setup in production.',
-            addr, unsealKey: init.keys_base64[0], rootToken: init.root_token, createdAt: new Date().toISOString()
-        }, null, 1) + '\n', { mode: 0o600 });
-        console.log(`Initialised the vault; unseal key and root token in ${initFile} (this user only)`);
-        status = await sealStatus();
-    }
+    const {unsealKey} = JSON.parse(readFileSync(initFile, 'utf8'));
+    status = await api('sys/unseal', {
+      method: 'PUT',
+      body: JSON.stringify({key: unsealKey}),
+    });
     if (status.sealed) {
-        if (!existsSync(initFile)) throw new Error(`The vault is initialised but ${initFile} is missing (e.g. the first start was interrupted before the keys were saved), so it cannot be unsealed. Unseal it with its key (bao operator unseal), or, on a development system, delete ${dataDir} to start over`);
-        const { unsealKey } = JSON.parse(readFileSync(initFile, 'utf8'));
-        status = await api('sys/unseal', { method: 'PUT', body: JSON.stringify({ key: unsealKey }) });
-        if (status.sealed) throw new Error('Unsealing failed: the key in dev-init.json does not belong to this vault');
+      throw new Error(
+        'Unsealing failed: the key in dev-init.json does not belong to this vault',
+      );
     }
-    console.log(`OpenBao ${VERSION} (development) on ${addr}: initialised, unsealed. Data in ${dataDir}.`);
-    console.log(`  export BAO_ADDR=${addr}   # the root token is in ${initFile}`);
-    await prepareEncryption(JSON.parse(readFileSync(initFile, 'utf8')).rootToken);
+  }
+  console.log(
+    `OpenBao ${VERSION} (development) on ${addr}: initialised, unsealed. Data in ${dataDir}.`,
+  );
+  console.log(`  export BAO_ADDR=${addr}   # the root token is in ${initFile}`);
+  await prepareEncryption(JSON.parse(readFileSync(initFile, 'utf8')).rootToken);
 } catch (err) {
-    console.error(`OpenBao: ${err.message}`);
-    server.kill('SIGTERM');
-    process.exitCode = 1;
+  console.error(`OpenBao: ${err.message}`);
+  server.kill('SIGTERM');
+  process.exitCode = 1;
 }
 
 // ---------------------------------------------------------------- document encryption (development)
 
 /** One transit key, policy and AppRole per service that stores files (packages/storage/README.md §4). */
 async function prepareEncryption(root) {
-    // Right after unsealing, the Raft node elects itself leader (about 5 s); until then requests fail
-    // with "local node not active". sys/health answers 200 once the node is active.
-    for (let i = 0; ; i++) {
-        const res = await fetch(`${addr}/v1/sys/health`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
-        if (res?.status === 200) break;
-        if (i >= 120) throw new Error('OpenBao did not become active within a minute after unsealing');
-        await new Promise(r => setTimeout(r, 500));
+  // Right after unsealing, the Raft node elects itself leader (about 5 s); until then requests fail
+  // with "local node not active". sys/health answers 200 once the node is active.
+  for (let i = 0; ; i++) {
+    const res = await fetch(`${addr}/v1/sys/health`, {
+      signal: AbortSignal.timeout(2000),
+    }).catch(() => null);
+    if (res?.status === 200) break;
+    if (i >= 120) {
+      throw new Error(
+        'OpenBao did not become active within a minute after unsealing',
+      );
     }
-    // data keys for stored files; the audit service's Cardano wallet key signs anchorings (API-656)
-    const files = (key) => ({
-        type: 'aes256-gcm96', what: 'new data keys and unwrapping',
-        paths: [`path "transit/datakey/plaintext/${key}" { capabilities = ["update"] }`, `path "transit/decrypt/${key}" { capabilities = ["update"] }`]
+    await new Promise(r => setTimeout(r, 500));
+  }
+  // data keys for stored files; the audit service's Cardano wallet key signs anchorings (API-656)
+  const files = key => ({
+    type: 'aes256-gcm96',
+    what: 'new data keys and unwrapping',
+    paths: [
+      `path "transit/datakey/plaintext/${key}" { capabilities = ["update"] }`,
+      `path "transit/decrypt/${key}" { capabilities = ["update"] }`,
+    ],
+  });
+  const SERVICES = [
+    {
+      name: 'edrms',
+      setting: 'EDRMS_ENCRYPTION=bao',
+      key: 'edrms-files',
+      ...files('edrms-files'),
+    },
+    {
+      name: 'intake',
+      setting: 'INTAKE_ENCRYPTION=bao',
+      key: 'intake-files',
+      ...files('intake-files'),
+    },
+    {
+      name: 'audit',
+      setting: 'CARDANO_PROVIDER=ogmios (or blockfrost)',
+      key: 'audit-anchor',
+      keySetting: 'ANCHOR_BAO_KEY',
+      type: 'ed25519',
+      what: 'signing and reading its public key',
+      paths: [
+        'path "transit/sign/audit-anchor" { capabilities = ["update"] }',
+        'path "transit/keys/audit-anchor" { capabilities = ["read"] }',
+      ],
+    },
+  ];
+  const as = (method, path, body) =>
+    api(path, {
+      method,
+      token: root,
+      ...(body ? {body: JSON.stringify(body)} : {}),
     });
-    const SERVICES = [
-        { name: 'edrms', setting: 'EDRMS_ENCRYPTION=bao', key: 'edrms-files', ...files('edrms-files') },
-        { name: 'intake', setting: 'INTAKE_ENCRYPTION=bao', key: 'intake-files', ...files('intake-files') },
-        {
-            name: 'audit', setting: 'CARDANO_PROVIDER=ogmios (or blockfrost)', key: 'audit-anchor', keySetting: 'ANCHOR_BAO_KEY',
-            type: 'ed25519', what: 'signing and reading its public key',
-            paths: ['path "transit/sign/audit-anchor" { capabilities = ["update"] }', 'path "transit/keys/audit-anchor" { capabilities = ["read"] }']
-        }
-    ];
-    const as = (method, path, body) => api(path, { method, token: root, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const exists = (path) => as('GET', path).then(() => true, (err) => { if (err.status === 404) return false; throw err; });
+  const exists = path =>
+    as('GET', path).then(
+      () => true,
+      err => {
+        if (err.status === 404) return false;
+        throw err;
+      },
+    );
 
-    const mounts = await as('GET', 'sys/mounts');
-    if (!(mounts.data || mounts)['transit/']) await as('POST', 'sys/mounts/transit', { type: 'transit' });
-    const auths = await as('GET', 'sys/auth');
-    if (!(auths.data || auths)['approle/']) await as('POST', 'sys/auth/approle', { type: 'approle' });
+  const mounts = await as('GET', 'sys/mounts');
+  if (!(mounts.data || mounts)['transit/']) {
+    await as('POST', 'sys/mounts/transit', {type: 'transit'});
+  }
+  const auths = await as('GET', 'sys/auth');
+  if (!(auths.data || auths)['approle/']) {
+    await as('POST', 'sys/auth/approle', {type: 'approle'});
+  }
 
-    const dir = join(dataDir, 'approle');
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const lines = [];
-    for (const s of SERVICES) {
-        // the key: created once, never exportable (it never leaves OpenBao)
-        if (!(await exists(`transit/keys/${s.key}`))) await as('POST', `transit/keys/${s.key}`, { type: s.type, exportable: false });
-        // the policy: only what the service needs, on its own key only
-        await as('PUT', `sys/policies/acl/${s.key}`, {
-            policy: `# ${s.name}: ${s.what}, on its own key only (written by bao.js)\n${s.paths.join('\n')}\n`
-        });
-        // the AppRole: short-lived renewable tokens, usable from this machine only
-        await as('POST', `auth/approle/role/${s.name}`, {
-            token_policies: [s.key], token_ttl: '1h', token_max_ttl: '24h',
-            token_bound_cidrs: ['127.0.0.1/32'], secret_id_bound_cidrs: ['127.0.0.1/32']
-        });
-        const roleId = (await as('GET', `auth/approle/role/${s.name}/role-id`)).data.role_id;
-        const secretFile = join(dir, `${s.name}-secret-id`);
-        // keep a secret ID that still logs in; otherwise issue a new one
-        const current = existsSync(secretFile) ? readFileSync(secretFile, 'utf8').trim() : null;
-        const valid = current && await api('auth/approle/login', { method: 'POST', body: JSON.stringify({ role_id: roleId, secret_id: current }) }).then(() => true, () => false);
-        if (!valid) writeFileSync(secretFile, (await as('POST', `auth/approle/role/${s.name}/secret-id`)).data.secret_id + '\n', { mode: 0o600 });
-        writeFileSync(join(dir, `${s.name}-role-id`), roleId + '\n', { mode: 0o600 });
-        lines.push(`  ${s.name} (backend/services/${s.name}/.env):`,
-            `    ${s.setting}`, `    BAO_ADDR=${addr}`, `    BAO_ROLE_ID=${roleId}`, `    BAO_SECRET_ID_FILE=${secretFile}`, `    ${s.keySetting || 'BAO_KEY_NAME'}=${s.key}`);
+  const dir = join(dataDir, 'approle');
+  mkdirSync(dir, {recursive: true, mode: 0o700});
+  const lines = [];
+  for (const s of SERVICES) {
+    // the key: created once, never exportable (it never leaves OpenBao)
+    if (!(await exists(`transit/keys/${s.key}`))) {
+      await as('POST', `transit/keys/${s.key}`, {
+        type: s.type,
+        exportable: false,
+      });
     }
-    console.log(`Document encryption ready: transit keys ${SERVICES.map(s => s.key).join(', ')}; AppRoles ${SERVICES.map(s => s.name).join(', ')}.`);
-    console.log('  Settings for the services (development only):');
-    console.log(lines.join('\n'));
+    // the policy: only what the service needs, on its own key only
+    await as('PUT', `sys/policies/acl/${s.key}`, {
+      policy: `# ${s.name}: ${s.what}, on its own key only (written by bao.js)\n${s.paths.join('\n')}\n`,
+    });
+    // the AppRole: short-lived renewable tokens, usable from this machine only
+    await as('POST', `auth/approle/role/${s.name}`, {
+      token_policies: [s.key],
+      token_ttl: '1h',
+      token_max_ttl: '24h',
+      token_bound_cidrs: ['127.0.0.1/32'],
+      secret_id_bound_cidrs: ['127.0.0.1/32'],
+    });
+    const roleId = (await as('GET', `auth/approle/role/${s.name}/role-id`)).data
+      .role_id;
+    const secretFile = join(dir, `${s.name}-secret-id`);
+    // keep a secret ID that still logs in; otherwise issue a new one
+    const current = existsSync(secretFile)
+      ? readFileSync(secretFile, 'utf8').trim()
+      : null;
+    const valid =
+      current &&
+      (await api('auth/approle/login', {
+        method: 'POST',
+        body: JSON.stringify({role_id: roleId, secret_id: current}),
+      }).then(
+        () => true,
+        () => false,
+      ));
+    if (!valid) {
+      writeFileSync(
+        secretFile,
+        (await as('POST', `auth/approle/role/${s.name}/secret-id`)).data
+          .secret_id + '\n',
+        {mode: 0o600},
+      );
+    }
+    writeFileSync(join(dir, `${s.name}-role-id`), roleId + '\n', {mode: 0o600});
+    lines.push(
+      `  ${s.name} (backend/services/${s.name}/.env):`,
+      `    ${s.setting}`,
+      `    BAO_ADDR=${addr}`,
+      `    BAO_ROLE_ID=${roleId}`,
+      `    BAO_SECRET_ID_FILE=${secretFile}`,
+      `    ${s.keySetting || 'BAO_KEY_NAME'}=${s.key}`,
+    );
+  }
+  console.log(
+    `Document encryption ready: transit keys ${SERVICES.map(s => s.key).join(', ')}; AppRoles ${SERVICES.map(s => s.name).join(', ')}.`,
+  );
+  console.log('  Settings for the services (development only):');
+  console.log(lines.join('\n'));
 }

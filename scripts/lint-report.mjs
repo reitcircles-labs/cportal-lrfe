@@ -1,5 +1,6 @@
-// Lint baseline: how many lint findings and unformatted files each area of the repository has,
-// as a Markdown table, so the clean-up can be planned area by area (docs/coding-guide.md).
+// Lint findings per area: how many lint findings and unformatted files each area of the repository
+// has, as a Markdown table, for the CI summary and to see where a failing check comes from
+// (docs/coding-guide.md).
 //
 //   npm run lint:report                  prints the report
 //   npm run lint:report -- report.md     also writes it to report.md

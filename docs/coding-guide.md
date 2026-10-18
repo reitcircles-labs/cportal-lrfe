@@ -27,8 +27,10 @@ npx prettier --write <path>         # formats a file or folder
 npm run lint:report                 # findings and unformatted files per area, as a table
 ```
 
-The checks also run in CI on every pull request. For now they only **report**: the build does not
-fail on them, until the existing code has been brought in line area by area (epic API-679).
+The checks also run in CI on every pull request and every push to main, and they are
+**blocking**: a lint error or an unformatted file fails the build. Run `npm run lint` and
+`npm run format:check` before you commit. Lint warnings, such as a missing JSDoc comment, are
+shown but do not fail the build.
 
 ## The rules, in short
 
@@ -93,6 +95,7 @@ fail on them, until the existing code has been brought in line area by area (epi
 
 ## Changing old code
 
-New and changed code follows this guide from now on. Existing code is brought in line area by area,
-in the tickets of epic API-679. Those changes are style only: no change to behaviour, routes,
-payloads, events, database columns, UI text or the labels the e2e tests look for.
+All code follows this guide. The existing code was brought in line area by area in epic API-679;
+those changes were style only: no change to behaviour, routes, payloads, events, database columns,
+UI text or the labels the e2e tests look for. Do the same when you tidy old code: keep style changes
+separate from changes in behaviour.

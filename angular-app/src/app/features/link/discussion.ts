@@ -26,7 +26,8 @@ export interface DiscussionComment {
   versionNumber: number | null;
 }
 
-export type EventKind = 'comment' | 'submitted' | 'withdrawn' | 'returned' | 'approved';
+export type EventKind =
+  'comment' | 'submitted' | 'withdrawn' | 'returned' | 'approved';
 
 /** One entry of the timeline. */
 export interface DiscussionEvent {
@@ -61,10 +62,16 @@ export function isDecision(e: DiscussionEvent): boolean {
   return e.kind !== 'comment';
 }
 
-function whatHappened(kind: EventKind, version: number, submissions: number): string {
+function whatHappened(
+  kind: EventKind,
+  version: number,
+  submissions: number,
+): string {
   switch (kind) {
     case 'submitted':
-      return submissions > 1 ? `submitted version ${version} again` : `submitted version ${version} for review`;
+      return submissions > 1
+        ? `submitted version ${version} again`
+        : `submitted version ${version} for review`;
     case 'withdrawn':
       return `withdrew version ${version} from review`;
     case 'returned':
@@ -77,7 +84,10 @@ function whatHappened(kind: EventKind, version: number, submissions: number): st
 }
 
 /** The decisions and comments of a record, as one list, oldest first. */
-export function discussionEvents(versions: readonly DiscussionVersion[], comments: readonly DiscussionComment[]): DiscussionEvent[] {
+export function discussionEvents(
+  versions: readonly DiscussionVersion[],
+  comments: readonly DiscussionComment[],
+): DiscussionEvent[] {
   const events: DiscussionEvent[] = [];
   for (const v of versions) {
     let submissions = 0;
@@ -112,7 +122,9 @@ export function discussionEvents(versions: readonly DiscussionVersion[], comment
 }
 
 /** The events grouped by version, the newest version first; each group oldest first. */
-export function groupByVersion(events: readonly DiscussionEvent[]): DiscussionGroup[] {
+export function groupByVersion(
+  events: readonly DiscussionEvent[],
+): DiscussionGroup[] {
   const groups = new Map<number | null, DiscussionEvent[]>();
   for (const e of events) {
     const list = groups.get(e.versionNumber) ?? [];
@@ -121,5 +133,5 @@ export function groupByVersion(events: readonly DiscussionEvent[]): DiscussionGr
   }
   return [...groups.entries()]
     .sort(([a], [b]) => (b ?? 0) - (a ?? 0))
-    .map(([versionNumber, list]) => ({ versionNumber, events: list }));
+    .map(([versionNumber, list]) => ({versionNumber, events: list}));
 }

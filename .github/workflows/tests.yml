@@ -1,7 +1,7 @@
 # Backend unit tests and the end-to-end browser tests (e2e/README.md).
 #
 #   every pull request and push to main   backend tests, API docs check, e2e on the in-memory stack
-#                                         lint and format checks (report only, docs/coding-guide.md)
+#                                         lint and format checks (blocking, docs/coding-guide.md)
 #   nightly, and on demand (Run workflow)  the same e2e suite on PostgreSQL as well
 #
 # On failure, the Playwright HTML report and test-results (screenshots, videos, traces) are kept as
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   style:
-    name: lint and format (report only)
+    name: lint and format
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -36,15 +36,15 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      # Report only until the existing code is in line (epic API-679): findings show in the log
-      # and the summary, but don't fail the build.
+      # Blocking: a lint error or an unformatted file fails the build (docs/coding-guide.md).
       - name: Lint
         run: npm run lint
-        continue-on-error: true
+      # also when Lint failed, so one run shows both
       - name: Format
+        if: ${{ !cancelled() }}
         run: npm run format:check
-        continue-on-error: true
-      - name: Baseline per area
+      - name: Findings per area
+        if: ${{ !cancelled() }}
         run: npm run -s lint:report >> "$GITHUB_STEP_SUMMARY"
 
   backend:
