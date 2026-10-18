@@ -3,7 +3,7 @@
  * mortgage bonds suggest that the draft does not have yet. Plain TypeScript without Angular, so it
  * is unit tested on its own (`npm run test:link`).
  */
-import type { Encumbrance } from '../../api/records.api';
+import type {Encumbrance} from '../../api/records.api';
 
 /** What to offer: the encumbrances to add, and the request that adds them. */
 export interface EncumbranceOffer {
@@ -28,16 +28,22 @@ export function encumbranceKey(e: Encumbrance): string {
 
 /** Whether two encumbrances are the same in every detail the record keeps. */
 function sameEntry(a: Encumbrance, b: Encumbrance): boolean {
-  return a.type === b.type && (a.ref || '').trim() === (b.ref || '').trim()
-      && (a.inFavourOf ?? '') === (b.inFavourOf ?? '') && (a.note ?? '') === (b.note ?? '');
+  return (
+    a.type === b.type &&
+    (a.ref || '').trim() === (b.ref || '').trim() &&
+    (a.inFavourOf ?? '') === (b.inFavourOf ?? '') &&
+    (a.note ?? '') === (b.note ?? '')
+  );
 }
 
 /**
  * The offer for a draft's encumbrances, given the documents' suggestions; null when there is nothing
  * to add. Suggestions without a reference are not offered, and each is offered once.
  */
-export function encumbranceOffer(suggested: readonly Encumbrance[] | null | undefined,
-    current: readonly Encumbrance[] | null | undefined): EncumbranceOffer | null {
+export function encumbranceOffer(
+  suggested: readonly Encumbrance[] | null | undefined,
+  current: readonly Encumbrance[] | null | undefined,
+): EncumbranceOffer | null {
   const s = suggested ?? [];
   const kept = current ?? [];
   const have = new Set(kept.map(encumbranceKey));
@@ -52,7 +58,8 @@ export function encumbranceOffer(suggested: readonly Encumbrance[] | null | unde
   return {
     missing,
     label: `Use ${missing.map(e => e.ref.trim()).join(', ')} from the documents`,
-    encumbrances: target.map(e => ({ ...e })),
-    accept: target.length === s.length && target.every((e, i) => sameEntry(e, s[i])),
+    encumbrances: target.map(e => ({...e})),
+    accept:
+      target.length === s.length && target.every((e, i) => sameEntry(e, s[i])),
   };
 }
