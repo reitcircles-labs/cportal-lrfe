@@ -12,13 +12,7 @@ import {toSignal} from '@angular/core/rxjs-interop';
 import {ActivatedRoute, RouterLink} from '@angular/router';
 import {map} from 'rxjs';
 
-import {
-  AuditApi,
-  CheckDocument,
-  CheckVersion,
-  Checkpoint,
-  Finding,
-} from '../../api/audit.api';
+import {AuditApi, Checkpoint, Finding} from '../../api/audit.api';
 import {IntakeApi, IntakeDocType} from '../../api/intake.api';
 import {
   History,
@@ -28,17 +22,28 @@ import {
   Version,
 } from '../../api/records.api';
 import {InfoTipComponent} from '../../shared/info-tip.component';
-import {ProofDownloadComponent} from '../../shared/proof-download.component';
-import {ProofLinkComponent} from '../../shared/proof-link.component';
-import {RecordDiffComponent} from '../../shared/record-diff.component';
 import {ConfirmService} from '../../state/confirm.service';
 import {RbacService} from '../../state/rbac.service';
 import {ToastService} from '../../state/toast.service';
+import {AuditDocumentsComponent} from './audit-documents.component';
+import {AuditCheckpointDetailComponent} from './audit-checkpoint-detail.component';
+import {AuditDocDetailComponent} from './audit-doc-detail.component';
+import {
+  DocFilter,
+  DocRow,
+  SelectedVersion,
+  Selection,
+  VersionRow,
+  docTypeLabel,
+  fieldsOf,
+} from './audit-record.types';
 import {AuditReviewComponent} from './audit-review.component';
+import {AUDIT_SHARED_STYLES} from './audit-shared.styles';
 import {AuditTrailComponent} from './audit-trail.component';
+import {AuditVersionDetailComponent} from './audit-version-detail.component';
+import {AuditVersionsComponent} from './audit-versions.component';
 import {
   ANCHORING,
-  CHANGED_SINCE_REVIEW,
   MATCH,
   TIPS,
   findingNumber,
@@ -52,34 +57,7 @@ import {
   toneClass,
   versionState,
 } from './audit-wording';
-import {FindingReply, FindingThreadComponent} from './finding-thread.component';
-
-/** What the detail panel shows. */
-type Selection =
-  | {kind: 'checkpoint'}
-  | {kind: 'version'; n: number}
-  | {kind: 'doc'; id: string};
-
-/** The documents table's filters. */
-type DocFilter = 'attention' | 'new' | 'all';
-
-const DOC_FILTERS: Array<{id: DocFilter; label: string}> = [
-  {id: 'attention', label: 'Needs attention'},
-  {id: 'new', label: 'New in this audit'},
-  {id: 'all', label: 'All'},
-];
-
-/** A document of the version shown, as the table and the panel use it. */
-interface DocRow {
-  pin: PinnedDocument;
-  addedIn: number;
-  check: CheckDocument | null;
-  findings: Finding[];
-  changed: boolean;
-  issues: string[];
-  checkLabel: string;
-  checkTone: string;
-}
+import {FindingReply} from './finding-thread.component';
 
 /**
  * One land record's audit (`#/audit/records/:id`, API-661): the open checkpoint (every version since
@@ -92,15 +70,17 @@ interface DocRow {
   imports: [
     RouterLink,
     InfoTipComponent,
-    ProofLinkComponent,
-    ProofDownloadComponent,
-    RecordDiffComponent,
-    FindingThreadComponent,
     AuditReviewComponent,
     AuditTrailComponent,
+    AuditVersionsComponent,
+    AuditDocumentsComponent,
+    AuditCheckpointDetailComponent,
+    AuditVersionDetailComponent,
+    AuditDocDetailComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './audit-record.component.html',
+  styles: [AUDIT_SHARED_STYLES],
   styleUrl: './audit-record.component.css',
 })
 export class AuditRecordComponent {
@@ -118,8 +98,6 @@ export class AuditRecordComponent {
   );
 
   protected readonly tips = TIPS;
-  protected readonly docFilters = DOC_FILTERS;
-  protected readonly changedSinceReview = CHANGED_SINCE_REVIEW;
 
   protected readonly record = signal<LandRecord | null>(null);
   protected readonly check = signal<Checkpoint | null>(null);
@@ -149,7 +127,7 @@ export class AuditRecordComponent {
     checksum: string;
   } | null>(null);
   /** The document types with their labels and their fields' labels (the intake catalogue). */
-  private readonly docTypes = signal<IntakeDocType[]>([]);
+  protected readonly docTypes = signal<IntakeDocType[]>([]);
 
   protected readonly canAct = computed(() => this.rbac.can('audit.signoff'));
   protected readonly canExport = computed(() => this.rbac.can('audit.export'));
@@ -176,7 +154,7 @@ export class AuditRecordComponent {
   // ------------------------------------------------ versions
 
   /** Every committed version, newest first, with its proof status and how far the auditor has got. */
-  protected readonly versionRows = computed(() => {
+  protected readonly versionRows = computed<VersionRow[]>(() => {
     const check = this.check();
     const lastTo = check?.lastSignoff?.toVersion ?? 0;
     const lastDate = shortDate(check?.lastSignoff?.signedAt);
@@ -315,11 +293,7 @@ export class AuditRecordComponent {
 
   // ------------------------------------------------ the selected item
 
-  protected readonly selectedVersion = computed<{
-    n: number;
-    inRange: CheckVersion | null;
-    earlier: boolean;
-  } | null>(() => {
+  protected readonly selectedVersion = computed<SelectedVersion | null>(() => {
     const s = this.selected();
     if (s.kind !== 'version') {
       return null;
@@ -474,18 +448,12 @@ export class AuditRecordComponent {
 
   /** A document type's name, e.g. "SG diagram" for sg_diagram. */
   protected docTypeLabel(id: string): string {
-    return (
-      this.docTypes().find(t => t.id === id)?.label ?? id.replace(/_/g, ' ')
-    );
+    return docTypeLabel(this.docTypes(), id);
   }
 
   /** A document's sealed fields with their names, as the intake catalogue gives them. */
   protected fieldsOf(pin: PinnedDocument): Array<{k: string; v: string}> {
-    const type = this.docTypes().find(t => t.id === pin.docType);
-    return Object.entries(pin.fields || {}).map(([k, v]) => ({
-      k: type?.fields.find(f => f.k === k)?.label ?? k,
-      v,
-    }));
+    return fieldsOf(this.docTypes(), pin);
   }
 
   @HostListener('document:keydown.escape')
@@ -493,24 +461,8 @@ export class AuditRecordComponent {
     this.raising.set(null);
   }
 
-  protected anchoringText(state: CheckVersion['anchoring']): string {
-    return ANCHORING[state].label;
-  }
-
-  protected anchoringClass(state: CheckVersion['anchoring']): string {
-    return toneClass(ANCHORING[state].tone);
-  }
-
-  protected dateTime(iso: string): string {
-    return shortDateTime(iso);
-  }
-
   protected markChecked(n: number): void {
     this.checked.update(s => new Set([...s, n]));
-  }
-
-  protected typeDocQuery(event: Event): void {
-    this.docQuery.set((event.target as HTMLInputElement).value);
   }
 
   protected review(documentId: string): void {

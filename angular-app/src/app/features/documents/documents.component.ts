@@ -14,54 +14,13 @@ import {ConfirmService} from '../../state/confirm.service';
 import {TasksService} from '../../state/tasks.service';
 import {IconComponent} from '../../shared/icon.component';
 import {CanDirective} from '../../shared/can.directive';
-import {Anchoring, anchoringLabel, anchoringTag} from '../../shared/anchoring';
-import {BlockchainVerifyComponent} from '../../shared/blockchain-verify.component';
 import {InfoTipComponent} from '../../shared/info-tip.component';
-import {ProofDownloadComponent} from '../../shared/proof-download.component';
-import {ProofLinkComponent} from '../../shared/proof-link.component';
 import {VERIFY_TIPS} from '../audit/verify-wording';
+import {DocumentFieldsPanelComponent} from './document-fields-panel.component';
+import {DocumentRecordMetaPanelComponent} from './document-record-meta-panel.component';
+import {DocumentVersionsPanelComponent} from './document-versions-panel.component';
+import {DocDetail, DocRow} from './documents.types';
 
-interface DocRow {
-  id: string;
-  edrmsNo: string;
-  docType: string;
-  title: string;
-  instrumentRef: string | null;
-  batchId: string | null;
-  currentVersion: number;
-  filedAt: string;
-  props: Record<string, string>;
-}
-interface Field {
-  k: string;
-  label: string;
-  v: string;
-  c?: number;
-  edited?: boolean;
-}
-interface Version {
-  versionNumber: number;
-  label: string;
-  kind: 'filed' | 'amendment';
-  reason: string | null;
-  changes: Array<{k: string; from: string; to: string}>;
-  sha256: string;
-  seal: string;
-  size: number;
-  mimeType: string;
-  createdAt: string;
-  createdByName: string | null;
-  approvedByName: string | null;
-  anchoring?: Anchoring | null;
-}
-interface DocDetail extends DocRow {
-  registry: string;
-  pages: number;
-  fields: Field[];
-  recordMetadata: Record<string, unknown>;
-  filedByName: string | null;
-  versions: Version[];
-}
 interface OpenChange {
   id: string;
   status: 'active' | 'error';
@@ -89,10 +48,10 @@ interface IntegrityCheck {
   imports: [
     IconComponent,
     CanDirective,
-    ProofLinkComponent,
-    ProofDownloadComponent,
-    BlockchainVerifyComponent,
     InfoTipComponent,
+    DocumentFieldsPanelComponent,
+    DocumentVersionsPanelComponent,
+    DocumentRecordMetaPanelComponent,
   ],
   template: `
     <div class="shell">
@@ -151,43 +110,11 @@ interface IntegrityCheck {
           }
 
           <div class="auto-grid">
-            <section class="panel">
-              <div class="panel-head"><h3>Verified metadata</h3><span class="small muted">{{ d.fields.length }} fields</span></div>
-              <table class="table" style="font-size:13.5px">
-                <tbody>
-                  @for (f of d.fields; track f.k) {
-                    <tr><td class="small muted" style="width:40%">{{ f.label }}</td><td>{{ f.v }} @if (f.edited) { <span class="tag tag-outline" style="margin-left:6px">corrected</span> }</td></tr>
-                  }
-                </tbody>
-              </table>
-            </section>
+            <app-document-fields-panel [doc]="d" />
 
             <section class="stack" style="gap:16px;min-width:0">
-              <div class="panel">
-                <div class="panel-head"><h3>Version history</h3><span class="small muted">every version is sealed and kept</span></div>
-                <div class="panel-body stack" style="gap:14px">
-                  @for (v of versionsDesc(); track v.versionNumber) {
-                    <div class="ver">
-                      <div class="row" style="justify-content:space-between;gap:8px"><b>v{{ v.label }} · {{ v.kind === 'filed' ? 'Filed' : 'Amendment' }}</b><span class="small muted">{{ fmt(v.createdAt) }}</span></div>
-                      <div class="small">{{ v.kind === 'filed' ? 'Filed by ' + (v.createdByName || '—') : 'Requested by ' + (v.createdByName || '—') + ' · approved by ' + (v.approvedByName || '—') }}</div>
-                      @if (v.reason) { <div class="small muted">“{{ v.reason }}”</div> }
-                      @for (c of v.changes; track c.k) { <div class="small"><span class="muted">{{ c.k }}:</span> <span class="strike">{{ c.from }}</span> → <b>{{ c.to }}</b></div> }
-                      <div class="small mono muted" [title]="'content SHA-256 ' + v.sha256 + ' · seal ' + v.seal">sha256 {{ v.sha256.slice(0, 12) }}… · seal {{ v.seal.slice(0, 12) }}…</div>
-                      @if (v.anchoring; as a) {
-                        <div class="row" style="gap:8px;align-items:center"><app-proof-link [label]="anchoringLabel(a)" [tagClass]="anchoringTag(a)" [batch]="a.batch" />
-                          <app-proof-download kind="document-version" [itemId]="d.id" [version]="v.versionNumber" [fileName]="'proof-' + d.edrmsNo + '-v' + v.versionNumber + '.json'" [waiting]="a.status === 'waiting'" /></div>
-                        <app-blockchain-verify kind="document-version" [itemId]="d.id" [version]="v.versionNumber" />
-                      }
-                    </div>
-                  }
-                </div>
-              </div>
-              <div class="panel">
-                <div class="panel-head"><h3>Record metadata</h3><span class="small muted">ISO 23081</span></div>
-                <div class="panel-body"><div class="kv">
-                  @for (m of recordMeta(); track m.k) { <span>{{ m.k }}</span><span>{{ m.v }}</span> }
-                </div></div>
-              </div>
+              <app-document-versions-panel [doc]="d" />
+              <app-document-record-meta-panel [doc]="d" />
             </section>
           </div>
         } @else {
@@ -238,8 +165,6 @@ interface IntegrityCheck {
     .banner { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-radius: var(--radius-lg); background: var(--color-accent-100); border: 1px solid var(--color-accent-300); flex-wrap: wrap; }
     .banner.ok { background: var(--success-bg); border-color: var(--success); }
     .banner.err { background: var(--danger-bg); border-color: var(--danger-bd); color: var(--danger-fg); }
-    .ver { display: flex; flex-direction: column; gap: 3px; padding-left: 12px; border-left: 2px solid var(--color-divider); }
-    .strike { text-decoration: line-through; color: var(--color-neutral-600); }
     .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; max-height: 46vh; overflow-y: auto; margin: 10px 0; }
     .fl { display: flex; flex-direction: column; gap: 3px; }
     .fl.changed .input { border-color: var(--color-accent); background: var(--color-accent-100); }
@@ -273,24 +198,7 @@ export class DocumentsComponent {
   private searchTimer: ReturnType<typeof setTimeout>;
 
   fmt = fmtTime;
-  anchoringLabel = anchoringLabel;
-  anchoringTag = anchoringTag;
   protected readonly verifyTips = VERIFY_TIPS;
-  versionsDesc = computed(() => [...(this.sel()?.versions || [])].reverse());
-  recordMeta = computed(() => {
-    const m = this.sel()?.recordMetadata || {};
-    return Object.entries(m).map(([k, v]) => ({
-      k,
-      // a list of agents shows as "role: name"; any other list item as JSON
-      v: Array.isArray(v)
-        ? v
-            .map((x: {role?: string; name?: string}) =>
-              x.name ? `${x.role}: ${x.name}` : JSON.stringify(x),
-            )
-            .join(', ')
-        : String(v),
-    }));
-  });
   changedCount = computed(() => {
     const d = this.draft();
     const s = this.sel();
