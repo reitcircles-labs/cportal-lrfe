@@ -1,11 +1,12 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { flowModel } from '../../data/mock-data';
+import {Component, ChangeDetectionStrategy} from '@angular/core';
+import {RouterLink} from '@angular/router';
+import {flowModel} from '../../data/mock-data';
 
+/** Process & schema: how a deed goes from scan to land record, and the metadata kept. */
 @Component({
-    selector: 'app-flow',
-    imports: [RouterLink],
-    template: `
+  selector: 'app-flow',
+  imports: [RouterLink],
+  template: `
     <div class="page">
       <section class="intro">
         <div>
@@ -74,8 +75,9 @@ import { flowModel } from '../../data/mock-data';
       </section>
     </div>
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .intro { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 32px 40px; align-items: end; margin: 8px 0 30px; }
     .hero { font-size: 48px; margin: 6px 0 10px; text-wrap: balance; }
     .lede { max-width: 62ch; color: var(--color-neutral-800); text-wrap: pretty; margin: 0; }
@@ -92,7 +94,8 @@ import { flowModel } from '../../data/mock-data';
     .step { padding: 9px 11px; height: 100%; box-sizing: border-box; }
     .schema { margin-top: 40px; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2.6fr); gap: 32px; align-items: start; }
     @media (max-width: 1000px) { .schema { grid-template-columns: 1fr; } }
-  `]
+  `,
+  ],
 })
 export class FlowComponent {
   m = flowModel();

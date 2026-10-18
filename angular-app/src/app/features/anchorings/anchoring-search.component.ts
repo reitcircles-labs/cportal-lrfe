@@ -1,9 +1,24 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { AnchoringsApi, LookupResult } from '../../api/anchorings.api';
 import {
-  ITEM_STATUS, MESSAGES, answerStatus, answerText, aboutTime, count, historyLine, inSentence, notFoundText, toneClass
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import {RouterLink} from '@angular/router';
+
+import {AnchoringsApi, LookupResult} from '../../api/anchorings.api';
+import {
+  ITEM_STATUS,
+  MESSAGES,
+  answerStatus,
+  answerText,
+  aboutTime,
+  count,
+  historyLine,
+  inSentence,
+  notFoundText,
+  toneClass,
 } from './anchorings-wording';
 
 /** The example searches offered under the field. */
@@ -88,7 +103,8 @@ const EXAMPLES = ['LR-NA-2026-000001', 'EDR-NA-2026-000412', 'Erf 1873'];
       }
     </section>
   `,
-  styles: [`
+  styles: [
+    `
     .find { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
     .find h2 { margin: 0; font-size: 20px; }
     .find p { margin: 0; }
@@ -110,7 +126,8 @@ const EXAMPLES = ['LR-NA-2026-000001', 'EDR-NA-2026-000412', 'Erf 1873'];
     .where { min-width: 150px; text-align: right; }
     .where a { font-weight: 600; display: inline-flex; min-height: 44px; align-items: center; }
     .foot { padding: 12px 18px; border-top: 1px solid var(--color-divider); background: var(--color-surface-2); }
-  `]
+  `,
+  ],
 })
 export class AnchoringSearchComponent {
   private readonly api = inject(AnchoringsApi);
@@ -133,27 +150,43 @@ export class AnchoringSearchComponent {
     }
     const now = new Date();
     const labels = this.typeLabels();
-    const typeLabel = (id: string | null | undefined) => (id ? labels.get(id) ?? '' : '');
+    const typeLabel = (id: string | null | undefined) =>
+      id ? (labels.get(id) ?? '') : '';
     const status = answerStatus(r);
     const answer = answerText(r, now);
-    const nextDue = r.answer.status === 'waiting' && r.answer.nextDueAt ? `Next batch ${aboutTime(r.answer.nextDueAt, now)}` : 'With the next batch';
-    let head: { kind: string; title: string; subtitle: string; historyTitle: string; footnote: string };
+    const nextDue =
+      r.answer.status === 'waiting' && r.answer.nextDueAt
+        ? `Next batch ${aboutTime(r.answer.nextDueAt, now)}`
+        : 'With the next batch';
+    let head: {
+      kind: string;
+      title: string;
+      subtitle: string;
+      historyTitle: string;
+      footnote: string;
+    };
     if (r.kind === 'record') {
       head = {
         kind: 'Land record',
         title: `${r.record.recordNo} · ${r.record.label}`,
-        subtitle: r.record.currentVersion ? `Current version v${r.record.currentVersion}, committed ${inSentence(r.record.committedAt, now)}` : 'No committed version yet',
+        subtitle: r.record.currentVersion
+          ? `Current version v${r.record.currentVersion}, committed ${inSentence(r.record.committedAt, now)}`
+          : 'No committed version yet',
         historyTitle: 'Its history on the blockchain, newest first',
-        footnote: answer.good ? MESSAGES.recordFootnote : MESSAGES.waitingFootnote
+        footnote: answer.good
+          ? MESSAGES.recordFootnote
+          : MESSAGES.waitingFootnote,
       };
     } else {
-      const type = [typeLabel(r.document.docType), r.document.ref].filter(Boolean).join(' ');
+      const type = [typeLabel(r.document.docType), r.document.ref]
+        .filter(Boolean)
+        .join(' ');
       head = {
         kind: 'Document',
         title: `${r.document.edrmsNo}${type ? ` · ${type}` : ''}`,
         subtitle: `Version ${r.document.currentVersion}`,
         historyTitle: 'Its versions on the blockchain',
-        footnote: MESSAGES.documentFootnote
+        footnote: MESSAGES.documentFootnote,
       };
     }
     return {
@@ -171,14 +204,17 @@ export class AnchoringSearchComponent {
           statusClass: toneClass(s.tone),
           batch: h.batch,
           batchLabel: h.batch ? count(h.batch) : '',
-          waiting: h.status === 'waiting' ? nextDue : ''
+          waiting: h.status === 'waiting' ? nextDue : '',
         };
-      })
+      }),
     };
   });
 
   constructor() {
-    this.api.documentTypes().then(t => this.typeLabels.set(t)).catch(() => {});
+    this.api
+      .documentTypes()
+      .then(t => this.typeLabels.set(t))
+      .catch(() => {});
   }
 
   protected value(event: Event): string {
@@ -211,7 +247,11 @@ export class AnchoringSearchComponent {
     } catch (e) {
       if (mine === this.requestNo) {
         this.result.set(null);
-        this.error.set((e as { status?: number }).status === 400 ? MESSAGES.tooLong : (e as Error).message);
+        this.error.set(
+          (e as {status?: number}).status === 400
+            ? MESSAGES.tooLong
+            : (e as Error).message,
+        );
       }
     } finally {
       if (mine === this.requestNo) {

@@ -1,14 +1,22 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AuthService } from '../../state/auth.service';
-import { ThemeService } from '../../state/theme.service';
-import { IconComponent } from '../../shared/icon.component';
-import { SiteConfigService } from '../../state/site-config.service';
+import {
+  Component,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {ActivatedRoute, Router} from '@angular/router';
+import {ApiError} from '../../api/api.service';
+import {AuthService} from '../../state/auth.service';
+import {ThemeService} from '../../state/theme.service';
+import {IconComponent} from '../../shared/icon.component';
+import {SiteConfigService} from '../../state/site-config.service';
 
+/** Sign-in: password, then the authenticator code (enrolling one the first time). */
 @Component({
-    selector: 'app-login',
-    imports: [IconComponent],
-    template: `
+  selector: 'app-login',
+  imports: [IconComponent],
+  template: `
     <div class="wrap">
       <section class="hero">
         <div class="flag" aria-hidden="true"></div>
@@ -89,8 +97,9 @@ import { SiteConfigService } from '../../state/site-config.service';
       </section>
     </div>
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .wrap { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
     .hero { position: relative; background: radial-gradient(120% 90% at 0% 0%, #123a6b 0%, var(--sidebar-bg) 55%, #081a33 100%); color: #dbe5f2; display: flex; flex-direction: column; overflow: hidden; }
     .hero::after { content: ""; position: absolute; right: -120px; bottom: -120px; width: 420px; height: 420px; border-radius: 50%; border: 1px solid rgba(255,206,0,.18); box-shadow: 0 0 0 40px rgba(255,206,0,.04), 0 0 0 80px rgba(255,206,0,.03); pointer-events: none; }
@@ -129,7 +138,8 @@ import { SiteConfigService } from '../../state/site-config.service';
       .pitch h1 { font-size: 30px; }
       .facts, .legal { display: none; }
     }
-  `]
+  `,
+  ],
 })
 export class LoginComponent {
   auth = inject(AuthService);
@@ -149,7 +159,11 @@ export class LoginComponent {
   private challenge = '';
   private secret = signal('');
   otpauthUrl = signal('');
-  groupedSecret = computed(() => this.secret().replace(/(.{4})/g, '$1 ').trim());
+  groupedSecret = computed(() =>
+    this.secret()
+      .replace(/(.{4})/g, '$1 ')
+      .trim(),
+  );
   /** The otpauth:// link as a QR image (data: URL), drawn in the browser: the secret never leaves it. */
   qr = signal<string | null>(null);
   copied = signal(false);
@@ -157,34 +171,57 @@ export class LoginComponent {
   constructor() {
     const q = this.route.snapshot.queryParamMap;
     if (q.get('email')) this.email.set(q.get('email')!);
-    if (q.get('expired')) { this.notice.set('Your session ended. Sign in again to continue.'); this.noticeWarn.set(true); }
-    else if (q.get('activated')) this.notice.set('Your account is active. Sign in with your new password.');
+    if (q.get('expired')) {
+      this.notice.set('Your session ended. Sign in again to continue.');
+      this.noticeWarn.set(true);
+    } else if (q.get('activated')) {
+      this.notice.set(
+        'Your account is active. Sign in with your new password.',
+      );
+    }
     if (this.auth.signedIn()) this.router.navigateByUrl(this.auth.role()!.home);
   }
 
   async submitPassword() {
-    this.busy.set(true); this.error.set('');
+    this.busy.set(true);
+    this.error.set('');
     try {
       const res = await this.auth.login(this.email().trim(), this.password());
       if (res.next === 'done') return this.enter();
       this.challenge = res.challenge;
-      if (res.next === 'mfa-enroll') { this.secret.set(res.secret); this.otpauthUrl.set(res.otpauthUrl); this.drawQr(res.otpauthUrl); }
-      this.code.set(''); this.password.set('');
+      if (res.next === 'mfa-enroll') {
+        this.secret.set(res.secret);
+        this.otpauthUrl.set(res.otpauthUrl);
+        this.drawQr(res.otpauthUrl);
+      }
+      this.code.set('');
+      this.password.set('');
       this.step.set(res.next);
-    } catch (e: any) {
+    } catch (caught) {
+      const e = caught as ApiError;
       this.error.set(e?.message || 'Sign-in failed');
-    } finally { this.busy.set(false); }
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   async submitCode() {
-    this.busy.set(true); this.error.set('');
+    this.busy.set(true);
+    this.error.set('');
     try {
       await this.auth.verifyMfa(this.challenge, this.code());
       this.enter();
-    } catch (e: any) {
-      this.error.set(e?.status === 401 && /expired/i.test(e.message) ? 'That took too long. Start again.' : e?.message || 'Invalid code');
+    } catch (caught) {
+      const e = caught as ApiError;
+      this.error.set(
+        e?.status === 401 && /expired/i.test(e.message)
+          ? 'That took too long. Start again.'
+          : e?.message || 'Invalid code',
+      );
       this.code.set('');
-    } finally { this.busy.set(false); }
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   onCode(input: HTMLInputElement) {
@@ -194,8 +231,14 @@ export class LoginComponent {
   }
 
   restart() {
-    this.step.set('password'); this.code.set(''); this.error.set(''); this.challenge = ''; this.secret.set('');
-    this.otpauthUrl.set(''); this.qr.set(null); this.copied.set(false);
+    this.step.set('password');
+    this.code.set('');
+    this.error.set('');
+    this.challenge = '';
+    this.secret.set('');
+    this.otpauthUrl.set('');
+    this.qr.set(null);
+    this.copied.set(false);
   }
 
   /** If the QR code cannot be drawn, the setup key is shown open instead. */
@@ -204,11 +247,20 @@ export class LoginComponent {
     try {
       // loaded only for enrolment, not with the app. qrcode is a CommonJS package: depending on how it
       // is bundled its functions are named exports or sit on `default` (the dev server in CI mode).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const qrcode: any = await import('qrcode');
-      const toDataURL: typeof import('qrcode').toDataURL = qrcode.toDataURL ?? qrcode.default?.toDataURL;
-      const image = await toDataURL(url, { errorCorrectionLevel: 'M', margin: 0, width: 400, color: { dark: '#000000', light: '#ffffff' } });
+      const toDataURL: typeof import('qrcode').toDataURL =
+        qrcode.toDataURL ?? qrcode.default?.toDataURL;
+      const image = await toDataURL(url, {
+        errorCorrectionLevel: 'M',
+        margin: 0,
+        width: 400,
+        color: {dark: '#000000', light: '#ffffff'},
+      });
       if (this.otpauthUrl() === url) this.qr.set(image);
-    } catch { /* fallback: the setup key */ }
+    } catch {
+      /* fallback: the setup key */
+    }
   }
 
   async copyKey() {
@@ -216,11 +268,15 @@ export class LoginComponent {
       await navigator.clipboard.writeText(this.secret());
       this.copied.set(true);
       setTimeout(() => this.copied.set(false), 2000);
-    } catch { /* clipboard blocked (e.g. plain http on a non-localhost address): the key stays visible to copy by hand */ }
+    } catch {
+      /* clipboard blocked (e.g. plain http on a non-localhost address): the key stays visible to copy by hand */
+    }
   }
 
   private enter() {
     const target = this.route.snapshot.queryParamMap.get('returnUrl');
-    this.router.navigateByUrl(target && !target.startsWith('/login') ? target : this.auth.role()!.home);
+    this.router.navigateByUrl(
+      target && !target.startsWith('/login') ? target : this.auth.role()!.home,
+    );
   }
 }

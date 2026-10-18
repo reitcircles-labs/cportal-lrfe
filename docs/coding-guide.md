@@ -78,7 +78,8 @@ fail on them, until the existing code has been brought in line area by area (epi
 
 **Formatting**
 - Prettier does it: 80 columns, single quotes, trailing commas, as in Google's own `gts` preset.
-  The settings are in `.prettierrc.json`. Templates inside Angular components are not reformatted.
+  The settings are in `.prettierrc.json`. Angular templates, inline or in `.component.html` files,
+  are not reformatted: whitespace in a template can change what is shown.
 
 ## What the checks leave alone
 

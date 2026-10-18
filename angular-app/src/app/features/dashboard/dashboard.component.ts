@@ -1,22 +1,34 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-import { BATCHES, DOCS, QUEUE, TOTAL } from '../../data/mock-data';
-import { ViewerService } from '../../state/viewer.service';
-import { RbacService } from '../../state/rbac.service';
-import { RegistryStore } from '../../state/registry.store';
-import { AuthService } from '../../state/auth.service';
-import { IconComponent } from '../../shared/icon.component';
-import { SiteConfigService } from '../../state/site-config.service';
+import {
+  Component,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {Router, RouterLink} from '@angular/router';
+import {BATCHES, DOCS, QUEUE, TOTAL} from '../../data/mock-data';
+import {ViewerService} from '../../state/viewer.service';
+import {RbacService} from '../../state/rbac.service';
+import {RegistryStore} from '../../state/registry.store';
+import {AuthService} from '../../state/auth.service';
+import {IconComponent} from '../../shared/icon.component';
+import {SiteConfigService} from '../../state/site-config.service';
 
 const WEEK = [
-  { d: 'Mon', pages: 1840, docs: 412 }, { d: 'Tue', pages: 2210, docs: 498 }, { d: 'Wed', pages: 1975, docs: 451 },
-  { d: 'Thu', pages: 2460, docs: 540 }, { d: 'Fri', pages: 2105, docs: 472 }, { d: 'Sat', pages: 620, docs: 131 }, { d: 'Today', pages: 1380, docs: 309 }
+  {d: 'Mon', pages: 1840, docs: 412},
+  {d: 'Tue', pages: 2210, docs: 498},
+  {d: 'Wed', pages: 1975, docs: 451},
+  {d: 'Thu', pages: 2460, docs: 540},
+  {d: 'Fri', pages: 2105, docs: 472},
+  {d: 'Sat', pages: 620, docs: 131},
+  {d: 'Today', pages: 1380, docs: 309},
 ];
 
+/** The home screen: the work of the registry at a glance, with sample figures. */
 @Component({
-    selector: 'app-dashboard',
-    imports: [RouterLink, IconComponent],
-    template: `
+  selector: 'app-dashboard',
+  imports: [RouterLink, IconComponent],
+  template: `
     <div class="page stack" style="gap:24px">
       <section class="welcome">
         <div>
@@ -179,8 +191,9 @@ const WEEK = [
       </section>
     </div>
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .sample-note { margin: -12px 0 0; }
     .welcome { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
@@ -241,7 +254,8 @@ const WEEK = [
     .pi { width: 34px; height: 34px; border-radius: 8px; flex: none; display: grid; place-items: center; background: var(--color-accent-100); color: var(--color-accent-600); }
     .pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--color-divider); flex-wrap: wrap; }
     @media (max-width: 720px) { .pipe { grid-template-columns: 1fr 1fr; } .chart { gap: 6px; } .val { display: none; } }
-  `]
+  `,
+  ],
 })
 export class DashboardComponent {
   store = inject(RegistryStore);
@@ -256,66 +270,199 @@ export class DashboardComponent {
   records = computed(() => this.store.recordRows());
   counts = computed(() => {
     const r = this.records();
-    return { all: r.length, scanned: r.filter(x => x.st === 'scanned').length, verified: r.filter(x => x.st === 'verified').length, finalized: r.filter(x => x.st === 'finalized').length };
+    return {
+      all: r.length,
+      scanned: r.filter(x => x.st === 'scanned').length,
+      verified: r.filter(x => x.st === 'verified').length,
+      finalized: r.filter(x => x.st === 'finalized').length,
+    };
   });
   statusFilters = computed(() => {
     const c = this.counts();
     return [
-      { id: 'all' as const, label: 'All records', n: c.all, dot: '' },
-      { id: 'scanned' as const, label: 'Scanned', n: c.scanned, dot: 'scanned' },
-      { id: 'verified' as const, label: 'Verified · ready for review', n: c.verified, dot: 'verified' },
-      { id: 'finalized' as const, label: 'Finalized', n: c.finalized, dot: 'finalized' }
+      {id: 'all' as const, label: 'All records', n: c.all, dot: ''},
+      {id: 'scanned' as const, label: 'Scanned', n: c.scanned, dot: 'scanned'},
+      {
+        id: 'verified' as const,
+        label: 'Verified · ready for review',
+        n: c.verified,
+        dot: 'verified',
+      },
+      {
+        id: 'finalized' as const,
+        label: 'Finalized',
+        n: c.finalized,
+        dot: 'finalized',
+      },
     ];
   });
   filtered = computed(() => {
-    const q = this.q().toLowerCase().trim(), s = this.status();
-    return this.records().filter(r => (s === 'all' || r.st === s) && (!q || (r.erf + ' ' + r.township + ' ' + r.ownerList.join(' ') + ' ' + r.batch).toLowerCase().includes(q)));
+    const q = this.q().toLowerCase().trim();
+    const s = this.status();
+    return this.records().filter(
+      r =>
+        (s === 'all' || r.st === s) &&
+        (!q ||
+          (
+            r.erf +
+            ' ' +
+            r.township +
+            ' ' +
+            r.ownerList.join(' ') +
+            ' ' +
+            r.batch
+          )
+            .toLowerCase()
+            .includes(q)),
+    );
   });
-  pages = computed(() => Math.max(1, Math.ceil(this.filtered().length / this.perPage)));
-  pageRows = computed(() => this.filtered().slice(this.page() * this.perPage, (this.page() + 1) * this.perPage));
-  rangeLabel = computed(() => { const n = this.filtered().length; if (!n) return '0'; const a = this.page() * this.perPage + 1; return a + '–' + Math.min(n, a + this.perPage - 1); });
-  viewDocs(id: string) { const ids = this.store.recordDocIds(id); if (ids.length) this.viewer.open('record', ids[0], 0, id); }
-  open(r: { id: string }) { this.router.navigate(['/link'], { queryParams: { record: r.id } }); }
-  canOpen() { return this.rbac.can('record.view'); }
-
+  pages = computed(() =>
+    Math.max(1, Math.ceil(this.filtered().length / this.perPage)),
+  );
+  pageRows = computed(() =>
+    this.filtered().slice(
+      this.page() * this.perPage,
+      (this.page() + 1) * this.perPage,
+    ),
+  );
+  rangeLabel = computed(() => {
+    const n = this.filtered().length;
+    if (!n) return '0';
+    const a = this.page() * this.perPage + 1;
+    return a + '–' + Math.min(n, a + this.perPage - 1);
+  });
+  viewDocs(id: string) {
+    const ids = this.store.recordDocIds(id);
+    if (ids.length) this.viewer.open('record', ids[0], 0, id);
+  }
+  open(r: {id: string}) {
+    this.router.navigate(['/link'], {queryParams: {record: r.id}});
+  }
+  canOpen() {
+    return this.rbac.can('record.view');
+  }
 
   auth = inject(AuthService);
   site = inject(SiteConfigService);
+  // The global Math, under its own name, for the template.
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   Math = Math;
   week = WEEK;
   maxPages = Math.max(...WEEK.map(w => w.pages));
   weekTotal = WEEK.reduce((a, w) => a + w.pages, 0);
 
-  firstName = computed(() => (this.auth.role()?.name || '').replace(/^[A-Z]\.\s*/, '') || 'colleague');
-  private openDocs = computed(() => { this.store.fs(); this.store.filed(); return QUEUE.filter(d => !this.store.isFiled(d)); });
+  firstName = computed(
+    () =>
+      (this.auth.role()?.name || '').replace(/^[A-Z]\.\s*/, '') || 'colleague',
+  );
+  private openDocs = computed(() => {
+    this.store.fs();
+    this.store.filed();
+    return QUEUE.filter(d => !this.store.isFiled(d));
+  });
   kpis = computed(() => {
-    const th = this.store.threshold(), open = this.openDocs();
-    const low = open.reduce((a, d) => a + d.fields.filter(f => (f.c ?? 1) < th).length, 0);
+    const th = this.store.threshold();
+    const open = this.openDocs();
+    const low = open.reduce(
+      (a, d) => a + d.fields.filter(f => (f.c ?? 1) < th).length,
+      0,
+    );
     return [
-      { label: 'Pages captured · WDH-B017', value: this.store.pages() + ' / ' + TOTAL, delta: this.store.scanDone() ? 'Batch complete' : 'Scanner SC-02 ready', up: this.store.scanDone(), icon: 'scan', tone: 'info', link: '/capture' },
-      { label: 'Documents awaiting review', value: String(open.length), delta: 'across ' + BATCHES.length + ' batches', up: false, icon: 'inbox', tone: 'info', link: '/verify' },
-      { label: 'Low-confidence fields', value: String(low), delta: 'below ' + Math.round(th * 100) + '% threshold', up: false, icon: 'alert', tone: 'warn', link: '/verify' },
-      { label: 'Records finalized', value: String(this.store.recordRows().filter(r => r.st === 'finalized').length), delta: 'of ' + this.store.recordRows().length + ' land records · tokenization-ready', up: true, icon: 'token', tone: 'ok', link: '/link' }
+      {
+        label: 'Pages captured · WDH-B017',
+        value: this.store.pages() + ' / ' + TOTAL,
+        delta: this.store.scanDone() ? 'Batch complete' : 'Scanner SC-02 ready',
+        up: this.store.scanDone(),
+        icon: 'scan',
+        tone: 'info',
+        link: '/capture',
+      },
+      {
+        label: 'Documents awaiting review',
+        value: String(open.length),
+        delta: 'across ' + BATCHES.length + ' batches',
+        up: false,
+        icon: 'inbox',
+        tone: 'info',
+        link: '/verify',
+      },
+      {
+        label: 'Low-confidence fields',
+        value: String(low),
+        delta: 'below ' + Math.round(th * 100) + '% threshold',
+        up: false,
+        icon: 'alert',
+        tone: 'warn',
+        link: '/verify',
+      },
+      {
+        label: 'Records finalized',
+        value: String(
+          this.store.recordRows().filter(r => r.st === 'finalized').length,
+        ),
+        delta:
+          'of ' +
+          this.store.recordRows().length +
+          ' land records · tokenization-ready',
+        up: true,
+        icon: 'token',
+        tone: 'ok',
+        link: '/link',
+      },
     ];
   });
   pipeline = computed(() => {
-    const filed = DOCS.filter(d => this.store.filed()[d.id]).length, linked = this.store.linkedCount();
+    const filed = DOCS.filter(d => this.store.filed()[d.id]).length;
+    const linked = this.store.linkedCount();
     const steps = [
-      { label: 'Captured', value: this.store.pages() + ' of ' + TOTAL + ' pages', pct: Math.round(this.store.pages() / TOTAL * 100) },
-      { label: 'Verified & filed', value: filed + ' of 3 documents', pct: Math.round(filed / 3 * 100) },
-      { label: 'Linked to erf', value: linked + ' of 3 documents', pct: Math.round(linked / 3 * 100) },
-      { label: 'Committed', value: this.store.committed() ? 'Record v3' : 'Pending', pct: this.store.committed() ? 100 : 0 }
+      {
+        label: 'Captured',
+        value: this.store.pages() + ' of ' + TOTAL + ' pages',
+        pct: Math.round((this.store.pages() / TOTAL) * 100),
+      },
+      {
+        label: 'Verified & filed',
+        value: filed + ' of 3 documents',
+        pct: Math.round((filed / 3) * 100),
+      },
+      {
+        label: 'Linked to erf',
+        value: linked + ' of 3 documents',
+        pct: Math.round((linked / 3) * 100),
+      },
+      {
+        label: 'Committed',
+        value: this.store.committed() ? 'Record v3' : 'Pending',
+        pct: this.store.committed() ? 100 : 0,
+      },
     ];
     const cur = steps.findIndex(s => s.pct < 100);
-    return steps.map((s, i) => ({ ...s, cur: i === cur }));
+    return steps.map((s, i) => ({...s, cur: i === cur}));
   });
   readiness = computed(() => {
-    const c = this.store.checks(), ok = c.filter(x => x.state === 'ok').length;
-    return ok + ' of ' + c.length + ' record checks passing · ' + this.store.owners().length + ' registered owners';
+    const c = this.store.checks();
+    const ok = c.filter(x => x.state === 'ok').length;
+    return (
+      ok +
+      ' of ' +
+      c.length +
+      ' record checks passing · ' +
+      this.store.owners().length +
+      ' registered owners'
+    );
   });
-  batches = computed(() => { this.store.filed(); return BATCHES.map(b => {
-    const docs = QUEUE.filter(d => d.batch === b.id), f = docs.filter(d => this.store.isFiled(d)).length;
-    return { id: b.id, src: b.src, total: docs.length, pct: Math.round(f / docs.length * 100) };
-  }); });
+  batches = computed(() => {
+    this.store.filed();
+    return BATCHES.map(b => {
+      const docs = QUEUE.filter(d => d.batch === b.id);
+      const f = docs.filter(d => this.store.isFiled(d)).length;
+      return {
+        id: b.id,
+        src: b.src,
+        total: docs.length,
+        pct: Math.round((f / docs.length) * 100),
+      };
+    });
+  });
   recent = computed(() => [...this.store.trail()].reverse().slice(0, 6));
 }

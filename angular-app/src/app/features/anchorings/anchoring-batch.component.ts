@@ -1,14 +1,39 @@
-import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-
-import { AnchoringsApi, BatchCoverage, BatchDetail, BatchDocument } from '../../api/anchorings.api';
-import { InfoTipComponent } from '../../shared/info-tip.component';
-import { RbacService } from '../../state/rbac.service';
+import {NgTemplateOutlet} from '@angular/common';
 import {
-  BATCH_STATUS, FAIL_REASON, MESSAGES, TIPS, batchSteps, batchSummary, count, depthText, documentVersionText, madeOf,
-  inSentence, plural, rangeLabel, toneClass, usedInText, when
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import {takeUntilDestroyed} from '@angular/core/rxjs-interop';
+import {ActivatedRoute, RouterLink} from '@angular/router';
+
+import {
+  AnchoringsApi,
+  BatchCoverage,
+  BatchDetail,
+  BatchDocument,
+} from '../../api/anchorings.api';
+import {InfoTipComponent} from '../../shared/info-tip.component';
+import {RbacService} from '../../state/rbac.service';
+import {
+  BATCH_STATUS,
+  FAIL_REASON,
+  MESSAGES,
+  TIPS,
+  batchSteps,
+  batchSummary,
+  count,
+  depthText,
+  documentVersionText,
+  madeOf,
+  inSentence,
+  plural,
+  rangeLabel,
+  toneClass,
+  usedInText,
+  when,
 } from './anchorings-wording';
 
 /** How many land records and documents a page of the batch shows. */
@@ -21,7 +46,7 @@ interface Fact {
   mono: boolean;
   tip: string;
   note?: string;
-  link?: { text: string; batch: number };
+  link?: {text: string; batch: number};
 }
 
 /**
@@ -257,7 +282,8 @@ interface Fact {
       </dl>
     </ng-template>
   `,
-  styles: [`
+  styles: [
+    `
     .head { justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
     h1 { margin: 0; font-size: 36px; line-height: 1.1; }
     h2 { margin: 0; font-size: 18px; }
@@ -295,7 +321,8 @@ interface Fact {
     .why { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; background: var(--warn-bg); border-color: var(--warn-bd); color: var(--warn-fg); }
     .trust { background: var(--color-accent-100); border: 1px solid var(--color-accent-200, var(--color-divider)); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  `]
+  `,
+  ],
 })
 export class AnchoringBatchComponent {
   private readonly api = inject(AnchoringsApi);
@@ -330,9 +357,14 @@ export class AnchoringBatchComponent {
     const now = new Date();
     const s = BATCH_STATUS[d.status];
     const replacement = d.replacement
-      ? { batch: d.replacement.batch, label: count(d.replacement.batch), status: BATCH_STATUS[d.replacement.status].label,
-          tagClass: toneClass(BATCH_STATUS[d.replacement.status].tone), when: inSentence(d.replacement.createdAt, now),
-          landed: d.replacement.status !== 'failed' }
+      ? {
+          batch: d.replacement.batch,
+          label: count(d.replacement.batch),
+          status: BATCH_STATUS[d.replacement.status].label,
+          tagClass: toneClass(BATCH_STATUS[d.replacement.status].tone),
+          when: inSentence(d.replacement.createdAt, now),
+          landed: d.replacement.status !== 'failed',
+        }
       : null;
     const reason = d.reason ? FAIL_REASON[d.reason] : null;
     return {
@@ -350,7 +382,7 @@ export class AnchoringBatchComponent {
       nextBatch: d.nextBatch,
       nextLabel: d.nextBatch ? count(d.nextBatch) : '',
       prevLabel: d.prev?.batch ? count(d.prev.batch) : '',
-      facts: d.status === 'failed' ? this.preparedFacts(d) : this.chainFacts(d)
+      facts: d.status === 'failed' ? this.preparedFacts(d) : this.chainFacts(d),
     };
   });
 
@@ -361,7 +393,9 @@ export class AnchoringBatchComponent {
       return '';
     }
     const since = d.prev?.batch ? ` since batch ${count(d.prev.batch)}` : '';
-    const trail = c?.trailUpTo ? `, and the audit trail up to entry ${count(c.trailUpTo)}` : '';
+    const trail = c?.trailUpTo
+      ? `, and the audit trail up to entry ${count(c.trailUpTo)}`
+      : '';
     return `${plural(d.covers, 'new fingerprint')}${since}${trail}.`;
   });
 
@@ -371,14 +405,19 @@ export class AnchoringBatchComponent {
     return `${plural(this.documentsTotal(), 'document version')}, filed or corrected${since}.`;
   });
 
-  protected readonly records = computed(() => this.coveredRecords().map(r => ({
-    recordId: r.recordId,
-    label: r.label ?? r.recordNo ?? 'A land record no longer listed',
-    recordNo: r.label ? r.recordNo ?? '' : '',
-    versions: r.versions.map(v => `v${v.versionNumber}`).join(', ') || '—',
-    madeOf: r.versions.map(v => ({ version: r.versions.length > 1 ? `v${v.versionNumber}: ` : '', ...madeOf(v) })),
-    signoffs: r.signoffs.map(s => rangeLabel(s.from, s.to)).join(', ') || '—'
-  })));
+  protected readonly records = computed(() =>
+    this.coveredRecords().map(r => ({
+      recordId: r.recordId,
+      label: r.label ?? r.recordNo ?? 'A land record no longer listed',
+      recordNo: r.label ? (r.recordNo ?? '') : '',
+      versions: r.versions.map(v => `v${v.versionNumber}`).join(', ') || '—',
+      madeOf: r.versions.map(v => ({
+        version: r.versions.length > 1 ? `v${v.versionNumber}: ` : '',
+        ...madeOf(v),
+      })),
+      signoffs: r.signoffs.map(s => rangeLabel(s.from, s.to)).join(', ') || '—',
+    })),
+  );
 
   protected readonly documentRows = computed(() => {
     const labels = this.typeLabels();
@@ -389,25 +428,39 @@ export class AnchoringBatchComponent {
       type: (d.docType && labels.get(d.docType)) || '—',
       version: documentVersionText(d.version),
       used: d.usedIn.length > 0,
-      usedIn: usedInText(d.usedIn)
+      usedIn: usedInText(d.usedIn),
     }));
   });
 
   constructor() {
-    this.api.documentTypes().then(t => this.typeLabels.set(t)).catch(() => {});
-    inject(ActivatedRoute).paramMap.pipe(takeUntilDestroyed()).subscribe(p => void this.open(Number(p.get('batch'))));
+    this.api
+      .documentTypes()
+      .then(t => this.typeLabels.set(t))
+      .catch(() => {});
+    inject(ActivatedRoute)
+      .paramMap.pipe(takeUntilDestroyed())
+      .subscribe(p => void this.open(Number(p.get('batch'))));
   }
 
   protected async moreRecords(): Promise<void> {
     await this.loadMore(async () => {
-      const page = await this.api.coverage(this.batch(), PAGE, this.coveredRecords().length);
-      return () => this.coveredRecords.set([...this.coveredRecords(), ...page.records]);
+      const page = await this.api.coverage(
+        this.batch(),
+        PAGE,
+        this.coveredRecords().length,
+      );
+      return () =>
+        this.coveredRecords.set([...this.coveredRecords(), ...page.records]);
     });
   }
 
   protected async moreDocuments(): Promise<void> {
     await this.loadMore(async () => {
-      const page = await this.api.documents(this.batch(), PAGE, this.documents().length);
+      const page = await this.api.documents(
+        this.batch(),
+        PAGE,
+        this.documents().length,
+      );
       return () => this.documents.set([...this.documents(), ...page.items]);
     });
   }
@@ -454,7 +507,10 @@ export class AnchoringBatchComponent {
       if (detail.status === 'failed') {
         return;
       }
-      const [coverage, documents] = await Promise.all([this.api.coverage(batch, PAGE, 0), this.api.documents(batch, PAGE, 0)]);
+      const [coverage, documents] = await Promise.all([
+        this.api.coverage(batch, PAGE, 0),
+        this.api.documents(batch, PAGE, 0),
+      ]);
       if (mine === this.requestNo) {
         this.coverage.set(coverage);
         this.coveredRecords.set(coverage.records);
@@ -463,7 +519,11 @@ export class AnchoringBatchComponent {
       }
     } catch (e) {
       if (mine === this.requestNo) {
-        this.error.set((e as { status?: number }).status === 404 ? `There is no batch ${count(batch)}.` : MESSAGES.unreadable);
+        this.error.set(
+          (e as {status?: number}).status === 404
+            ? `There is no batch ${count(batch)}.`
+            : MESSAGES.unreadable,
+        );
       }
     }
   }
@@ -471,24 +531,71 @@ export class AnchoringBatchComponent {
   /** What the transaction holds and where it is. */
   private chainFacts(d: BatchDetail): Fact[] {
     const now = new Date();
-    const newInBatch = d.covers === null ? '' : ` ${count(d.covers)} of them ${d.covers === 1 ? 'is' : 'are'} new in this batch.`;
+    const newInBatch =
+      d.covers === null
+        ? ''
+        : ` ${count(d.covers)} of them ${d.covers === 1 ? 'is' : 'are'} new in this batch.`;
     const facts: Fact[] = [
-      { label: 'Batch', value: count(d.batch), mono: false, tip: TIPS.factBatch },
-      { label: 'Combined fingerprint', value: d.root, mono: true, note: 'Written on the blockchain as "root"', tip: TIPS.root },
-      { label: 'Fingerprints included', value: count(d.size), mono: false, note: 'Written on the blockchain as "size"', tip: TIPS.size + newInBatch },
+      {label: 'Batch', value: count(d.batch), mono: false, tip: TIPS.factBatch},
+      {
+        label: 'Combined fingerprint',
+        value: d.root,
+        mono: true,
+        note: 'Written on the blockchain as "root"',
+        tip: TIPS.root,
+      },
+      {
+        label: 'Fingerprints included',
+        value: count(d.size),
+        mono: false,
+        note: 'Written on the blockchain as "size"',
+        tip: TIPS.size + newInBatch,
+      },
       d.prev
-        ? { label: 'Previous batch’s combined fingerprint', value: d.prev.root, mono: true, note: 'Written on the blockchain as "prev"', tip: TIPS.prev,
-            link: d.prev.batch ? { text: `Batch ${count(d.prev.batch)}`, batch: d.prev.batch } : undefined }
-        : { label: 'Previous batch’s combined fingerprint', value: 'None: this is the first batch', mono: false, tip: TIPS.prev },
-      { label: 'Blockchain transaction', value: d.txHash ?? '—', mono: !!d.txHash, tip: TIPS.factTransaction }
+        ? {
+            label: 'Previous batch’s combined fingerprint',
+            value: d.prev.root,
+            mono: true,
+            note: 'Written on the blockchain as "prev"',
+            tip: TIPS.prev,
+            link: d.prev.batch
+              ? {text: `Batch ${count(d.prev.batch)}`, batch: d.prev.batch}
+              : undefined,
+          }
+        : {
+            label: 'Previous batch’s combined fingerprint',
+            value: 'None: this is the first batch',
+            mono: false,
+            tip: TIPS.prev,
+          },
+      {
+        label: 'Blockchain transaction',
+        value: d.txHash ?? '—',
+        mono: !!d.txHash,
+        tip: TIPS.factTransaction,
+      },
     ];
     if (d.block) {
-      facts.push({ label: 'Block', value: count(d.block), mono: false, note: when(d.steps.onChainAt, now), tip: TIPS.factBlock });
+      facts.push({
+        label: 'Block',
+        value: count(d.block),
+        mono: false,
+        note: when(d.steps.onChainAt, now),
+        tip: TIPS.factBlock,
+      });
     }
     if (d.confirmations !== null) {
       facts.push({
-        label: 'Confirmations', value: d.confirmations >= d.confirmationsNeeded ? `${d.confirmationsNeeded}+` : count(d.confirmations), mono: false,
-        note: d.steps.confirmedAt ? `Confirmed ${inSentence(d.steps.confirmedAt, now)}` : depthText(d.confirmations, d.confirmationsNeeded), tip: TIPS.confirmations
+        label: 'Confirmations',
+        value:
+          d.confirmations >= d.confirmationsNeeded
+            ? `${d.confirmationsNeeded}+`
+            : count(d.confirmations),
+        mono: false,
+        note: d.steps.confirmedAt
+          ? `Confirmed ${inSentence(d.steps.confirmedAt, now)}`
+          : depthText(d.confirmations, d.confirmationsNeeded),
+        tip: TIPS.confirmations,
       });
     }
     return facts;
@@ -497,11 +604,35 @@ export class AnchoringBatchComponent {
   /** The values a failed batch would have written. */
   private preparedFacts(d: BatchDetail): Fact[] {
     return [
-      { label: 'Batch', value: count(d.batch), mono: false, tip: TIPS.factBatch },
-      { label: 'Combined fingerprint (root)', value: d.root, mono: true, tip: TIPS.root },
-      { label: 'Fingerprints included (size)', value: count(d.size), mono: false, tip: TIPS.size },
-      { label: 'Previous combined fingerprint (prev)', value: d.prev?.batch ? `Batch ${count(d.prev.batch)}` : d.prev ? d.prev.root : 'None: it would have been the first batch', mono: !!d.prev && !d.prev.batch, tip: TIPS.prev },
-      { label: 'Blockchain transaction', value: MESSAGES.notOnChain, mono: false, tip: TIPS.preparedTransaction }
+      {label: 'Batch', value: count(d.batch), mono: false, tip: TIPS.factBatch},
+      {
+        label: 'Combined fingerprint (root)',
+        value: d.root,
+        mono: true,
+        tip: TIPS.root,
+      },
+      {
+        label: 'Fingerprints included (size)',
+        value: count(d.size),
+        mono: false,
+        tip: TIPS.size,
+      },
+      {
+        label: 'Previous combined fingerprint (prev)',
+        value: d.prev?.batch
+          ? `Batch ${count(d.prev.batch)}`
+          : d.prev
+            ? d.prev.root
+            : 'None: it would have been the first batch',
+        mono: !!d.prev && !d.prev.batch,
+        tip: TIPS.prev,
+      },
+      {
+        label: 'Blockchain transaction',
+        value: MESSAGES.notOnChain,
+        mono: false,
+        tip: TIPS.preparedTransaction,
+      },
     ];
   }
 }

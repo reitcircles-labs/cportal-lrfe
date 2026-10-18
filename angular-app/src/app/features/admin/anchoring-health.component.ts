@@ -1,9 +1,21 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import {RouterLink} from '@angular/router';
 
-import { ApiService } from '../../api/api.service';
-import { InfoTipComponent } from '../../shared/info-tip.component';
-import { HEALTH_TIPS, HealthWarning, liveLine, warningLine } from './anchoring-health-wording';
+import {ApiService} from '../../api/api.service';
+import {InfoTipComponent} from '../../shared/info-tip.component';
+import {
+  HEALTH_TIPS,
+  HealthWarning,
+  liveLine,
+  warningLine,
+} from './anchoring-health-wording';
 
 /** How often the panel reads the report again while it is open, in milliseconds. */
 const REFRESH_MS = 30_000;
@@ -11,23 +23,39 @@ const REFRESH_MS = 30_000;
 /** The audit service's health report (GET /audit/anchoring/health). */
 interface Health {
   configured: boolean;
-  wallet: { readable: boolean; address: string | null; funds: { ada: string; low: boolean; minimumAda: number } | null };
-  chain: { reachable: boolean; tipHeight: number | null; synced: boolean | null };
-  lastAnchoring: { batch: number; status: string; createdAt: string } | null;
-  next: { dueAt: string; waiting: number } | null;
+  wallet: {
+    readable: boolean;
+    address: string | null;
+    funds: {ada: string; low: boolean; minimumAda: number} | null;
+  };
+  chain: {reachable: boolean; tipHeight: number | null; synced: boolean | null};
+  lastAnchoring: {batch: number; status: string; createdAt: string} | null;
+  next: {dueAt: string; waiting: number} | null;
   overdue: boolean;
-  gaps: { count: number; latest: { seq: number; at: string; missing: number | null }[] };
+  gaps: {
+    count: number;
+    latest: Array<{seq: number; at: string; missing: number | null}>;
+  };
   warnings: HealthWarning[];
-  live: { kind: 'lowFunds' | 'trailGap'; at: string; missing: number | null }[];
+  live: Array<{
+    kind: 'lowFunds' | 'trailGap';
+    at: string;
+    missing: number | null;
+  }>;
 }
 
 /** How far a batch has got, as the Anchorings screens say it. */
-const STATUS: Record<string, string> = { sent: 'Sent to the blockchain', onChain: 'On the blockchain', confirmed: 'Confirmed', failed: 'Failed' };
+const STATUS: Record<string, string> = {
+  sent: 'Sent to the blockchain',
+  onChain: 'On the blockchain',
+  confirmed: 'Confirmed',
+  failed: 'Failed',
+};
 
 /** A date and time: "12 Oct 2026, 13:10". */
 function dateTime(iso: string): string {
   const d = new Date(iso);
-  return `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}, ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+  return `${d.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'})}, ${d.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})}`;
 }
 
 /**
@@ -147,7 +175,8 @@ function dateTime(iso: string): string {
       }
     </div>
   `,
-  styles: [`
+  styles: [
+    `
     .head { justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
     .note { padding: 12px 14px; border-radius: 10px; background: var(--color-surface-2); border: 1px solid var(--color-divider); }
     .note.danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-bd); }
@@ -165,7 +194,8 @@ function dateTime(iso: string): string {
     .addr { font-size: 12.5px; word-break: break-all; padding: 8px 10px; border-radius: 8px; background: var(--color-surface-2); border: 1px solid var(--color-divider); }
     .btn-sm { min-height: 32px; padding: 0 10px; font-size: 13px; }
     .list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
-  `]
+  `,
+  ],
 })
 export class AnchoringHealthComponent {
   private readonly api = inject(ApiService);
@@ -181,10 +211,14 @@ export class AnchoringHealthComponent {
     const h = this.health();
     return h ? h.warnings.map(w => warningLine(w, h)) : [];
   });
-  protected readonly live = computed(() => [...(this.health()?.live ?? [])].reverse().map(liveLine));
+  protected readonly live = computed(() =>
+    [...(this.health()?.live ?? [])].reverse().map(liveLine),
+  );
   protected readonly checkedText = computed(() => {
     const at = this.checkedAt();
-    return at ? `Checked ${at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} · again every 30 seconds` : '';
+    return at
+      ? `Checked ${at.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', second: '2-digit'})} · again every 30 seconds`
+      : '';
   });
 
   constructor() {
@@ -213,7 +247,7 @@ export class AnchoringHealthComponent {
 
   private async load(): Promise<void> {
     if (this.loading) {
-      return;                                    // the previous read is still running
+      return; // the previous read is still running
     }
     this.loading = true;
     try {
@@ -221,7 +255,9 @@ export class AnchoringHealthComponent {
       this.error.set(null);
       this.checkedAt.set(new Date());
     } catch {
-      this.error.set('The anchoring health could not be read. It is tried again in 30 seconds.');
+      this.error.set(
+        'The anchoring health could not be read. It is tried again in 30 seconds.',
+      );
     } finally {
       this.loading = false;
     }

@@ -1,38 +1,100 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { ApiError, ApiService } from '../../api/api.service';
-import { AuthService } from '../../state/auth.service';
-import { RbacService, fmtTime } from '../../state/rbac.service';
-import { ToastService } from '../../state/toast.service';
-import { ConfirmService } from '../../state/confirm.service';
-import { TasksService } from '../../state/tasks.service';
-import { IconComponent } from '../../shared/icon.component';
-import { CanDirective } from '../../shared/can.directive';
-import { Anchoring, anchoringLabel, anchoringTag } from '../../shared/anchoring';
-import { BlockchainVerifyComponent } from '../../shared/blockchain-verify.component';
-import { InfoTipComponent } from '../../shared/info-tip.component';
-import { ProofDownloadComponent } from '../../shared/proof-download.component';
-import { ProofLinkComponent } from '../../shared/proof-link.component';
-import { VERIFY_TIPS } from '../audit/verify-wording';
+import {
+  Component,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {ActivatedRoute, Router} from '@angular/router';
+import {ApiError, ApiService} from '../../api/api.service';
+import {AuthService} from '../../state/auth.service';
+import {RbacService, fmtTime} from '../../state/rbac.service';
+import {ToastService} from '../../state/toast.service';
+import {ConfirmService} from '../../state/confirm.service';
+import {TasksService} from '../../state/tasks.service';
+import {IconComponent} from '../../shared/icon.component';
+import {CanDirective} from '../../shared/can.directive';
+import {Anchoring, anchoringLabel, anchoringTag} from '../../shared/anchoring';
+import {BlockchainVerifyComponent} from '../../shared/blockchain-verify.component';
+import {InfoTipComponent} from '../../shared/info-tip.component';
+import {ProofDownloadComponent} from '../../shared/proof-download.component';
+import {ProofLinkComponent} from '../../shared/proof-link.component';
+import {VERIFY_TIPS} from '../audit/verify-wording';
 
-interface DocRow { id: string; edrmsNo: string; docType: string; title: string; instrumentRef: string | null; batchId: string | null; currentVersion: number; filedAt: string; props: Record<string, string>; }
-interface Field { k: string; label: string; v: string; c?: number; edited?: boolean; }
+interface DocRow {
+  id: string;
+  edrmsNo: string;
+  docType: string;
+  title: string;
+  instrumentRef: string | null;
+  batchId: string | null;
+  currentVersion: number;
+  filedAt: string;
+  props: Record<string, string>;
+}
+interface Field {
+  k: string;
+  label: string;
+  v: string;
+  c?: number;
+  edited?: boolean;
+}
 interface Version {
-  versionNumber: number; label: string; kind: 'filed' | 'amendment'; reason: string | null; changes: { k: string; from: string; to: string }[];
-  sha256: string; seal: string; size: number; mimeType: string; createdAt: string; createdByName: string | null; approvedByName: string | null;
+  versionNumber: number;
+  label: string;
+  kind: 'filed' | 'amendment';
+  reason: string | null;
+  changes: Array<{k: string; from: string; to: string}>;
+  sha256: string;
+  seal: string;
+  size: number;
+  mimeType: string;
+  createdAt: string;
+  createdByName: string | null;
+  approvedByName: string | null;
   anchoring?: Anchoring | null;
 }
-interface DocDetail extends DocRow { registry: string; pages: number; fields: Field[]; recordMetadata: Record<string, any>; filedByName: string | null; versions: Version[]; }
-interface OpenChange { id: string; status: 'active' | 'error'; startedById: string; startedByName: string; startedAt: string; errorMessage: string | null; }
+interface DocDetail extends DocRow {
+  registry: string;
+  pages: number;
+  fields: Field[];
+  recordMetadata: Record<string, unknown>;
+  filedByName: string | null;
+  versions: Version[];
+}
+interface OpenChange {
+  id: string;
+  status: 'active' | 'error';
+  startedById: string;
+  startedByName: string;
+  startedAt: string;
+  errorMessage: string | null;
+}
+
+/** The fields of an edrms integrity check (verifyVersion) that this screen shows. */
+interface IntegrityCheck {
+  version: number;
+  intact: boolean;
+  contentIntact: boolean;
+  sealIntact: boolean;
+  checkedAt: string;
+}
 
 /**
  * #/documents — the EDRMS: filed documents of record (edrms service). Read-only except for
  * "Request correction", which starts the four-eyes document-amendment process (bpm).
  */
 @Component({
-    selector: 'app-documents',
-    imports: [IconComponent, CanDirective, ProofLinkComponent, ProofDownloadComponent, BlockchainVerifyComponent, InfoTipComponent],
-    template: `
+  selector: 'app-documents',
+  imports: [
+    IconComponent,
+    CanDirective,
+    ProofLinkComponent,
+    ProofDownloadComponent,
+    BlockchainVerifyComponent,
+    InfoTipComponent,
+  ],
+  template: `
     <div class="shell">
       <aside class="rail">
         <div class="rail-head">
@@ -156,8 +218,9 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
       </div>
     }
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .shell { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: start; max-width: 1560px; margin: 0 auto; }
     .rail { border-right: 1px solid var(--color-divider); background: var(--color-surface); display: flex; flex-direction: column; position: sticky; top: var(--topbar-h); height: calc(100vh - var(--topbar-h)); }
     .rail-head { padding: 14px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--color-divider); }
@@ -183,7 +246,8 @@ interface OpenChange { id: string; status: 'active' | 'error'; startedById: stri
     .errbox { padding: 10px 12px; border-radius: 8px; background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-bd); font-size: 13.5px; }
     textarea.input { resize: vertical; font: inherit; }
     @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } .rail { position: static; height: 50vh; } .fields { grid-template-columns: 1fr; } }
-  `]
+  `,
+  ],
 })
 export class DocumentsComponent {
   private api = inject(ApiService);
@@ -199,14 +263,14 @@ export class DocumentsComponent {
   rows = signal<DocRow[]>([]);
   total = signal(0);
   loading = signal(false);
-  docTypes = signal<{ id: string; label: string }[]>([]);
+  docTypes = signal<Array<{id: string; label: string}>>([]);
   sel = signal<DocDetail | null>(null);
   openChange = signal<OpenChange | null>(null);
-  integrity = signal<any | null>(null);
-  draft = signal<{ values: Record<string, string>; reason: string } | null>(null);
+  integrity = signal<IntegrityCheck | null>(null);
+  draft = signal<{values: Record<string, string>; reason: string} | null>(null);
   busy = signal(false);
   error = signal('');
-  private searchTimer: any;
+  private searchTimer: ReturnType<typeof setTimeout>;
 
   fmt = fmtTime;
   anchoringLabel = anchoringLabel;
@@ -216,21 +280,37 @@ export class DocumentsComponent {
   recordMeta = computed(() => {
     const m = this.sel()?.recordMetadata || {};
     return Object.entries(m).map(([k, v]) => ({
-      k, v: Array.isArray(v) ? v.map((x: any) => x.name ? `${x.role}: ${x.name}` : JSON.stringify(x)).join(', ') : String(v)
+      k,
+      // a list of agents shows as "role: name"; any other list item as JSON
+      v: Array.isArray(v)
+        ? v
+            .map((x: {role?: string; name?: string}) =>
+              x.name ? `${x.role}: ${x.name}` : JSON.stringify(x),
+            )
+            .join(', ')
+        : String(v),
     }));
   });
   changedCount = computed(() => {
-    const d = this.draft(), s = this.sel();
+    const d = this.draft();
+    const s = this.sel();
     return d && s ? s.fields.filter(f => d.values[f.k] !== f.v).length : 0;
   });
 
   constructor() {
-    this.api.get<{ docTypes: { id: string; label: string }[] }>('/document-catalogue').then(c => this.docTypes.set(c.docTypes)).catch(() => {});
+    this.api
+      .get<{docTypes: Array<{id: string; label: string}>}>(
+        '/document-catalogue',
+      )
+      .then(c => this.docTypes.set(c.docTypes))
+      .catch(() => {});
     const id = inject(ActivatedRoute).snapshot.queryParamMap.get('id');
     this.load(id);
   }
 
-  typeLabel(id: string) { return this.docTypes().find(t => t.id === id)?.label || id; }
+  typeLabel(id: string) {
+    return this.docTypes().find(t => t.id === id)?.label || id;
+  }
 
   onSearch(v: string) {
     this.q.set(v);
@@ -241,78 +321,144 @@ export class DocumentsComponent {
   async load(selectId?: string | null) {
     this.loading.set(true);
     try {
-      const res = await this.api.get<{ items: DocRow[]; total: number }>('/documents', { q: this.q().trim(), docType: this.type(), limit: 100 });
+      const res = await this.api.get<{items: DocRow[]; total: number}>(
+        '/documents',
+        {q: this.q().trim(), docType: this.type(), limit: 100},
+      );
       this.rows.set(res.items);
       this.total.set(res.total);
       const target = selectId || this.sel()?.id || res.items[0]?.id;
       if (target) await this.select(target);
       else this.sel.set(null);
-    } catch (e) { this.fail('Could not load documents', e); } finally { this.loading.set(false); }
+    } catch (e) {
+      this.fail('Could not load documents', e);
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   async select(id: string) {
     try {
       const [doc, active, failed] = await Promise.all([
         this.api.get<DocDetail>(`/documents/${id}`),
-        this.api.get<{ items: OpenChange[] }>('/process-instances', { definitionKey: 'document-amendment', businessKey: id, status: 'active' }),
-        this.api.get<{ items: OpenChange[] }>('/process-instances', { definitionKey: 'document-amendment', businessKey: id, status: 'error' })
+        this.api.get<{items: OpenChange[]}>('/process-instances', {
+          definitionKey: 'document-amendment',
+          businessKey: id,
+          status: 'active',
+        }),
+        this.api.get<{items: OpenChange[]}>('/process-instances', {
+          definitionKey: 'document-amendment',
+          businessKey: id,
+          status: 'error',
+        }),
       ]);
       this.sel.set(doc);
       this.openChange.set(active.items[0] || failed.items[0] || null);
       this.integrity.set(null);
-      this.router.navigate([], { queryParams: { id }, replaceUrl: true });
-    } catch (e) { this.fail('Could not open the document', e); }
+      this.router.navigate([], {queryParams: {id}, replaceUrl: true});
+    } catch (e) {
+      this.fail('Could not open the document', e);
+    }
   }
 
   async openFile(d: DocDetail) {
     try {
-      const link = await this.api.get<{ url: string }>(`/documents/${d.id}/content`);
+      const link = await this.api.get<{url: string}>(
+        `/documents/${d.id}/content`,
+      );
       window.open(link.url, '_blank', 'noopener');
-    } catch (e) { this.fail('Could not open the file', e); }
+    } catch (e) {
+      this.fail('Could not open the file', e);
+    }
   }
 
   async verify(d: DocDetail) {
     try {
-      this.integrity.set(await this.api.get(`/documents/${d.id}/versions/${d.currentVersion}/verify`));
-    } catch (e) { this.fail('Integrity check failed to run', e); }
+      this.integrity.set(
+        await this.api.get<IntegrityCheck>(
+          `/documents/${d.id}/versions/${d.currentVersion}/verify`,
+        ),
+      );
+    } catch (e) {
+      this.fail('Integrity check failed to run', e);
+    }
   }
 
   startCorrection(d: DocDetail) {
     this.error.set('');
-    this.draft.set({ values: Object.fromEntries(d.fields.map(f => [f.k, f.v])), reason: '' });
+    this.draft.set({
+      values: Object.fromEntries(d.fields.map(f => [f.k, f.v])),
+      reason: '',
+    });
   }
-  setValue(k: string, v: string) { this.draft.update(d => d && ({ ...d, values: { ...d.values, [k]: v } })); }
-  setReason(v: string) { this.draft.update(d => d && ({ ...d, reason: v })); }
+  setValue(k: string, v: string) {
+    this.draft.update(d => d && {...d, values: {...d.values, [k]: v}});
+  }
+  setReason(v: string) {
+    this.draft.update(d => d && {...d, reason: v});
+  }
 
   async submitCorrection() {
-    const d = this.sel()!, dr = this.draft()!;
-    const changes = d.fields.filter(f => dr.values[f.k] !== f.v).map(f => ({ k: f.k, v: dr.values[f.k] }));
-    this.busy.set(true); this.error.set('');
+    const d = this.sel()!;
+    const dr = this.draft()!;
+    const changes = d.fields
+      .filter(f => dr.values[f.k] !== f.v)
+      .map(f => ({k: f.k, v: dr.values[f.k]}));
+    this.busy.set(true);
+    this.error.set('');
     try {
       await this.api.post('/processes/document-amendment/instances', {
-        variables: { documentId: d.id, expectedVersion: d.currentVersion, reason: dr.reason.trim(), changes }
+        variables: {
+          documentId: d.id,
+          expectedVersion: d.currentVersion,
+          reason: dr.reason.trim(),
+          changes,
+        },
       });
       this.draft.set(null);
-      this.toast.show('success', 'Correction sent for approval', `${changes.length} field(s) on ${d.edrmsNo}. The record changes once a second person approves.`);
+      this.toast.show(
+        'success',
+        'Correction sent for approval',
+        `${changes.length} field(s) on ${d.edrmsNo}. The record changes once a second person approves.`,
+      );
       await this.select(d.id);
       this.tasks.refresh();
     } catch (e) {
       this.error.set(e instanceof ApiError ? e.message : String(e));
-    } finally { this.busy.set(false); }
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   async withdraw(c: OpenChange) {
-    const ok = await this.confirm.ask({ title: c.status === 'error' ? 'Close this correction request?' : 'Withdraw the correction request?', body: 'The document is not changed. You can request a new correction afterwards.', confirmLabel: c.status === 'error' ? 'Close request' : 'Withdraw', tone: 'danger' });
+    const ok = await this.confirm.ask({
+      title:
+        c.status === 'error'
+          ? 'Close this correction request?'
+          : 'Withdraw the correction request?',
+      body: 'The document is not changed. You can request a new correction afterwards.',
+      confirmLabel: c.status === 'error' ? 'Close request' : 'Withdraw',
+      tone: 'danger',
+    });
     if (!ok) return;
     try {
-      await this.api.post(`/process-instances/${c.id}/cancel`, { reason: 'Withdrawn from the Documents screen' });
+      await this.api.post(`/process-instances/${c.id}/cancel`, {
+        reason: 'Withdrawn from the Documents screen',
+      });
       this.toast.show('info', 'Correction request withdrawn');
       await this.select(this.sel()!.id);
       this.tasks.refresh();
-    } catch (e) { this.fail('Could not withdraw the request', e); }
+    } catch (e) {
+      this.fail('Could not withdraw the request', e);
+    }
   }
 
   private fail(title: string, e: unknown) {
-    this.toast.show('danger', title, e instanceof ApiError ? e.message : String(e), 7000);
+    this.toast.show(
+      'danger',
+      title,
+      e instanceof ApiError ? e.message : String(e),
+      7000,
+    );
   }
 }

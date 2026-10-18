@@ -1,20 +1,45 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
-import { AppUser, PERMS, PERM_GROUPS, Policies, RbacService, SodRule, UserStatus, AccessKind, Office, OfficeType, OFFICE_TYPE_LABEL, NATIONAL_ROLES } from '../../state/rbac.service';
-import { ConfirmService } from '../../state/confirm.service';
-import { ToastService } from '../../state/toast.service';
-import { IconComponent } from '../../shared/icon.component';
-import { SiteConfigService } from '../../state/site-config.service';
+import {
+  Component,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {ActivatedRoute, RouterLink, RouterLinkActive} from '@angular/router';
+import {
+  AppUser,
+  PERMS,
+  PERM_GROUPS,
+  Policies,
+  RbacService,
+  SodRule,
+  UserStatus,
+  AccessKind,
+  Office,
+  OfficeType,
+  OFFICE_TYPE_LABEL,
+  NATIONAL_ROLES,
+} from '../../state/rbac.service';
+import {ConfirmService} from '../../state/confirm.service';
+import {ToastService} from '../../state/toast.service';
+import {IconComponent} from '../../shared/icon.component';
+import {SiteConfigService} from '../../state/site-config.service';
 
 type Tab = 'users' | 'offices' | 'roles' | 'policies' | 'log';
 const KIND: Record<AccessKind, [string, string]> = {
-  role: ['Role', 'tag-info'], user: ['User', 'tag-neutral'], policy: ['Policy', 'tag-outline'], denied: ['Denied', 'tag-danger'], session: ['Session', 'tag-neutral'], office: ['Office', 'tag-info']
+  role: ['Role', 'tag-info'],
+  user: ['User', 'tag-neutral'],
+  policy: ['Policy', 'tag-outline'],
+  denied: ['Denied', 'tag-danger'],
+  session: ['Session', 'tag-neutral'],
+  office: ['Office', 'tag-info'],
 };
 
+/** Administration: users, offices, roles and permissions, security policies and the access log. */
 @Component({
-    selector: 'app-admin',
-    imports: [IconComponent, RouterLink, RouterLinkActive],
-    template: `
+  selector: 'app-admin',
+  imports: [IconComponent, RouterLink, RouterLinkActive],
+  template: `
     <div class="page stack" style="gap:20px">
       <nav class="tabs" aria-label="Administration">
         @for (t of visibleTabs(); track t.id) { <a [routerLink]="t.path" routerLinkActive="on">{{ t.label }}</a> }
@@ -335,8 +360,9 @@ const KIND: Record<AccessKind, [string, string]> = {
       </div>
     }
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .empty-o { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 16px; text-align: center; color: var(--color-neutral-700); }
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-divider); flex-wrap: wrap; }
     .tabs a { padding: 10px 14px; font-weight: 600; font-size: 14px; color: var(--color-neutral-700); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
@@ -399,7 +425,8 @@ const KIND: Record<AccessKind, [string, string]> = {
     .pchip.on { background: var(--success-bg); color: var(--success-fg); text-decoration: none; }
     .fg { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
     @media (max-width: 640px) { .fg { grid-template-columns: 1fr; } .toolbar .seg { overflow-x: auto; max-width: 100%; } }
-  `]
+  `,
+  ],
 })
 export class AdminComponent {
   rbac = inject(RbacService);
@@ -408,13 +435,31 @@ export class AdminComponent {
   private toast = inject(ToastService);
   tab = signal<Tab>('users');
   perms = PERMS;
-  groups = PERM_GROUPS.map(name => ({ name, perms: PERMS.filter(p => p.group === name) }));
+  groups = PERM_GROUPS.map(name => ({
+    name,
+    perms: PERMS.filter(p => p.group === name),
+  }));
   tabs = [
-    { id: 'users', label: 'Users', path: '/admin/users', perm: 'admin.users' },
-    { id: 'offices', label: 'Offices', path: '/admin/offices', perm: 'admin.offices' },
-    { id: 'roles', label: 'Roles & permissions', path: '/admin/roles', perm: 'admin.roles' },
-    { id: 'policies', label: 'Security policies', path: '/admin/policies', perm: 'admin.policies' },
-    { id: 'log', label: 'Access log', path: '/admin/log', perm: 'admin.users' }
+    {id: 'users', label: 'Users', path: '/admin/users', perm: 'admin.users'},
+    {
+      id: 'offices',
+      label: 'Offices',
+      path: '/admin/offices',
+      perm: 'admin.offices',
+    },
+    {
+      id: 'roles',
+      label: 'Roles & permissions',
+      path: '/admin/roles',
+      perm: 'admin.roles',
+    },
+    {
+      id: 'policies',
+      label: 'Security policies',
+      path: '/admin/policies',
+      perm: 'admin.policies',
+    },
+    {id: 'log', label: 'Access log', path: '/admin/log', perm: 'admin.users'},
   ];
   visibleTabs = computed(() => this.tabs.filter(t => this.rbac.can(t.perm)));
   constructor() {
@@ -424,112 +469,352 @@ export class AdminComponent {
     });
   }
   async copy(text: string) {
-    try { await navigator.clipboard.writeText(text); this.toast.show('success', 'Link copied'); } catch { this.toast.show('warn', 'Copy failed', 'Select the link and copy it manually.'); }
+    try {
+      await navigator.clipboard.writeText(text);
+      this.toast.show('success', 'Link copied');
+    } catch {
+      this.toast.show(
+        'warn',
+        'Copy failed',
+        'Select the link and copy it manually.',
+      );
+    }
   }
 
-  initials(n: string) { return n.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).map(s => s[0]).slice(0, 2).join('').toUpperCase(); }
-  statusTag(s: UserStatus) { return s === 'Active' ? 'tag-accent' : s === 'Suspended' ? 'tag-danger' : 'tag-outline'; }
+  initials(n: string) {
+    return n
+      .replace(/[^A-Za-z ]/g, '')
+      .split(' ')
+      .filter(Boolean)
+      .map(s => s[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  }
+  statusTag(s: UserStatus) {
+    return s === 'Active'
+      ? 'tag-accent'
+      : s === 'Suspended'
+        ? 'tag-danger'
+        : 'tag-outline';
+  }
 
   // ---------- users ----------
-  statusOpts: ('all' | UserStatus)[] = ['all', 'Active', 'Invited', 'Suspended'];
-  uq = signal(''); uRole = signal('all'); uStatus = signal<'all' | UserStatus>('all'); uOffice = signal('all');
-  isNational(roles: string[]) { return roles.some(r => NATIONAL_ROLES.includes(r)); }
+  statusOpts: Array<'all' | UserStatus> = [
+    'all',
+    'Active',
+    'Invited',
+    'Suspended',
+  ];
+  uq = signal('');
+  uRole = signal('all');
+  uStatus = signal<'all' | UserStatus>('all');
+  uOffice = signal('all');
+  isNational(roles: string[]) {
+    return roles.some(r => NATIONAL_ROLES.includes(r));
+  }
   users = computed(() => {
-    const q = this.uq().toLowerCase().trim(), r = this.uRole(), s = this.uStatus(), o = this.uOffice();
-    return this.rbac.users()
-      .filter(u => o === 'all' || (o === 'none' ? !u.officeId : u.officeId === o))
-      .filter(u => (r === 'all' || u.roles.includes(r)) && (s === 'all' || u.status === s) && (!q || (u.name + ' ' + u.email + ' ' + u.office + ' ' + (u.officeCode || '')).toLowerCase().includes(q)))
-      .map(u => ({ ...u, conflicts: this.rbac.userConflicts(u).length }));
+    const q = this.uq().toLowerCase().trim();
+    const r = this.uRole();
+    const s = this.uStatus();
+    const o = this.uOffice();
+    return this.rbac
+      .users()
+      .filter(
+        u => o === 'all' || (o === 'none' ? !u.officeId : u.officeId === o),
+      )
+      .filter(
+        u =>
+          (r === 'all' || u.roles.includes(r)) &&
+          (s === 'all' || u.status === s) &&
+          (!q ||
+            (
+              u.name +
+              ' ' +
+              u.email +
+              ' ' +
+              u.office +
+              ' ' +
+              (u.officeCode || '')
+            )
+              .toLowerCase()
+              .includes(q)),
+      )
+      .map(u => ({...u, conflicts: this.rbac.userConflicts(u).length}));
   });
   stats = computed(() => {
-    const us = this.rbac.users(), active = us.filter(u => u.status === 'Active'), noMfa = active.filter(u => !u.mfa).length;
-    const conf = us.filter(u => u.status !== 'Suspended' && this.rbac.userConflicts(u).length).length;
+    const us = this.rbac.users();
+    const active = us.filter(u => u.status === 'Active');
+    const noMfa = active.filter(u => !u.mfa).length;
+    const conf = us.filter(
+      u => u.status !== 'Suspended' && this.rbac.userConflicts(u).length,
+    ).length;
     return [
-      { label: 'Active users', v: String(active.length), sub: us.length + ' accounts in total', warn: false },
-      { label: 'Pending invitations', v: String(us.filter(u => u.status === 'Invited').length), sub: 'Expire after 3 days', warn: false },
-      { label: 'Suspended', v: String(us.filter(u => u.status === 'Suspended').length), sub: 'Sign-in blocked', warn: false },
-      { label: 'MFA enrolled', v: Math.round((active.length - noMfa) / Math.max(1, active.length) * 100) + '%', sub: noMfa + ' active user' + (noMfa === 1 ? '' : 's') + ' without MFA', warn: this.rbac.policies().mfa && noMfa > 0 },
-      { label: 'Duty conflicts', v: String(conf), sub: 'Users breaking a segregation rule', warn: conf > 0 }
+      {
+        label: 'Active users',
+        v: String(active.length),
+        sub: us.length + ' accounts in total',
+        warn: false,
+      },
+      {
+        label: 'Pending invitations',
+        v: String(us.filter(u => u.status === 'Invited').length),
+        sub: 'Expire after 3 days',
+        warn: false,
+      },
+      {
+        label: 'Suspended',
+        v: String(us.filter(u => u.status === 'Suspended').length),
+        sub: 'Sign-in blocked',
+        warn: false,
+      },
+      {
+        label: 'MFA enrolled',
+        v:
+          Math.round(
+            ((active.length - noMfa) / Math.max(1, active.length)) * 100,
+          ) + '%',
+        sub: noMfa + ' active user' + (noMfa === 1 ? '' : 's') + ' without MFA',
+        warn: this.rbac.policies().mfa && noMfa > 0,
+      },
+      {
+        label: 'Duty conflicts',
+        v: String(conf),
+        sub: 'Users breaking a segregation rule',
+        warn: conf > 0,
+      },
     ];
   });
   editId = signal<string | null>(null);
   draftRoles = signal<string[]>([]);
-  editUser = computed(() => this.rbac.users().find(u => u.id === this.editId()) || null);
+  editUser = computed(
+    () => this.rbac.users().find(u => u.id === this.editId()) || null,
+  );
   draftPerms = computed(() => this.rbac.effective(this.draftRoles()));
   draftConflicts = computed(() => this.rbac.conflicts(this.draftPerms()));
-  draftGroups = computed(() => this.groups.map(g => { const ps = g.perms.map(p => ({ ...p, on: this.draftPerms().includes(p.id) })); return { name: g.name, perms: ps, n: ps.filter(p => p.on).length }; }));
-  userDirty = computed(() => { const u = this.editUser(); return !!u && [...u.roles].sort().join() !== [...this.draftRoles()].sort().join(); });
-  openUser(id: string) { const u = this.rbac.users().find(x => x.id === id)!; this.draftRoles.set([...u.roles]); this.draftOffice.set(u.officeId || ''); this.editId.set(id); }
+  draftGroups = computed(() =>
+    this.groups.map(g => {
+      const ps = g.perms.map(p => ({
+        ...p,
+        on: this.draftPerms().includes(p.id),
+      }));
+      return {name: g.name, perms: ps, n: ps.filter(p => p.on).length};
+    }),
+  );
+  userDirty = computed(() => {
+    const u = this.editUser();
+    return (
+      !!u && [...u.roles].sort().join() !== [...this.draftRoles()].sort().join()
+    );
+  });
+  openUser(id: string) {
+    const u = this.rbac.users().find(x => x.id === id)!;
+    this.draftRoles.set([...u.roles]);
+    this.draftOffice.set(u.officeId || '');
+    this.editId.set(id);
+  }
   draftOffice = signal('');
   /** Active offices, plus the user's current one even if it is suspended (so it shows as selected). */
-  officeChoices(u: AppUser) { return this.rbac.offices().filter(o => o.status === 'Active' || o.id === u.officeId); }
-  async saveOffice(u: AppUser) { await this.rbac.setUserOffice(u.id, this.draftOffice() || null); }
-  toggleDraftRole(id: string) { this.draftRoles.update(r => r.includes(id) ? r.filter(x => x !== id) : [...r, id]); }
+  officeChoices(u: AppUser) {
+    return this.rbac
+      .offices()
+      .filter(o => o.status === 'Active' || o.id === u.officeId);
+  }
+  async saveOffice(u: AppUser) {
+    await this.rbac.setUserOffice(u.id, this.draftOffice() || null);
+  }
+  toggleDraftRole(id: string) {
+    this.draftRoles.update(r =>
+      r.includes(id) ? r.filter(x => x !== id) : [...r, id],
+    );
+  }
   async saveUser() {
     const u = this.editUser()!;
-    if (this.draftConflicts().length && !(await this.confirm.ask({ title: 'Save with a duty conflict?', body: u.name + ' would hold permissions that an enabled segregation-of-duties rule keeps apart. The exception is recorded in the access log.', confirmLabel: 'Save anyway', tone: 'danger' }))) return;
+    if (
+      this.draftConflicts().length &&
+      !(await this.confirm.ask({
+        title: 'Save with a duty conflict?',
+        body:
+          u.name +
+          ' would hold permissions that an enabled segregation-of-duties rule keeps apart. The exception is recorded in the access log.',
+        confirmLabel: 'Save anyway',
+        tone: 'danger',
+      }))
+    ) {
+      return;
+    }
     this.rbac.saveUserRoles(u.id, this.draftRoles());
     this.editId.set(null);
   }
   async toggleSuspend(u: AppUser) {
     const suspend = u.status !== 'Suspended';
-    if (await this.confirm.ask({ title: (suspend ? 'Suspend ' : 'Reactivate ') + u.name + '?', body: suspend ? 'Active sessions end immediately and sign-in is blocked. Their work and audit history are kept.' : 'The user can sign in again with their existing roles.', confirmLabel: suspend ? 'Suspend user' : 'Reactivate', tone: suspend ? 'danger' : 'primary' }))
+    if (
+      await this.confirm.ask({
+        title: (suspend ? 'Suspend ' : 'Reactivate ') + u.name + '?',
+        body: suspend
+          ? 'Active sessions end immediately and sign-in is blocked. Their work and audit history are kept.'
+          : 'The user can sign in again with their existing roles.',
+        confirmLabel: suspend ? 'Suspend user' : 'Reactivate',
+        tone: suspend ? 'danger' : 'primary',
+      })
+    ) {
       this.rbac.setStatus(u.id, suspend ? 'Suspended' : 'Active');
+    }
   }
   async resetMfa(u: AppUser) {
-    if (await this.confirm.ask({ title: 'Reset MFA for ' + u.name + '?', body: 'Their current authenticator stops working. They must enrol a new one at next sign-in.', confirmLabel: 'Reset MFA', tone: 'danger' })) this.rbac.resetMfa(u.id);
+    if (
+      await this.confirm.ask({
+        title: 'Reset MFA for ' + u.name + '?',
+        body: 'Their current authenticator stops working. They must enrol a new one at next sign-in.',
+        confirmLabel: 'Reset MFA',
+        tone: 'danger',
+      })
+    ) {
+      this.rbac.resetMfa(u.id);
+    }
   }
   inviteOpen = signal(false);
-  inv = signal({ name: '', email: '', officeId: '', role: 'rev' });
-  openInvite() { this.inv.set({ name: '', email: '', officeId: this.rbac.activeOffices()[0]?.id ?? '', role: 'rev' }); this.inviteOpen.set(true); }
+  inv = signal({name: '', email: '', officeId: '', role: 'rev'});
+  openInvite() {
+    this.inv.set({
+      name: '',
+      email: '',
+      officeId: this.rbac.activeOffices()[0]?.id ?? '',
+      role: 'rev',
+    });
+    this.inviteOpen.set(true);
+  }
   setInv(k: string, v: string) {
     this.inv.update(i => {
-      const next = { ...i, [k]: v };
+      const next = {...i, [k]: v};
       // only administrators may be invited without an office
-      if (k === 'role' && !next.officeId && !this.isNational([v])) next.officeId = this.rbac.activeOffices()[0]?.id ?? '';
+      if (k === 'role' && !next.officeId && !this.isNational([v])) {
+        next.officeId = this.rbac.activeOffices()[0]?.id ?? '';
+      }
       return next;
     });
   }
   inviting = signal(false);
   async invite() {
-    const i = this.inv(); if (!i.name.trim() || !i.email.includes('@')) return;
+    const i = this.inv();
+    if (!i.name.trim() || !i.email.includes('@')) return;
     this.inviting.set(true);
-    const ok = await this.rbac.invite({ name: i.name.trim(), email: i.email.trim(), officeId: i.officeId || null, roles: [i.role] });
+    const ok = await this.rbac.invite({
+      name: i.name.trim(),
+      email: i.email.trim(),
+      officeId: i.officeId || null,
+      roles: [i.role],
+    });
     this.inviting.set(false);
     if (ok) this.inviteOpen.set(false);
   }
 
   // ---------- offices ----------
   officeTypes: OfficeType[] = ['registry', 'external'];
-  typeLabel(t: OfficeType) { return OFFICE_TYPE_LABEL[t]; }
+  typeLabel(t: OfficeType) {
+    return OFFICE_TYPE_LABEL[t];
+  }
   oq = signal('');
   officeRows = computed(() => {
     const q = this.oq().toLowerCase().trim();
-    return this.rbac.offices().filter(o => !q || (o.code + ' ' + o.name + ' ' + o.address).toLowerCase().includes(q));
+    return this.rbac
+      .offices()
+      .filter(
+        o =>
+          !q ||
+          (o.code + ' ' + o.name + ' ' + o.address).toLowerCase().includes(q),
+      );
   });
   /** The add / edit dialog: `id` null when adding. */
-  officeForm = signal<{ id: string | null; code: string; name: string; type: OfficeType; address: string; contact: string } | null>(null);
+  officeForm = signal<{
+    id: string | null;
+    code: string;
+    name: string;
+    type: OfficeType;
+    address: string;
+    contact: string;
+  } | null>(null);
   savingOffice = signal(false);
-  openAddOffice() { this.officeForm.set({ id: null, code: '', name: '', type: 'registry', address: '', contact: '' }); }
-  openEditOffice(o: Office) { this.officeForm.set({ id: o.id, code: o.code, name: o.name, type: o.type, address: o.address, contact: o.contact }); }
-  setOffice(k: string, v: string) { this.officeForm.update(f => f && ({ ...f, [k]: k === 'code' ? v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5) : v })); }
-  officeValid = computed(() => { const f = this.officeForm(); return !!f && /^[A-Z]{2,5}$/.test(f.code) && !!f.name.trim(); });
-  editingOffice = computed(() => { const f = this.officeForm(); return f?.id ? this.rbac.offices().find(o => o.id === f.id) ?? null : null; });
+  openAddOffice() {
+    this.officeForm.set({
+      id: null,
+      code: '',
+      name: '',
+      type: 'registry',
+      address: '',
+      contact: '',
+    });
+  }
+  openEditOffice(o: Office) {
+    this.officeForm.set({
+      id: o.id,
+      code: o.code,
+      name: o.name,
+      type: o.type,
+      address: o.address,
+      contact: o.contact,
+    });
+  }
+  setOffice(k: string, v: string) {
+    this.officeForm.update(
+      f =>
+        f && {
+          ...f,
+          [k]:
+            k === 'code'
+              ? v
+                  .toUpperCase()
+                  .replace(/[^A-Z]/g, '')
+                  .slice(0, 5)
+              : v,
+        },
+    );
+  }
+  officeValid = computed(() => {
+    const f = this.officeForm();
+    return !!f && /^[A-Z]{2,5}$/.test(f.code) && !!f.name.trim();
+  });
+  editingOffice = computed(() => {
+    const f = this.officeForm();
+    return f?.id
+      ? (this.rbac.offices().find(o => o.id === f.id) ?? null)
+      : null;
+  });
   async saveOfficeForm() {
-    const f = this.officeForm(); if (!f || !this.officeValid()) return;
+    const f = this.officeForm();
+    if (!f || !this.officeValid()) return;
     this.savingOffice.set(true);
-    const d = { name: f.name.trim(), type: f.type, address: f.address.trim(), contact: f.contact.trim() };
-    const ok = f.id ? await this.rbac.updateOffice(f.id, d) : await this.rbac.addOffice({ code: f.code, ...d });
+    const d = {
+      name: f.name.trim(),
+      type: f.type,
+      address: f.address.trim(),
+      contact: f.contact.trim(),
+    };
+    const ok = f.id
+      ? await this.rbac.updateOffice(f.id, d)
+      : await this.rbac.addOffice({code: f.code, ...d});
     this.savingOffice.set(false);
     if (ok) this.officeForm.set(null);
   }
   async toggleOffice(o: Office) {
     const suspend = o.status === 'Active';
-    if (await this.confirm.ask({
-      title: (suspend ? 'Suspend ' : 'Reactivate ') + o.code + ' · ' + o.name + '?',
-      body: suspend ? 'No new users can be invited into this office, and pending invitations cannot be resent. Its ' + o.users + ' user(s) and their work are not affected.' : 'Users can be invited into this office again.',
-      confirmLabel: suspend ? 'Suspend office' : 'Reactivate', tone: suspend ? 'danger' : 'primary'
-    })) {
+    if (
+      await this.confirm.ask({
+        title:
+          (suspend ? 'Suspend ' : 'Reactivate ') +
+          o.code +
+          ' · ' +
+          o.name +
+          '?',
+        body: suspend
+          ? 'No new users can be invited into this office, and pending invitations cannot be resent. Its ' +
+            o.users +
+            ' user(s) and their work are not affected.'
+          : 'Users can be invited into this office again.',
+        confirmLabel: suspend ? 'Suspend office' : 'Reactivate',
+        tone: suspend ? 'danger' : 'primary',
+      })
+    ) {
       await this.rbac.setOfficeStatus(o, suspend);
       this.officeForm.set(null);
     }
@@ -538,29 +823,84 @@ export class AdminComponent {
   // ---------- roles ----------
   selRole = signal<string | null>(null);
   draft = signal<Record<string, string[]> | null>(null);
-  working = computed<Record<string, string[]>>(() => this.draft() ?? Object.fromEntries(this.rbac.roles().map(r => [r.id, r.perms])));
-  has(r: string, p: string) { return (this.working()[r] || []).includes(p); }
-  locked(r: string, p: string) { return r === 'adm' && (p === 'admin.roles' || p === 'admin.users'); }
+  working = computed<Record<string, string[]>>(
+    () =>
+      this.draft() ??
+      Object.fromEntries(this.rbac.roles().map(r => [r.id, r.perms])),
+  );
+  has(r: string, p: string) {
+    return (this.working()[r] || []).includes(p);
+  }
+  locked(r: string, p: string) {
+    return r === 'adm' && (p === 'admin.roles' || p === 'admin.users');
+  }
   toggle(r: string, p: string) {
     if (this.locked(r, p)) return;
-    const w = { ...this.working() }, cur = w[r] || [];
+    const w = {...this.working()};
+    const cur = w[r] || [];
     w[r] = cur.includes(p) ? cur.filter(x => x !== p) : [...cur, p];
     this.draft.set(w);
   }
-  colConflict(r: string) { return this.rbac.conflicts(this.working()[r] || []).length > 0; }
-  cellConflict(r: string, p: string) { return this.has(r, p) && this.rbac.conflicts(this.working()[r] || []).some(c => c.a === p || c.b === p); }
+  colConflict(r: string) {
+    return this.rbac.conflicts(this.working()[r] || []).length > 0;
+  }
+  cellConflict(r: string, p: string) {
+    return (
+      this.has(r, p) &&
+      this.rbac
+        .conflicts(this.working()[r] || [])
+        .some(c => c.a === p || c.b === p)
+    );
+  }
   changes = computed(() => {
-    const d = this.draft(); if (!d) return 0;
+    const d = this.draft();
+    if (!d) return 0;
     let n = 0;
-    this.rbac.roles().forEach(r => PERMS.forEach(p => { if (r.perms.includes(p.id) !== (d[r.id] || []).includes(p.id)) n++; }));
+    this.rbac.roles().forEach(r =>
+      PERMS.forEach(p => {
+        if (r.perms.includes(p.id) !== (d[r.id] || []).includes(p.id)) n++;
+      }),
+    );
     return n;
   });
-  roleCards = computed(() => this.rbac.roles().map(r => ({ ...r, users: this.rbac.users().filter(u => u.roles.includes(r.id)).length, n: (this.working()[r.id] || []).length, conflict: this.colConflict(r.id) })));
+  roleCards = computed(() =>
+    this.rbac.roles().map(r => ({
+      ...r,
+      users: this.rbac.users().filter(u => u.roles.includes(r.id)).length,
+      n: (this.working()[r.id] || []).length,
+      conflict: this.colConflict(r.id),
+    })),
+  );
   async saveMatrix() {
     const d = this.draft()!;
-    const affected = this.rbac.users().filter(u => u.roles.some(r => this.rbac.roles().find(x => x.id === r)?.perms.join() !== (d[r] || []).join())).length;
-    if (await this.confirm.ask({ title: 'Apply ' + this.changes() + ' permission change' + (this.changes() === 1 ? '' : 's') + '?', body: 'This affects ' + affected + ' user' + (affected === 1 ? '' : 's') + ', at their next token refresh (within 15 minutes). Each change is written to the access log.', confirmLabel: 'Save changes' })) {
-      await this.rbac.saveMatrix(d); this.draft.set(null);
+    const affected = this.rbac.users().filter(u =>
+      u.roles.some(
+        r =>
+          this.rbac
+            .roles()
+            .find(x => x.id === r)
+            ?.perms.join() !== (d[r] || []).join(),
+      ),
+    ).length;
+    if (
+      await this.confirm.ask({
+        title:
+          'Apply ' +
+          this.changes() +
+          ' permission change' +
+          (this.changes() === 1 ? '' : 's') +
+          '?',
+        body:
+          'This affects ' +
+          affected +
+          ' user' +
+          (affected === 1 ? '' : 's') +
+          ', at their next token refresh (within 15 minutes). Each change is written to the access log.',
+        confirmLabel: 'Save changes',
+      })
+    ) {
+      await this.rbac.saveMatrix(d);
+      this.draft.set(null);
     }
   }
 
@@ -570,19 +910,66 @@ export class AdminComponent {
   wp = computed(() => this.pol() ?? this.rbac.policies());
   ws = computed(() => this.sod() ?? this.rbac.sod());
   polDirty = computed(() => !!this.pol() || !!this.sod());
-  setPol(k: keyof Policies, v: any) { this.pol.set({ ...this.wp(), [k]: v }); }
-  setSod(id: string, on: boolean) { this.sod.set(this.ws().map(s => s.id === id ? { ...s, on } : s)); }
-  affected(s: SodRule) { return this.rbac.users().filter(u => u.status !== 'Suspended' && this.rbac.conflicts(this.rbac.effective(u.roles), [{ ...s, on: true }]).length).length; }
+  setPol<K extends keyof Policies>(k: K, v: Policies[K]) {
+    this.pol.set({...this.wp(), [k]: v});
+  }
+  setSod(id: string, on: boolean) {
+    this.sod.set(this.ws().map(s => (s.id === id ? {...s, on} : s)));
+  }
+  affected(s: SodRule) {
+    return this.rbac
+      .users()
+      .filter(
+        u =>
+          u.status !== 'Suspended' &&
+          this.rbac.conflicts(this.rbac.effective(u.roles), [{...s, on: true}])
+            .length,
+      ).length;
+  }
   async savePolicies() {
-    if (await this.confirm.ask({ title: 'Save security policies?', body: 'Authentication changes apply at each user’s next sign-in. Segregation rules apply immediately.', confirmLabel: 'Save policies' })) {
-      this.rbac.savePolicies(this.wp(), this.ws()); this.pol.set(null); this.sod.set(null);
+    if (
+      await this.confirm.ask({
+        title: 'Save security policies?',
+        body: 'Authentication changes apply at each user’s next sign-in. Segregation rules apply immediately.',
+        confirmLabel: 'Save policies',
+      })
+    ) {
+      this.rbac.savePolicies(this.wp(), this.ws());
+      this.pol.set(null);
+      this.sod.set(null);
     }
   }
 
   // ---------- log ----------
-  kinds: { id: 'all' | AccessKind; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'role', label: 'Roles' }, { id: 'user', label: 'Users' }, { id: 'office', label: 'Offices' }, { id: 'policy', label: 'Policies' }, { id: 'denied', label: 'Denied' }, { id: 'session', label: 'Sign-ins' }];
-  lq = signal(''); lk = signal<'all' | AccessKind>('all');
-  logRows = computed(() => { const q = this.lq().toLowerCase().trim(), k = this.lk(); return this.rbac.log().filter(e => (k === 'all' || e.kind === k) && (!q || (e.actor + ' ' + e.target + ' ' + e.detail + ' ' + e.action).toLowerCase().includes(q))); });
-  kindTag(k: AccessKind) { return KIND[k][1]; }
-  kindLabel(k: AccessKind) { return KIND[k][0]; }
+  kinds: Array<{id: 'all' | AccessKind; label: string}> = [
+    {id: 'all', label: 'All'},
+    {id: 'role', label: 'Roles'},
+    {id: 'user', label: 'Users'},
+    {id: 'office', label: 'Offices'},
+    {id: 'policy', label: 'Policies'},
+    {id: 'denied', label: 'Denied'},
+    {id: 'session', label: 'Sign-ins'},
+  ];
+  lq = signal('');
+  lk = signal<'all' | AccessKind>('all');
+  logRows = computed(() => {
+    const q = this.lq().toLowerCase().trim();
+    const k = this.lk();
+    return this.rbac
+      .log()
+      .filter(
+        e =>
+          (k === 'all' || e.kind === k) &&
+          (!q ||
+            (e.actor + ' ' + e.target + ' ' + e.detail + ' ' + e.action)
+              .toLowerCase()
+              .includes(q)),
+      );
+  });
+  kindTag(k: AccessKind) {
+    return KIND[k][1];
+  }
+  kindLabel(k: AccessKind) {
+    return KIND[k][0];
+  }
 }
