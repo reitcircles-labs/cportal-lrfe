@@ -21,6 +21,13 @@ import {LinkReviewTabComponent} from './link-review-tab.component';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkSideComponent} from './link-side.component';
 import {LinkStore} from './link.store';
+import {LinkDetailsForm} from './link-details-form';
+import {LinkOwnersEditor} from './link-owners-editor';
+import {LinkCreateFlow} from './link-create-flow';
+import {LinkDocumentsSearch} from './link-documents-search';
+import {LinkDiscussion} from './link-discussion';
+import {LinkReviewFlow} from './link-review-flow';
+import {LinkLifecycle} from './link-lifecycle';
 
 /**
  * Land records (#/link) on the land-records service: list and search records; a record's documents
@@ -46,7 +53,16 @@ import {LinkStore} from './link.store';
     LinkCreateDialogComponent,
     LinkOwnersDialogComponent,
   ],
-  providers: [LinkStore],
+  providers: [
+    LinkStore,
+    LinkDetailsForm,
+    LinkOwnersEditor,
+    LinkCreateFlow,
+    LinkDocumentsSearch,
+    LinkDiscussion,
+    LinkReviewFlow,
+    LinkLifecycle,
+  ],
   template: `
     <div class="ws" [class.list-hidden]="!store.listOpen()">
       <!-- Land record list -->

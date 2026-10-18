@@ -2,6 +2,8 @@ import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
 import {RecordDiffComponent} from '../../shared/record-diff.component';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
+import {LinkReviewFlow} from './link-review-flow';
+import {initials} from './link-format';
 
 /** Land record, Review & approve tab: the version in review, its checks and changes, and the decision. */
 @Component({
@@ -15,7 +17,7 @@ import {LinkStore} from './link.store';
           @if (store.myTask(); as t) { @if (t.dueAt) { <span class="small" [class.muted]="!t.overdue" [style.color]="t.overdue ? 'var(--danger)' : null">Due {{ store.fmt(t.dueAt) }}</span> } }</div>
         <div class="panel-body stack" style="gap:14px">
           <div class="kv">
-            <span>Submitted by</span><span>{{ d.submittedByName || '—' }} · {{ store.fmt(d.submittedAt) }}{{ store.submissions() > 1 ? ' (submission ' + store.submissions() + ')' : '' }}</span>
+            <span>Submitted by</span><span>{{ d.submittedByName || '—' }} · {{ store.fmt(d.submittedAt) }}{{ reviewing.submissions() > 1 ? ' (submission ' + reviewing.submissions() + ')' : '' }}</span>
           </div>
           @if (store.review(); as rv) {
             <div class="stack" style="gap:8px">
@@ -37,8 +39,8 @@ import {LinkStore} from './link.store';
       <div class="panel">
         <div class="panel-head"><h4>Discussion on version {{ d.versionNumber }}</h4><button class="btn btn-ghost" style="min-height:30px" (click)="store.tab.set('discussion'); store.loadDiscussion()">Open the whole discussion</button></div>
         <ul class="thread">
-          @for (e of store.versionEvents(); track e.key) { <li [class]="'dev ' + e.kind">
-            <span class="av">{{ store.initials(e.byName) }}</span>
+          @for (e of reviewing.versionEvents(); track e.key) { <li [class]="'dev ' + e.kind">
+            <span class="av">{{ initials(e.byName) }}</span>
             <div class="stack" style="gap:3px;min-width:0">
               <span class="row" style="gap:8px;flex-wrap:wrap"><b>{{ e.byName }}</b>@if (e.what) { <span class="what">{{ e.what }}</span> }<span class="small muted">{{ store.fmt(e.at) }}</span></span>
               @if (e.text) { <span style="font-size:14px;white-space:pre-wrap">{{ e.text }}</span> }
@@ -55,8 +57,8 @@ import {LinkStore} from './link.store';
               <textarea id="dc" class="input" rows="3" [value]="store.decisionText()" (input)="store.decisionText.set($any($event.target).value)"></textarea></div>
             @if (store.decisionError()) { <div class="err" role="alert">{{ store.decisionError() }}</div> }
             <div class="row" style="justify-content:flex-end;gap:10px;flex-wrap:wrap">
-              <button type="button" class="btn btn-danger" [disabled]="store.busy()" (click)="store.decide('rejected')">Return to records officer</button>
-              <button type="button" class="btn btn-primary" [disabled]="store.busy()" (click)="store.decide('approved')">Approve version {{ d.versionNumber }}</button>
+              <button type="button" class="btn btn-danger" [disabled]="store.busy()" (click)="reviewing.decide('rejected')">Return to records officer</button>
+              <button type="button" class="btn btn-primary" [disabled]="store.busy()" (click)="reviewing.decide('approved')">Approve version {{ d.versionNumber }}</button>
             </div>
           </div>
         </form>
@@ -73,9 +75,9 @@ import {LinkStore} from './link.store';
       <div class="panel"><div class="panel-body stack" style="gap:6px">
         <b>Version {{ r.draft.versionNumber }} is a draft with the records officer</b>
         <span class="small muted">It comes here for approval once it is submitted.</span>
-        @if (store.lastReturn(); as ret) { <span class="small">Returned by {{ ret.byName }}: {{ ret.text }}</span> }
+        @if (reviewing.lastReturn(); as ret) { <span class="small">Returned by {{ ret.byName }}: {{ ret.text }}</span> }
       </div></div>
-    } @else if (store.lastApproval(); as a) {
+    } @else if (reviewing.lastApproval(); as a) {
       <div class="panel"><div class="panel-body stack" style="gap:10px">
         <b>Version {{ a.versionNumber }} approved: nothing is waiting for approval</b>
         <div class="kv">
@@ -100,4 +102,6 @@ import {LinkStore} from './link.store';
 })
 export class LinkReviewTabComponent {
   protected readonly store = inject(LinkStore);
+  protected readonly reviewing = inject(LinkReviewFlow);
+  protected readonly initials = initials;
 }

@@ -3,6 +3,8 @@ import {IconComponent} from '../../shared/icon.component';
 import {CanDirective} from '../../shared/can.directive';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
+import {LinkDocumentsSearch} from './link-documents-search';
+import {linkedText} from './link-format';
 
 /** Land record, Documents tab: the linked documents and, on a draft, adding documents from the EDRMS. */
 @Component({
@@ -22,12 +24,12 @@ import {LinkStore} from './link.store';
                   <td style="font-size:13.5px">{{ d.fields['property'] || '—' }}</td>
                   <td class="small muted num">{{ d.edrmsNo }} · v{{ d.version }}.0</td>
                   <td style="text-align:right;white-space:nowrap">
-                    @if (store.newer(d); as to) {
-                      @if (store.editable()) { <button class="btn btn-secondary" style="min-height:32px" appCan="record.link" [disabled]="store.busy()" (click)="store.refresh(d)">Use v{{ to }}.0</button> }
+                    @if (documents.newer(d); as to) {
+                      @if (store.editable()) { <button class="btn btn-secondary" style="min-height:32px" appCan="record.link" [disabled]="store.busy()" (click)="documents.refresh(d)">Use v{{ to }}.0</button> }
                       @else { <span class="tag tag-outline">v{{ to }}.0 in EDRMS</span> }
                     }
-                    <button class="btn btn-ghost btn-icon" title="View document" aria-label="View document" (click)="store.view(d.edrmsDocumentId, d.version)"><app-icon name="eye" [size]="17" /></button>
-                    @if (store.editable()) { <button class="btn btn-ghost btn-icon danger" title="Remove from record" aria-label="Remove from record" appCan="record.unlink" (click)="store.remove(d)"><app-icon name="x" [size]="17" /></button> }
+                    <button class="btn btn-ghost btn-icon" title="View document" aria-label="View document" (click)="documents.view(d.edrmsDocumentId, d.version)"><app-icon name="eye" [size]="17" /></button>
+                    @if (store.editable()) { <button class="btn btn-ghost btn-icon danger" title="Remove from record" aria-label="Remove from record" appCan="record.unlink" (click)="documents.remove(d)"><app-icon name="x" [size]="17" /></button> }
                   </td>
                 </tr>
               }
@@ -49,11 +51,11 @@ import {LinkStore} from './link.store';
           <div class="panel-body stack" style="gap:12px">
             <div class="row">
               <div class="seg">
-                <label class="seg-opt"><input type="radio" name="pf" [checked]="store.mode() === 'match'" (change)="store.setMode('match')">Matching this parcel</label>
-                <label class="seg-opt"><input type="radio" name="pf" [checked]="store.mode() === 'search'" (change)="store.setMode('search')">Search</label>
+                <label class="seg-opt"><input type="radio" name="pf" [checked]="store.mode() === 'match'" (change)="documents.setMode('match')">Matching this parcel</label>
+                <label class="seg-opt"><input type="radio" name="pf" [checked]="store.mode() === 'search'" (change)="documents.setMode('search')">Search</label>
               </div>
               @if (store.mode() === 'search') {
-                <div class="search" style="flex:1;min-width:220px"><app-icon name="search" [size]="15" /><input class="input" placeholder="Deed no., erf, party name or EDRMS ID" [value]="store.dq()" (input)="store.searchDocs($any($event.target).value)" aria-label="Search EDRMS documents"></div>
+                <div class="search" style="flex:1;min-width:220px"><app-icon name="search" [size]="15" /><input class="input" placeholder="Deed no., erf, party name or EDRMS ID" [value]="store.dq()" (input)="documents.searchDocs($any($event.target).value)" aria-label="Search EDRMS documents"></div>
               }
             </div>
             <div class="results">
@@ -63,12 +65,12 @@ import {LinkStore} from './link.store';
                     <span class="row" style="gap:8px"><b class="num">{{ p.ref || p.edrmsNo }}</b><span class="small muted">{{ store.typeLabel(p.docType) }} · {{ p.edrmsNo }}</span></span>
                     <span style="font-size:13px" class="ell">{{ p.property || p.title }}</span>
                     @for (why of p.reasons || []; track why) { <span class="small" style="color:var(--color-accent-700)">{{ why }}</span> }
-                    @if (p.linkedTo.length) { <span class="small muted">Also in {{ store.linkedText(p) }}</span> }
+                    @if (p.linkedTo.length) { <span class="small muted">Also in {{ linkedText(p) }}</span> }
                   </div>
                   <div class="row" style="gap:6px;flex-wrap:nowrap">
-                    <button class="btn btn-ghost btn-icon" title="Preview" aria-label="Preview" (click)="store.view(p.edrmsDocumentId)"><app-icon name="eye" [size]="17" /></button>
+                    <button class="btn btn-ghost btn-icon" title="Preview" aria-label="Preview" (click)="documents.view(p.edrmsDocumentId)"><app-icon name="eye" [size]="17" /></button>
                     @if (p.inThisRecord) { <span class="tag tag-info">In this record</span> }
-                    @else { <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="store.add(p)">+ Add</button> }
+                    @else { <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="documents.add(p)">+ Add</button> }
                   </div>
                 </div>
               } @empty {
@@ -96,4 +98,6 @@ import {LinkStore} from './link.store';
 })
 export class LinkDocumentsTabComponent {
   protected readonly store = inject(LinkStore);
+  protected readonly documents = inject(LinkDocumentsSearch);
+  protected readonly linkedText = linkedText;
 }

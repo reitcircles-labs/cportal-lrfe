@@ -3,6 +3,8 @@ import {IconComponent} from '../../shared/icon.component';
 import {CanDirective} from '../../shared/can.directive';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
+import {LinkLifecycle} from './link-lifecycle';
+import {extentText, statusOf, tenureLabel} from './link-format';
 
 /** Land record: the header of the open record, its actions, and its notes (returned, newer documents). */
 @Component({
@@ -15,13 +17,13 @@ import {LinkStore} from './link.store';
         <div class="row" style="gap:10px">
           <button class="btn btn-ghost btn-icon tog" (click)="store.listOpen.set(!store.listOpen())" [title]="store.listOpen() ? 'Hide record list' : 'Show record list'"><app-icon [name]="store.listOpen() ? 'panelClose' : 'panelOpen'" [size]="18" /></button>
           <span class="card-kicker num">{{ r.recordNo }} · {{ store.versionLabel() }}</span>
-          <span class="tag" [class]="'tag ' + store.statusOf(r).tag">{{ store.statusOf(r).label }}</span>
+          <span class="tag" [class]="'tag ' + statusOf(r).tag">{{ statusOf(r).label }}</span>
         </div>
         <h1 class="rt">{{ r.label }}</h1>
         <div class="meta">
           @if (store.data()?.parcel?.regDiv) { <span>Reg. division {{ store.data()!.parcel.regDiv }}{{ store.data()!.parcel.region ? ' · ' + store.data()!.parcel.region : '' }}</span> }
-          <span>Extent {{ store.extentText(store.data()?.extent) }}</span>
-          <span>{{ store.tenureLabel(store.data()?.tenure) }}</span>
+          <span>Extent {{ extentText(store.data()?.extent) }}</span>
+          <span>{{ tenureLabel(store.data()?.tenure) }}</span>
           <span>{{ store.docs().length }} linked document{{ store.docs().length === 1 ? '' : 's' }}</span>
           <span>Updated {{ store.fmt(r.updatedAt) }}</span>
         </div>
@@ -29,12 +31,12 @@ import {LinkStore} from './link.store';
       <div class="row">
         @if (store.editable()) {
           <button class="btn btn-secondary" appCan="record.link" (click)="store.tab.set('documents'); store.addOpen.set(true)"><app-icon name="search" [size]="16" />Add documents</button>
-          <button class="btn btn-primary" appCan="record.link" [disabled]="store.busy() || store.failing().length > 0" [title]="store.failing().length ? 'Every required check must pass first' : ''" (click)="store.submit()"><app-icon name="checkCircle" [size]="17" />Submit for review</button>
+          <button class="btn btn-primary" appCan="record.link" [disabled]="store.busy() || store.failing().length > 0" [title]="store.failing().length ? 'Every required check must pass first' : ''" (click)="lifecycle.submit()"><app-icon name="checkCircle" [size]="17" />Submit for review</button>
         } @else if (r.draftState === 'in_review') {
-          @if (store.isSubmitter()) { <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="store.withdraw()">Withdraw from review</button> }
+          @if (store.isSubmitter()) { <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="lifecycle.withdraw()">Withdraw from review</button> }
           <span class="small muted">Waiting for approval by a second person</span>
         } @else if (r.status === 'committed' && !r.draftVersion) {
-          <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="store.change()">Change record</button>
+          <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="lifecycle.change()">Change record</button>
         }
       </div>
     </header>
@@ -61,4 +63,8 @@ import {LinkStore} from './link.store';
 })
 export class LinkHeaderComponent {
   protected readonly store = inject(LinkStore);
+  protected readonly lifecycle = inject(LinkLifecycle);
+  protected readonly statusOf = statusOf;
+  protected readonly tenureLabel = tenureLabel;
+  protected readonly extentText = extentText;
 }

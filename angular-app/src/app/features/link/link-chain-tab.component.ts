@@ -2,6 +2,7 @@ import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
 import {IconComponent} from '../../shared/icon.component';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
+import {LinkDocumentsSearch} from './link-documents-search';
 
 /** Land record, Chain of title tab: the title deeds in order. */
 @Component({
@@ -15,7 +16,7 @@ import {LinkStore} from './link.store';
           <div class="spine"><i></i><b class="ok"></b>@if (!last) { <i style="flex:1"></i> }</div>
           <div class="evc">
             <div class="row" style="justify-content:space-between"><b>{{ store.typeLabel(e.docType) }} · <span class="num">{{ e.ref }}</span></b>
-              <button class="btn btn-ghost" style="min-height:30px" (click)="store.viewByNo(e.edrmsNo)"><app-icon name="eye" [size]="15" />View</button></div>
+              <button class="btn btn-ghost" style="min-height:30px" (click)="documents.viewByNo(e.edrmsNo)"><app-icon name="eye" [size]="15" />View</button></div>
             <div style="font-size:13.5px;color:var(--color-neutral-800)">
               {{ e.transferor ? e.transferor + ' → ' : '' }}{{ e.holders.join(', ') || '—' }}{{ e.regDate ? ' · registered ' + e.regDate : '' }}{{ e.priorTitle ? ' · held under ' + e.priorTitle : '' }}
             </div>
@@ -42,4 +43,5 @@ import {LinkStore} from './link.store';
 })
 export class LinkChainTabComponent {
   protected readonly store = inject(LinkStore);
+  protected readonly documents = inject(LinkDocumentsSearch);
 }

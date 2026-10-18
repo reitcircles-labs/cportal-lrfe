@@ -3,6 +3,8 @@ import {IconComponent} from '../../shared/icon.component';
 import {CanDirective} from '../../shared/can.directive';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
+import {LinkCreateFlow} from './link-create-flow';
+import {dot, statusOf} from './link-format';
 
 /** Land records: the list of records, with search and status filters. */
 @Component({
@@ -12,7 +14,7 @@ import {LinkStore} from './link.store';
     <div class="list-head">
       <div class="row" style="justify-content:space-between">
         <h4 style="margin:0">Land records</h4>
-        <button class="btn btn-primary" style="min-height:34px;padding:0 12px" appCan="record.create" (click)="store.openCreate()"><span style="font-size:18px;line-height:0">+</span>New record</button>
+        <button class="btn btn-primary" style="min-height:34px;padding:0 12px" appCan="record.create" (click)="creating.openCreate()"><span style="font-size:18px;line-height:0">+</span>New record</button>
       </div>
       <div class="search"><app-icon name="search" [size]="15" /><input class="input" placeholder="Record no., parcel, owner or deed" [value]="store.q()" (input)="store.search($any($event.target).value)" aria-label="Search land records"></div>
       <div class="chips">
@@ -24,12 +26,12 @@ import {LinkStore} from './link.store';
     <div class="list-body">
       @for (r of store.visible(); track r.id) {
         <button class="rec" [class.on]="r.id === store.selId()" (click)="store.select(r.id)">
-          <span class="d" [class]="'d ' + store.dot(r)"></span>
+          <span class="d" [class]="'d ' + dot(r)"></span>
           <span class="stack" style="gap:1px;min-width:0">
             <b class="ell">{{ r.label }}</b>
             <span class="small muted ell num">{{ r.recordNo }}</span>
           </span>
-          <span class="tag" [class]="'tag ' + store.statusOf(r).tag">{{ store.statusOf(r).label }}</span>
+          <span class="tag" [class]="'tag ' + statusOf(r).tag">{{ statusOf(r).label }}</span>
         </button>
       } @empty { <div class="small muted" style="padding:28px;text-align:center">{{ store.loading() ? 'Loading…' : 'No land records match.' }}</div> }
     </div>
@@ -55,4 +57,7 @@ import {LinkStore} from './link.store';
 })
 export class LinkListComponent {
   protected readonly store = inject(LinkStore);
+  protected readonly creating = inject(LinkCreateFlow);
+  protected readonly statusOf = statusOf;
+  protected readonly dot = dot;
 }
