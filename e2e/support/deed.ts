@@ -8,9 +8,12 @@
  * need several deeds pass a deed number (put it in the file name too: the canned AI reads it from
  * there, see sampleDeed) and get distinct bytes from the marker printed in the footer.
  */
-import type { Browser } from '@playwright/test';
+import type {Browser} from '@playwright/test';
 
-const deedHtml = (deedNo: string, marker: string) => `<!doctype html><html><head><meta charset="utf-8"><style>
+const deedHtml = (
+  deedNo: string,
+  marker: string,
+) => `<!doctype html><html><head><meta charset="utf-8"><style>
   body { font: 13px/1.6 Georgia, serif; margin: 56px 64px; color: #111; }
   h1 { font-size: 20px; text-align: center; letter-spacing: .08em; margin: 0 0 4px; }
   .no { text-align: center; margin: 0 0 28px; }
@@ -34,12 +37,15 @@ const deedHtml = (deedNo: string, marker: string) => `<!doctype html><html><head
   <div class="foot">SAMPLE DOCUMENT FOR AUTOMATED TESTS · ALL NAMES AND NUMBERS ARE FICTITIOUS${marker ? ` · ${marker}` : ''}</div>
 </body></html>`;
 
-export async function sampleDeedPdf(browser: Browser, { deedNo = 'T 2210/2008', marker = '' } = {}): Promise<Buffer> {
-    const page = await browser.newPage();
-    try {
-        await page.setContent(deedHtml(deedNo, marker));
-        return await page.pdf({ format: 'A4', printBackground: true });
-    } finally {
-        await page.close();
-    }
+export async function sampleDeedPdf(
+  browser: Browser,
+  {deedNo = 'T 2210/2008', marker = ''} = {},
+): Promise<Buffer> {
+  const page = await browser.newPage();
+  try {
+    await page.setContent(deedHtml(deedNo, marker));
+    return await page.pdf({format: 'A4', printBackground: true});
+  } finally {
+    await page.close();
+  }
 }
