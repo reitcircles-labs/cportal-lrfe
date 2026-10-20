@@ -35,6 +35,10 @@ export function defineModels(sequelize) {
       // ended "new document" flags (API-766): dismissed [{ flag, outcome, dismissedAt, dismissedById, dismissedByName, reason }]
       // or added to a draft [{ flag, outcome, versionNumber, at, byId, byName }]
       flagLog: {type: DataTypes.JSONB, allowNull: false, defaultValue: []},
+      // in the bin since (API-767): a record never approved, moved there with a reason
+      discardedAt: d(),
+      // moved to the bin, restored, a change discarded: [{ action, at, byId, byName, reason, … }] (API-767)
+      binLog: {type: DataTypes.JSONB, allowNull: false, defaultValue: []},
       // parcel, record number, owners' names and ID numbers of the current version and the draft
       searchText: {type: DataTypes.TEXT, allowNull: false, defaultValue: ''},
       createdAt: {type: DataTypes.DATE, allowNull: false},

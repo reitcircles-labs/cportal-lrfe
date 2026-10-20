@@ -64,6 +64,8 @@ export const readingMethods = {
       flags: record.flags || [],
       // ended "new document" flags: dismissed (who, when, why) or added to a draft (API-766)
       flagLog: record.flagLog || [],
+      // moved to the bin, restored, a change discarded: who, when and why (API-767)
+      binLog: record.binLog || [],
       versions: versions.reverse(),
     };
   },
@@ -76,7 +78,7 @@ export const readingMethods = {
   },
 
   async addComment(recordId, {body}, actor = SYSTEM) {
-    const record = await this.requireRecord(recordId);
+    const record = await this.requireActive(recordId);
     const text = String(body ?? '').trim();
     if (!text) throw new BadRequestError('The comment is empty');
     return this.repo.addComment({
@@ -317,6 +319,10 @@ export const readingMethods = {
       newDocuments: (r.flags || []).filter(f => f.type === 'document_filed')
         .length,
       flags: r.flags || [],
+      // in the bin since (API-767)
+      inBin: !!r.discardedAt,
+      discardedAt: r.discardedAt ?? null,
+      bin: r.discardedAt ? binNote(r) : null,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     };
@@ -332,11 +338,23 @@ export const readingMethods = {
         'in_review',
         'needs_review',
         'new_document',
+        'in_bin',
       ].includes(status)
     ) {
       throw new BadRequestError(`Unknown status "${status}"`);
     }
     // in_review / needs_review / new_document filter in the service: small lists, simple repos
+    // the bin is its own list: records in it are in no other (API-767)
+    if (status === 'in_bin') {
+      const res = await this.repo.listRecords({
+        q,
+        match,
+        inBin: true,
+        limit,
+        offset,
+      });
+      return {items: res.items.map(r => this.summary(r)), total: res.total};
+    }
     const base = ['draft', 'committed'].includes(status) ? status : undefined;
     const res = await this.repo.listRecords({
       q,
@@ -444,6 +462,14 @@ export const readingMethods = {
     };
   },
 };
+
+/** Who moved a record in the bin there, when and why (API-767). */
+function binNote(r) {
+  const moved = [...(r.binLog || [])]
+    .reverse()
+    .find(e => e.action === 'discarded');
+  return {at: moved.at, byName: moved.byName, reason: moved.reason};
+}
 
 /** The parcel's number alone (erf, farm or unit number): the broadest search for documents about it. */
 function numberWords(parcel) {

@@ -18,6 +18,8 @@ const PARCEL_LABELS: Record<string, string> = {
 
 /** Whether a land record belongs under a status filter of the list. */
 export function matches(r: RecordSummary, f: SFilter) {
+  // a record in the bin is under "In the bin" only (API-767)
+  if (f === 'in_bin' || r.inBin) return f === 'in_bin' && r.inBin;
   if (f === 'all') return true;
   if (f === 'draft') return r.status === 'draft';
   if (f === 'committed') return r.status === 'committed';
@@ -28,6 +30,7 @@ export function matches(r: RecordSummary, f: SFilter) {
 
 /** A land record's status as the list and the header show it: its label and tag colour. */
 export function statusOf(r: RecordSummary): {label: string; tag: string} {
+  if (r.inBin) return {label: 'In the bin', tag: 'tag-neutral'};
   if (r.needsReview) return {label: 'Needs review', tag: 'tag-outline'};
   if (r.draftState === 'in_review') {
     return {label: 'In review', tag: 'tag-info'};

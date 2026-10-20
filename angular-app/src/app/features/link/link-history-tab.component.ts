@@ -10,7 +10,10 @@ import {ProofDownloadComponent} from '../../shared/proof-download.component';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
 
-/** Land record, History tab: the committed versions with their seals and proofs, and the new documents dismissed (API-766). */
+/**
+ * Land record, History tab: the committed versions with their seals and proofs, the bin and the
+ * discarded changes (API-767), and the new documents dismissed (API-766).
+ */
 @Component({
   selector: 'app-link-history-tab',
   imports: [RecordDiffComponent, ProofLinkComponent, ProofDownloadComponent],
@@ -36,6 +39,21 @@ import {LinkStore} from './link.store';
         } @empty { <div class="small muted" style="text-align:center;padding:12px">{{ store.history() ? 'No committed version yet.' : store.historyFailed() ? 'The history could not be loaded.' : 'Loading…' }}</div> }
       </div>
     </div>
+    @if (store.history()?.binLog?.length) {
+      <div class="panel">
+        <div class="panel-head"><h4>Bin and discarded changes</h4></div>
+        <div class="panel-body stack" style="gap:12px">
+          @for (e of store.history()!.binLog; track $index) {
+            <div class="hv">
+              <b>{{ e.action === 'discarded' ? 'Moved to the bin' : e.action === 'restored' ? 'Restored from the bin' : 'Draft version ' + e.versionNumber + ' discarded' }}</b>
+              <div class="small muted">{{ store.fmt(e.at) }} by {{ e.byName || '—' }}</div>
+              @if (e.reason) { <div class="small">Reason: {{ e.reason }}</div> }
+              @if (e.diff) { <app-record-diff [diff]="e.diff" /> }
+            </div>
+          }
+        </div>
+      </div>
+    }
     @if (dismissed().length) {
       <div class="panel">
         <div class="panel-head"><h4>Dismissed new documents</h4></div>

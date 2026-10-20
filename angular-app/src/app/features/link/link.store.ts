@@ -27,7 +27,13 @@ export type Tab =
   'documents' | 'chain' | 'details' | 'history' | 'discussion' | 'review';
 export type DFilter = 'all' | 'comments' | 'decisions';
 export type SFilter =
-  'all' | 'draft' | 'in_review' | 'committed' | 'needs_review' | 'new_document';
+  | 'all'
+  | 'draft'
+  | 'in_review'
+  | 'committed'
+  | 'needs_review'
+  | 'new_document'
+  | 'in_bin';
 
 /**
  * The land record page's shared state: the list, the open record and its tabs, and the actions
@@ -96,6 +102,9 @@ export class LinkStore {
   // dismissing a "new document" flag (API-766)
   dismissing = signal<Flag | null>(null);
   dismissReason = signal('');
+  // the bin (API-767): moving the record there, or discarding its open draft
+  binning = signal<'record' | 'draft' | null>(null);
+  binReason = signal('');
   // create dialog (its own state is in LinkCreateFlow); the kind of parcel is kept between openings
   createOpen = signal(false);
   kinds = signal<ParcelKind[]>([]);
@@ -119,7 +128,7 @@ export class LinkStore {
   data = computed(() => this.shown()?.data ?? null);
   editable = computed(() => {
     const r = this.rec();
-    return !!r?.draft && r.draft.state === 'draft';
+    return !!r?.draft && r.draft.state === 'draft' && !r.inBin;
   });
   docs = computed<PinnedDocument[]>(() => this.data()?.documents ?? []);
   owners = computed<Owner[]>(() => this.data()?.owners ?? []);
@@ -155,7 +164,7 @@ export class LinkStore {
     const rows = this.records();
     const n = (f: SFilter) => rows.filter(r => matches(r, f)).length;
     return [
-      {id: 'all' as SFilter, label: 'All', n: rows.length},
+      {id: 'all' as SFilter, label: 'All', n: n('all')},
       {id: 'draft' as SFilter, label: 'Draft', n: n('draft')},
       {id: 'in_review' as SFilter, label: 'In review', n: n('in_review')},
       {id: 'committed' as SFilter, label: 'Committed', n: n('committed')},
@@ -169,6 +178,7 @@ export class LinkStore {
         label: 'New document',
         n: n('new_document'),
       },
+      {id: 'in_bin' as SFilter, label: 'In the bin', n: n('in_bin')},
     ];
   });
   visible = computed(() => this.records().filter(r => matches(r, this.sf())));
@@ -181,8 +191,13 @@ export class LinkStore {
 
   async loadList() {
     try {
-      const {items} = await this.records$.list(this.q().trim() || undefined);
-      this.records.set(items);
+      // the bin is listed apart (API-767); its records show under "In the bin" only
+      const q = this.q().trim() || undefined;
+      const [{items}, bin] = await Promise.all([
+        this.records$.list(q),
+        this.records$.list(q, 'in_bin'),
+      ]);
+      this.records.set([...items, ...bin.items]);
       if (!this.selId() && items.length) this.select(items[0].id);
     } catch (e) {
       this.fail('Could not load land records', e);

@@ -66,6 +66,7 @@ export async function recordsRoutes(app, {service}) {
                 'in_review',
                 'needs_review',
                 'new_document',
+                'in_bin',
               ],
             },
             match: {type: 'string', enum: ['all', 'parcel'], default: 'all'},
@@ -324,6 +325,32 @@ export async function recordsRoutes(app, {service}) {
     '/records/:id/draft/withdraw',
     {onRequest: app.requirePerm('record.link'), schema: idParams()},
     async req => service.withdraw(req.params.id, actorOf(req)),
+  );
+
+  // the bin (API-767): a record never approved moved there and back, an abandoned change discarded
+  const withReason = {
+    ...idParams(),
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['reason'],
+      properties: {reason: {type: 'string', minLength: 1, maxLength: 1000}},
+    },
+  };
+  app.post(
+    '/records/:id/bin',
+    {onRequest: app.requirePerm('record.create'), schema: withReason},
+    async req => service.moveToBin(req.params.id, req.body, actorOf(req)),
+  );
+  app.post(
+    '/records/:id/restore',
+    {onRequest: app.requirePerm('record.create'), schema: idParams()},
+    async req => service.restoreFromBin(req.params.id, actorOf(req)),
+  );
+  app.post(
+    '/records/:id/draft/discard',
+    {onRequest: app.requirePerm('record.create'), schema: withReason},
+    async req => service.discardDraft(req.params.id, req.body, actorOf(req)),
   );
 
   // a "new document" flag dismissed, with the reason (API-766)

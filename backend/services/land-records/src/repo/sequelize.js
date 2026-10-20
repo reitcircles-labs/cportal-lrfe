@@ -45,6 +45,12 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.query(
         `ALTER TABLE "${SCHEMA}"."land_record" ADD COLUMN IF NOT EXISTS "flagLog" JSONB NOT NULL DEFAULT '[]'::jsonb`,
       );
+      await sequelize.query(
+        `ALTER TABLE "${SCHEMA}"."land_record" ADD COLUMN IF NOT EXISTS "discardedAt" TIMESTAMPTZ`,
+      );
+      await sequelize.query(
+        `ALTER TABLE "${SCHEMA}"."land_record" ADD COLUMN IF NOT EXISTS "binLog" JSONB NOT NULL DEFAULT '[]'::jsonb`,
+      );
       // the audit service's backfill reads committed seals in this order (API-669)
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "record_version_seal_order" ON "${SCHEMA}"."record_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`,
@@ -73,8 +79,16 @@ export function createSequelizeRepo(sequelize) {
     async findRecord(where) {
       return plain(await m.Record.findOne({where}));
     },
-    async listRecords({q, status, match, limit = 50, offset = 0} = {}) {
-      const where = {};
+    async listRecords({
+      q,
+      status,
+      match,
+      inBin = false,
+      limit = 50,
+      offset = 0,
+    } = {}) {
+      // a record in the bin is listed only with `inBin` (API-767)
+      const where = {discardedAt: inBin ? {[Op.ne]: null} : null};
       if (status) where.status = status;
       if (q) {
         const like = `%${q.replace(/[%_\\]/g, '\\$&')}%`;
@@ -94,7 +108,10 @@ export function createSequelizeRepo(sequelize) {
       return {items: rows.map(plain), total: count};
     },
     async updateRecord(id, patch) {
-      const [n] = await m.Record.update(patch, {where: {id}});
+      // a parcel taken by another record meanwhile (restoring from the bin, API-767): a 409
+      const [n] = await uniqueToConflict(() =>
+        m.Record.update(patch, {where: {id}}),
+      );
       return n ? plain(await m.Record.findByPk(id)) : null;
     },
 
@@ -139,6 +156,14 @@ export function createSequelizeRepo(sequelize) {
         })
       ).map(plain);
     },
+    /** Remove a version that is still a draft (a change discarded, API-767); false if it is not. */
+    async deleteVersion(recordId, versionNumber) {
+      return (
+        (await m.Version.destroy({
+          where: {recordId, versionNumber, state: 'draft'},
+        })) > 0
+      );
+    },
     async addVersion(version) {
       return uniqueToConflict(async () =>
         plain(await m.Version.create(version)),
@@ -168,7 +193,7 @@ export function createSequelizeRepo(sequelize) {
                    FROM "${SCHEMA}"."record_version" v
                    JOIN "${SCHEMA}"."land_record" r ON r."id" = v."recordId"
                    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(v."data"->'documents', '[]'::jsonb)) d
-                  WHERE v."state" <> 'superseded' AND d->>'edrmsDocumentId' IN (:ids)`,
+                  WHERE v."state" <> 'superseded' AND r."discardedAt" IS NULL AND d->>'edrmsDocumentId' IN (:ids)`,
         {replacements: {ids: documentIds}},
       );
       for (const {documentId, ...rest} of rows) {

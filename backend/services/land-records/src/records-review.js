@@ -224,7 +224,8 @@ export const reviewMethods = {
 
   /** The version in review, for a decision from bpm. */
   async requireInReview(recordId, versionNumber) {
-    const record = await this.requireRecord(recordId);
+    // a record in the bin is never approved (API-767)
+    const record = await this.requireActive(recordId);
     const version = await this.repo.getVersion(recordId, versionNumber);
     if (!version) throw new NotFoundError('Version not found');
     return {record, version};
@@ -592,7 +593,7 @@ export const reviewMethods = {
    * (The log also keeps the flags whose document went into a draft: `outcome: 'added'`.)
    */
   async dismissFlag(recordId, {edrmsDocumentId, reason}, actor = SYSTEM) {
-    const record = await this.requireRecord(recordId);
+    const record = await this.requireActive(recordId);
     const why = String(reason ?? '').trim();
     if (!why) throw new BadRequestError('Give the reason for dismissing it');
     const flag = (record.flags || []).find(
@@ -631,7 +632,7 @@ export const reviewMethods = {
  * document is in the record at an older version than the corrected one; a "new document" flag
  * while that document is not in the record.
  */
-function openFlags(flags = [], data) {
+export function openFlags(flags = [], data) {
   const docs = data.documents || [];
   return flags.filter(f => {
     if (f.type === 'document_updated') {

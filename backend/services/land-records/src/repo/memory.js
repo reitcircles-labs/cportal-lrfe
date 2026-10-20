@@ -52,13 +52,21 @@ export function createMemoryRepo() {
       const [k, v] = Object.entries(where)[0];
       return clone([...records.values()].find(r => r[k] === v)) ?? null;
     },
-    async listRecords({q, status, match, limit = 50, offset = 0} = {}) {
+    async listRecords({
+      q,
+      status,
+      match,
+      inBin = false,
+      limit = 50,
+      offset = 0,
+    } = {}) {
       const needle = q?.toLowerCase();
       const fields = r =>
         match === 'parcel'
           ? [r.recordNo, r.label]
           : [r.recordNo, r.label, r.searchText];
       const all = [...records.values()]
+        .filter(r => !!r.discardedAt === inBin)
         .filter(r => !status || r.status === status)
         .filter(
           r =>
@@ -117,6 +125,18 @@ export function createMemoryRepo() {
         .sort((a, b) => a.versionNumber - b.versionNumber)
         .map(clone);
     },
+    /** Remove a version that is still a draft (a change discarded, API-767); false if it is not. */
+    async deleteVersion(recordId, versionNumber) {
+      const i = versions.findIndex(
+        v =>
+          v.recordId === recordId &&
+          v.versionNumber === versionNumber &&
+          v.state === 'draft',
+      );
+      if (i < 0) return false;
+      versions.splice(i, 1);
+      return true;
+    },
     async addVersion(version) {
       if (findVersion(version.recordId, version.versionNumber)) {
         throw new ConflictError(
@@ -145,7 +165,11 @@ export function createMemoryRepo() {
     async findRecordsPinning(documentIds) {
       const wanted = new Set(documentIds);
       const out = new Map();
-      for (const v of versions.filter(x => x.state !== 'superseded')) {
+      // not a record in the bin: its documents are free again (API-767)
+      const live = versions.filter(
+        x => x.state !== 'superseded' && !records.get(x.recordId)?.discardedAt,
+      );
+      for (const v of live) {
         for (const d of v.data?.documents || []) {
           if (!wanted.has(d.edrmsDocumentId)) continue;
           const r = records.get(v.recordId);

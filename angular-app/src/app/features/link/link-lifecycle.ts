@@ -3,7 +3,10 @@ import {Flag, RecordsApi} from '../../api/records.api';
 import {ConfirmService} from '../../state/confirm.service';
 import {LinkStore} from './link.store';
 
-/** Land record: submitting a draft for review, withdrawing it, and opening a change. */
+/**
+ * Land record: submitting a draft for review, withdrawing it, opening a change, adding or dismissing
+ * a new document (API-766), and the bin (API-767).
+ */
 @Injectable()
 export class LinkLifecycle {
   private readonly store = inject(LinkStore);
@@ -97,6 +100,53 @@ export class LinkLifecycle {
     ) {
       this.store.addOpen.set(true);
       this.store.loadFound();
+    }
+  }
+
+  // ---------------------------------------------------------------- the bin (API-767)
+
+  /** Open the bin dialog: to discard the open draft of an approved record, else to move the record to the bin. */
+  askBin() {
+    this.store.binReason.set('');
+    this.store.binning.set(
+      this.store.rec()?.currentVersion ? 'draft' : 'record',
+    );
+  }
+
+  /** Move the record to the bin, or discard its open draft: what the bin dialog was opened for. */
+  async bin() {
+    const what = this.store.binning();
+    const reason = this.store.binReason().trim();
+    if (!what || !reason) return;
+    const r = this.store.rec()!;
+    const done = await this.store.act(
+      x =>
+        what === 'record'
+          ? this.records$.moveToBin(x.id, reason)
+          : this.records$.discardDraft(x.id, reason),
+      what === 'record'
+        ? `${r.label} moved to the bin`
+        : `Draft version ${r.draftVersion} discarded; version ${r.currentVersion} stays current`,
+    );
+    if (done) {
+      this.store.binning.set(null);
+      this.store.binReason.set('');
+      this.store.loadFound();
+      if (this.store.history()) this.store.loadHistory();
+    }
+  }
+
+  /** Take the record out of the bin, as it was. */
+  async restore() {
+    const r = this.store.rec()!;
+    if (
+      await this.store.act(
+        x => this.records$.restore(x.id),
+        `${r.label} restored`,
+      )
+    ) {
+      this.store.loadFound();
+      if (this.store.history()) this.store.loadHistory();
     }
   }
 

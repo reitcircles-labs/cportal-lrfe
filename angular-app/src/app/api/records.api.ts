@@ -5,7 +5,12 @@ import {ApiService} from './api.service';
 /** Types and calls of the land-records service (gateway prefix /api/records). */
 
 export type RecordStatusFilter =
-  'draft' | 'committed' | 'in_review' | 'needs_review' | 'new_document';
+  | 'draft'
+  | 'committed'
+  | 'in_review'
+  | 'needs_review'
+  | 'new_document'
+  | 'in_bin';
 
 export interface Source {
   from: 'document' | 'manual';
@@ -155,6 +160,10 @@ export interface RecordSummary {
   needsReview: boolean;
   /** Documents filed for the parcel that are not in the record yet. */
   newDocuments: number;
+  /** Moved to the bin (API-767): in no list but the bin's, and not changed until restored. */
+  inBin: boolean;
+  discardedAt: string | null;
+  bin: {at: string; byName: string | null; reason: string} | null;
   flags: Flag[];
   createdAt: string;
   updatedAt: string;
@@ -227,7 +236,18 @@ export interface History {
   intact: boolean;
   flags: Flag[];
   flagLog: FlagLogEntry[];
+  binLog: BinLogEntry[];
   versions: HistoryVersion[];
+}
+/** Moved to the bin, restored, or a change discarded (with what it changed): who, when, why. */
+export interface BinLogEntry {
+  action: 'discarded' | 'restored' | 'draft_discarded';
+  at: string;
+  byId: string;
+  byName: string | null;
+  reason?: string;
+  versionNumber?: number;
+  diff?: Diff;
 }
 export interface LandRecord extends RecordSummary {
   current: Version | null;
@@ -310,11 +330,21 @@ export class RecordsApi {
   catalogue() {
     return this.api.get<{parcelKinds: ParcelKind[]}>('/records/catalogue');
   }
-  list(q?: string) {
+  list(q?: string, status?: RecordStatusFilter) {
     return this.api.get<{items: RecordSummary[]; total: number}>('/records', {
       q,
+      status,
       limit: 200,
     });
+  }
+  moveToBin(id: string, reason: string) {
+    return this.api.post<LandRecord>(`/records/${id}/bin`, {reason});
+  }
+  restore(id: string) {
+    return this.api.post<LandRecord>(`/records/${id}/restore`);
+  }
+  discardDraft(id: string, reason: string) {
+    return this.api.post<LandRecord>(`/records/${id}/draft/discard`, {reason});
   }
   get(id: string) {
     return this.api.get<LandRecord>(`/records/${id}`);

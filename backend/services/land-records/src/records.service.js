@@ -16,8 +16,9 @@ import {
 } from './catalogue.js';
 import {parcelFromProperty, propertyMatches} from './parcel-match.js';
 import {checksFor, sameName, suggestFromDocuments} from './derive.js';
+import {diffVersions} from './diff.js';
 import {readingMethods} from './records-reading.js';
-import {reviewMethods, settleFiled} from './records-review.js';
+import {openFlags, reviewMethods, settleFiled} from './records-review.js';
 import {searchTextOf} from './search-text.js';
 import {SYSTEM} from './system-actor.js';
 
@@ -206,7 +207,7 @@ export class RecordsService {
 
   /** The record's open draft, which must not be in review. */
   async requireDraft(recordId) {
-    const record = await this.requireRecord(recordId);
+    const record = await this.requireActive(recordId);
     if (!record.draftVersion) {
       throw new ConflictError('The record has no open draft');
     }
@@ -459,7 +460,7 @@ export class RecordsService {
    * version stays current until the new one is approved. One open draft per record.
    */
   async openDraft(recordId, actor = SYSTEM) {
-    const record = await this.requireRecord(recordId);
+    const record = await this.requireActive(recordId);
     if (record.draftVersion) {
       throw new ConflictError(
         `The record already has an open draft (version ${record.draftVersion})`,
@@ -519,6 +520,178 @@ export class RecordsService {
           versionNumber: n,
           revision: 1,
           change,
+        },
+        {actor},
+      );
+    });
+    return this.getRecord(recordId);
+  }
+
+  // ---------------------------------------------------------------- the bin (API-767)
+
+  /** A record that is not in the bin: one in the bin cannot be changed until it is restored. */
+  async requireActive(recordId) {
+    const record = await this.requireRecord(recordId);
+    if (record.discardedAt) {
+      throw new ConflictError('The record is in the bin: restore it first');
+    }
+    return record;
+  }
+
+  /**
+   * Move a record that was never approved to the bin, with the reason. Nothing of it was sealed
+   * or anchored. It is kept, not deleted: it leaves the lists, and its parcel and documents are
+   * free again (a new record can be made for the parcel). Its record number stays used.
+   */
+  async moveToBin(recordId, {reason} = {}, actor = SYSTEM) {
+    const record = await this.requireActive(recordId);
+    if (record.currentVersion) {
+      throw new ConflictError(
+        'An approved record cannot go to the bin: change it with a new version',
+      );
+    }
+    if (record.draftState === 'in_review') {
+      throw new ConflictError('The draft is in review: withdraw it first');
+    }
+    const why = requireReason(reason);
+    const now = this.clock();
+    const entry = this.entry(actor, {
+      action: 'discarded',
+      reason: why,
+      parcelKey: record.parcelKey,
+    });
+    // the record and its event are committed together (API-613)
+    await this.atomic(async () => {
+      await this.repo.updateRecord(recordId, {
+        discardedAt: now,
+        // the parcel is free for a new record while this one is in the bin
+        parcelKey: `${record.parcelKey}~bin~${record.id}`,
+        binLog: [...(record.binLog || []), entry],
+        updatedAt: now,
+      });
+      await this.events?.publish(
+        'records.record.discarded',
+        {recordId, recordNo: record.recordNo, reason: why},
+        {actor},
+      );
+    });
+    return this.getRecord(recordId);
+  }
+
+  /** Take a record out of the bin, as it was: refused when its parcel has another record by now. */
+  async restoreFromBin(recordId, actor = SYSTEM) {
+    const record = await this.requireRecord(recordId);
+    if (!record.discardedAt) {
+      throw new ConflictError('The record is not in the bin');
+    }
+    const moved = [...(record.binLog || [])]
+      .reverse()
+      .find(e => e.action === 'discarded');
+    const other = await this.repo.findRecord({parcelKey: moved.parcelKey});
+    if (other) {
+      throw new ConflictError(
+        `${record.label} has another land record now (${other.recordNo}): this one cannot be restored`,
+        {recordId: other.id, recordNo: other.recordNo},
+      );
+    }
+    const now = this.clock();
+    const entry = this.entry(actor, {action: 'restored'});
+    await this.atomic(async () => {
+      await this.repo.updateRecord(recordId, {
+        discardedAt: null,
+        parcelKey: moved.parcelKey,
+        binLog: [...record.binLog, entry],
+        updatedAt: now,
+      });
+      await this.events?.publish(
+        'records.record.restored',
+        {recordId, recordNo: record.recordNo},
+        {actor},
+      );
+    });
+    return this.getRecord(recordId);
+  }
+
+  /**
+   * Discard the open draft of an approved record (a change that was abandoned), with the reason.
+   * The current version stays as it is and a new change can be opened. The draft is kept in the
+   * record's bin log: what it changed, its change log, who discarded it, when and why.
+   */
+  async discardDraft(recordId, {reason} = {}, actor = SYSTEM) {
+    const record = await this.requireActive(recordId);
+    if (!record.currentVersion) {
+      throw new ConflictError(
+        'The record was never approved: move it to the bin instead',
+      );
+    }
+    if (!record.draftVersion) {
+      throw new ConflictError('The record has no open draft');
+    }
+    if (record.draftState === 'in_review') {
+      throw new ConflictError('The draft is in review: withdraw it first');
+    }
+    const why = requireReason(reason);
+    const [current, draft] = await Promise.all([
+      this.repo.getVersion(recordId, record.currentVersion),
+      this.repo.getVersion(recordId, record.draftVersion),
+    ]);
+    // the record takes the current version's parcel again (the draft may have changed it)
+    const label = parcelLabel(current.data.parcel);
+    const key = parcelKey(current.data.parcel);
+    if (key !== record.parcelKey) {
+      const other = await this.repo.findRecord({parcelKey: key});
+      if (other && other.id !== recordId) {
+        throw new ConflictError(
+          `${label} has another land record now (${other.recordNo}): this draft cannot be discarded`,
+          {recordId: other.id, recordNo: other.recordNo},
+        );
+      }
+    }
+    const now = this.clock();
+    const entry = this.entry(actor, {
+      action: 'draft_discarded',
+      reason: why,
+      versionNumber: draft.versionNumber,
+      diff: diffVersions(current.data, draft.data),
+      changes: draft.changes || [],
+    });
+    // the record, the draft's removal and the event are committed together (API-613)
+    await this.atomic(async () => {
+      // only while it is still a draft: submitted meanwhile, it is not discarded
+      if (!(await this.repo.deleteVersion(recordId, draft.versionNumber))) {
+        throw new ConflictError(
+          'The draft was submitted meanwhile: withdraw it first',
+        );
+      }
+      // "new document" flags whose documents were only in this draft come back (API-766), and
+      // the flags of the current version are the ones still open
+      const settled = settleFiled(
+        record,
+        current.data,
+        draft.versionNumber,
+        entry,
+      );
+      await this.repo.updateRecord(recordId, {
+        draftVersion: null,
+        draftState: null,
+        label,
+        parcelKey: key,
+        searchText: searchTextOf(
+          {...record, label, parcelKey: key},
+          current.data,
+        ),
+        binLog: [...(record.binLog || []), entry],
+        updatedAt: now,
+        ...settled,
+        flags: openFlags(settled.flags ?? record.flags, current.data),
+      });
+      await this.events?.publish(
+        'records.draft.discarded',
+        {
+          recordId,
+          recordNo: record.recordNo,
+          versionNumber: draft.versionNumber,
+          reason: why,
         },
         {actor},
       );
@@ -647,6 +820,13 @@ export class RecordsService {
     }
     return this.edrms;
   }
+}
+
+/** A reason that is not empty, trimmed. */
+function requireReason(reason) {
+  const why = String(reason ?? '').trim();
+  if (!why) throw new BadRequestError('Give the reason');
+  return why;
 }
 
 // Reviewing (submit, approve, return) and reading (records, versions, history, comments,

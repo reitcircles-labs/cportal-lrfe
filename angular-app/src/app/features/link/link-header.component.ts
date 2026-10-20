@@ -10,7 +10,7 @@ import {extentText, statusOf, tenureLabel} from './link-format';
 /**
  * Land record: the header of the open record, its actions, and its notes: returned by the
  * reviewer, a newer version of a linked document, a new document filed for the parcel (API-766)
- * with adding or dismissing it.
+ * with adding or dismissing it, and the bin (API-767): moving there, restoring, discarding a draft.
  */
 @Component({
   selector: 'app-link-header',
@@ -34,7 +34,10 @@ import {extentText, statusOf, tenureLabel} from './link-format';
         </div>
       </div>
       <div class="row">
-        @if (store.editable()) {
+        @if (r.inBin) {
+          <button class="btn btn-secondary" appCan="record.create" [disabled]="store.busy()" (click)="lifecycle.restore()">Restore</button>
+        } @else if (store.editable()) {
+          <button class="btn btn-ghost danger" appCan="record.create" [disabled]="store.busy()" (click)="lifecycle.askBin()">{{ r.currentVersion ? 'Discard draft' : 'Move to bin' }}</button>
           <button class="btn btn-secondary" appCan="record.link" (click)="store.tab.set('documents'); store.addOpen.set(true)"><app-icon name="search" [size]="16" />Add documents</button>
           <button class="btn btn-primary" appCan="record.link" [disabled]="store.busy() || store.failing().length > 0" [title]="store.failing().length ? 'Every required check must pass first' : ''" (click)="lifecycle.submit()"><app-icon name="checkCircle" [size]="17" />Submit for review</button>
         } @else if (r.draftState === 'in_review') {
@@ -46,6 +49,10 @@ import {extentText, statusOf, tenureLabel} from './link-format';
       </div>
     </header>
 
+    @if (r.bin; as b) {
+      <div class="note warn" role="status"><b>In the bin since {{ store.fmt(b.at) }}{{ b.byName ? ', moved by ' + b.byName : '' }}.</b> Reason: {{ b.reason }}
+        <div class="small" style="margin-top:2px">It cannot be changed until it is restored.</div></div>
+    }
     @if (r.draft?.reviewComment && r.draft?.state === 'draft') {
       <div class="note warn" role="status"><b>Returned by the reviewer:</b> {{ r.draft!.reviewComment }}</div>
     }

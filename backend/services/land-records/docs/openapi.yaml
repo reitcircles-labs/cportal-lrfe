@@ -71,8 +71,8 @@ paths:
       description: >-
         `{ items, total }`. `q` searches the record number, the parcel, owners' names and ID numbers, and document references. `status`:
         `draft` (never committed), `committed`, `in_review` (a version waits for approval), `needs_review` (a linked document was
-        corrected), `new_document` (a document filed for the parcel is not in the record yet). Each record has `needsReview` and
-        `newDocuments`.
+        corrected), `new_document` (a document filed for the parcel is not in the record yet), `in_bin` (records moved to the bin; they are
+        in no other list). Each record has `needsReview`, `newDocuments` and `inBin`.
 
 
         **Access:** Signed-in user with permission `record.view`, or a service token from `audit`.
@@ -95,6 +95,7 @@ paths:
               - in_review
               - needs_review
               - new_document
+              - in_bin
         - name: match
           in: query
           required: false
@@ -758,7 +759,8 @@ paths:
       summary: "History: every committed version"
       description: >-
         `{ intact, flags, flagLog, versions }` (`flagLog`: ended "new document" flags, `outcome` `dismissed` with who, when and why, or
-        `added` to a draft), versions newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff`
+        `added` to a draft; `binLog`: moved to the bin, restored, a change discarded, with who, when and why, and for a discarded change its
+        `diff` and change log), versions newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff`
         against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next
         anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.
 
@@ -1045,6 +1047,197 @@ paths:
         allOf:
           - record.link
       x-gateway-path: /api/records/{id}/draft/withdraw
+  /records/{id}/bin:
+    post:
+      tags:
+        - Records
+      summary: Move a record that was never approved to the bin, with the reason
+      description: >-
+        `{ reason }`. Only a record without an approved version, and not in review. It is kept: it leaves the lists (`status=in_bin` lists
+        it), its parcel and documents are free again, its record number stays used. 409 otherwise.
+
+
+        **Access:** Signed-in user with permission `record.create`.
+      operationId: postRecordsIdBin
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.create
+      x-gateway-path: /api/records/{id}/bin
+  /records/{id}/restore:
+    post:
+      tags:
+        - Records
+      summary: Restore a record from the bin
+      description: |-
+        As it was. 409 with `recordId` and `recordNo` when its parcel has another record by now.
+
+        **Access:** Signed-in user with permission `record.create`.
+      operationId: postRecordsIdRestore
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.create
+      x-gateway-path: /api/records/{id}/restore
+  /records/{id}/draft/discard:
+    post:
+      tags:
+        - Records
+      summary: Discard the open draft of an approved record, with the reason
+      description: >-
+        `{ reason }`. The current version stays; a new change can be opened. The draft is kept in `binLog` (its `diff` against the current
+        version and its change log). Not for a draft in review (withdraw it first). 409 otherwise.
+
+
+        **Access:** Signed-in user with permission `record.create`.
+      operationId: postRecordsIdDraftDiscard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.create
+      x-gateway-path: /api/records/{id}/draft/discard
   /records/{id}/flags/dismiss:
     post:
       tags:

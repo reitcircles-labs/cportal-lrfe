@@ -204,6 +204,24 @@ reason (`POST /records/:id/flags/dismiss`); it moves to `flagLog` as `dismissed`
 why. Either way the same document never flags that record again. The list filter `status=new_document` gives the
 records with such a flag; each record has `newDocuments` (the count) besides `needsReview`.
 
+## 8b. The bin (API-767)
+
+A record that was never approved (only draft v1, not in review) can be moved to the bin with a reason
+(`POST /records/:id/bin`). Nothing of it was sealed or anchored. It is kept, not deleted: `discardedAt`
+is set, it leaves every list but `status=in_bin`, its parcel key is set aside so a new record can be
+made for the parcel, and its documents are free again (no longer "linked to" it). Its record number
+stays used. It cannot be changed or commented on while in the bin. `POST /records/:id/restore` brings
+it back as it was, unless its parcel has another record by now (409 naming it).
+
+An abandoned change of an approved record is discarded with a reason (`POST /records/:id/draft/discard`):
+the draft vN+1 is removed, the record takes the current version's parcel again, and a new change can be
+opened. An approved record never goes to the bin.
+
+Each of these is kept in the record's `binLog` with who, when and why (for a discarded change also its
+`diff` against the current version and its change log), shown with the history, and published
+(`records.record.discarded`, `records.record.restored`, `records.draft.discarded`). Permission:
+`record.create`.
+
 ## 9. Finding documents
 
 Search over filed documents by their verified metadata (deed or diagram number, property, owner
@@ -232,6 +250,8 @@ checks, is logged in the version's `changes` (who, what, when) and published as 
 | `POST /records/:id/draft/documents/:edrmsDocumentId/refresh {revision}` | `record.link` | adopt a document's newer EDRMS version |
 | `GET /records/:id/history` | `record.view` | committed versions with who, when, changes and seal check |
 | `POST /records/:id/flags/dismiss {edrmsDocumentId, reason}` | `record.link` | dismiss a "new document" flag, with the reason (API-766) |
+| `POST /records/:id/bin {reason}` · `POST /records/:id/restore` | `record.create` | move a never-approved record to the bin · restore it (API-767) |
+| `POST /records/:id/draft/discard {reason}` | `record.create` | discard the open draft of an approved record (API-767) |
 | `POST /records/:id/draft/submit {revision}` · `…/withdraw` | `record.link` | submit for review · withdraw (submitter only) |
 | `GET /records/:id/review` | `record.view` | what the reviewer sees: version, checks, overrides, difference from the current version |
 | `GET /records/:id/comments` · `POST` | `record.view` · `record.comment` | discussion |

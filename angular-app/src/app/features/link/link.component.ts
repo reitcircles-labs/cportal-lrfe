@@ -20,6 +20,7 @@ import {LinkOwnersDialogComponent} from './link-owners-dialog.component';
 import {LinkReviewTabComponent} from './link-review-tab.component';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkSideComponent} from './link-side.component';
+import {LinkBinDialogComponent} from './link-bin-dialog.component';
 import {LinkStore} from './link.store';
 import {LinkDetailsForm} from './link-details-form';
 import {LinkOwnersEditor} from './link-owners-editor';
@@ -52,6 +53,7 @@ import {LinkLifecycle} from './link-lifecycle';
     LinkSideComponent,
     LinkCreateDialogComponent,
     LinkOwnersDialogComponent,
+    LinkBinDialogComponent,
   ],
   providers: [
     LinkStore,
@@ -105,6 +107,8 @@ import {LinkLifecycle} from './link-lifecycle';
     <app-link-create-dialog />
 
     <app-link-owners-dialog />
+
+    <app-link-bin-dialog />
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [
