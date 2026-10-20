@@ -30,6 +30,7 @@ import {dot, statusOf} from './link-format';
           <span class="stack" style="gap:1px;min-width:0">
             <b class="ell">{{ r.label }}</b>
             <span class="small muted ell num">{{ r.recordNo }}</span>
+            @if (r.newDocuments) { <span class="small newdoc">{{ r.newDocuments === 1 ? 'New document' : r.newDocuments + ' new documents' }}</span> }
           </span>
           <span class="tag" [class]="'tag ' + statusOf(r).tag">{{ statusOf(r).label }}</span>
         </button>
@@ -44,6 +45,7 @@ import {dot, statusOf} from './link-format';
     :host { display: contents; }
     .list-head { padding: 16px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--color-divider); }
     .list-body { flex: 1; overflow-y: auto; min-height: 0; }
+    .newdoc { color: var(--warn-fg); font-weight: 600; }
     .rec { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--color-divider); background: transparent; cursor: pointer; text-align: left; }
     .rec:hover { background: var(--color-neutral-100); }
     .rec.on { background: var(--color-accent-100); border-left-color: var(--color-accent); }

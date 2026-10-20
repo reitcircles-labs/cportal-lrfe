@@ -189,6 +189,21 @@ ID number shows as a new suggestion and an `overrides` warning until accepted), 
 through review. The flag clears when a committed version pins the corrected document version (or no
 longer holds the document); a committed change that leaves the older version keeps the flag.
 
+### When edrms files a new document for the parcel (API-766)
+
+edrms publishes `edrms.document.filed` when a document is filed; land-records reads it with a
+durable consumer (`land-records-document-filed`). A record that does not hold the document yet is
+flagged **new document** when the document's property describes its parcel (the rule of the
+`parcel_match` check) or when the document names a title deed in the record as its prior title
+(`flags: [{ type: "document_filed", edrmsDocumentId, edrmsNo, ref, docType, matchedBy: "property" |
+"chain", message: "New document for this parcel: T …. Open a change to add it." }]`,
+`records.record.flagged`). The record does not change by itself: an officer opens a change and adds
+the document, and the flag ends as soon as a draft holds it (it moves to `flagLog` as `added`, and
+comes back if the document is taken out of that draft again). An officer can also dismiss it with a
+reason (`POST /records/:id/flags/dismiss`); it moves to `flagLog` as `dismissed`, with who, when and
+why. Either way the same document never flags that record again. The list filter `status=new_document` gives the
+records with such a flag; each record has `newDocuments` (the count) besides `needsReview`.
+
 ## 9. Finding documents
 
 Search over filed documents by their verified metadata (deed or diagram number, property, owner
@@ -216,6 +231,7 @@ checks, is logged in the version's `changes` (who, what, when) and published as 
 | `POST /records/:id/draft` | `record.create` or `record.link` | open a new draft from the current version (one per record) |
 | `POST /records/:id/draft/documents/:edrmsDocumentId/refresh {revision}` | `record.link` | adopt a document's newer EDRMS version |
 | `GET /records/:id/history` | `record.view` | committed versions with who, when, changes and seal check |
+| `POST /records/:id/flags/dismiss {edrmsDocumentId, reason}` | `record.link` | dismiss a "new document" flag, with the reason (API-766) |
 | `POST /records/:id/draft/submit {revision}` · `…/withdraw` | `record.link` | submit for review · withdraw (submitter only) |
 | `GET /records/:id/review` | `record.view` | what the reviewer sees: version, checks, overrides, difference from the current version |
 | `GET /records/:id/comments` · `POST` | `record.view` · `record.comment` | discussion |

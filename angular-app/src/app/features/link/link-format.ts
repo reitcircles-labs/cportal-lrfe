@@ -22,6 +22,7 @@ export function matches(r: RecordSummary, f: SFilter) {
   if (f === 'draft') return r.status === 'draft';
   if (f === 'committed') return r.status === 'committed';
   if (f === 'in_review') return r.draftState === 'in_review';
+  if (f === 'new_document') return r.newDocuments > 0;
   return r.needsReview;
 }
 

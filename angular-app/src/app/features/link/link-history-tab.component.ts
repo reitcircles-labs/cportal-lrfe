@@ -1,11 +1,16 @@
-import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+} from '@angular/core';
 import {RecordDiffComponent} from '../../shared/record-diff.component';
 import {ProofLinkComponent} from '../../shared/proof-link.component';
 import {ProofDownloadComponent} from '../../shared/proof-download.component';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
 
-/** Land record, History tab: the committed versions with their seals and proofs. */
+/** Land record, History tab: the committed versions with their seals and proofs, and the new documents dismissed (API-766). */
 @Component({
   selector: 'app-link-history-tab',
   imports: [RecordDiffComponent, ProofLinkComponent, ProofDownloadComponent],
@@ -31,6 +36,20 @@ import {LinkStore} from './link.store';
         } @empty { <div class="small muted" style="text-align:center;padding:12px">{{ store.history() ? 'No committed version yet.' : store.historyFailed() ? 'The history could not be loaded.' : 'Loading…' }}</div> }
       </div>
     </div>
+    @if (dismissed().length) {
+      <div class="panel">
+        <div class="panel-head"><h4>Dismissed new documents</h4></div>
+        <div class="panel-body stack" style="gap:12px">
+          @for (e of dismissed(); track e.flag.edrmsDocumentId) {
+            <div class="hv">
+              <b>{{ e.flag.ref || e.flag.edrmsNo }}{{ e.flag.docType ? ' · ' + store.typeLabel(e.flag.docType) : '' }}</b>
+              <div class="small muted">Dismissed {{ store.fmt(e.dismissedAt) }} by {{ e.dismissedByName || '—' }}</div>
+              <div class="small">Reason: {{ e.reason }}</div>
+            </div>
+          }
+        </div>
+      </div>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [
@@ -44,4 +63,10 @@ import {LinkStore} from './link.store';
 })
 export class LinkHistoryTabComponent {
   protected readonly store = inject(LinkStore);
+  /** The new documents an officer dismissed (the log also keeps those added to a draft). */
+  protected readonly dismissed = computed(() =>
+    (this.store.history()?.flagLog ?? []).filter(
+      e => e.outcome === 'dismissed',
+    ),
+  );
 }

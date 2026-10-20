@@ -1,5 +1,5 @@
 import {Injectable, inject} from '@angular/core';
-import {RecordsApi} from '../../api/records.api';
+import {Flag, RecordsApi} from '../../api/records.api';
 import {ConfirmService} from '../../state/confirm.service';
 import {LinkStore} from './link.store';
 
@@ -72,5 +72,48 @@ export class LinkLifecycle {
     }
   }
 
-  // ---------------------------------------------------------------- history
+  // ---------------------------------------------------------------- new documents (API-766)
+
+  /**
+   * A document filed for the parcel, into the record: added to the open draft, or a change opened
+   * with it (the current version stays current until the change is approved).
+   */
+  async addFiled(f: Flag) {
+    const name = f.ref || f.edrmsNo;
+    let r = this.store.rec()!;
+    if (!r.draftVersion) {
+      const opened = await this.store.act(
+        x => this.records$.openDraft(x.id),
+        `Draft version ${(r.currentVersion ?? 0) + 1} opened`,
+      );
+      if (!opened) return;
+      r = opened;
+    }
+    if (
+      await this.store.act(
+        x => this.records$.link(x.id, x.draft!.revision, f.edrmsDocumentId),
+        `${name} added to draft version ${r.draft!.versionNumber}`,
+      )
+    ) {
+      this.store.addOpen.set(true);
+      this.store.loadFound();
+    }
+  }
+
+  /** Dismiss the "new document" flag being dismissed, with the reason typed in. */
+  async dismissFiled() {
+    const f = this.store.dismissing();
+    const reason = this.store.dismissReason().trim();
+    if (!f || !reason) return;
+    if (
+      await this.store.act(
+        x => this.records$.dismissFlag(x.id, f.edrmsDocumentId, reason),
+        `${f.ref || f.edrmsNo} dismissed`,
+      )
+    ) {
+      this.store.dismissing.set(null);
+      this.store.dismissReason.set('');
+      if (this.store.history()) this.store.loadHistory();
+    }
+  }
 }

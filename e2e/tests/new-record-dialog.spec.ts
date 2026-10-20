@@ -14,10 +14,10 @@ import {userByRole} from '../support/catalogue';
 import {signInAs} from '../support/auth';
 import {apiAs} from '../support/intake';
 import {evidence} from '../support/evidence';
-import {fileSample} from '../support/samples';
+import {fileNumbered} from '../support/samples';
 import {toast} from '../support/documents';
+import {committedRecord} from '../support/records';
 
-const DEED = '04-T-2210-2008-deed-of-transfer.pdf';
 const rnd = (from: number, span: number) =>
   from + Math.floor(Math.random() * span);
 /** Erf numbers of this run, so reruns on one database start afresh. */
@@ -40,15 +40,7 @@ const fileAs = (
   baseURL: string,
   no: string,
   property?: string,
-) => {
-  const [, num, year] = /^[TB] (\d+)\/(\d{4})$/.exec(no)!;
-  const name = no.startsWith('B')
-    ? `B-${num}-${year}-mortgage-bond.pdf`
-    : `deed-T${num}-${year}.pdf`;
-  return fileSample(playwright, baseURL, DEED, property ? {property} : {}, {
-    as: name,
-  });
-};
+) => fileNumbered(playwright, baseURL, no, property ? {property} : {});
 
 /** New record, the document found and picked, and on to its parcel. */
 async function startFrom(page: Page, ref: string) {
@@ -279,88 +271,12 @@ test.describe.serial('New record dialog (API-765)', () => {
     async ({page, playwright, baseURL}) => {
       test.slow();
       // a committed record for the erf: created, completed from its deed, submitted and approved
-      const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
-      const h = {headers: rec.headers};
-      const found = await (
-        await rec.api.get(
-          `/api/records/document-search?q=${encodeURIComponent(CHANGE_TITLE)}`,
-          h,
-        )
-      ).json();
-      const deed = found.items.find(
-        (d: {ref: string}) => d.ref === CHANGE_TITLE,
-      );
-      const created = await rec.api.post('/api/records', {
-        ...h,
-        data: {
-          parcel: {
-            kind: 'erf',
-            number: String(CHANGE_ERF),
-            township: 'Olympia',
-            regDiv: 'K',
-          },
-          edrmsDocumentId: deed.edrmsDocumentId,
-        },
+      await committedRecord(playwright, baseURL!, CHANGE_TITLE, {
+        kind: 'erf',
+        number: String(CHANGE_ERF),
+        township: 'Olympia',
+        regDiv: 'K',
       });
-      expect(created.status(), await created.text()).toBe(201);
-      let record = await created.json();
-      const edit = async (data: Record<string, unknown>) => {
-        const res = await rec.api.patch(`/api/records/${record.id}/draft`, {
-          ...h,
-          data: {revision: record.draft.revision, ...data},
-        });
-        expect(res.status(), await res.text()).toBe(200);
-        record = await res.json();
-      };
-      await edit({accept: ['owners', 'extent']});
-      await edit({changes: {tenure: 'freehold'}});
-      const submitted = await rec.api.post(
-        `/api/records/${record.id}/draft/submit`,
-        {...h, data: {revision: record.draft.revision}},
-      );
-      expect(submitted.status(), await submitted.text()).toBe(200);
-      await rec.dispose();
-      const reg = await apiAs(playwright, baseURL!, userByRole('sup').email);
-      let task: {id: string} | undefined;
-      await expect
-        .poll(
-          async () => {
-            const {tasks} = await (
-              await reg.api.get('/api/tasks', {headers: reg.headers})
-            ).json();
-            task = tasks.find(
-              (t: {title?: string; businessKey?: string}) =>
-                t.businessKey === record.id ||
-                (t.title ?? '').includes(record.recordNo),
-            );
-            return !!task;
-          },
-          {timeout: 20_000},
-        )
-        .toBe(true);
-      const approved = await reg.api.post(`/api/tasks/${task!.id}/complete`, {
-        headers: reg.headers,
-        data: {output: {outcome: 'approved'}},
-      });
-      expect(approved.status(), await approved.text()).toBe(200);
-      await reg.dispose();
-      await expect
-        .poll(
-          async () => {
-            const r = await apiAs(
-              playwright,
-              baseURL!,
-              userByRole('rec').email,
-            );
-            const now = await (
-              await r.api.get(`/api/records/${record.id}`, {headers: r.headers})
-            ).json();
-            await r.dispose();
-            return now.currentVersion;
-          },
-          {timeout: 20_000},
-        )
-        .toBe(1);
 
       // the next transfer of the erf is filed
       await fileAs(

@@ -4,12 +4,17 @@ import {CanDirective} from '../../shared/can.directive';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
 import {LinkLifecycle} from './link-lifecycle';
+import {LinkDocumentDetailsComponent} from './link-document-details.component';
 import {extentText, statusOf, tenureLabel} from './link-format';
 
-/** Land record: the header of the open record, its actions, and its notes (returned, newer documents). */
+/**
+ * Land record: the header of the open record, its actions, and its notes: returned by the
+ * reviewer, a newer version of a linked document, a new document filed for the parcel (API-766)
+ * with adding or dismissing it.
+ */
 @Component({
   selector: 'app-link-header',
-  imports: [IconComponent, CanDirective],
+  imports: [IconComponent, CanDirective, LinkDocumentDetailsComponent],
   template: `
     @let r = store.rec()!;
     <header class="panel head">
@@ -44,9 +49,41 @@ import {extentText, statusOf, tenureLabel} from './link-format';
     @if (r.draft?.reviewComment && r.draft?.state === 'draft') {
       <div class="note warn" role="status"><b>Returned by the reviewer:</b> {{ r.draft!.reviewComment }}</div>
     }
-    @for (f of r.flags; track f.edrmsDocumentId) {
-      <div class="note warn" role="status"><b>{{ f.message }}</b>{{ f.reason ? ' Reason: ' + f.reason + '.' : '' }}
-        {{ store.editable() ? 'Use the newer version in the documents below.' : r.draftVersion ? '' : 'Change the record to take it over.' }}</div>
+    @for (f of r.flags; track f.type + f.edrmsDocumentId) {
+      @if (f.type === 'document_filed') {
+        <div class="note info filed" role="status">
+          <span class="stack" style="gap:2px;min-width:0;flex:1">
+            <b>New document for this parcel: {{ f.ref || f.edrmsNo }}{{ f.docType ? ' (' + store.typeLabel(f.docType).toLowerCase() + ')' : '' }}</b>
+            <span class="small">{{ f.matchedBy === 'chain' ? 'It names a title deed of this record as its prior title.' : 'Its property describes this parcel.' }}
+              {{ r.draftState === 'in_review' ? 'Add it once the version in review is approved or returned.' : '' }}</span>
+          </span>
+          <span class="row" style="gap:6px;flex-wrap:nowrap">
+            <app-link-document-details [documentId]="f.edrmsDocumentId" [name]="f.ref || f.edrmsNo" [edrmsNo]="f.edrmsNo" [typeLabel]="f.docType ? store.typeLabel(f.docType) : ''" />
+            @if (r.draftState !== 'in_review') {
+              <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="lifecycle.addFiled(f)">{{ r.draftVersion ? 'Add to the draft' : 'Open a change with it' }}</button>
+            }
+            <button class="btn btn-ghost" appCan="record.link" [disabled]="store.busy()" (click)="store.dismissReason.set(''); store.dismissing.set(f)">Dismiss</button>
+          </span>
+        </div>
+      } @else {
+        <div class="note warn" role="status"><b>{{ f.message }}</b>{{ f.reason ? ' Reason: ' + f.reason + '.' : '' }}
+          {{ store.editable() ? 'Use the newer version in the documents below.' : r.draftVersion ? '' : 'Change the record to take it over.' }}</div>
+      }
+    }
+
+    @if (store.dismissing(); as f) {
+      <div class="dialog-backdrop" (click)="store.dismissing.set(null)">
+        <form class="dialog" style="width:min(480px,100%)" aria-labelledby="dismiss-title" (click)="$event.stopPropagation()" (submit)="$event.preventDefault(); lifecycle.dismissFiled()">
+          <div class="dialog-title" id="dismiss-title">Dismiss {{ f.ref || f.edrmsNo }}?</div>
+          <div class="dialog-body">The record stays as it is and this document will not be offered for it again. The reason is kept in the History.</div>
+          <div class="field" style="margin-top:12px"><label for="dismiss-reason">Reason</label>
+            <textarea id="dismiss-reason" class="input" rows="3" style="height:auto;padding:8px 12px" [value]="store.dismissReason()" (input)="store.dismissReason.set($any($event.target).value)" placeholder="For example: a copy of a document already in the record"></textarea></div>
+          <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" (click)="store.dismissing.set(null)">Cancel</button>
+            <button type="submit" class="btn btn-primary" [disabled]="store.busy() || !store.dismissReason().trim()">Dismiss</button>
+          </div>
+        </form>
+      </div>
     }
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -58,6 +95,8 @@ import {extentText, statusOf, tenureLabel} from './link-format';
     .rt { font-size: 28px; margin: 0; letter-spacing: -.02em; }
     .meta { display: flex; gap: 6px 18px; flex-wrap: wrap; font-size: 13.5px; color: var(--color-neutral-700); }
     .tog { width: 32px; height: 32px; margin-left: -6px; }
+    .filed { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
   `,
   ],
 })

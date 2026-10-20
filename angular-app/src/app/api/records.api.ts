@@ -5,7 +5,7 @@ import {ApiService} from './api.service';
 /** Types and calls of the land-records service (gateway prefix /api/records). */
 
 export type RecordStatusFilter =
-  'draft' | 'committed' | 'in_review' | 'needs_review';
+  'draft' | 'committed' | 'in_review' | 'needs_review' | 'new_document';
 
 export interface Source {
   from: 'document' | 'manual';
@@ -114,16 +114,33 @@ export interface Version {
   /** The bpm review of this version, while (or since) it was submitted. */
   reviewInstanceId?: string | null;
 }
+/**
+ * A note on a record: a linked document was corrected in the EDRMS (`document_updated`, from and
+ * to its versions), or a document was filed for the parcel and is not in the record yet
+ * (`document_filed`, API-766).
+ */
 export interface Flag {
-  type: string;
+  type: 'document_updated' | 'document_filed';
   edrmsDocumentId: string;
   edrmsNo: string;
   ref: string | null;
-  from: number;
-  to: number;
+  from?: number;
+  to?: number;
   reason?: string;
+  docType?: string | null;
+  matchedBy?: 'property' | 'chain';
   message: string;
   at: string;
+}
+/** A "new document" flag that ended: dismissed (who, when, why), or its document added to a draft. */
+export interface FlagLogEntry {
+  flag: Flag;
+  outcome: 'dismissed' | 'added';
+  dismissedAt?: string;
+  dismissedById?: string;
+  dismissedByName?: string | null;
+  reason?: string;
+  versionNumber?: number;
 }
 export interface RecordSummary {
   id: string;
@@ -136,6 +153,8 @@ export interface RecordSummary {
   draftVersion: number | null;
   draftState: 'draft' | 'in_review' | null;
   needsReview: boolean;
+  /** Documents filed for the parcel that are not in the record yet. */
+  newDocuments: number;
   flags: Flag[];
   createdAt: string;
   updatedAt: string;
@@ -207,6 +226,7 @@ export interface History {
   label: string;
   intact: boolean;
   flags: Flag[];
+  flagLog: FlagLogEntry[];
   versions: HistoryVersion[];
 }
 export interface LandRecord extends RecordSummary {
@@ -347,6 +367,12 @@ export class RecordsApi {
   }
   withdraw(id: string) {
     return this.api.post<LandRecord>(`/records/${id}/draft/withdraw`);
+  }
+  dismissFlag(id: string, edrmsDocumentId: string, reason: string) {
+    return this.api.post<LandRecord>(`/records/${id}/flags/dismiss`, {
+      edrmsDocumentId,
+      reason,
+    });
   }
   searchDocuments(q: string, recordId?: string) {
     return this.api.get<{items: FoundDocument[]; total: number}>(

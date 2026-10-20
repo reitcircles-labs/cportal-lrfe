@@ -110,3 +110,26 @@ export async function fileSample(
   await rev.dispose();
   return edrmsNo;
 }
+
+/**
+ * The canned AI's deed, or bond, under the number `no` ("T 1234/2026", "B 77/2026": read from the
+ * file name), filed with the reviewer's `corrections`.
+ */
+export function fileNumbered(
+  playwright: Parameters<typeof apiAs>[0],
+  baseURL: string,
+  no: string,
+  corrections: Record<string, string> = {},
+): Promise<string> {
+  const [, num, year] = /^([TB]) (\d+)\/(\d{4})$/.exec(no)!.slice(1);
+  const name = no.startsWith('B')
+    ? `B-${num}-${year}-mortgage-bond.pdf`
+    : `deed-T${num}-${year}.pdf`;
+  return fileSample(
+    playwright,
+    baseURL,
+    '04-T-2210-2008-deed-of-transfer.pdf',
+    corrections,
+    {as: name},
+  );
+}

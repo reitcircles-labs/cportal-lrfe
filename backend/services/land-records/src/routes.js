@@ -60,7 +60,13 @@ export async function recordsRoutes(app, {service}) {
             q: {type: 'string', maxLength: 200},
             status: {
               type: 'string',
-              enum: ['draft', 'committed', 'in_review', 'needs_review'],
+              enum: [
+                'draft',
+                'committed',
+                'in_review',
+                'needs_review',
+                'new_document',
+              ],
             },
             match: {type: 'string', enum: ['all', 'parcel'], default: 'all'},
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
@@ -318,6 +324,27 @@ export async function recordsRoutes(app, {service}) {
     '/records/:id/draft/withdraw',
     {onRequest: app.requirePerm('record.link'), schema: idParams()},
     async req => service.withdraw(req.params.id, actorOf(req)),
+  );
+
+  // a "new document" flag dismissed, with the reason (API-766)
+  app.post(
+    '/records/:id/flags/dismiss',
+    {
+      onRequest: app.requirePerm('record.link'),
+      schema: {
+        ...idParams(),
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['edrmsDocumentId', 'reason'],
+          properties: {
+            edrmsDocumentId: uuid,
+            reason: {type: 'string', minLength: 1, maxLength: 1000},
+          },
+        },
+      },
+    },
+    async req => service.dismissFlag(req.params.id, req.body, actorOf(req)),
   );
 
   app.get(

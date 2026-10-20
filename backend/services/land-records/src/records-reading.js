@@ -62,6 +62,8 @@ export const readingMethods = {
       label: record.label,
       intact: seals.every(x => x.intact && x.linked),
       flags: record.flags || [],
+      // ended "new document" flags: dismissed (who, when, why) or added to a draft (API-766)
+      flagLog: record.flagLog || [],
       versions: versions.reverse(),
     };
   },
@@ -309,7 +311,11 @@ export const readingMethods = {
       currentVersion: r.currentVersion ?? null,
       draftVersion: r.draftVersion ?? null,
       draftState: r.draftState ?? null,
-      needsReview: (r.flags || []).length > 0,
+      // a linked document was corrected in edrms (API-648)
+      needsReview: (r.flags || []).some(f => f.type !== 'document_filed'),
+      // documents filed for the parcel and not in the record yet (API-766)
+      newDocuments: (r.flags || []).filter(f => f.type === 'document_filed')
+        .length,
       flags: r.flags || [],
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -320,11 +326,17 @@ export const readingMethods = {
   async listRecords({q, status, match, limit, offset} = {}) {
     if (
       status &&
-      !['draft', 'committed', 'in_review', 'needs_review'].includes(status)
+      ![
+        'draft',
+        'committed',
+        'in_review',
+        'needs_review',
+        'new_document',
+      ].includes(status)
     ) {
       throw new BadRequestError(`Unknown status "${status}"`);
     }
-    // in_review / needs_review filter in the service: small lists, simple repos
+    // in_review / needs_review / new_document filter in the service: small lists, simple repos
     const base = ['draft', 'committed'].includes(status) ? status : undefined;
     const res = await this.repo.listRecords({
       q,
@@ -337,12 +349,16 @@ export const readingMethods = {
     if (status === 'in_review') {
       items = items.filter(r => r.draftState === 'in_review');
     }
+    let summaries = items.map(r => this.summary(r));
     if (status === 'needs_review') {
-      items = items.filter(r => (r.flags || []).length);
+      summaries = summaries.filter(r => r.needsReview);
+    }
+    if (status === 'new_document') {
+      summaries = summaries.filter(r => r.newDocuments > 0);
     }
     return {
-      items: items.map(r => this.summary(r)),
-      total: status && !base ? items.length : res.total,
+      items: summaries,
+      total: status && !base ? summaries.length : res.total,
     };
   },
 

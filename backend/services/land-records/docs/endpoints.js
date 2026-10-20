@@ -22,7 +22,7 @@ export const ENDPOINTS = {
       tag: 'Records',
       summary: 'List and search land records',
       description:
-        "`{ items, total }`. `q` searches the record number, the parcel, owners' names and ID numbers, and document references. `status`: `draft` (never committed), `committed`, `in_review` (a version waits for approval), `needs_review` (a linked document was corrected).",
+        "`{ items, total }`. `q` searches the record number, the parcel, owners' names and ID numbers, and document references. `status`: `draft` (never committed), `committed`, `in_review` (a version waits for approval), `needs_review` (a linked document was corrected), `new_document` (a document filed for the parcel is not in the record yet). Each record has `needsReview` and `newDocuments`.",
     },
     'GET /records/document-search': {
       tag: 'Documents',
@@ -41,6 +41,12 @@ export const ENDPOINTS = {
       summary: "A filed document's metadata, for land records",
       description:
         'The document as `document-search` returns it: `fields` (`k`, `label`, `v`, `edited`) and `linkedTo` (the records that hold it).',
+    },
+    'POST /records/{id}/flags/dismiss': {
+      tag: 'Records',
+      summary: 'Dismiss a "new document" flag, with the reason',
+      description:
+        "`{ edrmsDocumentId, reason }`. The flag moves to the record's `flagLog` (shown with the history), with who dismissed it, when and why. A flag also ends while a draft holds its document (`outcome: added`), and comes back if the document is taken out of that draft.",
     },
     'POST /records/preview': {
       tag: 'Records',
@@ -118,7 +124,7 @@ export const ENDPOINTS = {
       tag: 'Records',
       summary: 'History: every committed version',
       description:
-        '`{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff` against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.',
+        '`{ intact, flags, flagLog, versions }` (`flagLog`: ended "new document" flags, `outcome` `dismissed` with who, when and why, or `added` to a draft), versions newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff` against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.',
     },
     'GET /records/{id}/comments': {
       tag: 'Records',

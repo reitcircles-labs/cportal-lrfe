@@ -4,6 +4,7 @@ import {
   Check,
   Comment,
   Encumbrance,
+  Flag,
   FoundDocument,
   History,
   LandRecord,
@@ -26,7 +27,7 @@ export type Tab =
   'documents' | 'chain' | 'details' | 'history' | 'discussion' | 'review';
 export type DFilter = 'all' | 'comments' | 'decisions';
 export type SFilter =
-  'all' | 'draft' | 'in_review' | 'committed' | 'needs_review';
+  'all' | 'draft' | 'in_review' | 'committed' | 'needs_review' | 'new_document';
 
 /**
  * The land record page's shared state: the list, the open record and its tabs, and the actions
@@ -92,6 +93,9 @@ export class LinkStore {
   });
   // owners dialog
   ownerForm = signal<{owners: Owner[]; reason: string} | null>(null);
+  // dismissing a "new document" flag (API-766)
+  dismissing = signal<Flag | null>(null);
+  dismissReason = signal('');
   // create dialog (its own state is in LinkCreateFlow); the kind of parcel is kept between openings
   createOpen = signal(false);
   kinds = signal<ParcelKind[]>([]);
@@ -159,6 +163,11 @@ export class LinkStore {
         id: 'needs_review' as SFilter,
         label: 'Needs review',
         n: n('needs_review'),
+      },
+      {
+        id: 'new_document' as SFilter,
+        label: 'New document',
+        n: n('new_document'),
       },
     ];
   });

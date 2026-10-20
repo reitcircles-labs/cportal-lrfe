@@ -42,6 +42,9 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.query(
         `ALTER TABLE "${SCHEMA}"."record_version" ADD COLUMN IF NOT EXISTS "reviewInstanceId" UUID`,
       );
+      await sequelize.query(
+        `ALTER TABLE "${SCHEMA}"."land_record" ADD COLUMN IF NOT EXISTS "flagLog" JSONB NOT NULL DEFAULT '[]'::jsonb`,
+      );
       // the audit service's backfill reads committed seals in this order (API-669)
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "record_version_seal_order" ON "${SCHEMA}"."record_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`,

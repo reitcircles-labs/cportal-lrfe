@@ -17,7 +17,7 @@ import {
 import {parcelFromProperty, propertyMatches} from './parcel-match.js';
 import {checksFor, sameName, suggestFromDocuments} from './derive.js';
 import {readingMethods} from './records-reading.js';
-import {reviewMethods} from './records-review.js';
+import {reviewMethods, settleFiled} from './records-review.js';
 import {searchTextOf} from './search-text.js';
 import {SYSTEM} from './system-actor.js';
 
@@ -269,6 +269,14 @@ export class RecordsService {
         : null;
       const label = parcelLabel(data.parcel);
       const key = parcelKey(data.parcel);
+      // a "new document" flag ends while a draft holds its document (API-766); read again here, so
+      // a flag raised meanwhile is kept
+      const settled = settleFiled(
+        await this.repo.getRecord(record.id),
+        data,
+        version.versionNumber,
+        entry,
+      );
       await this.repo.updateRecord(record.id, {
         label,
         parcelKey: key,
@@ -278,6 +286,7 @@ export class RecordsService {
           current?.data,
           data,
         ),
+        ...settled,
       });
       await this.events?.publish(
         'records.draft.changed',
