@@ -96,9 +96,10 @@ test.describe
       await page.getByRole('button', {name: 'New record'}).click();
       const dialog = page.locator('form.dialog');
       await dialog.getByLabel('Find a filed document').fill('T 2210/2008');
+      // by its number exactly: bonds that name it as their title deed are found too
       await dialog
-        .locator('label.pick', {hasText: 'T 2210/2008'})
-        .first()
+        .locator('label.pick')
+        .filter({has: page.getByText('T 2210/2008', {exact: true})})
         .click();
       await dialog
         .getByRole('button', {name: 'Next: check the parcel'})

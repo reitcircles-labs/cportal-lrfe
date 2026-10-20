@@ -113,7 +113,8 @@ export async function fileSample(
 
 /**
  * The canned AI's deed, or bond, under the number `no` ("T 1234/2026", "B 77/2026": read from the
- * file name), filed with the reviewer's `corrections`.
+ * file name), filed with the reviewer's `corrections`. Its prior title is a neutral one unless given,
+ * so it does not continue the chain of the shared Erf 1873 record (API-766 would flag that record).
  */
 export function fileNumbered(
   playwright: Parameters<typeof apiAs>[0],
@@ -129,7 +130,7 @@ export function fileNumbered(
     playwright,
     baseURL,
     '04-T-2210-2008-deed-of-transfer.pdf',
-    corrections,
+    {priorTitle: 'T 1/1900', ...corrections},
     {as: name},
   );
 }

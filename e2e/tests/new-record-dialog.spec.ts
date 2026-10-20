@@ -66,8 +66,8 @@ test.describe.serial('New record dialog (API-765)', () => {
     await fileAs(playwright, baseURL!, BOND, olympia(ERF));
     await fileAs(playwright, baseURL!, BOND_TITLE, olympia(BOND_ERF));
     await fileAs(playwright, baseURL!, BOND_OTHER, olympia(BOND_ERF));
-    // a bond over another erf (the canned bond's own), to link to the record by mistake
-    await fileAs(playwright, baseURL!, OLD_BOND);
+    // a bond over another erf, to link to the record by mistake (not Erf 1873, which other tests share)
+    await fileAs(playwright, baseURL!, OLD_BOND, 'Erf 4417, Klein Windhoek');
     await fileAs(playwright, baseURL!, CHANGE_TITLE, olympia(CHANGE_ERF));
   });
 
@@ -254,7 +254,7 @@ test.describe.serial('New record dialog (API-765)', () => {
       );
       await expect(pop).toContainText('as in this record');
       await expect(pop.locator('dl').first()).toContainText(
-        'Property descriptionErf 1873, Klein Windhoek',
+        'Property descriptionErf 4417, Klein Windhoek',
       );
       await expect(pop.locator('dl').last()).toContainText('Mortgagee');
       await evidence(
