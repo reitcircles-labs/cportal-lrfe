@@ -56,12 +56,19 @@ export interface VersionData {
   attributes?: Record<string, unknown>;
   documents?: PinnedDocument[];
 }
+/** Why a document's property does not describe the parcel: the parcel's words it does not name. */
+export interface Mismatch {
+  missing: string[];
+  otherPortion: boolean;
+}
 export interface Check {
   id: string;
   level: 'error' | 'warning';
   ok: boolean;
   message: string;
   details: string[];
+  /** On "documents describe this parcel": why, per document. */
+  mismatches?: Array<Mismatch & {edrmsDocumentId: string}>;
 }
 export interface ChainEntry {
   ref: string;
@@ -219,6 +226,30 @@ export interface FoundDocument {
   inThisRecord: boolean;
   linkedTo: Array<{recordId: string; recordNo: string; label: string}>;
   reasons?: string[];
+  /** The verified metadata, labelled as on the Documents screen. */
+  fields: DocumentField[];
+}
+export interface DocumentField {
+  k: string;
+  label: string;
+  v: string;
+  edited?: boolean;
+}
+/** A filed document before creating a record: whether it describes the parcel as filled in. */
+export interface PreviewDocument extends FoundDocument {
+  chosen: boolean;
+  matches: boolean;
+  mismatch?: Mismatch;
+}
+/** What POST /records/preview says about a parcel before its record is created. */
+export interface CreatePreview {
+  document: FoundDocument | null;
+  read: Parcel | null;
+  parcel: Parcel | null;
+  missing: string[];
+  suggested: Record<string, {value: string; from: number}>;
+  documents: PreviewDocument[];
+  existing: (RecordSummary & {hasDocument: boolean}) | null;
 }
 /** A version as GET /records/:id/versions lists it, with its change log. */
 export interface VersionSummary {
@@ -270,6 +301,14 @@ export class RecordsApi {
   }
   create(body: {parcel?: Parcel; edrmsDocumentId?: string}) {
     return this.api.post<LandRecord>('/records', body);
+  }
+  preview(body: {parcel?: Parcel; edrmsDocumentId?: string}) {
+    return this.api.post<CreatePreview>('/records/preview', body);
+  }
+  documentDetails(edrmsDocumentId: string) {
+    return this.api.get<FoundDocument>(
+      `/records/document-details/${edrmsDocumentId}`,
+    );
   }
   edit(
     id: string,

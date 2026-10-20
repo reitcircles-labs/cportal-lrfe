@@ -17,110 +17,9 @@ import {apiSignIn, signInAs, signedInPage} from '../support/auth';
 import {apiAs} from '../support/intake';
 import {adminApi, createUser, NEW_USER_PASSWORD} from '../support/admin';
 import {evidence} from '../support/evidence';
+import {fileSample} from '../support/samples';
 import {pathToFileURL} from 'node:url';
 import {GATEWAY_URL, REPO_DIR} from '../stack/config.mjs';
-
-const SAMPLES = join(REPO_DIR, 'angular-app', 'docs', 'samples');
-
-/**
- * Upload a sample as the scan operator and file it as the reviewer: `corrections` typed in, the rest
- * accepted as read. `as`: another file name (the canned AI reads its deed number from it), and
- * `reviewer`: who files it (default the demo reviewer).
- */
-async function fileSample(
-  playwright: Parameters<typeof apiAs>[0],
-  baseURL: string,
-  file: string,
-  corrections: Record<string, string> = {},
-  {
-    as: name = file,
-    reviewer,
-  }: {
-    as?: string;
-    reviewer?: () => Promise<{
-      api: import('@playwright/test').APIRequestContext;
-      headers: Record<string, string>;
-      dispose: () => Promise<void>;
-    }>;
-  } = {},
-): Promise<string> {
-  const scan = await apiAs(playwright, baseURL, userByRole('scan').email);
-  const batch = await (
-    await scan.api.post('/api/intake/batches', {
-      headers: scan.headers,
-      data: {source: 'Tester samples'},
-    })
-  ).json();
-  const up = await scan.api.post(`/api/intake/batches/${batch.id}/documents`, {
-    // under another name, another file (a comment line appended), as intake refuses a scan it has seen before
-    headers: scan.headers,
-    multipart: {
-      file: {
-        name,
-        mimeType: 'application/pdf',
-        buffer:
-          name === file
-            ? readFileSync(join(SAMPLES, file))
-            : Buffer.concat([
-                readFileSync(join(SAMPLES, file)),
-                Buffer.from(`\n% ${name}\n`),
-              ]),
-      },
-    },
-  });
-  expect(up.status(), await up.text()).toBe(201);
-  const {id} = await up.json();
-  await expect
-    .poll(
-      async () =>
-        (
-          await (
-            await scan.api.get(`/api/intake/documents/${id}`, {
-              headers: scan.headers,
-            })
-          ).json()
-        ).status,
-      {timeout: 30_000},
-    )
-    .toBe('ready');
-  await scan.dispose();
-
-  const rev = reviewer
-    ? await reviewer()
-    : await apiAs(playwright, baseURL, userByRole('rev').email);
-  const h = {headers: rev.headers};
-  await expect
-    .poll(
-      async () =>
-        (await rev.api.post(`/api/intake/documents/${id}/claim`, h)).status(),
-      {timeout: 20_000},
-    )
-    .toBe(200);
-  for (const [k, value] of Object.entries(corrections)) {
-    const res = await rev.api.put(`/api/intake/documents/${id}/fields/${k}`, {
-      ...h,
-      data: {value},
-    });
-    expect(res.status(), `${k}: ${await res.text()}`).toBe(200);
-  }
-  await rev.api.post(`/api/intake/documents/${id}/accept-clean`, h);
-  const detail = await (
-    await rev.api.get(`/api/intake/documents/${id}`, h)
-  ).json();
-  for (const f of detail.fields.filter(
-    (x: {status: string}) => x.status === 'pending',
-  )) {
-    await rev.api.put(`/api/intake/documents/${id}/fields/${f.k}`, {
-      ...h,
-      data: {status: 'accepted'},
-    });
-  }
-  const filed = await rev.api.post(`/api/intake/documents/${id}/file`, h);
-  expect(filed.status(), await filed.text()).toBe(200);
-  const {edrmsNo} = await filed.json();
-  await rev.dispose();
-  return edrmsNo;
-}
 
 /** T 4521/2019 as the deed reads: the late Petrus Nghishidi's half passes to his two children. */
 const ESTATE_TRANSFER = {
@@ -198,9 +97,13 @@ test.describe
       const dialog = page.locator('form.dialog');
       await dialog.getByLabel('Find a filed document').fill('T 2210/2008');
       await dialog
-        .locator('label.res', {hasText: 'T 2210/2008'})
+        .locator('label.pick', {hasText: 'T 2210/2008'})
         .first()
         .click();
+      await dialog
+        .getByRole('button', {name: 'Next: check the parcel'})
+        .click();
+      await expect(dialog.getByLabel('Township')).toHaveValue('Klein Windhoek');
       await dialog.getByRole('button', {name: 'Create record'}).click();
       await expect(toast('Erf 1873, Klein Windhoek created')).toBeVisible();
       await expect(head).toContainText('Erf 1873, Klein Windhoek');
@@ -2540,14 +2443,18 @@ test(
     // New record: the chosen kind of parcel survives closing and reopening the dialog
     await page.getByRole('button', {name: 'New record'}).click();
     const dialog = page.locator('form.dialog');
-    await dialog.locator('label.seg-opt', {hasText: 'For a parcel'}).click();
+    await dialog
+      .getByRole('button', {name: 'No document? Enter the parcel by hand'})
+      .click();
     await dialog
       .getByLabel('Kind of parcel')
       .selectOption({label: 'Farm portion'});
     await expect(dialog.getByLabel(/^Farm name/)).toBeVisible();
     await dialog.getByRole('button', {name: 'Cancel'}).click();
     await page.getByRole('button', {name: 'New record'}).click();
-    await dialog.locator('label.seg-opt', {hasText: 'For a parcel'}).click();
+    await dialog
+      .getByRole('button', {name: 'No document? Enter the parcel by hand'})
+      .click();
     expect
       .soft(
         await shown(dialog.getByLabel('Kind of parcel')),

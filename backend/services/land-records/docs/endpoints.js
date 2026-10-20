@@ -36,6 +36,19 @@ export const ENDPOINTS = {
       description:
         '`{ parcel, items }`. Each item: the document, `reasons` (property is this parcel; SG diagram cited by, prior title of, or citing a document already in the record), `inThisRecord`, `linkedTo`.',
     },
+    'GET /records/document-details/{edrmsDocumentId}': {
+      tag: 'Documents',
+      summary: "A filed document's metadata, for land records",
+      description:
+        'The document as `document-search` returns it: `fields` (`k`, `label`, `v`, `edited`) and `linkedTo` (the records that hold it).',
+    },
+    'POST /records/preview': {
+      tag: 'Records',
+      summary:
+        'Before creating a record: the parcel, the documents about it, an existing record',
+      description:
+        "`{ edrmsDocumentId }` and/or `{ parcel }` (the parcel as corrected). Returns `{ document, read, parcel, missing, suggested, documents, existing }`: `read` the parcel read from the document's property field (null when unclear); `parcel` the one checked (`parcel` given, else `read`); `missing` its required fields still empty; `documents` the filed documents with the same parcel number, each with `matches` and, when not, `mismatch: { missing, otherPortion }` (the parcel's words its property does not name); `suggested` a value for a missing field that all documents describing the parcel agree on, `{ field: { value, from } }`; `existing` the record the parcel already has (with `hasDocument`), or null. Reads only.",
+    },
     'POST /records': {
       tag: 'Records',
       summary: 'Create a land record (draft v1)',

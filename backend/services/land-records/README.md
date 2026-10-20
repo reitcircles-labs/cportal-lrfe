@@ -208,7 +208,8 @@ checks, is logged in the version's `changes` (who, what, when) and published as 
 | `GET /records?q=&status=` | `record.view` | list and search records |
 | `GET /records/:id` | `record.view` | the record with its current version, open draft and flags |
 | `GET /records/:id/versions/:n` · `…/verify` | `record.view` (verify: or the audit service) | a version · verify the seal chain |
-| `POST /records {parcel}` · `{edrmsDocumentId}` | `record.create` | create a record (draft v1); from a filed document: parcel read from its property field, document linked |
+| `POST /records/preview {edrmsDocumentId, parcel}` | `record.create` | before creating (API-765): the parcel read from a document or as corrected, what it still needs, the filed documents with its number and whether each describes it, values the documents agree on for missing fields, the record it already has |
+| `POST /records {parcel}` · `{edrmsDocumentId}` | `record.create` | create a record (draft v1); from a filed document: parcel read from its property field (or as given in `parcel`), document linked |
 | `PATCH /records/:id/draft {revision, changes, accept, reason}` | `record.create` or `record.link` | edit core fields and attributes; `accept` suggested owners, extent, encumbrances; `reason` for values entered by hand |
 | `POST /records/:id/draft/documents {edrmsDocumentId}` | `record.link` | pin a document (its current version) |
 | `DELETE /records/:id/draft/documents/:edrmsDocumentId?revision=` | `record.unlink` | remove a document |
@@ -218,7 +219,8 @@ checks, is logged in the version's `changes` (who, what, when) and published as 
 | `POST /records/:id/draft/submit {revision}` · `…/withdraw` | `record.link` | submit for review · withdraw (submitter only) |
 | `GET /records/:id/review` | `record.view` | what the reviewer sees: version, checks, overrides, difference from the current version |
 | `GET /records/:id/comments` · `POST` | `record.view` · `record.comment` | discussion |
-| `GET /records/document-search?…` · `GET /records/:id/suggestions` | `record.view` | find documents (API-645) |
+| `GET /records/document-search?…` · `GET /records/:id/suggestions` | `record.view` | find documents (API-645); each with its labelled `fields` |
+| `GET /records/document-details/:edrmsDocumentId` | `record.view` | one filed document's metadata, for its Details popover (API-765) |
 | `POST /records/:id/versions/:n/commit` · `…/reject` | service token from bpm | decisions from the review process |
 
 ## 11. Events

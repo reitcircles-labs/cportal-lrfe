@@ -92,15 +92,10 @@ export class LinkStore {
   });
   // owners dialog
   ownerForm = signal<{owners: Owner[]; reason: string} | null>(null);
-  // create dialog
+  // create dialog (its own state is in LinkCreateFlow); the kind of parcel is kept between openings
   createOpen = signal(false);
-  cmode = signal<'doc' | 'parcel'>('doc');
-  cq = signal('');
-  cfound = signal<FoundDocument[]>([]);
-  cpick = signal<string | null>(null);
   kinds = signal<ParcelKind[]>([]);
   ckind = signal('erf');
-  cparcel = signal<Record<string, string>>({});
 
   private timers: Record<string, ReturnType<typeof setTimeout>> = {};
   fmt = fmtTime;

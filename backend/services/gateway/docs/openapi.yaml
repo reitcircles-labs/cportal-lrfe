@@ -5495,6 +5495,58 @@ paths:
                 $ref: "#/components/schemas/Error"
       security:
         - bearerAuth: []
+  /api/records/document-details/{edrmsDocumentId}:
+    get:
+      tags:
+        - land-records · Documents
+      summary: A filed document's metadata, for land records
+      description: |-
+        The document as `document-search` returns it: `fields` (`k`, `label`, `v`, `edited`) and `linkedTo` (the records that hold it).
+
+        **Access:** Signed-in user with permission `record.view`.
+      operationId: land-records_getRecordsDocumentDetailsEdrmsDocumentId
+      parameters:
+        - name: edrmsDocumentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.view
   /api/records/document-search:
     get:
       tags:
@@ -5643,6 +5695,69 @@ paths:
       x-access:
         services:
           - audit
+  /api/records/preview:
+    post:
+      tags:
+        - land-records · Records
+      summary: "Before creating a record: the parcel, the documents about it, an existing record"
+      description: >-
+        `{ edrmsDocumentId }` and/or `{ parcel }` (the parcel as corrected). Returns `{ document, read, parcel, missing, suggested,
+        documents, existing }`: `read` the parcel read from the document's property field (null when unclear); `parcel` the one checked
+        (`parcel` given, else `read`); `missing` its required fields still empty; `documents` the filed documents with the same parcel
+        number, each with `matches` and, when not, `mismatch: { missing, otherPortion }` (the parcel's words its property does not name);
+        `suggested` a value for a missing field that all documents describing the parcel agree on, `{ field: { value, from } }`; `existing`
+        the record the parcel already has (with `hasDocument`), or null. Reads only.
+
+
+        **Access:** Signed-in user with permission `record.create`.
+      operationId: land-records_postRecordsPreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                parcel:
+                  type: object
+                edrmsDocumentId:
+                  type: string
+                  format: uuid
+              anyOf:
+                - required:
+                    - parcel
+                - required:
+                    - edrmsDocumentId
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - record.create
   /api/records/seals:
     get:
       tags:

@@ -1,5 +1,5 @@
 import {normalizeSearch} from '@lrfe/common';
-import {propertyMatches} from './parcel-match.js';
+import {propertyMatches, propertyMismatch} from './parcel-match.js';
 
 /**
  * What the linked documents say about the parcel (README.md section 3), and the checks a version
@@ -336,8 +336,8 @@ export function checksFor(
   const foreign = docs.filter(
     d => d.fields?.property && !propertyMatches(data.parcel, d.fields.property),
   );
-  out.push(
-    check(
+  out.push({
+    ...check(
       'parcel_match',
       'error',
       !foreign.length,
@@ -346,7 +346,12 @@ export function checksFor(
         : 'All documents describe this parcel',
       foreign.map(d => d.ref),
     ),
-  );
+    // per document, why: the parcel's words its property does not name (API-765)
+    mismatches: foreign.map(d => ({
+      edrmsDocumentId: d.edrmsDocumentId,
+      ...propertyMismatch(data.parcel, d.fields.property),
+    })),
+  });
 
   // documents at their current EDRMS version (flags come from edrms corrections, API-648)
   const stale = flags.filter(

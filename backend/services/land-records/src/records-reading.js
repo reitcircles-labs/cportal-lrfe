@@ -5,9 +5,14 @@
  */
 import {randomUUID} from 'node:crypto';
 import {BadRequestError, NotFoundError} from '@lrfe/common';
-import {parcelLabel} from './catalogue.js';
+import {kindOf, parcelKey, parcelLabel} from './catalogue.js';
 import {diffVersions} from './diff.js';
-import {propertyMatches} from './parcel-match.js';
+import {
+  parcelFromProperty,
+  propertyMatches,
+  propertyMismatch,
+  sameParcelNumber,
+} from './parcel-match.js';
 import {verifyChain} from './seal.js';
 import {SYSTEM} from './system-actor.js';
 
@@ -111,6 +116,93 @@ export const readingMethods = {
         !!recordId &&
         (pinnedBy.get(d.id) || []).some(x => x.recordId === recordId),
       linkedTo: unique,
+      // the verified metadata, with the labels the Documents screen shows (API-765)
+      fields: (d.fields || []).map(f => ({
+        k: f.k,
+        label: f.label ?? f.k,
+        v: f.v,
+        ...(f.edited ? {edited: true} : {}),
+      })),
+    };
+  },
+
+  /** One filed document as land records show it: its metadata and the records that hold it. */
+  async documentDetails(edrmsDocumentId) {
+    const doc = await this.requireDocument(edrmsDocumentId);
+    const pinnedBy = await this.repo.findRecordsPinning([doc.id]);
+    return this.documentSummary(doc, pinnedBy);
+  },
+
+  /**
+   * Before creating a record (API-765): the parcel as read from a filed document (or as the officer
+   * corrected it, `parcel`), what it still needs, the filed documents with the same parcel number
+   * and whether each describes this parcel, values for missing fields that those documents agree
+   * on, and the record the parcel already has. Reads only.
+   */
+  async createPreview({edrmsDocumentId, parcel} = {}) {
+    const doc = edrmsDocumentId
+      ? await this.requireDocument(edrmsDocumentId)
+      : null;
+    const read = doc
+      ? parcelFromProperty(doc.props?.property, doc.props)
+      : null;
+    const shown = parcel ?? read;
+    const kind = kindOf(shown?.kind);
+    const missing = kind
+      ? kind.parcelRequired.filter(f => !String(shown[f] ?? '').trim())
+      : [];
+
+    let about = [];
+    if (kind) {
+      const q = numberWords(shown);
+      const {items} = q
+        ? await this.requireEdrms().searchDocuments({q, limit: 200})
+        : {items: []};
+      about = items.filter(d => sameParcelNumber(shown, d.props?.property));
+    }
+    if (doc && !about.some(d => d.id === doc.id)) about.unshift(doc);
+    const pinnedBy = await this.repo.findRecordsPinning(about.map(d => d.id));
+    const documents = about.map(d => {
+      const why = kind ? propertyMismatch(shown, d.props?.property) : null;
+      return {
+        ...this.documentSummary(d, pinnedBy),
+        chosen: d.id === doc?.id,
+        matches: !!kind && !why,
+        ...(why ? {mismatch: why} : {}),
+      };
+    });
+
+    // a value the parcel lacks (a bond has no registration division) that the documents describing it agree on
+    const suggested = {};
+    const describing = about.filter(
+      d => kind && propertyMatches(shown, d.props?.property),
+    );
+    for (const f of missing) {
+      const values = [
+        ...new Set(describing.map(d => d.props?.[f]).filter(Boolean)),
+      ];
+      const from = describing.filter(d => d.props?.[f]).length;
+      if (values.length === 1) suggested[f] = {value: values[0], from};
+    }
+
+    const key = kind && !missing.length ? parcelKey(shown) : null;
+    const record = key ? await this.repo.findRecord({parcelKey: key}) : null;
+    const existing = record
+      ? {
+          ...this.summary(record),
+          hasDocument:
+            !!doc &&
+            (pinnedBy.get(doc.id) || []).some(x => x.recordId === record.id),
+        }
+      : null;
+    return {
+      document: doc ? this.documentSummary(doc, pinnedBy) : null,
+      read,
+      parcel: shown,
+      missing,
+      suggested,
+      documents,
+      existing,
     };
   },
 
@@ -336,6 +428,14 @@ export const readingMethods = {
     };
   },
 };
+
+/** The parcel's number alone (erf, farm or unit number): the broadest search for documents about it. */
+function numberWords(parcel) {
+  if (parcel.kind === 'erf') return parcel.number ?? '';
+  if (parcel.kind === 'farm_portion') return parcel.farmNumber ?? '';
+  if (parcel.kind === 'sectional_unit') return parcel.unit ?? '';
+  return '';
+}
 
 /** The words that identify a parcel in a document's text (for a first, broad search). */
 function parcelWords(parcel) {

@@ -102,7 +102,40 @@ export async function recordsRoutes(app, {service}) {
     },
   );
 
+  // One filed document's metadata, for its Details popover (API-765)
+  app.get(
+    '/records/document-details/:edrmsDocumentId',
+    {
+      onRequest: canView,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['edrmsDocumentId'],
+          properties: {edrmsDocumentId: uuid},
+        },
+      },
+    },
+    async req => service.documentDetails(req.params.edrmsDocumentId),
+  );
+
   // ------------------------------------------------ creating and editing (API-646)
+
+  // Before creating: the parcel read from a document, the documents about it, an existing record (API-765)
+  app.post(
+    '/records/preview',
+    {
+      onRequest: app.requirePerm('record.create'),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {parcel: {type: 'object'}, edrmsDocumentId: uuid},
+          anyOf: [{required: ['parcel']}, {required: ['edrmsDocumentId']}],
+        },
+      },
+    },
+    async req => service.createPreview(req.body),
+  );
 
   app.post(
     '/records',
