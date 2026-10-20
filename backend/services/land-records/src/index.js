@@ -103,6 +103,13 @@ events.consume(
   event => service.onDocumentAmended(event.data),
   {durable: 'land-records-document-amended'},
 );
+// a document filed for a parcel that has a record flags that record, so an officer opens a change
+// with it (API-766); durable, so a document filed while land-records is down is not missed
+events.consume(
+  'edrms.document.filed',
+  event => service.onDocumentFiled(event.data),
+  {durable: 'land-records-document-filed'},
+);
 
 const app = await buildApp({
   service,

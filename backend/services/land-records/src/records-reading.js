@@ -5,9 +5,14 @@
  */
 import {randomUUID} from 'node:crypto';
 import {BadRequestError, NotFoundError} from '@lrfe/common';
-import {parcelLabel} from './catalogue.js';
+import {kindOf, parcelKey, parcelLabel} from './catalogue.js';
 import {diffVersions} from './diff.js';
-import {propertyMatches} from './parcel-match.js';
+import {
+  parcelFromProperty,
+  propertyMatches,
+  propertyMismatch,
+  sameParcelNumber,
+} from './parcel-match.js';
 import {verifyChain} from './seal.js';
 import {SYSTEM} from './system-actor.js';
 
@@ -57,6 +62,10 @@ export const readingMethods = {
       label: record.label,
       intact: seals.every(x => x.intact && x.linked),
       flags: record.flags || [],
+      // ended "new document" flags: dismissed (who, when, why) or added to a draft (API-766)
+      flagLog: record.flagLog || [],
+      // moved to the bin, restored, a change discarded: who, when and why (API-767)
+      binLog: record.binLog || [],
       versions: versions.reverse(),
     };
   },
@@ -69,7 +78,7 @@ export const readingMethods = {
   },
 
   async addComment(recordId, {body}, actor = SYSTEM) {
-    const record = await this.requireRecord(recordId);
+    const record = await this.requireActive(recordId);
     const text = String(body ?? '').trim();
     if (!text) throw new BadRequestError('The comment is empty');
     return this.repo.addComment({
@@ -111,6 +120,93 @@ export const readingMethods = {
         !!recordId &&
         (pinnedBy.get(d.id) || []).some(x => x.recordId === recordId),
       linkedTo: unique,
+      // the verified metadata, with the labels the Documents screen shows (API-765)
+      fields: (d.fields || []).map(f => ({
+        k: f.k,
+        label: f.label ?? f.k,
+        v: f.v,
+        ...(f.edited ? {edited: true} : {}),
+      })),
+    };
+  },
+
+  /** One filed document as land records show it: its metadata and the records that hold it. */
+  async documentDetails(edrmsDocumentId) {
+    const doc = await this.requireDocument(edrmsDocumentId);
+    const pinnedBy = await this.repo.findRecordsPinning([doc.id]);
+    return this.documentSummary(doc, pinnedBy);
+  },
+
+  /**
+   * Before creating a record (API-765): the parcel as read from a filed document (or as the officer
+   * corrected it, `parcel`), what it still needs, the filed documents with the same parcel number
+   * and whether each describes this parcel, values for missing fields that those documents agree
+   * on, and the record the parcel already has. Reads only.
+   */
+  async createPreview({edrmsDocumentId, parcel} = {}) {
+    const doc = edrmsDocumentId
+      ? await this.requireDocument(edrmsDocumentId)
+      : null;
+    const read = doc
+      ? parcelFromProperty(doc.props?.property, doc.props)
+      : null;
+    const shown = parcel ?? read;
+    const kind = kindOf(shown?.kind);
+    const missing = kind
+      ? kind.parcelRequired.filter(f => !String(shown[f] ?? '').trim())
+      : [];
+
+    let about = [];
+    if (kind) {
+      const q = numberWords(shown);
+      const {items} = q
+        ? await this.requireEdrms().searchDocuments({q, limit: 200})
+        : {items: []};
+      about = items.filter(d => sameParcelNumber(shown, d.props?.property));
+    }
+    if (doc && !about.some(d => d.id === doc.id)) about.unshift(doc);
+    const pinnedBy = await this.repo.findRecordsPinning(about.map(d => d.id));
+    const documents = about.map(d => {
+      const why = kind ? propertyMismatch(shown, d.props?.property) : null;
+      return {
+        ...this.documentSummary(d, pinnedBy),
+        chosen: d.id === doc?.id,
+        matches: !!kind && !why,
+        ...(why ? {mismatch: why} : {}),
+      };
+    });
+
+    // a value the parcel lacks (a bond has no registration division) that the documents describing it agree on
+    const suggested = {};
+    const describing = about.filter(
+      d => kind && propertyMatches(shown, d.props?.property),
+    );
+    for (const f of missing) {
+      const values = [
+        ...new Set(describing.map(d => d.props?.[f]).filter(Boolean)),
+      ];
+      const from = describing.filter(d => d.props?.[f]).length;
+      if (values.length === 1) suggested[f] = {value: values[0], from};
+    }
+
+    const key = kind && !missing.length ? parcelKey(shown) : null;
+    const record = key ? await this.repo.findRecord({parcelKey: key}) : null;
+    const existing = record
+      ? {
+          ...this.summary(record),
+          hasDocument:
+            !!doc &&
+            (pinnedBy.get(doc.id) || []).some(x => x.recordId === record.id),
+        }
+      : null;
+    return {
+      document: doc ? this.documentSummary(doc, pinnedBy) : null,
+      read,
+      parcel: shown,
+      missing,
+      suggested,
+      documents,
+      existing,
     };
   },
 
@@ -217,8 +313,16 @@ export const readingMethods = {
       currentVersion: r.currentVersion ?? null,
       draftVersion: r.draftVersion ?? null,
       draftState: r.draftState ?? null,
-      needsReview: (r.flags || []).length > 0,
+      // a linked document was corrected in edrms (API-648)
+      needsReview: (r.flags || []).some(f => f.type !== 'document_filed'),
+      // documents filed for the parcel and not in the record yet (API-766)
+      newDocuments: (r.flags || []).filter(f => f.type === 'document_filed')
+        .length,
       flags: r.flags || [],
+      // in the bin since (API-767)
+      inBin: !!r.discardedAt,
+      discardedAt: r.discardedAt ?? null,
+      bin: r.discardedAt ? binNote(r) : null,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     };
@@ -228,11 +332,29 @@ export const readingMethods = {
   async listRecords({q, status, match, limit, offset} = {}) {
     if (
       status &&
-      !['draft', 'committed', 'in_review', 'needs_review'].includes(status)
+      ![
+        'draft',
+        'committed',
+        'in_review',
+        'needs_review',
+        'new_document',
+        'in_bin',
+      ].includes(status)
     ) {
       throw new BadRequestError(`Unknown status "${status}"`);
     }
-    // in_review / needs_review filter in the service: small lists, simple repos
+    // in_review / needs_review / new_document filter in the service: small lists, simple repos
+    // the bin is its own list: records in it are in no other (API-767)
+    if (status === 'in_bin') {
+      const res = await this.repo.listRecords({
+        q,
+        match,
+        inBin: true,
+        limit,
+        offset,
+      });
+      return {items: res.items.map(r => this.summary(r)), total: res.total};
+    }
     const base = ['draft', 'committed'].includes(status) ? status : undefined;
     const res = await this.repo.listRecords({
       q,
@@ -245,12 +367,16 @@ export const readingMethods = {
     if (status === 'in_review') {
       items = items.filter(r => r.draftState === 'in_review');
     }
+    let summaries = items.map(r => this.summary(r));
     if (status === 'needs_review') {
-      items = items.filter(r => (r.flags || []).length);
+      summaries = summaries.filter(r => r.needsReview);
+    }
+    if (status === 'new_document') {
+      summaries = summaries.filter(r => r.newDocuments > 0);
     }
     return {
-      items: items.map(r => this.summary(r)),
-      total: status && !base ? items.length : res.total,
+      items: summaries,
+      total: status && !base ? summaries.length : res.total,
     };
   },
 
@@ -336,6 +462,22 @@ export const readingMethods = {
     };
   },
 };
+
+/** Who moved a record in the bin there, when and why (API-767). */
+function binNote(r) {
+  const moved = [...(r.binLog || [])]
+    .reverse()
+    .find(e => e.action === 'discarded');
+  return {at: moved.at, byName: moved.byName, reason: moved.reason};
+}
+
+/** The parcel's number alone (erf, farm or unit number): the broadest search for documents about it. */
+function numberWords(parcel) {
+  if (parcel.kind === 'erf') return parcel.number ?? '';
+  if (parcel.kind === 'farm_portion') return parcel.farmNumber ?? '';
+  if (parcel.kind === 'sectional_unit') return parcel.unit ?? '';
+  return '';
+}
 
 /** The words that identify a parcel in a document's text (for a first, broad search). */
 function parcelWords(parcel) {

@@ -22,7 +22,7 @@ export const ENDPOINTS = {
       tag: 'Records',
       summary: 'List and search land records',
       description:
-        "`{ items, total }`. `q` searches the record number, the parcel, owners' names and ID numbers, and document references. `status`: `draft` (never committed), `committed`, `in_review` (a version waits for approval), `needs_review` (a linked document was corrected).",
+        "`{ items, total }`. `q` searches the record number, the parcel, owners' names and ID numbers, and document references. `status`: `draft` (never committed), `committed`, `in_review` (a version waits for approval), `needs_review` (a linked document was corrected), `new_document` (a document filed for the parcel is not in the record yet), `in_bin` (records moved to the bin; they are in no other list). Each record has `needsReview`, `newDocuments` and `inBin`.",
     },
     'GET /records/document-search': {
       tag: 'Documents',
@@ -35,6 +35,44 @@ export const ENDPOINTS = {
       summary: 'Documents that match this parcel, with the reasons',
       description:
         '`{ parcel, items }`. Each item: the document, `reasons` (property is this parcel; SG diagram cited by, prior title of, or citing a document already in the record), `inThisRecord`, `linkedTo`.',
+    },
+    'GET /records/document-details/{edrmsDocumentId}': {
+      tag: 'Documents',
+      summary: "A filed document's metadata, for land records",
+      description:
+        'The document as `document-search` returns it: `fields` (`k`, `label`, `v`, `edited`) and `linkedTo` (the records that hold it).',
+    },
+    'POST /records/{id}/bin': {
+      tag: 'Records',
+      summary:
+        'Move a record that was never approved to the bin, with the reason',
+      description:
+        '`{ reason }`. Only a record without an approved version, and not in review. It is kept: it leaves the lists (`status=in_bin` lists it), its parcel and documents are free again, its record number stays used. 409 otherwise.',
+    },
+    'POST /records/{id}/restore': {
+      tag: 'Records',
+      summary: 'Restore a record from the bin',
+      description:
+        'As it was. 409 with `recordId` and `recordNo` when its parcel has another record by now.',
+    },
+    'POST /records/{id}/draft/discard': {
+      tag: 'Records',
+      summary: 'Discard the open draft of an approved record, with the reason',
+      description:
+        '`{ reason }`. The current version stays; a new change can be opened. The draft is kept in `binLog` (its `diff` against the current version and its change log). Not for a draft in review (withdraw it first). 409 otherwise.',
+    },
+    'POST /records/{id}/flags/dismiss': {
+      tag: 'Records',
+      summary: 'Dismiss a "new document" flag, with the reason',
+      description:
+        "`{ edrmsDocumentId, reason }`. The flag moves to the record's `flagLog` (shown with the history), with who dismissed it, when and why. A flag also ends while a draft holds its document (`outcome: added`), and comes back if the document is taken out of that draft.",
+    },
+    'POST /records/preview': {
+      tag: 'Records',
+      summary:
+        'Before creating a record: the parcel, the documents about it, an existing record',
+      description:
+        "`{ edrmsDocumentId }` and/or `{ parcel }` (the parcel as corrected). Returns `{ document, read, parcel, missing, suggested, documents, existing }`: `read` the parcel read from the document's property field (null when unclear); `parcel` the one checked (`parcel` given, else `read`); `missing` its required fields still empty; `documents` the filed documents with the same parcel number, each with `matches` and, when not, `mismatch: { missing, otherPortion }` (the parcel's words its property does not name); `suggested` a value for a missing field that all documents describing the parcel agree on, `{ field: { value, from } }`; `existing` the record the parcel already has (with `hasDocument`), or null. Reads only.",
     },
     'POST /records': {
       tag: 'Records',
@@ -105,7 +143,7 @@ export const ENDPOINTS = {
       tag: 'Records',
       summary: 'History: every committed version',
       description:
-        '`{ intact, flags, versions }`, newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff` against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.',
+        '`{ intact, flags, flagLog, versions }` (`flagLog`: ended "new document" flags, `outcome` `dismissed` with who, when and why, or `added` to a draft; `binLog`: moved to the bin, restored, a change discarded, with who, when and why, and for a discarded change its `diff` and change log), versions newest first: submitter, approver, dates, review comment, seal with `intact` and `linked`, `diff` against the version before, and `anchoring`: `{ status, batch, tx, network, confirmedAt }` with `status` `waiting` (for the next anchoring), `anchored` or `confirmed`, or null when the audit service cannot say.',
     },
     'GET /records/{id}/comments': {
       tag: 'Records',

@@ -60,7 +60,14 @@ export async function recordsRoutes(app, {service}) {
             q: {type: 'string', maxLength: 200},
             status: {
               type: 'string',
-              enum: ['draft', 'committed', 'in_review', 'needs_review'],
+              enum: [
+                'draft',
+                'committed',
+                'in_review',
+                'needs_review',
+                'new_document',
+                'in_bin',
+              ],
             },
             match: {type: 'string', enum: ['all', 'parcel'], default: 'all'},
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
@@ -102,7 +109,40 @@ export async function recordsRoutes(app, {service}) {
     },
   );
 
+  // One filed document's metadata, for its Details popover (API-765)
+  app.get(
+    '/records/document-details/:edrmsDocumentId',
+    {
+      onRequest: canView,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['edrmsDocumentId'],
+          properties: {edrmsDocumentId: uuid},
+        },
+      },
+    },
+    async req => service.documentDetails(req.params.edrmsDocumentId),
+  );
+
   // ------------------------------------------------ creating and editing (API-646)
+
+  // Before creating: the parcel read from a document, the documents about it, an existing record (API-765)
+  app.post(
+    '/records/preview',
+    {
+      onRequest: app.requirePerm('record.create'),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {parcel: {type: 'object'}, edrmsDocumentId: uuid},
+          anyOf: [{required: ['parcel']}, {required: ['edrmsDocumentId']}],
+        },
+      },
+    },
+    async req => service.createPreview(req.body),
+  );
 
   app.post(
     '/records',
@@ -285,6 +325,53 @@ export async function recordsRoutes(app, {service}) {
     '/records/:id/draft/withdraw',
     {onRequest: app.requirePerm('record.link'), schema: idParams()},
     async req => service.withdraw(req.params.id, actorOf(req)),
+  );
+
+  // the bin (API-767): a record never approved moved there and back, an abandoned change discarded
+  const withReason = {
+    ...idParams(),
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['reason'],
+      properties: {reason: {type: 'string', minLength: 1, maxLength: 1000}},
+    },
+  };
+  app.post(
+    '/records/:id/bin',
+    {onRequest: app.requirePerm('record.create'), schema: withReason},
+    async req => service.moveToBin(req.params.id, req.body, actorOf(req)),
+  );
+  app.post(
+    '/records/:id/restore',
+    {onRequest: app.requirePerm('record.create'), schema: idParams()},
+    async req => service.restoreFromBin(req.params.id, actorOf(req)),
+  );
+  app.post(
+    '/records/:id/draft/discard',
+    {onRequest: app.requirePerm('record.create'), schema: withReason},
+    async req => service.discardDraft(req.params.id, req.body, actorOf(req)),
+  );
+
+  // a "new document" flag dismissed, with the reason (API-766)
+  app.post(
+    '/records/:id/flags/dismiss',
+    {
+      onRequest: app.requirePerm('record.link'),
+      schema: {
+        ...idParams(),
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['edrmsDocumentId', 'reason'],
+          properties: {
+            edrmsDocumentId: uuid,
+            reason: {type: 'string', minLength: 1, maxLength: 1000},
+          },
+        },
+      },
+    },
+    async req => service.dismissFlag(req.params.id, req.body, actorOf(req)),
   );
 
   app.get(

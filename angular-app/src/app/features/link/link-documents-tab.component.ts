@@ -1,15 +1,22 @@
-import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+} from '@angular/core';
+import {Mismatch} from '../../api/records.api';
 import {IconComponent} from '../../shared/icon.component';
 import {CanDirective} from '../../shared/can.directive';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
 import {LinkStore} from './link.store';
 import {LinkDocumentsSearch} from './link-documents-search';
+import {LinkDocumentDetailsComponent} from './link-document-details.component';
 import {linkedText} from './link-format';
 
 /** Land record, Documents tab: the linked documents and, on a draft, adding documents from the EDRMS. */
 @Component({
   selector: 'app-link-documents-tab',
-  imports: [IconComponent, CanDirective],
+  imports: [IconComponent, CanDirective, LinkDocumentDetailsComponent],
   template: `
     <div class="panel">
       <div class="panel-head"><h4>Linked documents</h4></div>
@@ -28,6 +35,8 @@ import {linkedText} from './link-format';
                       @if (store.editable()) { <button class="btn btn-secondary" style="min-height:32px" appCan="record.link" [disabled]="store.busy()" (click)="documents.refresh(d)">Use v{{ to }}.0</button> }
                       @else { <span class="tag tag-outline">v{{ to }}.0 in EDRMS</span> }
                     }
+                    <app-link-document-details [documentId]="d.edrmsDocumentId" [name]="d.ref || d.edrmsNo" [edrmsNo]="d.edrmsNo" [typeLabel]="store.typeLabel(d.docType)"
+                                               [version]="d.version" [pinned]="d.fields" [mismatch]="mismatchOf(d.edrmsDocumentId)" />
                     <button class="btn btn-ghost btn-icon" title="View document" aria-label="View document" (click)="documents.view(d.edrmsDocumentId, d.version)"><app-icon name="eye" [size]="17" /></button>
                     @if (store.editable()) { <button class="btn btn-ghost btn-icon danger" title="Remove from record" aria-label="Remove from record" appCan="record.unlink" (click)="documents.remove(d)"><app-icon name="x" [size]="17" /></button> }
                   </td>
@@ -68,6 +77,7 @@ import {linkedText} from './link-format';
                     @if (p.linkedTo.length) { <span class="small muted">Also in {{ linkedText(p) }}</span> }
                   </div>
                   <div class="row" style="gap:6px;flex-wrap:nowrap">
+                    <app-link-document-details [documentId]="p.edrmsDocumentId" [name]="p.ref || p.edrmsNo" [edrmsNo]="p.edrmsNo" [typeLabel]="store.typeLabel(p.docType)" [fields]="p.fields" />
                     <button class="btn btn-ghost btn-icon" title="Preview" aria-label="Preview" (click)="documents.view(p.edrmsDocumentId)"><app-icon name="eye" [size]="17" /></button>
                     @if (p.inThisRecord) { <span class="tag tag-info">In this record</span> }
                     @else { <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="documents.add(p)">+ Add</button> }
@@ -100,4 +110,18 @@ export class LinkDocumentsTabComponent {
   protected readonly store = inject(LinkStore);
   protected readonly documents = inject(LinkDocumentsSearch);
   protected readonly linkedText = linkedText;
+  /** Why each linked document does not describe the parcel (the check "documents describe this parcel"). */
+  private readonly mismatches = computed(
+    () =>
+      new Map(
+        (
+          this.store.checks().find(c => c.id === 'parcel_match')?.mismatches ??
+          []
+        ).map(m => [m.edrmsDocumentId, m]),
+      ),
+  );
+
+  protected mismatchOf(edrmsDocumentId: string): Mismatch | null {
+    return this.mismatches().get(edrmsDocumentId) ?? null;
+  }
 }

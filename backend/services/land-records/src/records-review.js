@@ -1,7 +1,8 @@
 /**
  * Reviewing a land record's draft (API-647): submitting it for review, withdrawing it, and the
  * approve and return decisions that bpm's land-record-review process reports back; and the flags
- * set when edrms corrects a linked document (API-648). These are methods of RecordsService
+ * set when edrms corrects a linked document (API-648) or files a new document for the parcel
+ * (API-766). These are methods of RecordsService
  * (records.service.js adds them), so `this` is the service.
  */
 import {
@@ -14,6 +15,7 @@ import {
 import {validateVersion} from './catalogue.js';
 import {blocking, checksFor} from './derive.js';
 import {diffVersions} from './diff.js';
+import {parcelFromProperty, propertyMatches} from './parcel-match.js';
 import {searchTextOf} from './search-text.js';
 import {sealOf} from './seal.js';
 import {SYSTEM} from './system-actor.js';
@@ -222,7 +224,8 @@ export const reviewMethods = {
 
   /** The version in review, for a decision from bpm. */
   async requireInReview(recordId, versionNumber) {
-    const record = await this.requireRecord(recordId);
+    // a record in the bin is never approved (API-767)
+    const record = await this.requireActive(recordId);
     const version = await this.repo.getVersion(recordId, versionNumber);
     if (!version) throw new NotFoundError('Version not found');
     return {record, version};
@@ -495,18 +498,187 @@ export const reviewMethods = {
     }
     return flagged;
   },
+
+  // ---------------------------------------------------------------- new documents (API-766)
+
+  /**
+   * edrms filed a new document (`edrms.document.filed`). Every record it is about and does not
+   * hold yet is flagged "new document": by its property (the rule of the parcel check), or as the
+   * next link in the record's chain (it names a title deed of the record as its prior title).
+   * Nothing in the record changes by itself. A repeated event, or a flag dismissed before, raises
+   * no new flag.
+   */
+  async onDocumentFiled({documentId, edrmsNo, docType, instrumentRef, props}) {
+    if (!documentId) return [];
+    const fields = props || {};
+    const matchedBy = new Map(); // record id → 'property' | 'chain'
+
+    // 1. the property describes the record's parcel: the records with that parcel number, checked
+    const parcel = parcelFromProperty(fields.property, fields);
+    const number = parcel?.number ?? parcel?.farmNumber;
+    if (number) {
+      const {items} = await this.repo.listRecords({
+        q: String(number),
+        match: 'parcel',
+        limit: 200,
+      });
+      for (const r of items) {
+        const v = await this.repo.getVersion(
+          r.id,
+          r.draftVersion ?? r.currentVersion,
+        );
+        if (v && propertyMatches(v.data.parcel, fields.property)) {
+          matchedBy.set(r.id, 'property');
+        }
+      }
+    }
+    // 2. it names a title deed in a record as its prior title
+    if (fields.priorTitle && this.edrms) {
+      const {items} = await this.edrms.searchDocuments({
+        fields: {deedNo: fields.priorTitle},
+      });
+      const pins = await this.repo.findRecordsPinning(items.map(d => d.id));
+      for (const list of pins.values()) {
+        for (const p of list) {
+          if (!matchedBy.has(p.recordId)) matchedBy.set(p.recordId, 'chain');
+        }
+      }
+    }
+
+    const holding = new Set(
+      (
+        (await this.repo.findRecordsPinning([documentId])).get(documentId) || []
+      ).map(p => p.recordId),
+    );
+    const flagged = [];
+    for (const [recordId, by] of matchedBy) {
+      if (holding.has(recordId)) continue;
+      const record = await this.repo.getRecord(recordId);
+      const known = [
+        ...(record.flags || []),
+        ...(record.flagLog || []).map(e => e.flag),
+      ].some(
+        f => f.type === 'document_filed' && f.edrmsDocumentId === documentId,
+      );
+      if (known) continue;
+      const flag = {
+        type: 'document_filed',
+        edrmsDocumentId: documentId,
+        edrmsNo,
+        ref: instrumentRef ?? null,
+        docType: docType ?? null,
+        matchedBy: by,
+        at: this.clock().toISOString(),
+        message: `New document for this parcel: ${instrumentRef || edrmsNo}. Open a change to add it.`,
+      };
+      // the flag and its event are committed together (API-613)
+      await this.atomic(async () => {
+        await this.repo.updateRecord(recordId, {
+          flags: [...(record.flags || []), flag],
+        });
+        await this.events?.publish('records.record.flagged', {
+          recordId,
+          recordNo: record.recordNo,
+          flag,
+        });
+      });
+      flagged.push(recordId);
+    }
+    return flagged;
+  },
+
+  /**
+   * An officer dismisses a "new document" flag, with the reason (the document is about another
+   * parcel, say). The flag moves to the record's flag log, with who dismissed it, when and why.
+   * (The log also keeps the flags whose document went into a draft: `outcome: 'added'`.)
+   */
+  async dismissFlag(recordId, {edrmsDocumentId, reason}, actor = SYSTEM) {
+    const record = await this.requireActive(recordId);
+    const why = String(reason ?? '').trim();
+    if (!why) throw new BadRequestError('Give the reason for dismissing it');
+    const flag = (record.flags || []).find(
+      f => f.type === 'document_filed' && f.edrmsDocumentId === edrmsDocumentId,
+    );
+    if (!flag) {
+      throw new NotFoundError('The record has no new-document flag for it');
+    }
+    const entry = {
+      flag,
+      outcome: 'dismissed',
+      dismissedAt: this.clock().toISOString(),
+      dismissedById: actor.id,
+      dismissedByName: actor.name ?? null,
+      reason: why,
+    };
+    // the change and its event are committed together (API-613)
+    await this.atomic(async () => {
+      await this.repo.updateRecord(recordId, {
+        flags: record.flags.filter(f => f !== flag),
+        flagLog: [...(record.flagLog || []), entry],
+        updatedAt: this.clock(),
+      });
+      await this.events?.publish(
+        'records.record.flag-dismissed',
+        {recordId, recordNo: record.recordNo, ...entry},
+        {actor},
+      );
+    });
+    return this.getRecord(recordId);
+  },
 };
 
 /**
  * The flags still open once `data` is committed: a "document updated" flag stays while that
- * document is in the record at an older version than the corrected one.
+ * document is in the record at an older version than the corrected one; a "new document" flag
+ * while that document is not in the record.
  */
-function openFlags(flags = [], data) {
-  return flags.filter(
-    f =>
-      f.type !== 'document_updated' ||
-      (data.documents || []).some(
+export function openFlags(flags = [], data) {
+  const docs = data.documents || [];
+  return flags.filter(f => {
+    if (f.type === 'document_updated') {
+      return docs.some(
         d => d.edrmsDocumentId === f.edrmsDocumentId && d.version < f.to,
-      ),
+      );
+    }
+    if (f.type === 'document_filed') {
+      return !docs.some(d => d.edrmsDocumentId === f.edrmsDocumentId);
+    }
+    return true;
+  });
+}
+
+/**
+ * The "new document" flags once a draft (version `versionNumber`) holds `data` (API-766): a flag
+ * whose document is in the draft moves to the flag log as added; one added to this draft whose
+ * document was taken out again comes back. `{flags, flagLog}` when either changes, else `{}`.
+ */
+export function settleFiled(record, data, versionNumber, change) {
+  const inDraft = id =>
+    (data.documents || []).some(d => d.edrmsDocumentId === id);
+  const flags = record.flags || [];
+  const log = record.flagLog || [];
+  const added = flags.filter(
+    f => f.type === 'document_filed' && inDraft(f.edrmsDocumentId),
   );
+  const back = log.filter(
+    e =>
+      e.outcome === 'added' &&
+      e.versionNumber === versionNumber &&
+      !inDraft(e.flag.edrmsDocumentId),
+  );
+  if (!added.length && !back.length) return {};
+  return {
+    flags: [...flags.filter(f => !added.includes(f)), ...back.map(e => e.flag)],
+    flagLog: [
+      ...log.filter(e => !back.includes(e)),
+      ...added.map(flag => ({
+        flag,
+        outcome: 'added',
+        versionNumber,
+        at: change.at,
+        byId: change.byId,
+        byName: change.byName,
+      })),
+    ],
+  };
 }

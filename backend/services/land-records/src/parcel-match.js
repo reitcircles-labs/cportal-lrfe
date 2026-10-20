@@ -5,35 +5,71 @@ import {normalizeSearch} from '@lrfe/common';
  * a whole word ("Erf 1873, Klein Windhoek" matches; "Erf 18730" or "Erf 1873, Eros" does not).
  */
 export function propertyMatches(parcel, property) {
-  if (!property) return false;
-  const words = new Set(normalizeSearch(property).split(' '));
+  return propertyMismatch(parcel, property) === null;
+}
+
+/**
+ * Why a document's property field does not describe this parcel, or null when it does: the
+ * parcel's identifying words it does not name (`missing`, as normalizeSearch writes them), and
+ * whether it names a portion the parcel does not have (`otherPortion`).
+ */
+export function propertyMismatch(parcel, property) {
+  const words = new Set(property ? normalizeSearch(property).split(' ') : []);
+  const required = identifyingWords(parcel ?? {});
+  const missing = required.filter(w => !words.has(w));
+  // no other portion than the parcel's own
+  const otherPortion = !parcel?.portion && words.has('portion');
+  if (property && required.length && !missing.length && !otherPortion) {
+    return null;
+  }
+  return {missing, otherPortion};
+}
+
+/**
+ * Does a document's property field name this parcel's number (the erf, farm or unit number),
+ * whatever township or name it gives? For listing the documents likely about this parcel, so the
+ * ones that do not match it can be shown.
+ */
+export function sameParcelNumber(parcel, property) {
+  const kind = parcel?.kind;
+  let numberOnly = null;
+  if (kind === 'erf') {
+    numberOnly = {kind, number: parcel.number, portion: parcel.portion};
+  } else if (kind === 'farm_portion') {
+    numberOnly = {kind, farmNumber: parcel.farmNumber, portion: parcel.portion};
+  } else if (kind === 'sectional_unit') {
+    numberOnly = {kind, unit: parcel.unit};
+  }
+  return !!numberOnly && propertyMatches(numberOnly, property);
+}
+
+/** The words a document's property field must name for this parcel. */
+function identifyingWords(parcel) {
   const need = (...vals) =>
     vals
       .filter(Boolean)
       .flatMap(v => normalizeSearch(v).split(' '))
       .filter(Boolean);
-  let required = [];
   if (parcel.kind === 'erf') {
-    required = need(
+    return need(
       'erf',
       parcel.number,
       parcel.township,
       parcel.portion ? `portion ${parcel.portion}` : null,
     );
-  } else if (parcel.kind === 'farm_portion') {
-    required = need(
+  }
+  if (parcel.kind === 'farm_portion') {
+    return need(
       'farm',
       parcel.farmName,
       parcel.farmNumber,
       parcel.portion ? `portion ${parcel.portion}` : null,
     );
-  } else if (parcel.kind === 'sectional_unit') {
-    required = need(parcel.schemeName, 'unit', parcel.unit);
   }
-  if (!required.length || !required.every(w => words.has(w))) return false;
-  // no other portion than the parcel's own
-  if (!parcel.portion && words.has('portion')) return false;
-  return true;
+  if (parcel.kind === 'sectional_unit') {
+    return need(parcel.schemeName, 'unit', parcel.unit);
+  }
+  return [];
 }
 
 /** "KLEIN WINDHOEK" → "Klein Windhoek": a name written in capitals, as deeds do; others as they are. */

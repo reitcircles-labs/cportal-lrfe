@@ -14,9 +14,12 @@ export class LinkDocumentsSearch {
     const f = this.store
       .rec()
       ?.flags.find(
-        x => x.edrmsDocumentId === d.edrmsDocumentId && x.to > d.version,
+        x =>
+          x.type === 'document_updated' &&
+          x.edrmsDocumentId === d.edrmsDocumentId &&
+          (x.to ?? 0) > d.version,
       );
-    return f ? f.to : null;
+    return f?.to ?? null;
   }
 
   setMode(m: 'match' | 'search') {

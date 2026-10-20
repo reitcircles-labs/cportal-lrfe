@@ -189,6 +189,39 @@ ID number shows as a new suggestion and an `overrides` warning until accepted), 
 through review. The flag clears when a committed version pins the corrected document version (or no
 longer holds the document); a committed change that leaves the older version keeps the flag.
 
+### When edrms files a new document for the parcel (API-766)
+
+edrms publishes `edrms.document.filed` when a document is filed; land-records reads it with a
+durable consumer (`land-records-document-filed`). A record that does not hold the document yet is
+flagged **new document** when the document's property describes its parcel (the rule of the
+`parcel_match` check) or when the document names a title deed in the record as its prior title
+(`flags: [{ type: "document_filed", edrmsDocumentId, edrmsNo, ref, docType, matchedBy: "property" |
+"chain", message: "New document for this parcel: T …. Open a change to add it." }]`,
+`records.record.flagged`). The record does not change by itself: an officer opens a change and adds
+the document, and the flag ends as soon as a draft holds it (it moves to `flagLog` as `added`, and
+comes back if the document is taken out of that draft again). An officer can also dismiss it with a
+reason (`POST /records/:id/flags/dismiss`); it moves to `flagLog` as `dismissed`, with who, when and
+why. Either way the same document never flags that record again. The list filter `status=new_document` gives the
+records with such a flag; each record has `newDocuments` (the count) besides `needsReview`.
+
+## 8b. The bin (API-767)
+
+A record that was never approved (only draft v1, not in review) can be moved to the bin with a reason
+(`POST /records/:id/bin`). Nothing of it was sealed or anchored. It is kept, not deleted: `discardedAt`
+is set, it leaves every list but `status=in_bin`, its parcel key is set aside so a new record can be
+made for the parcel, and its documents are free again (no longer "linked to" it). Its record number
+stays used. It cannot be changed or commented on while in the bin. `POST /records/:id/restore` brings
+it back as it was, unless its parcel has another record by now (409 naming it).
+
+An abandoned change of an approved record is discarded with a reason (`POST /records/:id/draft/discard`):
+the draft vN+1 is removed, the record takes the current version's parcel again, and a new change can be
+opened. An approved record never goes to the bin.
+
+Each of these is kept in the record's `binLog` with who, when and why (for a discarded change also its
+`diff` against the current version and its change log), shown with the history, and published
+(`records.record.discarded`, `records.record.restored`, `records.draft.discarded`). Permission:
+`record.create`.
+
 ## 9. Finding documents
 
 Search over filed documents by their verified metadata (deed or diagram number, property, owner
@@ -208,17 +241,22 @@ checks, is logged in the version's `changes` (who, what, when) and published as 
 | `GET /records?q=&status=` | `record.view` | list and search records |
 | `GET /records/:id` | `record.view` | the record with its current version, open draft and flags |
 | `GET /records/:id/versions/:n` · `…/verify` | `record.view` (verify: or the audit service) | a version · verify the seal chain |
-| `POST /records {parcel}` · `{edrmsDocumentId}` | `record.create` | create a record (draft v1); from a filed document: parcel read from its property field, document linked |
+| `POST /records/preview {edrmsDocumentId, parcel}` | `record.create` | before creating (API-765): the parcel read from a document or as corrected, what it still needs, the filed documents with its number and whether each describes it, values the documents agree on for missing fields, the record it already has |
+| `POST /records {parcel}` · `{edrmsDocumentId}` | `record.create` | create a record (draft v1); from a filed document: parcel read from its property field (or as given in `parcel`), document linked |
 | `PATCH /records/:id/draft {revision, changes, accept, reason}` | `record.create` or `record.link` | edit core fields and attributes; `accept` suggested owners, extent, encumbrances; `reason` for values entered by hand |
 | `POST /records/:id/draft/documents {edrmsDocumentId}` | `record.link` | pin a document (its current version) |
 | `DELETE /records/:id/draft/documents/:edrmsDocumentId?revision=` | `record.unlink` | remove a document |
 | `POST /records/:id/draft` | `record.create` or `record.link` | open a new draft from the current version (one per record) |
 | `POST /records/:id/draft/documents/:edrmsDocumentId/refresh {revision}` | `record.link` | adopt a document's newer EDRMS version |
 | `GET /records/:id/history` | `record.view` | committed versions with who, when, changes and seal check |
+| `POST /records/:id/flags/dismiss {edrmsDocumentId, reason}` | `record.link` | dismiss a "new document" flag, with the reason (API-766) |
+| `POST /records/:id/bin {reason}` · `POST /records/:id/restore` | `record.create` | move a never-approved record to the bin · restore it (API-767) |
+| `POST /records/:id/draft/discard {reason}` | `record.create` | discard the open draft of an approved record (API-767) |
 | `POST /records/:id/draft/submit {revision}` · `…/withdraw` | `record.link` | submit for review · withdraw (submitter only) |
 | `GET /records/:id/review` | `record.view` | what the reviewer sees: version, checks, overrides, difference from the current version |
 | `GET /records/:id/comments` · `POST` | `record.view` · `record.comment` | discussion |
-| `GET /records/document-search?…` · `GET /records/:id/suggestions` | `record.view` | find documents (API-645) |
+| `GET /records/document-search?…` · `GET /records/:id/suggestions` | `record.view` | find documents (API-645); each with its labelled `fields` |
+| `GET /records/document-details/:edrmsDocumentId` | `record.view` | one filed document's metadata, for its Details popover (API-765) |
 | `POST /records/:id/versions/:n/commit` · `…/reject` | service token from bpm | decisions from the review process |
 
 ## 11. Events
