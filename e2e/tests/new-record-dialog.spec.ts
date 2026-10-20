@@ -83,7 +83,7 @@ test.describe.serial('New record dialog (API-765)', () => {
     'a township read wrongly from a document is shown with the documents it does not match, corrected, and the record created',
     {tag: ['@API-765']},
     async ({page}) => {
-      await page.setViewportSize({width: 1440, height: 1000});
+      await page.setViewportSize({width: 1600, height: 1000});
       await signInAs(page, userByRole('rec').email, '/link');
       const dialog = await startFrom(page, SALE);
 
@@ -161,7 +161,7 @@ test.describe.serial('New record dialog (API-765)', () => {
     'a bond without a registration division: the dialog asks for it, offers the value of the other documents, and creates the record',
     {tag: ['@API-765']},
     async ({page}) => {
-      await page.setViewportSize({width: 1440, height: 1000});
+      await page.setViewportSize({width: 1600, height: 1000});
       await signInAs(page, userByRole('rec').email, '/link');
       const dialog = await startFrom(page, BOND_OTHER);
       const division = dialog.getByLabel(/^Registration division/);
@@ -193,7 +193,7 @@ test.describe.serial('New record dialog (API-765)', () => {
     'a parcel with a record in draft: the document is added to that draft instead; a linked document that is not this parcel says why',
     {tag: ['@API-765']},
     async ({page, playwright, baseURL}) => {
-      await page.setViewportSize({width: 1440, height: 1000});
+      await page.setViewportSize({width: 1600, height: 1000});
       await signInAs(page, userByRole('rec').email, '/link');
       const dialog = await startFrom(page, TITLE);
       const existing = dialog.locator('.existing');
@@ -370,7 +370,7 @@ test.describe.serial('New record dialog (API-765)', () => {
         `ERF NO. ${CHANGE_ERF} OLYMPIA`,
       );
 
-      await page.setViewportSize({width: 1440, height: 1000});
+      await page.setViewportSize({width: 1600, height: 1000});
       await signInAs(page, userByRole('rec').email, '/link');
       const dialog = await startFrom(page, CHANGE_NEW);
       const existing = dialog.locator('.existing');
