@@ -1,1 +1,1 @@
-export { createMemoryStore } from '@lrfe/storage';
+export {createMemoryStore} from '@lrfe/storage';

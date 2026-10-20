@@ -1,19 +1,54 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
+import {DomSanitizer, SafeResourceUrl} from '@angular/platform-browser';
 
-import { CheckDocument, Finding } from '../../api/audit.api';
-import { PinnedDocument, RecordsApi } from '../../api/records.api';
-import { InfoTipComponent } from '../../shared/info-tip.component';
-import { CHANGED_SINCE_REVIEW, MATCH, TIPS, documentStatus, findingNumber } from './audit-wording';
-import { FindingReply, FindingThreadComponent } from './finding-thread.component';
+import {CheckDocument, Finding} from '../../api/audit.api';
+import {PinnedDocument, RecordsApi} from '../../api/records.api';
+import {InfoTipComponent} from '../../shared/info-tip.component';
+import {
+  CHANGED_SINCE_REVIEW,
+  MATCH,
+  TIPS,
+  documentStatus,
+  findingNumber,
+} from './audit-wording';
+import {FindingReply, FindingThreadComponent} from './finding-thread.component';
 
 /** The blockchain check's result box. */
 const BANNERS = {
-  matches: { title: 'Match', body: 'This file is exactly the document that was sealed. Nothing has changed since.', tone: 'ok' },
-  changed: { title: 'Changed since review', body: `This file is not the document that was sealed. ${CHANGED_SINCE_REVIEW}`, tone: 'bad' },
-  notOnChain: { title: 'Not on the blockchain yet', body: 'You can read the document now. The check runs again once it is on the blockchain.', tone: 'wait' },
-  unavailable: { title: 'Couldn’t check right now', body: 'Try again in a few minutes.', tone: 'warn' },
-  earlier: { title: 'Checked at an earlier audit', body: 'This document version was covered by an earlier audit sign-off.', tone: 'wait' }
+  matches: {
+    title: 'Match',
+    body: 'This file is exactly the document that was sealed. Nothing has changed since.',
+    tone: 'ok',
+  },
+  changed: {
+    title: 'Changed since review',
+    body: `This file is not the document that was sealed. ${CHANGED_SINCE_REVIEW}`,
+    tone: 'bad',
+  },
+  notOnChain: {
+    title: 'Not on the blockchain yet',
+    body: 'You can read the document now. The check runs again once it is on the blockchain.',
+    tone: 'wait',
+  },
+  unavailable: {
+    title: 'Couldn’t check right now',
+    body: 'Try again in a few minutes.',
+    tone: 'warn',
+  },
+  earlier: {
+    title: 'Checked at an earlier audit',
+    body: 'This document version was covered by an earlier audit sign-off.',
+    tone: 'wait',
+  },
 } as const;
 
 /**
@@ -94,7 +129,8 @@ const BANNERS = {
       </aside>
     </div>
   `,
-  styles: [`
+  styles: [
+    `
     :host { display: flex; flex-direction: column; gap: 16px; }
     .head { justify-content: space-between; align-items: flex-end; gap: 12px; }
     h1 { margin: 2px 0 0; font-size: 28px; }
@@ -118,7 +154,8 @@ const BANNERS = {
     .banner.bad { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-bd); }
     .banner.warn { background: var(--warn-bg); border-color: var(--warn-bd); }
     .record pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; margin: 8px 0 0; }
-  `]
+  `,
+  ],
 })
 export class AuditReviewComponent {
   private readonly records = inject(RecordsApi);
@@ -128,7 +165,7 @@ export class AuditReviewComponent {
   /** The document type's name. */
   readonly kind = input.required<string>();
   /** The sealed fields with their names. */
-  readonly fields = input<{ k: string; v: string }[]>([]);
+  readonly fields = input<Array<{k: string; v: string}>>([]);
   readonly recordLabel = input.required<string>();
   readonly rangeText = input.required<string>();
   readonly addedIn = input.required<number>();
@@ -151,8 +188,12 @@ export class AuditReviewComponent {
   protected readonly rawUrl = signal<string>('');
   protected readonly fileError = signal<string | null>(null);
 
-  protected readonly match = computed(() => this.checkDocument()?.match ?? null);
-  protected readonly changed = computed(() => this.match() === 'changed' && !this.checkDocument()?.superseded);
+  protected readonly match = computed(
+    () => this.checkDocument()?.match ?? null,
+  );
+  protected readonly changed = computed(
+    () => this.match() === 'changed' && !this.checkDocument()?.superseded,
+  );
   protected readonly matchLabel = computed(() => {
     const m = this.match();
     if (m === 'matches') {
@@ -166,24 +207,48 @@ export class AuditReviewComponent {
     }
     return this.match() === 'changed' ? '✕' : '';
   });
-  protected readonly banner = computed(() => BANNERS[this.match() ?? 'earlier']);
+  protected readonly banner = computed(
+    () => BANNERS[this.match() ?? 'earlier'],
+  );
   protected readonly status = computed(() => {
-    const open = this.findings().filter(f => f.status === 'open').map(f => findingNumber(f.id));
+    const open = this.findings()
+      .filter(f => f.status === 'open')
+      .map(f => findingNumber(f.id));
     return documentStatus(this.changed(), open, this.match());
   });
   protected readonly metadata = computed(() => [
-    { k: 'Document number', v: this.pin().edrmsNo },
-    ...(this.pin().ref ? [{ k: 'Reference', v: this.pin().ref as string }] : []),
-    ...this.fields()
+    {k: 'Document number', v: this.pin().edrmsNo},
+    ...(this.pin().ref ? [{k: 'Reference', v: this.pin().ref as string}] : []),
+    ...this.fields(),
   ]);
-  protected readonly trailJson = computed(() => JSON.stringify({
-    trail: `Audit trail of ${this.pin().edrmsNo}, also shown in the trail of ${this.recordLabel()}`,
-    Findings: this.findings().map(f => ({
-      id: f.id, status: f.status, outcome: f.outcome, raisedBy: { name: f.raisedByName, at: f.raisedAt }, issue: f.description,
-      answers: (f.answers || []).map(a => ({ name: a.byName, role: a.role, at: a.at, text: a.text })),
-      ...(f.status === 'closed' ? { closedBy: { name: f.closedByName, at: f.closedAt }, answer: f.closeReason } : {})
-    }))
-  }, null, 2));
+  protected readonly trailJson = computed(() =>
+    JSON.stringify(
+      {
+        trail: `Audit trail of ${this.pin().edrmsNo}, also shown in the trail of ${this.recordLabel()}`,
+        Findings: this.findings().map(f => ({
+          id: f.id,
+          status: f.status,
+          outcome: f.outcome,
+          raisedBy: {name: f.raisedByName, at: f.raisedAt},
+          issue: f.description,
+          answers: (f.answers || []).map(a => ({
+            name: a.byName,
+            role: a.role,
+            at: a.at,
+            text: a.text,
+          })),
+          ...(f.status === 'closed'
+            ? {
+                closedBy: {name: f.closedByName, at: f.closedAt},
+                answer: f.closeReason,
+              }
+            : {}),
+        })),
+      },
+      null,
+      2,
+    ),
+  );
 
   constructor() {
     effect(() => {
@@ -195,11 +260,16 @@ export class AuditReviewComponent {
     this.url.set(null);
     this.fileError.set(null);
     try {
-      const { url } = await this.records.contentLink(pin.edrmsDocumentId, pin.version);
+      const {url} = await this.records.contentLink(
+        pin.edrmsDocumentId,
+        pin.version,
+      );
       this.rawUrl.set(url);
       this.url.set(this.sanitizer.bypassSecurityTrustResourceUrl(url));
     } catch (e) {
-      this.fileError.set(`The file could not be opened: ${(e as Error).message}`);
+      this.fileError.set(
+        `The file could not be opened: ${(e as Error).message}`,
+      );
     }
   }
 }

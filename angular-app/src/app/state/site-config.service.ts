@@ -1,8 +1,14 @@
-import { Injectable, computed, signal } from '@angular/core';
-import { DEFAULT_SITE_CONFIG, fullName, loadSiteConfig, nameAndPlace, type SiteConfig } from './site-config';
+import {Injectable, computed, signal} from '@angular/core';
+import {
+  DEFAULT_SITE_CONFIG,
+  fullName,
+  loadSiteConfig,
+  nameAndPlace,
+  type SiteConfig,
+} from './site-config';
 
 /** The organisation running this portal (site-config.ts), loaded once before the first screen. */
-@Injectable({ providedIn: 'root' })
+@Injectable({providedIn: 'root'})
 export class SiteConfigService {
   private readonly current = signal<SiteConfig>(DEFAULT_SITE_CONFIG);
 

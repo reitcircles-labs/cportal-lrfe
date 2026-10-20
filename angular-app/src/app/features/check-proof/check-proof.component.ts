@@ -1,7 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 
-import { AuditApi } from '../../api/audit.api';
-import { SiteConfigService } from '../../state/site-config.service';
+import {AuditApi} from '../../api/audit.api';
+import {SiteConfigService} from '../../state/site-config.service';
 
 /** Where the offline verifier is downloaded from (the audit service, no sign-in). */
 const VERIFIER_URL = '/api/audit/verifier/lrfe-verify.mjs';
@@ -106,7 +112,8 @@ interface Wallet {
       <p class="small muted foot"><a href="#/login">Registry staff: sign in</a></p>
     </main>
   `,
-  styles: [`
+  styles: [
+    `
     :host { display: block; min-height: 100vh; background: var(--color-bg, #f3f5f8); }
     .wrap { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; display: flex; flex-direction: column; gap: 18px; }
     .flag { height: 6px; border-radius: 3px; background: linear-gradient(100deg, var(--nam-blue) 0 38%, #fff 38% 41%, var(--nam-red) 41% 59%, #fff 59% 62%, var(--nam-green) 62% 100%); margin-bottom: 18px; }
@@ -129,7 +136,8 @@ interface Wallet {
     .field .input { font-family: ui-monospace, Menlo, monospace; }
     .foot { text-align: center; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  `]
+  `,
+  ],
 })
 export class CheckProofComponent {
   private readonly audit = inject(AuditApi);
@@ -141,7 +149,10 @@ export class CheckProofComponent {
   protected readonly tx = signal('');
   protected readonly copied = signal<'command' | 'address' | null>(null);
 
-  protected readonly command = computed(() => `node lrfe-verify.mjs proof.json --address ${this.wallet()?.address ?? '<the wallet address below>'}`);
+  protected readonly command = computed(
+    () =>
+      `node lrfe-verify.mjs proof.json --address ${this.wallet()?.address ?? '<the wallet address below>'}`,
+  );
 
   protected readonly txLink = computed(() => {
     const id = this.tx().trim().toLowerCase();
@@ -150,14 +161,20 @@ export class CheckProofComponent {
   });
 
   constructor() {
-    this.audit.wallet().then(w => this.wallet.set(w), () => this.error.set(true));
+    this.audit.wallet().then(
+      w => this.wallet.set(w),
+      () => this.error.set(true),
+    );
   }
 
   protected value(event: Event): string {
     return (event.target as HTMLInputElement).value;
   }
 
-  protected async copy(text: string, what: 'command' | 'address'): Promise<void> {
+  protected async copy(
+    text: string,
+    what: 'command' | 'address',
+  ): Promise<void> {
     try {
       await navigator.clipboard.writeText(text);
       this.copied.set(what);

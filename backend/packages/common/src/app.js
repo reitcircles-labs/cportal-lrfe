@@ -1,18 +1,18 @@
 import Fastify from 'fastify';
-import { errorHandler } from './errors.js';
-import { env } from './config.js';
+import {errorHandler} from './errors.js';
+import {env} from './config.js';
 
 /**
  * Fastify instance with the shared error handler and a public GET /health.
  * `onRoute(routeOptions)` sees every route as it is registered (the API docs generator uses it).
  */
-export function createBaseApp({ name, onRoute, ...fastifyOptions }) {
-    if (!name) throw new Error('createBaseApp: `name` is required');
-    const app = Fastify({ logger: false, ...fastifyOptions });
-    if (onRoute) app.addHook('onRoute', onRoute);
-    app.setErrorHandler(errorHandler);
-    app.get('/health', async () => ({ status: 'ok', service: name }));
-    return app;
+export function createBaseApp({name, onRoute, ...fastifyOptions}) {
+  if (!name) throw new Error('createBaseApp: `name` is required');
+  const app = Fastify({logger: false, ...fastifyOptions});
+  if (onRoute) app.addHook('onRoute', onRoute);
+  app.setErrorHandler(errorHandler);
+  app.get('/health', async () => ({status: 'ok', service: name}));
+  return app;
 }
 
 /**
@@ -22,25 +22,28 @@ export function createBaseApp({ name, onRoute, ...fastifyOptions }) {
  * HOST defaults to 0.0.0.0 (all interfaces — what containers need). On a developer machine
  * with a public address, set HOST=127.0.0.1 so the services are not reachable from outside.
  */
-export async function startService(app, { port, host = env('HOST', '0.0.0.0'), checks = [], onClose } = {}) {
-    for (const check of checks) {
-        try {
-            await check();
-        } catch (err) {
-            app.log.fatal({ err }, 'startup check failed');
-            process.exit(1);
-        }
+export async function startService(
+  app,
+  {port, host = env('HOST', '0.0.0.0'), checks = [], onClose} = {},
+) {
+  for (const check of checks) {
+    try {
+      await check();
+    } catch (err) {
+      app.log.fatal({err}, 'startup check failed');
+      process.exit(1);
     }
-    const shutdown = async (signal) => {
-        app.log.info({ signal }, 'shutting down');
-        try {
-            await app.close();
-            if (onClose) await onClose();
-        } finally {
-            process.exit(0);
-        }
-    };
-    process.once('SIGTERM', shutdown);
-    process.once('SIGINT', shutdown);
-    await app.listen({ port, host });
+  }
+  const shutdown = async signal => {
+    app.log.info({signal}, 'shutting down');
+    try {
+      await app.close();
+      if (onClose) await onClose();
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+  await app.listen({port, host});
 }

@@ -1,9 +1,9 @@
-import { HttpClient, HttpResponse } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import {HttpClient, HttpResponse} from '@angular/common/http';
+import {Injectable, inject} from '@angular/core';
+import {firstValueFrom} from 'rxjs';
 
-import type { VerifyResult } from '../features/audit/verify-wording';
-import { ApiService, toApiError } from './api.service';
+import type {VerifyResult} from '../features/audit/verify-wording';
+import {ApiService, toApiError} from './api.service';
 
 /** Types and calls of the audit service (gateway prefix /api/audit). */
 
@@ -29,11 +29,17 @@ export interface AuditListItem {
   proofBatch: number | null;
   needsAttention: boolean;
   audit: {
-    range: { from: number; to: number } | null;
+    range: {from: number; to: number} | null;
     newDocuments: number;
     check: 'matches' | 'changed' | 'notOnChain';
     openFindings: number;
-    lastSignoff: { toVersion: number; signedAt: string; signedByName: string | null; proof: Anchoring; batch: number | null } | null;
+    lastSignoff: {
+      toVersion: number;
+      signedAt: string;
+      signedByName: string | null;
+      proof: Anchoring;
+      batch: number | null;
+    } | null;
   };
 }
 
@@ -114,7 +120,7 @@ export interface FindingRecord {
   recordVersion: number | null;
   edrmsNo: string | null;
   documentVersion: number | null;
-  raisedBy: { id: string; name: string | null; at: string };
+  raisedBy: {id: string; name: string | null; at: string};
   issue: string;
 }
 
@@ -127,7 +133,7 @@ export interface Signoff {
   signedByName: string | null;
   signedAt: string;
   /** How far its trail entry has got on the blockchain, and in which batch (the checkpoint's last sign-off, API-699). */
-  proof?: { status: Anchoring; batch: number | null };
+  proof?: {status: Anchoring; batch: number | null};
 }
 
 /** The open checkpoint of a land record (GET /audit/records/:id/check). */
@@ -136,7 +142,7 @@ export interface Checkpoint {
   recordNo: string;
   label: string;
   lastSignoff: Signoff | null;
-  range: { from: number; to: number } | null;
+  range: {from: number; to: number} | null;
   versions: CheckVersion[];
   documents: CheckDocument[];
   openFindings: FindingRecord[];
@@ -150,7 +156,7 @@ export interface TrailEntry {
   type: string;
   source: string;
   time: string;
-  actor: { id: string | null; name: string };
+  actor: {id: string | null; name: string};
   subjects: string[];
   data: Record<string, unknown>;
   hash: string;
@@ -169,12 +175,13 @@ export interface EvidencePack {
   manifestSha256: string;
 }
 
-@Injectable({ providedIn: 'root' })
+/** The audit service API: the trail, proofs, sign-offs, findings and evidence packs. */
+@Injectable({providedIn: 'root'})
 export class AuditApi {
   private readonly api = inject(ApiService);
   private readonly http = inject(HttpClient);
 
-  list(query: { q?: string; filter: ListFilter; limit: number; offset: number }) {
+  list(query: {q?: string; filter: ListFilter; limit: number; offset: number}) {
     return this.api.get<AuditList>('/audit/records', query);
   }
 
@@ -183,76 +190,137 @@ export class AuditApi {
   }
 
   signOff(recordId: string, comment?: string) {
-    return this.api.post<Signoff>('/audit/signoffs', { recordId, ...(comment ? { comment } : {}) });
+    return this.api.post<Signoff>('/audit/signoffs', {
+      recordId,
+      ...(comment ? {comment} : {}),
+    });
   }
 
   findings(recordId: string) {
-    return this.api.get<{ items: Finding[] }>('/audit/findings', { recordId });
+    return this.api.get<{items: Finding[]}>('/audit/findings', {recordId});
   }
 
-  raiseFinding(body: { recordId: string; version: number; documentId?: string; description: string }) {
+  raiseFinding(body: {
+    recordId: string;
+    version: number;
+    documentId?: string;
+    description: string;
+  }) {
     return this.api.post<Finding>('/audit/findings', body);
   }
 
   answerFinding(findingId: string, text: string) {
-    return this.api.post<Finding>(`/audit/findings/${findingId}/answers`, { text });
+    return this.api.post<Finding>(`/audit/findings/${findingId}/answers`, {
+      text,
+    });
   }
 
-  closeFinding(findingId: string, outcome: 'agreed' | 'mistake', answer: string) {
-    return this.api.post<Finding>(`/audit/findings/${findingId}/close`, { outcome, answer });
+  closeFinding(
+    findingId: string,
+    outcome: 'agreed' | 'mistake',
+    answer: string,
+  ) {
+    return this.api.post<Finding>(`/audit/findings/${findingId}/close`, {
+      outcome,
+      answer,
+    });
   }
 
   /** Trail entries, oldest first, by subject, event type (or a family ending in a dot) and dates (API-673). */
-  searchTrail(query: { subject?: string; type?: string; from?: string; to?: string; offset: number; limit: number }) {
-    return this.api.get<{ total: number; entries: TrailEntry[] }>('/audit/trail', query);
+  searchTrail(query: {
+    subject?: string;
+    type?: string;
+    from?: string;
+    to?: string;
+    offset: number;
+    limit: number;
+  }) {
+    return this.api.get<{total: number; entries: TrailEntry[]}>(
+      '/audit/trail',
+      query,
+    );
   }
 
   /** The people who acted in the trail whose name contains `q`. */
   actors(q: string) {
-    return this.api.get<{ items: { id: string; name: string }[] }>('/audit/trail/actors', { q, limit: 10 });
+    return this.api.get<{items: Array<{id: string; name: string}>}>(
+      '/audit/trail/actors',
+      {q, limit: 10},
+    );
   }
 
   trail(recordId: string, offset: number, limit: number) {
-    return this.api.get<{ total: number; entries: TrailEntry[] }>('/audit/trail', { subject: `record:${recordId}`, offset, limit });
+    return this.api.get<{total: number; entries: TrailEntry[]}>(
+      '/audit/trail',
+      {subject: `record:${recordId}`, offset, limit},
+    );
   }
 
   /** A proof file (`lrfe-audit-proof/1`), for the offline verifier (API-672). */
   proof(kind: ProofKind, id: string, version?: number) {
-    return this.api.get<Record<string, unknown>>(`/audit/proofs/${kind}/${id}`, { version });
+    return this.api.get<Record<string, unknown>>(
+      `/audit/proofs/${kind}/${id}`,
+      {version},
+    );
   }
 
   /** Check a version against the blockchain now (API-675). */
   verify(kind: ProofKind, id: string, version?: number) {
-    return this.api.post<VerifyResult>('/audit/verify', { kind, id, ...(version ? { version } : {}) });
+    return this.api.post<VerifyResult>('/audit/verify', {
+      kind,
+      id,
+      ...(version ? {version} : {}),
+    });
   }
 
   /** The anchoring wallet the installation publishes (no sign-in needed). */
   wallet() {
-    return this.api.get<{ address: string | null; explorerUrl: string | null; transactionUrl: string | null }>('/audit/anchoring/wallet');
+    return this.api.get<{
+      address: string | null;
+      explorerUrl: string | null;
+      transactionUrl: string | null;
+    }>('/audit/anchoring/wallet');
   }
 
   proofStatus(seq: number) {
-    return this.api.get<{ status: ProofStatus; anchor: { batch: number } | null }>(`/audit/proofs/trail-entry/${seq}`);
+    return this.api.get<{status: ProofStatus; anchor: {batch: number} | null}>(
+      `/audit/proofs/trail-entry/${seq}`,
+    );
   }
 
   /** The whole trail's hash chain, recomputed. */
   verifyTrail() {
-    return this.api.get<{ intact: boolean; brokenAt?: number }>('/audit/trail/verify');
+    return this.api.get<{intact: boolean; brokenAt?: number}>(
+      '/audit/trail/verify',
+    );
   }
 
   verifyEntry(seq: number) {
-    return this.api.post<{ valid: boolean; status: ProofStatus }>('/audit/verify', { kind: 'trail-entry', id: String(seq) });
+    return this.api.post<{valid: boolean; status: ProofStatus}>(
+      '/audit/verify',
+      {kind: 'trail-entry', id: String(seq)},
+    );
   }
 
   async evidence(recordId: string): Promise<EvidencePack> {
     let res: HttpResponse<Blob>;
     try {
-      res = await firstValueFrom(this.http.get(`${this.api.base}/audit/records/${recordId}/evidence`, { observe: 'response', responseType: 'blob' }));
+      res = await firstValueFrom(
+        this.http.get(`${this.api.base}/audit/records/${recordId}/evidence`, {
+          observe: 'response',
+          responseType: 'blob',
+        }),
+      );
     } catch (e) {
       throw toApiError(e);
     }
     const disposition = res.headers.get('content-disposition') ?? '';
-    const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'evidence.zip';
-    return { blob: res.body!, fileName, manifestSha256: res.headers.get('x-manifest-sha256') ?? '' };
+    const fileName =
+      /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'evidence.zip';
+    return {
+      blob: res.body!,
+      fileName,
+      manifestSha256: res.headers.get('x-manifest-sha256') ?? '',
+    };
   }
 }

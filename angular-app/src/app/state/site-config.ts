@@ -29,7 +29,10 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
  * default.
  */
 export function parseSiteConfig(raw: unknown): SiteConfig {
-  const given = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const given =
+    raw !== null && typeof raw === 'object'
+      ? (raw as Record<string, unknown>)
+      : {};
   const read = (key: keyof SiteConfig): string => {
     const value = given[key];
     return typeof value === 'string' ? value.trim() : DEFAULT_SITE_CONFIG[key];
@@ -46,9 +49,11 @@ export function parseSiteConfig(raw: unknown): SiteConfig {
  * Fetches and reads `config.json`. Never fails: without a usable file the portal still starts,
  * with the defaults.
  */
-export async function loadSiteConfig(fetchFn: typeof fetch = fetch): Promise<SiteConfig> {
+export async function loadSiteConfig(
+  fetchFn: typeof fetch = fetch,
+): Promise<SiteConfig> {
   try {
-    const response = await fetchFn('config.json', { cache: 'no-store' });
+    const response = await fetchFn('config.json', {cache: 'no-store'});
     if (!response.ok) return DEFAULT_SITE_CONFIG;
     return parseSiteConfig(await response.json());
   } catch {
@@ -58,10 +63,14 @@ export async function loadSiteConfig(fetchFn: typeof fetch = fetch): Promise<Sit
 
 /** "Deeds Registry · Republic of Namibia" (or only the name, without a subtitle). */
 export function fullName(config: SiteConfig): string {
-  return config.orgSubtitle ? `${config.orgName} · ${config.orgSubtitle}` : config.orgName;
+  return config.orgSubtitle
+    ? `${config.orgName} · ${config.orgSubtitle}`
+    : config.orgName;
 }
 
 /** "Deeds Registry · Windhoek" (or only the name, without a place). */
 export function nameAndPlace(config: SiteConfig): string {
-  return config.orgPlace ? `${config.orgName} · ${config.orgPlace}` : config.orgName;
+  return config.orgPlace
+    ? `${config.orgName} · ${config.orgPlace}`
+    : config.orgName;
 }

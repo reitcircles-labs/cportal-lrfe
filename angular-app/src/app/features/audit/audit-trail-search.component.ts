@@ -1,12 +1,27 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-
-import { AuditApi, ProofStatus, TrailEntry } from '../../api/audit.api';
-import { AuditTabsComponent } from '../../shared/audit-tabs.component';
-import { InfoTipComponent } from '../../shared/info-tip.component';
-import { ProofDownloadComponent } from '../../shared/proof-download.component';
-import { ProofLinkComponent } from '../../shared/proof-link.component';
 import {
-  EVENT_GROUPS, SEARCH_TIPS, TIPS, actionLabel, chainResult, gapText, proofLabel, shortDateTime, sourceLabel, toneClass
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+
+import {AuditApi, ProofStatus, TrailEntry} from '../../api/audit.api';
+import {AuditTabsComponent} from '../../shared/audit-tabs.component';
+import {InfoTipComponent} from '../../shared/info-tip.component';
+import {ProofDownloadComponent} from '../../shared/proof-download.component';
+import {ProofLinkComponent} from '../../shared/proof-link.component';
+import {
+  EVENT_GROUPS,
+  SEARCH_TIPS,
+  TIPS,
+  actionLabel,
+  chainResult,
+  gapText,
+  proofLabel,
+  shortDateTime,
+  sourceLabel,
+  toneClass,
 } from './audit-wording';
 
 /** How many entries a page shows. */
@@ -18,11 +33,11 @@ const LOOKUP_PAUSE_MS = 250;
 /** What the search is about. */
 type SubjectKind = 'any' | 'user' | 'document' | 'record';
 
-const SUBJECT_KINDS: { id: SubjectKind; label: string }[] = [
-  { id: 'any', label: 'Anything' },
-  { id: 'user', label: 'A person' },
-  { id: 'document', label: 'A document' },
-  { id: 'record', label: 'A land record' }
+const SUBJECT_KINDS: Array<{id: SubjectKind; label: string}> = [
+  {id: 'any', label: 'Anything'},
+  {id: 'user', label: 'A person'},
+  {id: 'document', label: 'A document'},
+  {id: 'record', label: 'A land record'},
 ];
 
 /** The search as it was run, for paging. */
@@ -54,7 +69,12 @@ function endOfDay(date: string): string {
  */
 @Component({
   selector: 'app-audit-trail-search',
-  imports: [AuditTabsComponent, InfoTipComponent, ProofDownloadComponent, ProofLinkComponent],
+  imports: [
+    AuditTabsComponent,
+    InfoTipComponent,
+    ProofDownloadComponent,
+    ProofLinkComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -179,7 +199,8 @@ function endOfDay(date: string): string {
       </section>
     </div>
   `,
-  styles: [`
+  styles: [
+    `
     .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 14px 16px; border-bottom: 1px solid var(--color-divider); }
     .field { display: flex; flex-direction: column; gap: 4px; }
     .field.grow { flex: 1 1 240px; }
@@ -194,7 +215,8 @@ function endOfDay(date: string): string {
     .pager { padding: 12px 16px; border-top: 1px solid var(--color-divider); justify-content: space-between; gap: 10px; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     @media (max-width: 760px) { .detail-grid { grid-template-columns: minmax(0, 1fr); } }
-  `]
+  `,
+  ],
 })
 export class AuditTrailSearchComponent {
   private readonly audit = inject(AuditApi);
@@ -212,29 +234,39 @@ export class AuditTrailSearchComponent {
   protected readonly type = signal('');
   protected readonly from = signal('');
   protected readonly to = signal('');
-  protected readonly actors = signal<{ id: string; name: string }[]>([]);
+  protected readonly actors = signal<Array<{id: string; name: string}>>([]);
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
-  protected readonly result = signal<{ total: number; entries: TrailEntry[] } | null>(null);
+  protected readonly result = signal<{
+    total: number;
+    entries: TrailEntry[];
+  } | null>(null);
   protected readonly offset = signal(0);
   protected readonly open = signal<number | null>(null);
   protected readonly checking = signal(false);
-  protected readonly chain = signal<{ text: string; tone: string } | null>(null);
-  private readonly proofs = signal<Record<number, { status: ProofStatus; batch: number | null }>>({});
+  protected readonly chain = signal<{text: string; tone: string} | null>(null);
+  private readonly proofs = signal<
+    Record<number, {status: ProofStatus; batch: number | null}>
+  >({});
   private search: Search = {};
   private lookupTimer: ReturnType<typeof setTimeout> | undefined;
   /** Counts searches, so a slow answer to an earlier one never replaces a newer one. */
   private requestNo = 0;
 
-  protected readonly rows = computed(() => (this.result()?.entries ?? []).map(entry => ({
-    entry,
-    when: shortDateTime(entry.time),
-    who: entry.actor.name,
-    action: actionLabel(entry.type, entry.data),
-    source: sourceLabel(entry.source),
-    gap: entry.type === 'audit.trail.gap' ? gapText(Number(entry.data['missing'] ?? 0)) : '',
-    data: JSON.stringify(entry.data, null, 2)
-  })));
+  protected readonly rows = computed(() =>
+    (this.result()?.entries ?? []).map(entry => ({
+      entry,
+      when: shortDateTime(entry.time),
+      who: entry.actor.name,
+      action: actionLabel(entry.type, entry.data),
+      source: sourceLabel(entry.source),
+      gap:
+        entry.type === 'audit.trail.gap'
+          ? gapText(Number(entry.data['missing'] ?? 0))
+          : '',
+      data: JSON.stringify(entry.data, null, 2),
+    })),
+  );
 
   protected readonly range = computed(() => {
     const total = this.result()?.total ?? 0;
@@ -261,7 +293,14 @@ export class AuditTrailSearchComponent {
     clearTimeout(this.lookupTimer);
     this.lookupTimer = setTimeout(() => {
       // a slow answer for an earlier name never replaces the suggestions for the name typed now
-      this.audit.actors(q).then(r => { if (q === this.person()) { this.actors.set(r.items); } }, () => this.actors.set([]));
+      this.audit.actors(q).then(
+        r => {
+          if (q === this.person()) {
+            this.actors.set(r.items);
+          }
+        },
+        () => this.actors.set([]),
+      );
     }, LOOKUP_PAUSE_MS);
   }
 
@@ -285,7 +324,7 @@ export class AuditTrailSearchComponent {
       subject,
       type: this.type() || undefined,
       from: this.from() ? startOfDay(this.from()) : undefined,
-      to: this.to() ? endOfDay(this.to()) : undefined
+      to: this.to() ? endOfDay(this.to()) : undefined,
     };
     await this.go(0, mine);
   }
@@ -295,7 +334,11 @@ export class AuditTrailSearchComponent {
     this.loading.set(true);
     this.open.set(null);
     try {
-      const result = await this.audit.searchTrail({ ...this.search, offset, limit: PAGE });
+      const result = await this.audit.searchTrail({
+        ...this.search,
+        offset,
+        limit: PAGE,
+      });
       if (mine === this.requestNo) {
         this.result.set(result);
         this.offset.set(offset);
@@ -316,8 +359,12 @@ export class AuditTrailSearchComponent {
     this.open.set(this.open() === seq ? null : seq);
     if (this.open() === seq && !this.proofs()[seq]) {
       this.audit.proofStatus(seq).then(
-        p => this.proofs.update(all => ({ ...all, [seq]: { status: p.status, batch: p.anchor?.batch ?? null } })),
-        () => {}
+        p =>
+          this.proofs.update(all => ({
+            ...all,
+            [seq]: {status: p.status, batch: p.anchor?.batch ?? null},
+          })),
+        () => {},
       );
     }
   }
@@ -328,7 +375,12 @@ export class AuditTrailSearchComponent {
       return null;
     }
     const label = proofLabel(p.status);
-    return { label: label.label, tagClass: toneClass(label.tone), batch: p.batch, waiting: p.status === 'waiting' };
+    return {
+      label: label.label,
+      tagClass: toneClass(label.tone),
+      batch: p.batch,
+      waiting: p.status === 'waiting',
+    };
   }
 
   protected async checkChain(): Promise<void> {
@@ -336,7 +388,7 @@ export class AuditTrailSearchComponent {
     try {
       this.chain.set(chainResult(await this.audit.verifyTrail()));
     } catch (e) {
-      this.chain.set({ text: (e as Error).message, tone: 'danger' });
+      this.chain.set({text: (e as Error).message, tone: 'danger'});
     } finally {
       this.checking.set(false);
     }
@@ -350,11 +402,17 @@ export class AuditTrailSearchComponent {
       if (!name) {
         return undefined;
       }
-      const { items } = await this.audit.actors(name);
-      const exact = items.filter(a => a.name.toLowerCase() === name.toLowerCase());
+      const {items} = await this.audit.actors(name);
+      const exact = items.filter(
+        a => a.name.toLowerCase() === name.toLowerCase(),
+      );
       const candidates = exact.length ? exact : items;
       if (candidates.length !== 1) {
-        throw new Error(candidates.length ? 'Several people match. Type the full name of one of them.' : `Nobody called “${name}” appears in the trail.`);
+        throw new Error(
+          candidates.length
+            ? 'Several people match. Type the full name of one of them.'
+            : `Nobody called “${name}” appears in the trail.`,
+        );
       }
       return `user:${candidates[0].id}`;
     }
@@ -364,7 +422,12 @@ export class AuditTrailSearchComponent {
     }
     if (kind === 'record' && number) {
       // through the audit service, so whoever can open the Audit screen can search by land record
-      const { items } = await this.audit.list({ q: number, filter: 'all', limit: 100, offset: 0 });
+      const {items} = await this.audit.list({
+        q: number,
+        filter: 'all',
+        limit: 100,
+        offset: 0,
+      });
       const found = items.find(r => r.recordNo.toUpperCase() === number);
       if (!found) {
         throw new Error(`There is no land record ${number}. Check the number.`);

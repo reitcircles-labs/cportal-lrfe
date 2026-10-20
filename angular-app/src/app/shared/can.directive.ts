@@ -1,5 +1,12 @@
-import { Directive, ElementRef, computed, effect, inject, input } from '@angular/core';
-import { RbacService } from '../state/rbac.service';
+import {
+  Directive,
+  ElementRef,
+  computed,
+  effect,
+  inject,
+  input,
+} from '@angular/core';
+import {RbacService} from '../state/rbac.service';
 
 /**
  * Permission gate for actions: <button appCan="record.finalize" (click)="…">.
@@ -9,7 +16,10 @@ import { RbacService } from '../state/rbac.service';
 @Directive({
   selector: '[appCan]',
   standalone: true,
-  host: { '[class.denied]': '!allowed()', '[attr.aria-disabled]': 'allowed() ? null : "true"' }
+  host: {
+    '[class.denied]': '!allowed()',
+    '[attr.aria-disabled]': 'allowed() ? null : "true"',
+  },
 })
 export class CanDirective {
   appCan = input.required<string>();
@@ -19,17 +29,35 @@ export class CanDirective {
   allowed = computed(() => this.rbac.can(this.appCan()));
 
   constructor() {
-    this.el.nativeElement.addEventListener('click', (e: Event) => {
-      if (this.allowed()) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      this.rbac.deny(this.appCan());
-    }, true);
+    this.el.nativeElement.addEventListener(
+      'click',
+      (e: Event) => {
+        if (this.allowed()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this.rbac.deny(this.appCan());
+      },
+      true,
+    );
     effect(() => {
       const el = this.el.nativeElement as HTMLElement;
       if (this.orig === undefined) this.orig = el.getAttribute('title');
-      if (this.allowed()) { this.orig ? el.setAttribute('title', this.orig) : el.removeAttribute('title'); }
-      else el.setAttribute('title', 'Requires “' + this.rbac.permLabel(this.appCan()) + '”. Not granted to ' + this.rbac.roleLabel() + '.');
+      if (this.allowed()) {
+        if (this.orig) {
+          el.setAttribute('title', this.orig);
+        } else {
+          el.removeAttribute('title');
+        }
+      } else {
+        el.setAttribute(
+          'title',
+          'Requires “' +
+            this.rbac.permLabel(this.appCan()) +
+            '”. Not granted to ' +
+            this.rbac.roleLabel() +
+            '.',
+        );
+      }
     });
   }
 }

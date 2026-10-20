@@ -1,0 +1,9 @@
+{
+  "printWidth": 80,
+  "singleQuote": true,
+  "bracketSpacing": false,
+  "trailingComma": "all",
+  "arrowParens": "avoid",
+  "embeddedLanguageFormatting": "off",
+  "overrides": [{"files": "*.html", "options": {"parser": "angular"}}]
+}

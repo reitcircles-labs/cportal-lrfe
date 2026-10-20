@@ -1,6 +1,6 @@
-import { Injectable, inject } from '@angular/core';
+import {Injectable, inject} from '@angular/core';
 
-import { ApiService } from './api.service';
+import {ApiService} from './api.service';
 
 /** Types and calls of the Anchorings screens (audit service, gateway prefix /api/audit; API-671, API-696, API-697). */
 
@@ -47,7 +47,7 @@ export interface BatchList {
 export interface BatchDetail extends BatchRow {
   root: string;
   size: number;
-  prev: { root: string; batch: number | null } | null;
+  prev: {root: string; batch: number | null} | null;
   steps: {
     createdAt: string;
     sentAt: string | null;
@@ -56,7 +56,7 @@ export interface BatchDetail extends BatchRow {
     confirmedAt: string | null;
     failedAt: string | null;
   };
-  replacement: { batch: number; status: BatchStatus; createdAt: string } | null;
+  replacement: {batch: number; status: BatchStatus; createdAt: string} | null;
   previousBatch: number | null;
   nextBatch: number | null;
   confirmationsNeeded: number;
@@ -76,13 +76,13 @@ export interface CoveredRecord {
   recordNo: string | null;
   label: string | null;
   versions: CoveredVersion[];
-  signoffs: { from: number; to: number }[];
+  signoffs: Array<{from: number; to: number}>;
 }
 
 /** What a batch covers. */
 export interface BatchCoverage {
   batch: number;
-  kinds: { recordVersions: number; documentVersions: number; signoffs: number };
+  kinds: {recordVersions: number; documentVersions: number; signoffs: number};
   trailUpTo: number | null;
   records: CoveredRecord[];
   total: number;
@@ -95,11 +95,17 @@ export interface BatchDocument {
   edrmsNo: string | null;
   docType: string | null;
   ref: string | null;
-  usedIn: { recordId: string; versionNumber: number; recordNo: string | null; label: string | null }[];
+  usedIn: Array<{
+    recordId: string;
+    versionNumber: number;
+    recordNo: string | null;
+    label: string | null;
+  }>;
 }
 
 /** The status of an item in a search result: its batch's, or waiting, or not recorded. */
-export type ItemStatus = 'waiting' | 'sent' | 'onChain' | 'confirmed' | 'notRecorded';
+export type ItemStatus =
+  'waiting' | 'sent' | 'onChain' | 'confirmed' | 'notRecorded';
 
 /** The plain answer of a search. */
 export interface LookupAnswer {
@@ -131,28 +137,45 @@ export interface HistoryItem {
 
 /** A search's result: nothing, land records to choose from, one land record, or one document. */
 export type LookupResult =
-  | { query: string; kind: 'none' }
-  | { query: string; kind: 'choices'; choices: { recordId: string; recordNo: string; label: string }[] }
+  | {query: string; kind: 'none'}
+  | {
+      query: string;
+      kind: 'choices';
+      choices: Array<{recordId: string; recordNo: string; label: string}>;
+    }
   | {
       query: string;
       kind: 'record';
-      record: { id: string; recordNo: string; label: string; currentVersion: number | null; committedAt: string | null };
+      record: {
+        id: string;
+        recordNo: string;
+        label: string;
+        currentVersion: number | null;
+        committedAt: string | null;
+      };
       answer: LookupAnswer;
       history: HistoryItem[];
     }
   | {
       query: string;
       kind: 'document';
-      document: { id: string; edrmsNo: string; docType: string; ref: string | null; currentVersion: number };
+      document: {
+        id: string;
+        edrmsNo: string;
+        docType: string;
+        ref: string | null;
+        currentVersion: number;
+      };
       answer: LookupAnswer;
       history: HistoryItem[];
     };
 
-@Injectable({ providedIn: 'root' })
+/** The anchorings API of the audit service: batches and their coverage. */
+@Injectable({providedIn: 'root'})
 export class AnchoringsApi {
   private readonly api = inject(ApiService);
 
-  list(query: { status: BatchFilter; limit: number; offset: number }) {
+  list(query: {status: BatchFilter; limit: number; offset: number}) {
     return this.api.get<BatchList>('/audit/anchors', query);
   }
 
@@ -161,20 +184,28 @@ export class AnchoringsApi {
   }
 
   coverage(batch: number, limit: number, offset: number) {
-    return this.api.get<BatchCoverage>(`/audit/anchors/${batch}/coverage`, { limit, offset });
+    return this.api.get<BatchCoverage>(`/audit/anchors/${batch}/coverage`, {
+      limit,
+      offset,
+    });
   }
 
   documents(batch: number, limit: number, offset: number) {
-    return this.api.get<{ batch: number; items: BatchDocument[]; total: number }>(`/audit/anchors/${batch}/documents`, { limit, offset });
+    return this.api.get<{batch: number; items: BatchDocument[]; total: number}>(
+      `/audit/anchors/${batch}/documents`,
+      {limit, offset},
+    );
   }
 
   lookup(q: string) {
-    return this.api.get<LookupResult>('/audit/anchors/lookup', { q });
+    return this.api.get<LookupResult>('/audit/anchors/lookup', {q});
   }
 
   /** The document types' labels, by id. */
   async documentTypes(): Promise<Map<string, string>> {
-    const { docTypes } = await this.api.get<{ docTypes: { id: string; label: string }[] }>('/document-catalogue');
+    const {docTypes} = await this.api.get<{
+      docTypes: Array<{id: string; label: string}>;
+    }>('/document-catalogue');
     return new Map(docTypes.map(t => [t.id, t.label]));
   }
 }

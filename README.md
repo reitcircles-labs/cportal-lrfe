@@ -11,6 +11,7 @@ manage offices, users, roles and security policies.
 | `backend/services/identity/` | Sign-in, MFA, users, offices, roles, email | [identity README](backend/services/identity/README.md) |
 | `backend/scripts/` | `npm run dev`, API docs, remote access | [scripts README](backend/scripts/README.md) |
 | `e2e/` | End-to-end tests in a browser: sign-in, every role × screen and role × endpoint | [e2e/README.md](e2e/README.md) |
+| `docs/` | How code is written: the style guide, lint and format checks | [docs/coding-guide.md](docs/coding-guide.md) |
 
 ## Running it locally
 

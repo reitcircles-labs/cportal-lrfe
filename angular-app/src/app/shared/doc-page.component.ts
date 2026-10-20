@@ -1,6 +1,13 @@
-import { Component, computed, inject, input, output, ChangeDetectionStrategy } from '@angular/core';
-import { LandDoc } from '../data/models';
-import { RegistryStore } from '../state/registry.store';
+import {
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {LandDoc} from '../data/models';
+import {RegistryStore} from '../state/registry.store';
 
 export type HighlightMode = 'review' | 'audit' | 'none';
 
@@ -46,7 +53,8 @@ export type HighlightMode = 'review' | 'audit' | 'none';
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
-  styles: [`
+  styles: [
+    `
     .sheet { background: var(--paper) !important; box-shadow: var(--shadow-md) !important; border: 1px solid var(--paper-line) !important; border-radius: 4px !important; box-sizing: border-box; color: var(--paper-ink); }
     .sheet.fixed { aspect-ratio: 1 / 1.414; overflow: hidden; }
     .hdr { text-align: center; font-size: .72em; letter-spacing: .2em; color: var(--paper-mute); }
@@ -69,7 +77,8 @@ export type HighlightMode = 'review' | 'audit' | 'none';
     .sig .r { display: flex; justify-content: space-between; }
     .seal { border: 1px solid var(--color-accent-400); border-radius: 50%; width: 4em; height: 4em; margin-top: -2.4em; display: grid; place-items: center; font-size: .75em; color: var(--color-accent-700); }
     .foot { margin-top: 2em; display: flex; justify-content: space-between; font-size: .72em; color: var(--paper-mute); }
-  `]
+  `,
+  ],
 })
 export class DocPageComponent {
   private store = inject(RegistryStore);
@@ -82,29 +91,61 @@ export class DocPageComponent {
   fixedRatio = input(false);
   segClick = output<string>();
 
-  pad = computed(() => Math.round(40 * this.scale()) + 'px ' + Math.round(46 * this.scale()) + 'px');
+  pad = computed(
+    () =>
+      Math.round(40 * this.scale()) +
+      'px ' +
+      Math.round(46 * this.scale()) +
+      'px',
+  );
   segs = computed(() => {
-    const d = this.doc(), th = this.store.threshold(), mode = this.mode();
+    const d = this.doc();
+    const th = this.store.threshold();
+    const mode = this.mode();
     this.store.fs();
-    return d.paras.map(p => p.map(s => {
-      const idx = d.fields.findIndex(x => x.k === s);
-      if (idx < 0) return { text: s, key: null as string | null, hl: false, flag: false, active: false, edited: false };
-      const f = d.fields[idx];
-      const done = this.store.status(d, f, idx) !== 'pending';
-      const low = (f.c ?? 1) < th;
-      return {
-        text: mode === 'audit' ? f.v : this.store.value(d, f), key: mode === 'review' ? s : null,
-        hl: mode === 'review' && (this.showAll() || low), flag: mode === 'review' && low && !done,
-        active: mode === 'review' && this.activeKey() === s, edited: mode === 'audit' && this.store.isEdited(d, f)
-      };
-    }));
+    return d.paras.map(p =>
+      p.map(s => {
+        const idx = d.fields.findIndex(x => x.k === s);
+        if (idx < 0) {
+          return {
+            text: s,
+            key: null as string | null,
+            hl: false,
+            flag: false,
+            active: false,
+            edited: false,
+          };
+        }
+        const f = d.fields[idx];
+        const done = this.store.status(d, f, idx) !== 'pending';
+        const low = (f.c ?? 1) < th;
+        return {
+          text: mode === 'audit' ? f.v : this.store.value(d, f),
+          key: mode === 'review' ? s : null,
+          hl: mode === 'review' && (this.showAll() || low),
+          flag: mode === 'review' && low && !done,
+          active: mode === 'review' && this.activeKey() === s,
+          edited: mode === 'audit' && this.store.isEdited(d, f),
+        };
+      }),
+    );
   });
   contTitle = computed(() => {
-    const t = this.doc().isDiagram ? ['Coordinate list'] : ['Conditions of title', 'Annexure · power of attorney', 'Transfer duty receipt', 'Endorsements'];
+    const t = this.doc().isDiagram
+      ? ['Coordinate list']
+      : [
+          'Conditions of title',
+          'Annexure · power of attorney',
+          'Transfer duty receipt',
+          'Endorsements',
+        ];
     return t[(this.page() - 1) % t.length];
   });
   lines = computed(() => {
     const seed = this.page() * 31 + this.doc().ref.length * 7;
-    return Array.from({ length: 22 }, (_, k) => ({ w: 62 + (((k + seed) * 9301 + 49297) % 233280) / 233280 * 38, gap: k % 6 === 5 ? 0.9 : 0 }));
+    return Array.from({length: 22}, (_, k) => ({
+      w: 62 + ((((k + seed) * 9301 + 49297) % 233280) / 233280) * 38,
+      gap: k % 6 === 5 ? 0.9 : 0,
+    }));
   });
 }

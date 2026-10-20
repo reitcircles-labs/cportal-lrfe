@@ -1,21 +1,24 @@
-import { hostname } from 'node:os';
-import { runExtraction } from './extraction/pipeline.js';
+import {hostname} from 'node:os';
+import {runExtraction} from './extraction/pipeline.js';
+
+const PAUSED =
+  'Reading paused: the document store is temporarily unavailable; it will be tried again automatically.';
 
 /**
  * The reading error the screens show: never the model, provider or raw API message (those go to
  * the log, the job and the stored attempt).
  */
-const PAUSED = 'Reading paused: the document store is temporarily unavailable; it will be tried again automatically.';
-
 export function readingError(err, final) {
-    if (err?.publicMessage) return err.publicMessage;
-    return final ? 'The document could not be read. Read it again, or reject it.' : 'Reading failed; it will be tried again automatically.';
+  if (err?.publicMessage) return err.publicMessage;
+  return final
+    ? 'The document could not be read. Read it again, or reject it.'
+    : 'Reading failed; it will be tried again automatically.';
 }
 
 async function toBuffer(stream) {
-    const chunks = [];
-    for await (const c of stream) chunks.push(c);
-    return Buffer.concat(chunks);
+  const chunks = [];
+  for await (const c of stream) chunks.push(c);
+  return Buffer.concat(chunks);
 }
 
 /**
@@ -30,85 +33,183 @@ async function toBuffer(stream) {
  * `monthlyBudgetUsd`, the worker stops taking jobs until the next month (or a higher budget).
  */
 export class ExtractionWorker {
-    constructor({ repo, service, store, primary, escalation = null, checker, jev = null, jevConfig = null, monthlyBudgetUsd = null, maxEscalationPages = 10, pollMs = 2000, staleMs = 10 * 60_000, clock = () => new Date(), logger = console }) {
-        Object.assign(this, { repo, service, store, primary, escalation, checker, jev, jevConfig, monthlyBudgetUsd, maxEscalationPages, pollMs, staleMs, clock, logger });
-        this.workerId = `${hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
-        this.running = false;
-        this.budgetWarned = false;
-    }
+  constructor({
+    repo,
+    service,
+    store,
+    primary,
+    escalation = null,
+    checker,
+    jev = null,
+    jevConfig = null,
+    monthlyBudgetUsd = null,
+    maxEscalationPages = 10,
+    pollMs = 2000,
+    staleMs = 10 * 60_000,
+    clock = () => new Date(),
+    logger = console,
+  }) {
+    Object.assign(this, {
+      repo,
+      service,
+      store,
+      primary,
+      escalation,
+      checker,
+      jev,
+      jevConfig,
+      monthlyBudgetUsd,
+      maxEscalationPages,
+      pollMs,
+      staleMs,
+      clock,
+      logger,
+    });
+    this.workerId = `${hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
+    this.running = false;
+    this.budgetWarned = false;
+  }
 
-    async overBudget() {
-        if (this.monthlyBudgetUsd == null) return false;
-        const { costUsd } = await this.service.usage();
-        const over = costUsd >= this.monthlyBudgetUsd;
-        if (over && !this.budgetWarned) this.logger.warn({ costUsd, budget: this.monthlyBudgetUsd }, 'extraction paused: monthly budget reached');
-        this.budgetWarned = over;
-        return over;
+  async overBudget() {
+    if (this.monthlyBudgetUsd == null) return false;
+    const {costUsd} = await this.service.usage();
+    const over = costUsd >= this.monthlyBudgetUsd;
+    if (over && !this.budgetWarned) {
+      this.logger.warn(
+        {costUsd, budget: this.monthlyBudgetUsd},
+        'extraction paused: monthly budget reached',
+      );
     }
+    this.budgetWarned = over;
+    return over;
+  }
 
-    /** Process at most one job. Returns true if a job was taken. */
-    async tick() {
-        if (await this.overBudget()) return false;
-        const now = this.clock();
-        const job = await this.repo.claimJob({ workerId: this.workerId, now, staleMs: this.staleMs });
-        if (!job) return false;
-        try {
-            const doc = await this.service.markExtracting(job.documentId);
-            const buffer = await toBuffer(await this.service.readFile(doc.fileKey, doc.encryption));
-            const result = await runExtraction({
-                file: { buffer, mimeType: doc.mimeType, fileName: doc.fileName },
-                primary: this.primary, escalation: this.escalation, checker: this.checker, jev: this.jev, jevConfig: this.jevConfig,
-                forceEscalation: !!job.options?.escalate, pages: doc.pages ?? null, maxEscalationPages: this.maxEscalationPages, clock: this.clock
-            });
-            await this.service.applyExtraction(job.documentId, result);
-            await this.repo.updateJob(job.id, { status: 'done', lastError: null, updatedAt: this.clock() });
-        } catch (err) {
-            if (err.code === 'EUNAVAILABLE') return this.pause(job, err);
-            const final = err.retryable === false || job.attempts >= job.maxAttempts;
-            const delay = 60_000 * 4 ** (job.attempts - 1);
-            this.logger.error({ err: err.message, documentId: job.documentId, attempt: job.attempts, final }, 'extraction failed');
-            await this.repo.updateJob(job.id, final
-                ? { status: 'failed', lastError: err.message, updatedAt: this.clock() }
-                : { status: 'queued', lastError: err.message, runAfter: new Date(this.clock().getTime() + delay), updatedAt: this.clock() });
-            await this.service.markExtractionFailed(job.documentId, { attempts: err.attempts || [], error: readingError(err, final), detail: err.message, final }).catch(e => this.logger.error({ err: e.message }, 'could not record the failure'));
-        }
-        return true;
+  /** Process at most one job. Returns true if a job was taken. */
+  async tick() {
+    if (await this.overBudget()) return false;
+    const now = this.clock();
+    const job = await this.repo.claimJob({
+      workerId: this.workerId,
+      now,
+      staleMs: this.staleMs,
+    });
+    if (!job) return false;
+    try {
+      const doc = await this.service.markExtracting(job.documentId);
+      const buffer = await toBuffer(
+        await this.service.readFile(doc.fileKey, doc.encryption),
+      );
+      const result = await runExtraction({
+        file: {buffer, mimeType: doc.mimeType, fileName: doc.fileName},
+        primary: this.primary,
+        escalation: this.escalation,
+        checker: this.checker,
+        jev: this.jev,
+        jevConfig: this.jevConfig,
+        forceEscalation: !!job.options?.escalate,
+        pages: doc.pages ?? null,
+        maxEscalationPages: this.maxEscalationPages,
+        clock: this.clock,
+      });
+      await this.service.applyExtraction(job.documentId, result);
+      await this.repo.updateJob(job.id, {
+        status: 'done',
+        lastError: null,
+        updatedAt: this.clock(),
+      });
+    } catch (err) {
+      if (err.code === 'EUNAVAILABLE') return this.pause(job, err);
+      const final = err.retryable === false || job.attempts >= job.maxAttempts;
+      const delay = 60_000 * 4 ** (job.attempts - 1);
+      this.logger.error(
+        {
+          err: err.message,
+          documentId: job.documentId,
+          attempt: job.attempts,
+          final,
+        },
+        'extraction failed',
+      );
+      await this.repo.updateJob(
+        job.id,
+        final
+          ? {status: 'failed', lastError: err.message, updatedAt: this.clock()}
+          : {
+              status: 'queued',
+              lastError: err.message,
+              runAfter: new Date(this.clock().getTime() + delay),
+              updatedAt: this.clock(),
+            },
+      );
+      await this.service
+        .markExtractionFailed(job.documentId, {
+          attempts: err.attempts || [],
+          error: readingError(err, final),
+          detail: err.message,
+          final,
+        })
+        .catch(e =>
+          this.logger.error({err: e.message}, 'could not record the failure'),
+        );
     }
+    return true;
+  }
 
-    /**
-     * The scan's key service (OpenBao) is unavailable: nothing was read and no model was called, so
-     * the job goes back in the queue a minute later without using up an attempt; a vault outage
-     * never makes a reading fail for good.
-     */
-    async pause(job, err) {
-        this.logger.warn({ err: err.cause?.message || err.message, documentId: job.documentId }, 'extraction paused: document store unavailable');
-        await this.repo.updateJob(job.id, { status: 'queued', attempts: Math.max(0, job.attempts - 1), lastError: err.message, runAfter: new Date(this.clock().getTime() + 60_000), updatedAt: this.clock() });
-        await this.service.markExtractionFailed(job.documentId, { attempts: [], error: PAUSED, detail: err.cause?.message || err.message, final: false })
-            .catch(e => this.logger.error({ err: e.message }, 'could not record the pause'));
-        return true;
-    }
+  /**
+   * The scan's key service (OpenBao) is unavailable: nothing was read and no model was called, so
+   * the job goes back in the queue a minute later without using up an attempt; a vault outage
+   * never makes a reading fail for good.
+   */
+  async pause(job, err) {
+    this.logger.warn(
+      {err: err.cause?.message || err.message, documentId: job.documentId},
+      'extraction paused: document store unavailable',
+    );
+    await this.repo.updateJob(job.id, {
+      status: 'queued',
+      attempts: Math.max(0, job.attempts - 1),
+      lastError: err.message,
+      runAfter: new Date(this.clock().getTime() + 60_000),
+      updatedAt: this.clock(),
+    });
+    await this.service
+      .markExtractionFailed(job.documentId, {
+        attempts: [],
+        error: PAUSED,
+        detail: err.cause?.message || err.message,
+        final: false,
+      })
+      .catch(e =>
+        this.logger.error({err: e.message}, 'could not record the pause'),
+      );
+    return true;
+  }
 
-    /** Drain the queue now (tests, and "run once" scripts). */
-    async drain(limit = 100) {
-        let n = 0;
-        while (n < limit && await this.tick()) n++;
-        return n;
-    }
+  /** Drain the queue now (tests, and "run once" scripts). */
+  async drain(limit = 100) {
+    let n = 0;
+    while (n < limit && (await this.tick())) n++;
+    return n;
+  }
 
-    start() {
-        if (this.running) return;
-        this.running = true;
-        const loop = async () => {
-            if (!this.running) return;
-            let worked = false;
-            try { worked = await this.tick(); } catch (err) { this.logger.error({ err: err.message }, 'worker tick failed'); }
-            if (this.running) this.timer = setTimeout(loop, worked ? 0 : this.pollMs);
-        };
-        loop();
-    }
+  start() {
+    if (this.running) return;
+    this.running = true;
+    const loop = async () => {
+      if (!this.running) return;
+      let worked = false;
+      try {
+        worked = await this.tick();
+      } catch (err) {
+        this.logger.error({err: err.message}, 'worker tick failed');
+      }
+      if (this.running) this.timer = setTimeout(loop, worked ? 0 : this.pollMs);
+    };
+    loop();
+  }
 
-    stop() {
-        this.running = false;
-        clearTimeout(this.timer);
-    }
+  stop() {
+    this.running = false;
+    clearTimeout(this.timer);
+  }
 }

@@ -11,26 +11,36 @@
  * filed on a shared test system, testers can make their own with --set (live screens only: the
  * Land record screen only knows Erf 1873).
  */
-import { mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {mkdirSync} from 'node:fs';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
-const { chromium } = await import(join(REPO, 'e2e', 'node_modules', '@playwright', 'test', 'index.mjs'));
+const {chromium} = await import(
+  join(REPO, 'e2e', 'node_modules', '@playwright', 'test', 'index.mjs')
+);
 
 const setArg = process.argv.indexOf('--set');
 const set = setArg > 0 ? Number(process.argv[setArg + 1]) : 1;
-if (!Number.isInteger(set) || set < 1) { console.error('--set takes a whole number, 2 or more'); process.exit(2); }
+if (!Number.isInteger(set) || set < 1) {
+  console.error('--set takes a whole number, 2 or more');
+  process.exit(2);
+}
 const out = set === 1 ? HERE : join(HERE, `set-${set}`);
-mkdirSync(out, { recursive: true });
+mkdirSync(out, {recursive: true});
 
 // Numbers move with the set, so a set's deeds do not clash with another set's.
 const o = set === 1 ? 0 : set * 1000;
 const erf = 1873 + (set === 1 ? 0 : set * 100);
 const N = {
-    erf: `Erf ${erf}`, grant: `G ${88 + o}/1978`, t1996: `T ${1502 + o}/1996`, sg: `A ${412 + o}/2007`,
-    t2008: `T ${2210 + o}/2008`, t2019: `T ${4521 + o}/2019`, estate: `E ${1830 + o}/2018`
+  erf: `Erf ${erf}`,
+  grant: `G ${88 + o}/1978`,
+  t1996: `T ${1502 + o}/1996`,
+  sg: `A ${412 + o}/2007`,
+  t2008: `T ${2210 + o}/2008`,
+  t2019: `T ${4521 + o}/2019`,
+  estate: `E ${1830 + o}/2018`,
 };
 
 const STYLE = `
@@ -49,13 +59,17 @@ const STYLE = `
   .note { font: italic 15px 'Comic Sans MS', 'Segoe Print', cursive; color: #1b3d8f; }
   .letterhead { font: 600 15px Arial, sans-serif; border-bottom: 2px solid #222; padding-bottom: 6px; margin-bottom: 18px; }
 `;
-const page = (body, label) => `<!doctype html><html><head><meta charset="utf-8"><style>${STYLE}</style></head><body>${body}
+const page = (
+  body,
+  label,
+) => `<!doctype html><html><head><meta charset="utf-8"><style>${STYLE}</style></head><body>${body}
   <div class="foot">SAMPLE DOCUMENT FOR TESTING THE DEEDS REGISTRY PORTAL · ALL NAMES, NUMBERS AND DETAILS ARE FICTITIOUS · ${label}</div></body></html>`;
 
 const DOCS = [
-    {
-        file: `01-${N.grant.replace(/[ /]/g, '-')}-deed-of-grant.pdf`,
-        html: page(`
+  {
+    file: `01-${N.grant.replace(/[ /]/g, '-')}-deed-of-grant.pdf`,
+    html: page(
+      `
   <div class="stamp">DEEDS REGISTRY<br>WINDHOEK<br>2 MAY 1978</div>
   <div class="office">Deeds Registry · Windhoek</div>
   <h1>DEED OF GRANT</h1><p class="no">No. ${N.grant}</p>
@@ -67,11 +81,14 @@ const DOCS = [
   <p>for the purpose of township establishment, subject to the conditions imposed by the Townships and
   Division of Land Ordinance and to the reservation of all rights to minerals in favour of the State.</p>
   <p>Registered at the Deeds Registry, Windhoek, on 2 May 1978.</p>
-  <div class="sig"><div>For and on behalf of the State</div><div>Registrar of Deeds</div></div>`, 'DEED OF GRANT ' + N.grant)
-    },
-    {
-        file: `02-${N.t1996.replace(/[ /]/g, '-')}-deed-of-transfer.pdf`,
-        html: page(`
+  <div class="sig"><div>For and on behalf of the State</div><div>Registrar of Deeds</div></div>`,
+      'DEED OF GRANT ' + N.grant,
+    ),
+  },
+  {
+    file: `02-${N.t1996.replace(/[ /]/g, '-')}-deed-of-transfer.pdf`,
+    html: page(
+      `
   <div class="stamp">DEEDS REGISTRY<br>WINDHOEK<br>19 AUG 1996</div>
   <div class="office">Deeds Registry · Windhoek</div>
   <h1>DEED OF TRANSFER</h1><p class="no">No. ${N.t1996}</p>
@@ -86,17 +103,31 @@ const DOCS = [
   Region; measuring 1 214 square metres; first registered by Deed of Grant No. ${N.grant} and held under
   the said Deed of Grant No. ${N.grant}.</p>
   <p>Registered at the Deeds Registry, Windhoek, on 19 August 1996.</p>
-  <div class="sig"><div>Signature of appearer</div><div>Registrar of Deeds</div></div>`, 'DEED OF TRANSFER ' + N.t1996)
-    },
-    {
-        file: `03-SG-${N.sg.replace(/[ /]/g, '-')}-diagram.pdf`,
-        html: page(`
+  <div class="sig"><div>Signature of appearer</div><div>Registrar of Deeds</div></div>`,
+      'DEED OF TRANSFER ' + N.t1996,
+    ),
+  },
+  {
+    file: `03-SG-${N.sg.replace(/[ /]/g, '-')}-diagram.pdf`,
+    html: page(
+      `
   <div class="office">Office of the Surveyor-General · Windhoek</div>
   <h1>DIAGRAM</h1><p class="no">S.G. No. ${N.sg}</p>
   <svg viewBox="0 0 520 330" width="100%" height="330" style="margin:4px 0 10px">
     <polygon points="70,60 300,40 450,110 430,270 230,300 90,250" fill="#f4f1e6" stroke="#222" stroke-width="2"/>
-    ${[['A', 70, 60], ['B', 300, 40], ['C', 450, 110], ['D', 430, 270], ['E', 230, 300], ['F', 90, 250]]
-                .map(([b, x, y]) => `<circle cx="${x}" cy="${y}" r="4" fill="#222"/><text x="${x - 16}" y="${y - 8}" font-family="Arial" font-size="15">${b}</text>`).join('')}
+    ${[
+      ['A', 70, 60],
+      ['B', 300, 40],
+      ['C', 450, 110],
+      ['D', 430, 270],
+      ['E', 230, 300],
+      ['F', 90, 250],
+    ]
+      .map(
+        ([b, x, y]) =>
+          `<circle cx="${x}" cy="${y}" r="4" fill="#222"/><text x="${x - 16}" y="${y - 8}" font-family="Arial" font-size="15">${b}</text>`,
+      )
+      .join('')}
     <text x="200" y="175" font-family="Georgia" font-size="17">${N.erf}</text>
     <text x="215" y="198" font-family="Arial" font-size="12">1 214 m²</text>
     <text x="250" y="325" font-family="Arial" font-size="11">Scale 1 : 500</text>
@@ -110,11 +141,14 @@ const DOCS = [
   Windhoek, Registration Division "K", Khomas Region, measuring <b>1 214 square metres</b>. Beacons A–F (6): iron pegs.</p>
   <p>Surveyed on 22 October 2007 by me, <b>L. Hamutenya</b>, Professional Land Surveyor, PLS 0417.</p>
   <p>Approved by the Surveyor-General on 30 November 2007.</p>
-  <div class="sig"><div>Land surveyor</div><div>Surveyor-General</div></div>`, 'SG DIAGRAM ' + N.sg)
-    },
-    {
-        file: `04-${N.t2008.replace(/[ /]/g, '-')}-deed-of-transfer.pdf`,
-        html: page(`
+  <div class="sig"><div>Land surveyor</div><div>Surveyor-General</div></div>`,
+      'SG DIAGRAM ' + N.sg,
+    ),
+  },
+  {
+    file: `04-${N.t2008.replace(/[ /]/g, '-')}-deed-of-transfer.pdf`,
+    html: page(
+      `
   <div class="stamp">DEEDS REGISTRY<br>WINDHOEK<br>14 MAR 2008</div>
   <div class="office">Deeds Registry · Windhoek</div>
   <h1>DEED OF TRANSFER</h1><p class="no">No. ${N.t2008}</p>
@@ -128,11 +162,14 @@ const DOCS = [
   Region; measuring 1 214 square metres; as will more fully appear from Diagram S.G. No. ${N.sg}, and held under
   Deed of Transfer No. ${N.t1996}.</p>
   <p>Registered at the Deeds Registry, Windhoek, on 14 March 2008.</p>
-  <div class="sig"><div>Signature of appearer</div><div>Registrar of Deeds</div></div>`, 'DEED OF TRANSFER ' + N.t2008)
-    },
-    {
-        file: `05-${N.t2019.replace(/[ /]/g, '-')}-deed-of-transfer-estate.pdf`,
-        html: page(`
+  <div class="sig"><div>Signature of appearer</div><div>Registrar of Deeds</div></div>`,
+      'DEED OF TRANSFER ' + N.t2008,
+    ),
+  },
+  {
+    file: `05-${N.t2019.replace(/[ /]/g, '-')}-deed-of-transfer-estate.pdf`,
+    html: page(
+      `
   <div class="stamp">DEEDS REGISTRY<br>WINDHOEK<br>9 JUL 2019</div>
   <div class="office">Deeds Registry · Windhoek</div>
   <h1>DEED OF TRANSFER</h1><p class="no">No. ${N.t2019}</p>
@@ -148,11 +185,14 @@ const DOCS = [
   <p><b>${N.erf}, Klein Windhoek</b>, situated in the Municipality of Windhoek, Registration Division "K", Khomas
   Region; measuring 1 214 square metres; held under Deed of Transfer No. ${N.t2008}.</p>
   <p>Registered at the Deeds Registry, Windhoek, on 9 July 2019.</p>
-  <div class="sig"><div>Executor</div><div>Registrar of Deeds</div></div>`, 'DEED OF TRANSFER ' + N.t2019)
-    },
-    {
-        file: `06-practice-reject-cover-letter.pdf`,
-        html: page(`
+  <div class="sig"><div>Executor</div><div>Registrar of Deeds</div></div>`,
+      'DEED OF TRANSFER ' + N.t2019,
+    ),
+  },
+  {
+    file: `06-practice-reject-cover-letter.pdf`,
+    html: page(
+      `
   <div class="letterhead">Van Wyk &amp; Partners · Conveyancers<br><span style="font:400 11px Arial">12 Fidel Castro Street · Windhoek · Tel. 061 000 000</span></div>
   <p>The Registrar of Deeds<br>Deeds Registry<br>Windhoek</p>
   <p>14 March 2008</p>
@@ -162,19 +202,23 @@ const DOCS = [
   power of attorney, the transfer duty receipt and the rates clearance certificate. Kindly advise our office
   should any further documents be required.</p>
   <p>Yours faithfully,</p>
-  <p style="margin-top:36px">H. van Wyk<br>Conveyancer</p>`, 'COVER LETTER (NOT A REGISTRY INSTRUMENT)')
-    }
+  <p style="margin-top:36px">H. van Wyk<br>Conveyancer</p>`,
+      'COVER LETTER (NOT A REGISTRY INSTRUMENT)',
+    ),
+  },
 ];
 
-const browser = await chromium.launch({ channel: 'chromium' }).catch(() => chromium.launch());
+const browser = await chromium
+  .launch({channel: 'chromium'})
+  .catch(() => chromium.launch());
 try {
-    for (const d of DOCS) {
-        const p = await browser.newPage();
-        await p.setContent(d.html);
-        await p.pdf({ path: join(out, d.file), format: 'A4', printBackground: true });
-        await p.close();
-        console.log(`${out === HERE ? '' : `set-${set}/`}${d.file}`);
-    }
+  for (const d of DOCS) {
+    const p = await browser.newPage();
+    await p.setContent(d.html);
+    await p.pdf({path: join(out, d.file), format: 'A4', printBackground: true});
+    await p.close();
+    console.log(`${out === HERE ? '' : `set-${set}/`}${d.file}`);
+  }
 } finally {
-    await browser.close();
+  await browser.close();
 }

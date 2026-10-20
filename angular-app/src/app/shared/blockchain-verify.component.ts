@@ -1,12 +1,24 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 
-import { AuditApi, ProofKind } from '../api/audit.api';
-import { VERIFY_TIPS, VerifyResult, checkLines, verifySummary } from '../features/audit/verify-wording';
-import { RbacService } from '../state/rbac.service';
-import { InfoTipComponent } from './info-tip.component';
+import {AuditApi, ProofKind} from '../api/audit.api';
+import {
+  VERIFY_TIPS,
+  VerifyResult,
+  checkLines,
+  verifySummary,
+} from '../features/audit/verify-wording';
+import {RbacService} from '../state/rbac.service';
+import {InfoTipComponent} from './info-tip.component';
 
 /** The mark shown for each outcome. */
-const MARK = { passed: '✓', failed: '✕', unknown: '?' } as const;
+const MARK = {passed: '✓', failed: '✕', unknown: '?'} as const;
 
 /**
  * "Verify against the blockchain" for one version (API-675): runs POST /audit/verify and shows each
@@ -48,7 +60,8 @@ const MARK = { passed: '✓', failed: '✕', unknown: '?' } as const;
       </div>
     }
   `,
-  styles: [`
+  styles: [
+    `
     .bv { display: flex; flex-direction: column; gap: 6px; }
     .btn-sm { min-height: 32px; padding: 0 10px; font-size: 13px; }
     .result { border: 1px solid var(--color-divider); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
@@ -63,7 +76,8 @@ const MARK = { passed: '✓', failed: '✕', unknown: '?' } as const;
     .mark.unknown { background: var(--color-neutral-300, #ccd); }
     .tone-danger { color: var(--danger-fg); }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  `]
+  `,
+  ],
 })
 export class BlockchainVerifyComponent {
   private readonly audit = inject(AuditApi);
@@ -96,7 +110,7 @@ export class BlockchainVerifyComponent {
       lines: checkLines(r),
       tx,
       txShort: tx ? `${tx.slice(0, 8)}…${tx.slice(-8)}` : '',
-      explorerUrl: r.explorerUrl
+      explorerUrl: r.explorerUrl,
     };
   });
 
@@ -104,7 +118,9 @@ export class BlockchainVerifyComponent {
     this.busy.set(true);
     this.error.set(null);
     try {
-      this.result.set(await this.audit.verify(this.kind(), this.itemId(), this.version()));
+      this.result.set(
+        await this.audit.verify(this.kind(), this.itemId(), this.version()),
+      );
     } catch (e) {
       this.result.set(null);
       this.error.set((e as Error).message);

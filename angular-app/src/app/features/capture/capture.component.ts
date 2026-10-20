@@ -1,25 +1,44 @@
-import { Component, DestroyRef, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { Router } from '@angular/router';
-import { ApiError } from '../../api/api.service';
-import { IN_PROGRESS, IntakeApi, IntakeBatch, IntakeSummary, STATUS_LABEL, needsChecks } from '../../api/intake.api';
-import { RbacService, fmtTime } from '../../state/rbac.service';
-import { ToastService } from '../../state/toast.service';
-import { IconComponent } from '../../shared/icon.component';
-import { CanDirective } from '../../shared/can.directive';
+import {
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {Router} from '@angular/router';
+import {ApiError} from '../../api/api.service';
+import {
+  IN_PROGRESS,
+  IntakeApi,
+  IntakeBatch,
+  IntakeSummary,
+  STATUS_LABEL,
+  needsChecks,
+} from '../../api/intake.api';
+import {RbacService, fmtTime} from '../../state/rbac.service';
+import {ToastService} from '../../state/toast.service';
+import {IconComponent} from '../../shared/icon.component';
+import {CanDirective} from '../../shared/can.directive';
 
 const ACCEPT = ['application/pdf', 'image/png', 'image/jpeg'];
 const POLL_MS = 3000;
 
-interface Upload { key: number; name: string; state: 'waiting' | 'uploading' | 'done' | 'error'; message?: string; }
+interface Upload {
+  key: number;
+  name: string;
+  state: 'waiting' | 'uploading' | 'done' | 'error';
+  message?: string;
+}
 
 /**
  * #/capture — upload scans into an intake batch (intake service). Each file is stored and queued
  * for AI extraction; its progress shows here until it is ready for review on #/verify.
  */
 @Component({
-    selector: 'app-capture',
-    imports: [IconComponent, CanDirective],
-    template: `
+  selector: 'app-capture',
+  imports: [IconComponent, CanDirective],
+  template: `
     <div class="page layout">
       <aside class="stack" style="gap:18px">
         <div class="stack" style="gap:8px">
@@ -116,8 +135,9 @@ interface Upload { key: number; name: string; state: 'waiting' | 'uploading' | '
       </section>
     </div>
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 32px; align-items: start; }
     .empty { padding: 44px; text-align: center; color: var(--color-neutral-700); font-size: 14px; border-style: dashed; }
     .drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 26px 16px; text-align: center; border: 1.5px dashed var(--color-neutral-400); border-radius: var(--radius-lg); background: var(--color-surface); cursor: pointer; }
@@ -128,7 +148,8 @@ interface Upload { key: number; name: string; state: 'waiting' | 'uploading' | '
     .up.err .small { color: var(--danger-fg); }
     .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
-  `]
+  `,
+  ],
 })
 export class CaptureComponent {
   private intake = inject(IntakeApi);
@@ -145,33 +166,65 @@ export class CaptureComponent {
   loading = signal(true);
   busy = signal(false);
 
-  batch = computed(() => this.batches().find(b => b.id === this.batchId()) || null);
-  working = computed(() => this.docs().some(d => IN_PROGRESS.includes(d.status)));
-  uploading = computed(() => this.uploads().some(u => u.state === 'waiting' || u.state === 'uploading'));
-  tally = computed(() => ({ ready: this.docs().filter(d => d.status === 'ready').length, filed: this.docs().filter(d => d.status === 'filed').length }));
+  batch = computed(
+    () => this.batches().find(b => b.id === this.batchId()) || null,
+  );
+  working = computed(() =>
+    this.docs().some(d => IN_PROGRESS.includes(d.status)),
+  );
+  uploading = computed(() =>
+    this.uploads().some(u => u.state === 'waiting' || u.state === 'uploading'),
+  );
+  tally = computed(() => ({
+    ready: this.docs().filter(d => d.status === 'ready').length,
+    filed: this.docs().filter(d => d.status === 'filed').length,
+  }));
 
   fmt = fmtTime;
   needs = needsChecks;
   private seq = 0;
-  private timer: any = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => { this.destroyed = true; clearTimeout(this.timer); });
+    inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
+      clearTimeout(this.timer);
+    });
     this.loadBatches();
   }
 
-  label(d: IntakeSummary) { return d.status === 'ready' && d.escalated ? 'In review · read twice' : STATUS_LABEL[d.status]; }
-  size(n: number) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  label(d: IntakeSummary) {
+    return d.status === 'ready' && d.escalated
+      ? 'In review · read twice'
+      : STATUS_LABEL[d.status];
+  }
+  size(n: number) {
+    return n >= 1048576
+      ? (n / 1048576).toFixed(1) + ' MB'
+      : Math.max(1, Math.round(n / 1024)) + ' KB';
+  }
 
   async loadBatches(select?: string) {
     try {
-      const { batches } = await this.intake.batches();
-      this.batches.set([...batches].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))));
+      const {batches} = await this.intake.batches();
+      this.batches.set(
+        [...batches].sort((a, b) =>
+          String(b.createdAt).localeCompare(String(a.createdAt)),
+        ),
+      );
       const keep = select || this.batchId();
-      const target = this.batches().some(b => b.id === keep) ? keep : this.batches()[0]?.id || '';
-      if (target !== this.batchId() || !this.docs().length) await this.selectBatch(target);
-    } catch (e) { this.fail('Could not load batches', e); } finally { this.loading.set(false); }
+      const target = this.batches().some(b => b.id === keep)
+        ? keep
+        : this.batches()[0]?.id || '';
+      if (target !== this.batchId() || !this.docs().length) {
+        await this.selectBatch(target);
+      }
+    } catch (e) {
+      this.fail('Could not load batches', e);
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   async selectBatch(id: string) {
@@ -186,11 +239,16 @@ export class CaptureComponent {
     const id = this.batchId();
     if (!id || this.destroyed) return;
     try {
-      const { items } = await this.intake.documents({ batchId: id });
+      const {items} = await this.intake.documents({batchId: id});
       if (id !== this.batchId()) return;
       this.docs.set(items);
-    } catch (e) { this.fail('Could not load the batch', e); return; }
-    if (!this.destroyed && (this.working() || this.uploading())) this.timer = setTimeout(() => this.refresh(), POLL_MS);
+    } catch (e) {
+      this.fail('Could not load the batch', e);
+      return;
+    }
+    if (!this.destroyed && (this.working() || this.uploading())) {
+      this.timer = setTimeout(() => this.refresh(), POLL_MS);
+    }
   }
 
   async createBatch() {
@@ -198,9 +256,17 @@ export class CaptureComponent {
     try {
       const b = await this.intake.createBatch((this.newBatch() || '').trim());
       this.newBatch.set(null);
-      this.toast.show('success', `Batch ${b.id} created`, 'Upload the scans that belong to it.');
+      this.toast.show(
+        'success',
+        `Batch ${b.id} created`,
+        'Upload the scans that belong to it.',
+      );
       await this.loadBatches(b.id);
-    } catch (e) { this.fail('Could not create the batch', e); } finally { this.busy.set(false); }
+    } catch (e) {
+      this.fail('Could not create the batch', e);
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   onPick(e: Event) {
@@ -212,7 +278,10 @@ export class CaptureComponent {
   onDrop(e: DragEvent) {
     e.preventDefault();
     this.dragOver.set(false);
-    if (!this.rbac.can('capture.scan')) { this.rbac.deny('capture.scan'); return; }
+    if (!this.rbac.can('capture.scan')) {
+      this.rbac.deny('capture.scan');
+      return;
+    }
     this.upload(Array.from(e.dataTransfer?.files || []));
   }
 
@@ -220,18 +289,34 @@ export class CaptureComponent {
   private async upload(files: File[]) {
     const batchId = this.batchId();
     if (!files.length || !batchId) return;
-    const items: Upload[] = files.map(f => ({ key: ++this.seq, name: f.name, state: 'waiting' }));
+    const items: Upload[] = files.map(f => ({
+      key: ++this.seq,
+      name: f.name,
+      state: 'waiting',
+    }));
     this.uploads.update(u => [...items, ...u]);
-    const set = (key: number, patch: Partial<Upload>) => this.uploads.update(list => list.map(u => u.key === key ? { ...u, ...patch } : u));
+    const set = (key: number, patch: Partial<Upload>) =>
+      this.uploads.update(list =>
+        list.map(u => (u.key === key ? {...u, ...patch} : u)),
+      );
     for (const [i, f] of files.entries()) {
       const key = items[i].key;
-      if (!ACCEPT.includes(f.type)) { set(key, { state: 'error', message: 'Not a PDF, PNG or JPEG (convert TIFF first)' }); continue; }
-      set(key, { state: 'uploading' });
+      if (!ACCEPT.includes(f.type)) {
+        set(key, {
+          state: 'error',
+          message: 'Not a PDF, PNG or JPEG (convert TIFF first)',
+        });
+        continue;
+      }
+      set(key, {state: 'uploading'});
       try {
         await this.intake.upload(batchId, f);
-        set(key, { state: 'done' });
+        set(key, {state: 'done'});
       } catch (e) {
-        set(key, { state: 'error', message: e instanceof ApiError ? e.message : String(e) });
+        set(key, {
+          state: 'error',
+          message: e instanceof ApiError ? e.message : String(e),
+        });
       }
       if (batchId === this.batchId()) await this.refresh();
     }
@@ -240,9 +325,11 @@ export class CaptureComponent {
 
   async openFile(d: IntakeSummary) {
     try {
-      const { url } = await this.intake.fileLink(d.id);
+      const {url} = await this.intake.fileLink(d.id);
       window.open(url, '_blank', 'noopener');
-    } catch (e) { this.fail('Could not open the scan', e); }
+    } catch (e) {
+      this.fail('Could not open the scan', e);
+    }
   }
 
   async retry(d: IntakeSummary) {
@@ -250,10 +337,17 @@ export class CaptureComponent {
       await this.intake.extract(d.id);
       this.toast.show('info', `${d.fileName} queued again`);
       await this.refresh();
-    } catch (e) { this.fail('Could not queue the document', e); }
+    } catch (e) {
+      this.fail('Could not queue the document', e);
+    }
   }
 
   private fail(title: string, e: unknown) {
-    this.toast.show('danger', title, e instanceof ApiError ? e.message : String(e), 7000);
+    this.toast.show(
+      'danger',
+      title,
+      e instanceof ApiError ? e.message : String(e),
+      7000,
+    );
   }
 }

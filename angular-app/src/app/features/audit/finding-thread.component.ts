@@ -1,7 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 
-import { Finding } from '../../api/audit.api';
-import { findingNumber, findingState, shortDateTime } from './audit-wording';
+import {Finding} from '../../api/audit.api';
+import {findingNumber, findingState, shortDateTime} from './audit-wording';
 
 /** What the auditor asks for in a finding's answer box. */
 export interface FindingReply {
@@ -62,7 +69,8 @@ interface Message {
       }
     </article>
   `,
-  styles: [`
+  styles: [
+    `
     .finding { display: flex; flex-direction: column; gap: 8px; border-radius: 8px; padding: 12px 14px; background: var(--color-neutral-100, #f7f9fb); border: 1px solid var(--color-divider); }
     .finding.open { background: var(--warn-bg); border-color: var(--warn-bd); }
     .thread { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
@@ -72,7 +80,8 @@ interface Message {
     .reply { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--warn-bd); }
     .outcome { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
     .outcome label { display: flex; gap: 8px; align-items: flex-start; }
-  `]
+  `,
+  ],
 })
 export class FindingThreadComponent {
   readonly finding = input.required<Finding>();
@@ -92,15 +101,45 @@ export class FindingThreadComponent {
 
   protected readonly messages = computed<Message[]>(() => {
     const f = this.finding();
-    const out: Message[] = [{ by: f.raisedByName ?? 'An auditor', role: 'Auditor', at: shortDateTime(f.raisedAt), kind: 'raised the finding', text: f.description, closing: false }];
+    const out: Message[] = [
+      {
+        by: f.raisedByName ?? 'An auditor',
+        role: 'Auditor',
+        at: shortDateTime(f.raisedAt),
+        kind: 'raised the finding',
+        text: f.description,
+        closing: false,
+      },
+    ];
     for (const a of f.answers || []) {
-      out.push({ by: a.byName ?? 'An auditor', role: a.role ?? 'Auditor', at: shortDateTime(a.at), kind: 'answered', text: a.text, closing: false });
+      out.push({
+        by: a.byName ?? 'An auditor',
+        role: a.role ?? 'Auditor',
+        at: shortDateTime(a.at),
+        kind: 'answered',
+        text: a.text,
+        closing: false,
+      });
     }
     if (f.status === 'closed') {
-      out.push({ by: f.closedByName ?? 'An auditor', role: 'Auditor', at: shortDateTime(f.closedAt), kind: `answered and closed: ${findingState(f)}`, text: f.closeReason ?? '', closing: true });
+      out.push({
+        by: f.closedByName ?? 'An auditor',
+        role: 'Auditor',
+        at: shortDateTime(f.closedAt),
+        kind: `answered and closed: ${findingState(f)}`,
+        text: f.closeReason ?? '',
+        closing: true,
+      });
     }
     if (f.status === 'resolved') {
-      out.push({ by: 'System', role: 'Land records', at: shortDateTime(f.closedAt), kind: findingState(f), text: 'A corrected version was reviewed and committed.', closing: true });
+      out.push({
+        by: 'System',
+        role: 'Land records',
+        at: shortDateTime(f.closedAt),
+        kind: findingState(f),
+        text: 'A corrected version was reviewed and committed.',
+        closing: true,
+      });
     }
     return out;
   });
@@ -110,7 +149,7 @@ export class FindingThreadComponent {
   }
 
   protected send(close: 'agreed' | 'mistake' | null): void {
-    this.reply.emit({ finding: this.finding(), text: this.text().trim(), close });
+    this.reply.emit({finding: this.finding(), text: this.text().trim(), close});
     this.text.set('');
   }
 }

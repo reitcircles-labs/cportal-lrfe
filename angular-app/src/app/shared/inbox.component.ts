@@ -1,13 +1,20 @@
-import { Component, HostListener, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { Router } from '@angular/router';
-import { TaskDetail, TaskItem, TasksService } from '../state/tasks.service';
-import { ToastService } from '../state/toast.service';
-import { ApiError } from '../api/api.service';
-import { fmtTime } from '../state/rbac.service';
-import { IconComponent } from './icon.component';
-import { RecordDiffComponent } from './record-diff.component';
-import { Review, RecordsApi } from '../api/records.api';
-import { DiscussionEvent, discussionEvents } from '../features/link/discussion';
+import {
+  Component,
+  HostListener,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {Router} from '@angular/router';
+import {TaskDetail, TaskItem, TasksService} from '../state/tasks.service';
+import {ToastService} from '../state/toast.service';
+import {ApiError} from '../api/api.service';
+import {fmtTime} from '../state/rbac.service';
+import {IconComponent} from './icon.component';
+import {RecordDiffComponent} from './record-diff.component';
+import {Review, RecordsApi} from '../api/records.api';
+import {DiscussionEvent, discussionEvents} from '../features/link/discussion';
 
 /**
  * Top-bar bell: the workflow inbox (bpm tasks), and the dialog to approve or reject a task: a
@@ -15,9 +22,9 @@ import { DiscussionEvent, discussionEvents } from '../features/link/discussion';
  * latest of its discussion, and a link to review it on the record page: API-729).
  */
 @Component({
-    selector: 'app-inbox',
-    imports: [IconComponent, RecordDiffComponent],
-    template: `
+  selector: 'app-inbox',
+  imports: [IconComponent, RecordDiffComponent],
+  template: `
     <div class="wrap">
       <button class="btn btn-ghost btn-icon bell" (click)="open.set(!open()); tasks.refresh()" title="Tasks" aria-label="Tasks" [attr.aria-expanded]="open()">
         <app-icon name="bell" [size]="19" />
@@ -97,8 +104,9 @@ import { DiscussionEvent, discussionEvents } from '../features/link/discussion';
       </div>
     }
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [`
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
     .wrap { position: relative; }
     .bell { position: relative; }
     .count { position: absolute; top: 3px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px; background: var(--color-accent); color: #fff; font-size: 10.5px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--color-surface); }
@@ -121,7 +129,8 @@ import { DiscussionEvent, discussionEvents } from '../features/link/discussion';
     .go { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 46px; margin: 0 0 12px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--color-accent-100); color: var(--color-accent-700); font: inherit; font-weight: 600; font-size: 14px; text-align: left; cursor: pointer; }
     .go:hover { background: var(--color-accent-200, var(--color-accent-100)); text-decoration: underline; }
     .check-mark.bad { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-bd); }
-  `]
+  `,
+  ],
 })
 export class InboxComponent {
   tasks = inject(TasksService);
@@ -143,24 +152,54 @@ export class InboxComponent {
   overdue = computed(() => this.tasks.tasks().some(t => t.overdue));
 
   fmt = fmtTime;
-  label(t: TaskItem) { return this.isFinding(t) ? 'Audit finding' : t.document ? t.document.edrmsNo : t.definitionKey === 'land-record-review' ? 'Land record' : 'Task'; }
-  isRecord(t: TaskItem) { return t.definitionKey === 'land-record-review'; }
-  isFinding(t: TaskItem) { return t.definitionKey === 'audit-finding'; }
+  label(t: TaskItem) {
+    return this.isFinding(t)
+      ? 'Audit finding'
+      : t.document
+        ? t.document.edrmsNo
+        : t.definitionKey === 'land-record-review'
+          ? 'Land record'
+          : 'Task';
+  }
+  isRecord(t: TaskItem) {
+    return t.definitionKey === 'land-record-review';
+  }
+  isFinding(t: TaskItem) {
+    return t.definitionKey === 'audit-finding';
+  }
 
   async review(t: TaskItem) {
     this.open.set(false);
     try {
       const d = await this.tasks.get(t.id);
-      this.recordReview.set(null); this.discussion.set([]);
+      this.recordReview.set(null);
+      this.discussion.set([]);
       this.detail.set(d);
-      this.comment.set(''); this.outcome.set(null); this.error.set('');
-      if (this.isRecord(d) && d.input['record']?.id) {
-        this.records.review(d.input['record'].id).then(r => { if (this.detail()?.id === d.id) this.recordReview.set(r); })
-          .catch(e => this.detail()?.id === d.id && this.error.set('Could not load the record: ' + (e instanceof ApiError ? e.message : String(e))));
+      this.comment.set('');
+      this.outcome.set(null);
+      this.error.set('');
+      if (this.isRecord(d) && d.input.record?.id) {
+        this.records
+          .review(d.input.record.id)
+          .then(r => {
+            if (this.detail()?.id === d.id) this.recordReview.set(r);
+          })
+          .catch(
+            e =>
+              this.detail()?.id === d.id &&
+              this.error.set(
+                'Could not load the record: ' +
+                  (e instanceof ApiError ? e.message : String(e)),
+              ),
+          );
         this.loadDiscussion(d);
       }
     } catch (e) {
-      this.toast.show('danger', 'Could not open the task', e instanceof ApiError ? e.message : String(e));
+      this.toast.show(
+        'danger',
+        'Could not open the task',
+        e instanceof ApiError ? e.message : String(e),
+      );
       this.tasks.refresh();
     }
   }
@@ -168,35 +207,98 @@ export class InboxComponent {
   async decide(outcome: 'approved' | 'rejected' | 'acknowledged') {
     const d = this.detail()!;
     this.outcome.set(outcome);
-    if (outcome === 'rejected' && !this.comment().trim()) { this.error.set(this.isRecord(d) ? 'Say what the records officer should fix.' : 'Say why you reject the change.'); return; }
-    this.busy.set(true); this.error.set('');
+    if (outcome === 'rejected' && !this.comment().trim()) {
+      this.error.set(
+        this.isRecord(d)
+          ? 'Say what the records officer should fix.'
+          : 'Say why you reject the change.',
+      );
+      return;
+    }
+    this.busy.set(true);
+    this.error.set('');
     try {
-      const inst = await this.tasks.complete(d.id, outcome, this.comment().trim() || undefined);
-      const rec = d.input['record'];
-      if (outcome === 'acknowledged') this.toast.show('info', 'Finding acknowledged', 'It stays open until it is resolved or closed.');
-      else if (inst.status === 'error') this.toast.show('warn', 'Approved, but the change could not be applied', inst.errorMessage || 'See the process for details.', 9000);
-      else if (rec) this.toast.show(outcome === 'approved' ? 'success' : 'info', outcome === 'approved' ? `${rec.label} approved: version ${rec.versionNumber} is now current` : `${rec.label} returned to the records officer`, rec.recordNo);
-      else this.toast.show(outcome === 'approved' ? 'success' : 'info', outcome === 'approved' ? 'Change approved and applied' : 'Change rejected', d.input.document?.edrmsNo);
+      const inst = await this.tasks.complete(
+        d.id,
+        outcome,
+        this.comment().trim() || undefined,
+      );
+      const rec = d.input.record;
+      if (outcome === 'acknowledged') {
+        this.toast.show(
+          'info',
+          'Finding acknowledged',
+          'It stays open until it is resolved or closed.',
+        );
+      } else if (inst.status === 'error') {
+        this.toast.show(
+          'warn',
+          'Approved, but the change could not be applied',
+          inst.errorMessage || 'See the process for details.',
+          9000,
+        );
+      } else if (rec) {
+        this.toast.show(
+          outcome === 'approved' ? 'success' : 'info',
+          outcome === 'approved'
+            ? `${rec.label} approved: version ${rec.versionNumber} is now current`
+            : `${rec.label} returned to the records officer`,
+          rec.recordNo,
+        );
+      } else {
+        this.toast.show(
+          outcome === 'approved' ? 'success' : 'info',
+          outcome === 'approved'
+            ? 'Change approved and applied'
+            : 'Change rejected',
+          d.input.document?.edrmsNo,
+        );
+      }
       this.detail.set(null);
     } catch (e) {
       this.error.set(e instanceof ApiError ? e.message : String(e));
-    } finally { this.busy.set(false); }
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   /** The latest of the version's discussion; without it the dialog works as before. */
   private async loadDiscussion(d: TaskDetail) {
-    const rec = d.input['record'];
+    const rec = d.input.record;
     try {
-      const [versions, comments] = await Promise.all([this.records.versions(rec.id), this.records.comments(rec.id)]);
+      const [versions, comments] = await Promise.all([
+        this.records.versions(rec.id),
+        this.records.comments(rec.id),
+      ]);
       if (this.detail()?.id !== d.id) return;
-      this.discussion.set(discussionEvents(versions, comments.items).filter(e => e.versionNumber === rec.versionNumber));
-    } catch { /* not shown */ }
+      this.discussion.set(
+        discussionEvents(versions, comments.items).filter(
+          e => e.versionNumber === rec.versionNumber,
+        ),
+      );
+    } catch {
+      /* not shown */
+    }
   }
 
-  openRecord(id: string, review = false) { this.detail.set(null); this.router.navigate(['/link'], { queryParams: review ? { record: id, tab: 'review' } : { record: id } }); }
-  openDoc(id: string) { this.detail.set(null); this.router.navigate(['/documents'], { queryParams: { id } }); }
-  close() { this.detail.set(null); }
+  openRecord(id: string, review = false) {
+    this.detail.set(null);
+    this.router.navigate(['/link'], {
+      queryParams: review ? {record: id, tab: 'review'} : {record: id},
+    });
+  }
+  openDoc(id: string) {
+    this.detail.set(null);
+    this.router.navigate(['/documents'], {queryParams: {id}});
+  }
+  close() {
+    this.detail.set(null);
+  }
 
   @HostListener('document:click', ['$event'])
-  outside(e: Event) { if (this.open() && !(e.target as HTMLElement).closest('app-inbox')) this.open.set(false); }
+  outside(e: Event) {
+    if (this.open() && !(e.target as HTMLElement).closest('app-inbox')) {
+      this.open.set(false);
+    }
+  }
 }

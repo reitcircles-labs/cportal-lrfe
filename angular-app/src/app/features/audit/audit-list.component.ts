@@ -1,18 +1,36 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { AuditApi, AuditList, AuditListItem, ListFilter } from '../../api/audit.api';
-import { AuditTabsComponent } from '../../shared/audit-tabs.component';
-import { InfoTipComponent } from '../../shared/info-tip.component';
 import {
-  ANCHORING, ANCHORING_ORDER, HOW_AUDIT_WORKS, TIPS, auditColumn, shortDate, toneClass
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
+import {RouterLink} from '@angular/router';
+
+import {
+  AuditApi,
+  AuditList,
+  AuditListItem,
+  ListFilter,
+} from '../../api/audit.api';
+import {AuditTabsComponent} from '../../shared/audit-tabs.component';
+import {InfoTipComponent} from '../../shared/info-tip.component';
+import {
+  ANCHORING,
+  ANCHORING_ORDER,
+  HOW_AUDIT_WORKS,
+  TIPS,
+  auditColumn,
+  shortDate,
+  toneClass,
 } from './audit-wording';
 
 /** The filters, in the order the screen shows them. */
-const FILTERS: { id: ListFilter; label: string }[] = [
-  { id: 'changed', label: 'Changed since last audit' },
-  { id: 'attention', label: 'Needs attention' },
-  { id: 'all', label: 'All' }
+const FILTERS: Array<{id: ListFilter; label: string}> = [
+  {id: 'changed', label: 'Changed since last audit'},
+  {id: 'attention', label: 'Needs attention'},
+  {id: 'all', label: 'All'},
 ];
 
 /** The page sizes offered. */
@@ -161,7 +179,8 @@ const SEARCH_PAUSE_MS = 300;
       </section>
     </div>
   `,
-  styles: [`
+  styles: [
+    `
     .how { background: var(--color-accent-100); border: 1px solid var(--color-accent-200, var(--color-divider)); border-radius: var(--radius-lg); }
     .how-head { width: 100%; min-height: 48px; padding: 0 18px; border: 0; background: transparent; display: flex; gap: 10px; align-items: center;
                 cursor: pointer; text-align: left; font-weight: 600; font-size: 15px; color: inherit; }
@@ -181,7 +200,8 @@ const SEARCH_PAUSE_MS = 300;
     .tone-success { color: var(--success-fg); } .tone-danger { color: var(--danger-fg); } .tone-neutral { color: var(--color-neutral-700); }
     .note.danger { margin: 10px 16px; padding: 10px 12px; border-radius: 8px; background: var(--danger-bg); color: var(--danger-fg); }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  `]
+  `,
+  ],
 })
 export class AuditListComponent {
   private readonly audit = inject(AuditApi);
@@ -190,7 +210,10 @@ export class AuditListComponent {
   protected readonly how = HOW_AUDIT_WORKS;
   protected readonly filters = FILTERS;
   protected readonly pageSizes = PAGE_SIZES;
-  protected readonly anchoringSteps = ANCHORING_ORDER.map(s => ({ ...ANCHORING[s], tagClass: toneClass(ANCHORING[s].tone) }));
+  protected readonly anchoringSteps = ANCHORING_ORDER.map(s => ({
+    ...ANCHORING[s],
+    tagClass: toneClass(ANCHORING[s].tone),
+  }));
 
   protected readonly howOpen = signal(true);
   protected readonly query = signal('');
@@ -205,10 +228,16 @@ export class AuditListComponent {
   /** Counts requests, so a slow answer to an earlier search never replaces a newer one. */
   private requestNo = 0;
 
-  protected readonly counts = computed(() => this.result()?.counts ?? { changed: 0, attention: 0, all: 0 });
-  protected readonly pageCount = computed(() => Math.max(1, Math.ceil((this.result()?.total ?? 0) / this.pageSize())));
+  protected readonly counts = computed(
+    () => this.result()?.counts ?? {changed: 0, attention: 0, all: 0},
+  );
+  protected readonly pageCount = computed(() =>
+    Math.max(1, Math.ceil((this.result()?.total ?? 0) / this.pageSize())),
+  );
 
-  protected readonly rows = computed(() => (this.result()?.items ?? []).map(item => this.row(item)));
+  protected readonly rows = computed(() =>
+    (this.result()?.items ?? []).map(item => this.row(item)),
+  );
 
   protected readonly rangeText = computed(() => {
     const total = this.result()?.total ?? 0;
@@ -223,9 +252,11 @@ export class AuditListComponent {
   /** The page numbers to show: the first three, the current one and the last, with gaps. */
   protected readonly pageNumbers = computed(() => {
     const count = this.pageCount();
-    const wanted = new Set([1, 2, 3, this.page(), count].filter(n => n >= 1 && n <= count));
+    const wanted = new Set(
+      [1, 2, 3, this.page(), count].filter(n => n >= 1 && n <= count),
+    );
     const sorted = [...wanted].sort((a, b) => a - b);
-    const out: (number | null)[] = [];
+    const out: Array<number | null> = [];
     for (const n of sorted) {
       const previous = out[out.length - 1];
       if (typeof previous === 'number' && n - previous > 1) {
@@ -238,7 +269,12 @@ export class AuditListComponent {
 
   constructor() {
     effect(() => {
-      void this.load(this.search(), this.filter(), this.page(), this.pageSize());
+      void this.load(
+        this.search(),
+        this.filter(),
+        this.page(),
+        this.pageSize(),
+      );
     });
   }
 
@@ -262,11 +298,21 @@ export class AuditListComponent {
     this.page.set(1);
   }
 
-  private async load(q: string, filter: ListFilter, page: number, size: number): Promise<void> {
+  private async load(
+    q: string,
+    filter: ListFilter,
+    page: number,
+    size: number,
+  ): Promise<void> {
     const mine = ++this.requestNo;
     this.loading.set(true);
     try {
-      const result = await this.audit.list({ q, filter, limit: size, offset: (page - 1) * size });
+      const result = await this.audit.list({
+        q,
+        filter,
+        limit: size,
+        offset: (page - 1) * size,
+      });
       if (mine === this.requestNo) {
         this.result.set(result);
         this.error.set(null);
@@ -286,10 +332,10 @@ export class AuditListComponent {
     const proof = ANCHORING[item.proof];
     const last = item.audit.lastSignoff;
     // a signed-off record: how far the sign-off's own trail entry has got on the blockchain
-    let signoffProof: { label: string; tagClass: string } | null = null;
+    let signoffProof: {label: string; tagClass: string} | null = null;
     if (!item.audit.range && last) {
       const status = ANCHORING[last.proof];
-      signoffProof = { label: status.label, tagClass: toneClass(status.tone) };
+      signoffProof = {label: status.label, tagClass: toneClass(status.tone)};
     }
     return {
       item,
@@ -298,7 +344,7 @@ export class AuditListComponent {
       proofLabel: proof.label,
       proofClass: toneClass(proof.tone),
       audit: auditColumn(item.audit),
-      signoffProof
+      signoffProof,
     };
   }
 }

@@ -264,7 +264,8 @@ function deedOfSale({ seed }) {
 /** A Surveyor-General diagram: the figure with its beacons, the sides, and the certificate. */
 function sgDiagram({ no, land, beacons, area, surveyed, surveyor, approved, seed, old = false }) {
     const year = yearOf(approved);
-    const xs = beacons.map(b => b[1]), ys = beacons.map(b => b[2]);
+    const xs = beacons.map(b => b[1]);
+    const ys = beacons.map(b => b[2]);
     const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
     const scale = Math.min(380 / (maxX - minX), 300 / (maxY - minY));
     const pt = ([, x, y]) => [60 + (x - minX) * scale, 340 - (y - minY) * scale];

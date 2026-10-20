@@ -1,13 +1,41 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { AnchoringsApi, BatchFilter, BatchList, BatchRow } from '../../api/anchorings.api';
-import { AuditTabsComponent } from '../../shared/audit-tabs.component';
-import { InfoTipComponent } from '../../shared/info-tip.component';
-import { AnchoringSearchComponent } from './anchoring-search.component';
 import {
-  BATCH_STATUS, FAIL_REASON, FILTERS, HOW_ANCHORING_WORKS, JOURNEY, MESSAGES, TIPS, aboutTime, count, coversText, depthText,
-  gapNote, inSentence, plural, rangeText, shortHash, toneClass, when
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
+import {RouterLink} from '@angular/router';
+
+import {
+  AnchoringsApi,
+  BatchFilter,
+  BatchList,
+  BatchRow,
+} from '../../api/anchorings.api';
+import {AuditTabsComponent} from '../../shared/audit-tabs.component';
+import {InfoTipComponent} from '../../shared/info-tip.component';
+import {AnchoringSearchComponent} from './anchoring-search.component';
+import {
+  BATCH_STATUS,
+  FAIL_REASON,
+  FILTERS,
+  HOW_ANCHORING_WORKS,
+  JOURNEY,
+  MESSAGES,
+  TIPS,
+  aboutTime,
+  count,
+  coversText,
+  depthText,
+  gapNote,
+  inSentence,
+  plural,
+  rangeText,
+  shortHash,
+  toneClass,
+  when,
 } from './anchorings-wording';
 
 /** The page sizes offered. */
@@ -23,7 +51,12 @@ const GAPS_NAMED = 3;
  */
 @Component({
   selector: 'app-anchorings-list',
-  imports: [RouterLink, InfoTipComponent, AnchoringSearchComponent, AuditTabsComponent],
+  imports: [
+    RouterLink,
+    InfoTipComponent,
+    AnchoringSearchComponent,
+    AuditTabsComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -182,7 +215,8 @@ const GAPS_NAMED = 3;
       </section>
     </div>
   `,
-  styles: [`
+  styles: [
+    `
     .how { background: var(--color-accent-100); border: 1px solid var(--color-accent-200, var(--color-divider)); border-radius: var(--radius-lg); }
     .how-head { width: 100%; min-height: 48px; padding: 0 18px; border: 0; background: transparent; display: flex; gap: 10px; align-items: center;
                 cursor: pointer; text-align: left; font-weight: 600; font-size: 15px; color: inherit; }
@@ -208,7 +242,8 @@ const GAPS_NAMED = 3;
     .pager { padding: 12px 16px; border-top: 1px solid var(--color-divider); justify-content: space-between; gap: 10px; flex-wrap: wrap; }
     .note.danger { margin: 10px 16px; padding: 10px 12px; border-radius: 8px; background: var(--danger-bg); color: var(--danger-fg); }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  `]
+  `,
+  ],
 })
 export class AnchoringsListComponent {
   private readonly api = inject(AnchoringsApi);
@@ -217,7 +252,11 @@ export class AnchoringsListComponent {
   protected readonly how = HOW_ANCHORING_WORKS;
   protected readonly filters = FILTERS;
   protected readonly pageSizes = PAGE_SIZES;
-  protected readonly journey = JOURNEY.map(j => ({ label: BATCH_STATUS[j.status].label, tagClass: toneClass(BATCH_STATUS[j.status].tone), text: j.text }));
+  protected readonly journey = JOURNEY.map(j => ({
+    label: BATCH_STATUS[j.status].label,
+    tagClass: toneClass(BATCH_STATUS[j.status].tone),
+    text: j.text,
+  }));
 
   protected readonly howOpen = signal(false);
   protected readonly filter = signal<BatchFilter>('all');
@@ -234,12 +273,28 @@ export class AnchoringsListComponent {
   private requestNo = 0;
 
   protected readonly counts = computed(() => {
-    const c = this.newest()?.counts ?? this.result()?.counts ?? { all: 0, progress: 0, failed: 0 };
-    return { all: count(c.all), progress: count(c.progress), failed: count(c.failed) };
+    const c = this.newest()?.counts ??
+      this.result()?.counts ?? {all: 0, progress: 0, failed: 0};
+    return {
+      all: count(c.all),
+      progress: count(c.progress),
+      failed: count(c.failed),
+    };
   });
-  protected readonly pageCount = computed(() => Math.max(1, Math.ceil((this.result()?.total ?? 0) / this.pageSize())));
-  protected readonly range = computed(() => rangeText(this.filter(), this.page(), this.pageSize(), this.result()?.total ?? 0));
-  protected readonly emptyText = computed(() => (this.filter() === 'all' ? MESSAGES.empty : 'No anchorings match.'));
+  protected readonly pageCount = computed(() =>
+    Math.max(1, Math.ceil((this.result()?.total ?? 0) / this.pageSize())),
+  );
+  protected readonly range = computed(() =>
+    rangeText(
+      this.filter(),
+      this.page(),
+      this.pageSize(),
+      this.result()?.total ?? 0,
+    ),
+  );
+  protected readonly emptyText = computed(() =>
+    this.filter() === 'all' ? MESSAGES.empty : 'No anchorings match.',
+  );
 
   protected readonly rows = computed(() => {
     const needed = this.result()?.confirmationsNeeded ?? 10;
@@ -248,17 +303,32 @@ export class AnchoringsListComponent {
 
   protected readonly lastConfirmed = computed(() => {
     const b = this.newest()?.items.find(i => i.status === 'confirmed');
-    return b ? { batch: b.batch, label: count(b.batch), when: inSentence(b.createdAt), covers: plural(b.covers ?? 0, 'new fingerprint') } : null;
+    return b
+      ? {
+          batch: b.batch,
+          label: count(b.batch),
+          when: inSentence(b.createdAt),
+          covers: plural(b.covers ?? 0, 'new fingerprint'),
+        }
+      : null;
   });
 
   protected readonly inProgress = computed(() => {
     const list = this.newest();
-    const b = list?.items.find(i => i.status === 'sent' || i.status === 'onChain');
+    const b = list?.items.find(
+      i => i.status === 'sent' || i.status === 'onChain',
+    );
     if (!b || !list) {
       return null;
     }
     const s = BATCH_STATUS[b.status];
-    return { batch: b.batch, label: count(b.batch), status: s.label, tagClass: toneClass(s.tone), depth: depthText(b.confirmations, list.confirmationsNeeded) };
+    return {
+      batch: b.batch,
+      label: count(b.batch),
+      status: s.label,
+      tagClass: toneClass(s.tone),
+      depth: depthText(b.confirmations, list.confirmationsNeeded),
+    };
   });
 
   protected readonly next = computed(() => {
@@ -267,12 +337,22 @@ export class AnchoringsListComponent {
       return null;
     }
     const due = aboutTime(n.dueAt);
-    return { due: due.charAt(0).toUpperCase() + due.slice(1), waiting: n.waiting ? `${plural(n.waiting, 'new fingerprint')} waiting` : 'Nothing waiting' };
+    return {
+      due: due.charAt(0).toUpperCase() + due.slice(1),
+      waiting: n.waiting
+        ? `${plural(n.waiting, 'new fingerprint')} waiting`
+        : 'Nothing waiting',
+    };
   });
 
   protected readonly gaps = computed(() => {
     const f = this.failed();
-    return f && f.total ? gapNote(f.items.map(i => i.batch), f.total) : null;
+    return f && f.total
+      ? gapNote(
+          f.items.map(i => i.batch),
+          f.total,
+        )
+      : null;
   });
 
   constructor() {
@@ -296,8 +376,8 @@ export class AnchoringsListComponent {
   private async loadSummary(): Promise<void> {
     try {
       const [newest, failed] = await Promise.all([
-        this.api.list({ status: 'all', limit: 10, offset: 0 }),
-        this.api.list({ status: 'failed', limit: GAPS_NAMED, offset: 0 })
+        this.api.list({status: 'all', limit: 10, offset: 0}),
+        this.api.list({status: 'failed', limit: GAPS_NAMED, offset: 0}),
       ]);
       this.newest.set(newest);
       this.failed.set(failed);
@@ -306,11 +386,19 @@ export class AnchoringsListComponent {
     }
   }
 
-  private async load(filter: BatchFilter, page: number, size: number): Promise<void> {
+  private async load(
+    filter: BatchFilter,
+    page: number,
+    size: number,
+  ): Promise<void> {
     const mine = ++this.requestNo;
     this.loading.set(true);
     try {
-      const result = await this.api.list({ status: filter, limit: size, offset: (page - 1) * size });
+      const result = await this.api.list({
+        status: filter,
+        limit: size,
+        offset: (page - 1) * size,
+      });
       if (mine === this.requestNo) {
         this.result.set(result);
         this.error.set(null);
@@ -344,7 +432,7 @@ export class AnchoringsListComponent {
       tx: b.txHash ? shortHash(b.txHash) : '',
       explorerUrl: b.explorerUrl,
       block: b.block ? count(b.block) : '—',
-      depth: depthText(b.confirmations, needed)
+      depth: depthText(b.confirmations, needed),
     };
   }
 }

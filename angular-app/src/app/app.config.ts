@@ -1,10 +1,19 @@
-import { ApplicationConfig, inject, provideZoneChangeDetection, provideAppInitializer } from '@angular/core';
-import { provideRouter, withHashLocation } from '@angular/router';
-import { provideHttpClient, withInterceptors, withXhr } from '@angular/common/http';
-import { routes } from './app.routes';
-import { authInterceptor } from './api/auth.interceptor';
-import { AuthService } from './state/auth.service';
-import { SiteConfigService } from './state/site-config.service';
+import {
+  ApplicationConfig,
+  inject,
+  provideZoneChangeDetection,
+  provideAppInitializer,
+} from '@angular/core';
+import {provideRouter, withHashLocation} from '@angular/router';
+import {
+  provideHttpClient,
+  withInterceptors,
+  withXhr,
+} from '@angular/common/http';
+import {routes} from './app.routes';
+import {authInterceptor} from './api/auth.interceptor';
+import {AuthService} from './state/auth.service';
+import {SiteConfigService} from './state/site-config.service';
 
 /** Before the first route resolves: resume the session from the refresh cookie, if any. */
 function restoreSession() {
@@ -14,14 +23,14 @@ function restoreSession() {
 
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideZoneChangeDetection({ eventCoalescing: true }),
+    provideZoneChangeDetection({eventCoalescing: true}),
     provideRouter(routes, withHashLocation()),
     provideHttpClient(withXhr(), withInterceptors([authInterceptor])),
     provideAppInitializer(() => {
-        const initializerFn = (restoreSession)();
-        return initializerFn();
-      }),
+      const initializerFn = restoreSession();
+      return initializerFn();
+    }),
     // the organisation's name and texts, from the site's settings (API-712)
-    provideAppInitializer(() => inject(SiteConfigService).load())
-  ]
+    provideAppInitializer(() => inject(SiteConfigService).load()),
+  ],
 };

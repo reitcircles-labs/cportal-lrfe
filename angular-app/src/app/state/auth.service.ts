@@ -1,27 +1,61 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
-import { ApiService } from '../api/api.service';
+import {Injectable, computed, inject, signal} from '@angular/core';
+import {CanActivateFn, Router} from '@angular/router';
+import {ApiService} from '../api/api.service';
 
 /** Shape the shell and screens use for "who is signed in" (kept from the demo). */
-export interface Role { id: string; label: string; name: string; initials: string; home: string; office: string; }
+export interface Role {
+  id: string;
+  label: string;
+  name: string;
+  initials: string;
+  home: string;
+  office: string;
+}
 
 /** GET /api/auth/me, and the `me` part of every sign-in / refresh response. */
 export interface Me {
-  user: { id: string; name: string; email: string; office: string; roles: string[]; status: string; mfa: boolean; lastActive: string | null; conflicts: string[] };
-  roles: { id: string; label: string; home: string }[];
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    office: string;
+    roles: string[];
+    status: string;
+    mfa: boolean;
+    lastActive: string | null;
+    conflicts: string[];
+  };
+  roles: Array<{id: string; label: string; home: string}>;
   perms: string[];
   home: string;
-  policies: { timeout: number; fourEyes: boolean };
+  policies: {timeout: number; fourEyes: boolean};
 }
-interface Session { accessToken: string; expiresIn: number; me: Me; }
+
+/** Whether a sign-in answer is a session (signed in) rather than a next step such as MFA. */
+const isSession = (r: Session | LoginStep): r is Session =>
+  !!(r as Session).accessToken;
+
+interface Session {
+  accessToken: string;
+  expiresIn: number;
+  me: Me;
+}
 
 /** Result of the password step: signed in, or a second (MFA) step is needed. */
 export type LoginStep =
-  | { next: 'done' }
-  | { next: 'mfa'; challenge: string }
-  | { next: 'mfa-enroll'; challenge: string; secret: string; otpauthUrl: string };
+  | {next: 'done'}
+  | {next: 'mfa'; challenge: string}
+  | {next: 'mfa-enroll'; challenge: string; secret: string; otpauthUrl: string};
 
-const initials = (name: string) => name.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).map(s => s[0]).slice(0, 2).join('').toUpperCase();
+const initials = (name: string) =>
+  name
+    .replace(/[^A-Za-z ]/g, '')
+    .split(' ')
+    .filter(Boolean)
+    .map(s => s[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
 
 /**
  * Real sign-in against the identity service (via the gateway):
@@ -31,7 +65,7 @@ const initials = (name: string) => name.replace(/[^A-Za-z ]/g, '').split(' ').fi
  *  - the token is refreshed shortly before it expires, but only if the user has been active,
  *    so the server's idle-timeout policy still signs out an unattended browser
  */
-@Injectable({ providedIn: 'root' })
+@Injectable({providedIn: 'root'})
 export class AuthService {
   private api = inject(ApiService);
   private router = inject(Router);
@@ -46,19 +80,29 @@ export class AuthService {
     const me = this.me();
     if (!me) return null;
     return {
-      id: me.roles[0]?.id ?? '', label: me.roles.map(r => r.label).join(' + ') || 'No role', name: me.user.name,
-      initials: initials(me.user.name), home: me.home || '/', office: me.user.office
+      id: me.roles[0]?.id ?? '',
+      label: me.roles.map(r => r.label).join(' + ') || 'No role',
+      name: me.user.name,
+      initials: initials(me.user.name),
+      home: me.home || '/',
+      office: me.user.office,
     };
   });
 
-  private refreshTimer: any;
+  private refreshTimer: ReturnType<typeof setTimeout>;
   private refreshing: Promise<boolean> | null = null;
   private lastActivity = Date.now();
   private lastRefresh = Date.now();
 
   constructor() {
     for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
-      window.addEventListener(ev, () => { this.lastActivity = Date.now(); }, { passive: true });
+      window.addEventListener(
+        ev,
+        () => {
+          this.lastActivity = Date.now();
+        },
+        {passive: true},
+      );
     }
   }
 
@@ -68,27 +112,47 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<LoginStep> {
-    const res = await this.api.post<any>('/auth/login', { email, password }, { noRetry: true });
-    if (res.accessToken) {
+    const res = await this.api.post<Session | LoginStep>(
+      '/auth/login',
+      {email, password},
+      {noRetry: true},
+    );
+    if (isSession(res)) {
       this.start(res);
-      return { next: 'done' };
+      return {next: 'done'};
     }
-    return res as LoginStep;
+    return res;
   }
 
   async verifyMfa(challenge: string, code: string): Promise<void> {
-    this.start(await this.api.post<Session>('/auth/mfa', { challenge, code }, { noRetry: true }));
+    this.start(
+      await this.api.post<Session>(
+        '/auth/mfa',
+        {challenge, code},
+        {noRetry: true},
+      ),
+    );
   }
 
   /** Rotate the session. Concurrent callers share one request. Resolves false if the session is over. */
   refresh(): Promise<boolean> {
     if (!this.refreshing) {
-      this.refreshing = this.api.post<Session>('/auth/refresh', {}, { noRetry: true })
-        .then(s => { this.start(s); return true; })
+      this.refreshing = this.api
+        .post<Session>('/auth/refresh', {}, {noRetry: true})
+        .then(s => {
+          this.start(s);
+          return true;
+        })
         // A signed-in user whose session ended (idle timeout, suspension) goes to sign-in with a
         // notice; clearing first would leave them on the screen with failing requests.
-        .catch(() => { if (this.me()) this.expire(); else this.clear(); return false; })
-        .finally(() => { this.refreshing = null; });
+        .catch(() => {
+          if (this.me()) this.expire();
+          else this.clear();
+          return false;
+        })
+        .finally(() => {
+          this.refreshing = null;
+        });
     }
     return this.refreshing;
   }
@@ -99,7 +163,11 @@ export class AuthService {
   }
 
   async logout() {
-    try { await this.api.post('/auth/logout', {}, { noRetry: true }); } catch { /* signed out locally regardless */ }
+    try {
+      await this.api.post('/auth/logout', {}, {noRetry: true});
+    } catch {
+      /* signed out locally regardless */
+    }
     this.clear();
     this.router.navigateByUrl('/login');
   }
@@ -108,7 +176,9 @@ export class AuthService {
   expire() {
     if (!this.me()) return;
     this.clear();
-    this.router.navigate(['/login'], { queryParams: { expired: 1, returnUrl: this.router.url } });
+    this.router.navigate(['/login'], {
+      queryParams: {expired: 1, returnUrl: this.router.url},
+    });
   }
 
   private start(s: Session) {
@@ -117,9 +187,12 @@ export class AuthService {
     this.lastRefresh = Date.now();
     clearTimeout(this.refreshTimer);
     // Refresh a minute before expiry, if the user did something since the last refresh.
-    this.refreshTimer = setTimeout(() => {
-      if (this.lastActivity > this.lastRefresh) this.refresh();
-    }, Math.max(10, s.expiresIn - 60) * 1000);
+    this.refreshTimer = setTimeout(
+      () => {
+        if (this.lastActivity > this.lastRefresh) this.refresh();
+      },
+      Math.max(10, s.expiresIn - 60) * 1000,
+    );
   }
 
   private clear() {
@@ -129,7 +202,12 @@ export class AuthService {
   }
 }
 
+/** Lets signed-in users through; sends others to the sign-in screen. */
 export const authGuard: CanActivateFn = (_route, state) => {
   const auth = inject(AuthService);
-  return auth.signedIn() ? true : inject(Router).createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+  return auth.signedIn()
+    ? true
+    : inject(Router).createUrlTree(['/login'], {
+        queryParams: {returnUrl: state.url},
+      });
 };

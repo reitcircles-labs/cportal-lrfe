@@ -1,13 +1,26 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 
-import { AuditApi, ProofStatus, TrailEntry } from '../../api/audit.api';
-import { InfoTipComponent } from '../../shared/info-tip.component';
-import { ProofLinkComponent } from '../../shared/proof-link.component';
-import { TIPS, actionLabel, proofLabel, shortDateTime, toneClass } from './audit-wording';
+import {AuditApi, ProofStatus, TrailEntry} from '../../api/audit.api';
+import {InfoTipComponent} from '../../shared/info-tip.component';
+import {ProofLinkComponent} from '../../shared/proof-link.component';
+import {
+  TIPS,
+  actionLabel,
+  proofLabel,
+  shortDateTime,
+  toneClass,
+} from './audit-wording';
 
 /** How many entries are shown at a time. */
 const PAGE = 25;
-
 
 /** The result of verifying one entry. */
 type Result = 'valid' | 'notValid' | 'notYet' | 'unavailable';
@@ -16,7 +29,7 @@ const RESULTS: Record<Result, string> = {
   valid: 'Valid',
   notValid: 'Not valid',
   notYet: 'Not on the blockchain yet',
-  unavailable: 'Couldn’t check'
+  unavailable: 'Couldn’t check',
 };
 
 /**
@@ -65,11 +78,13 @@ const RESULTS: Record<Result, string> = {
       </div>
     </section>
   `,
-  styles: [`
+  styles: [
+    `
     .h { margin: 0; font-size: 18px; display: flex; align-items: center; }
     .foot { padding: 12px 14px; border-top: 1px solid var(--color-divider); justify-content: space-between; gap: 10px; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  `]
+  `,
+  ],
 })
 export class AuditTrailComponent {
   private readonly audit = inject(AuditApi);
@@ -84,22 +99,32 @@ export class AuditTrailComponent {
   protected readonly total = signal(0);
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
-  private readonly proofs = signal<Record<number, { status: ProofStatus; batch: number | null }>>({});
+  private readonly proofs = signal<
+    Record<number, {status: ProofStatus; batch: number | null}>
+  >({});
   private readonly results = signal<Record<number, Result>>({});
 
-  protected readonly rows = computed(() => this.entries().map(entry => {
-    const proof = this.proofs()[entry.seq];
-    const result = this.results()[entry.seq];
-    const status = proof ? proofLabel(proof.status) : null;
-    return {
-      entry,
-      time: shortDateTime(entry.time),
-      action: actionLabel(entry.type, entry.data),
-      item: itemOf(entry),
-      proof: status ? { label: status.label, tagClass: toneClass(status.tone), batch: proof?.batch ?? null } : null,
-      result: result ? RESULTS[result] : null
-    };
-  }));
+  protected readonly rows = computed(() =>
+    this.entries().map(entry => {
+      const proof = this.proofs()[entry.seq];
+      const result = this.results()[entry.seq];
+      const status = proof ? proofLabel(proof.status) : null;
+      return {
+        entry,
+        time: shortDateTime(entry.time),
+        action: actionLabel(entry.type, entry.data),
+        item: itemOf(entry),
+        proof: status
+          ? {
+              label: status.label,
+              tagClass: toneClass(status.tone),
+              batch: proof?.batch ?? null,
+            }
+          : null,
+        result: result ? RESULTS[result] : null,
+      };
+    }),
+  );
 
   constructor() {
     effect(() => {
@@ -124,24 +149,41 @@ export class AuditTrailComponent {
     } catch {
       result = 'unavailable';
     }
-    this.results.update(r => ({ ...r, [seq]: result }));
+    this.results.update(r => ({...r, [seq]: result}));
   }
 
   /** The newest `count` entries, newest first, with their proof status. */
   private async load(recordId: string, count: number): Promise<void> {
     this.loading.set(true);
     try {
-      const { total } = await this.audit.trail(recordId, 0, 1);
+      const {total} = await this.audit.trail(recordId, 0, 1);
       const offset = Math.max(0, total - count);
-      const { entries } = await this.audit.trail(recordId, offset, Math.min(count, 500));
+      const {entries} = await this.audit.trail(
+        recordId,
+        offset,
+        Math.min(count, 500),
+      );
       this.total.set(total);
       this.entries.set([...entries].reverse());
       // proofs that were waiting may have moved on since: ask again for those
       const known = this.proofs();
-      const missing = entries.filter(e => !known[e.seq] || known[e.seq].status === 'waiting');
-      const statuses = await Promise.all(missing.map(e => this.audit.proofStatus(e.seq).then(p => [e.seq, { status: p.status, batch: p.anchor?.batch ?? null }] as const, () => null)));
+      const missing = entries.filter(
+        e => !known[e.seq] || known[e.seq].status === 'waiting',
+      );
+      const statuses = await Promise.all(
+        missing.map(e =>
+          this.audit.proofStatus(e.seq).then(
+            p =>
+              [
+                e.seq,
+                {status: p.status, batch: p.anchor?.batch ?? null},
+              ] as const,
+            () => null,
+          ),
+        ),
+      );
       this.proofs.update(p => {
-        const next = { ...p };
+        const next = {...p};
         for (const s of statuses) {
           if (s) {
             next[s[0]] = s[1];
@@ -160,9 +202,17 @@ export class AuditTrailComponent {
 
 /** What an entry is about: a land record version, a document, or the record. */
 function itemOf(entry: TrailEntry): string {
-  const d = entry.data as { recordNo?: string; versionNumber?: number; edrmsNo?: string; fromVersion?: number; toVersion?: number };
+  const d = entry.data as {
+    recordNo?: string;
+    versionNumber?: number;
+    edrmsNo?: string;
+    fromVersion?: number;
+    toVersion?: number;
+  };
   if (d.fromVersion && d.toVersion) {
-    return d.fromVersion === d.toVersion ? `v${d.toVersion}` : `v${d.fromVersion}–v${d.toVersion}`;
+    return d.fromVersion === d.toVersion
+      ? `v${d.toVersion}`
+      : `v${d.fromVersion}–v${d.toVersion}`;
   }
   if (d.edrmsNo) {
     return d.edrmsNo;

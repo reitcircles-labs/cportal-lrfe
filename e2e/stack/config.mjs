@@ -2,8 +2,8 @@
  * Where the test stack runs. Ports differ from `npm run dev` (3500-3504, 4200), so the tests can
  * run while a developer copy is up. Override the base ports with E2E_API_PORT / E2E_WEB_PORT.
  */
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 export const E2E_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const REPO_DIR = join(E2E_DIR, '..');
@@ -17,18 +17,18 @@ export const BAO_DIR = join(STACK_DIR, 'bao');
 
 const apiBase = Number(process.env.E2E_API_PORT || 3600);
 export const PORTS = {
-    gateway: apiBase,
-    identity: apiBase + 1,
-    edrms: apiBase + 2,
-    bpm: apiBase + 3,
-    intake: apiBase + 4,
-    nats: apiBase + 5,
-    postgres: apiBase + 6,
-    bao: apiBase + 7,          // E2E_BAO=real; its cluster port is the next one
-    'land-records': apiBase + 9,
-    audit: apiBase + 10,
-    docs: apiBase + 11,        // the API docs container (npm run test:docker)
-    web: Number(process.env.E2E_WEB_PORT || 4300)
+  gateway: apiBase,
+  identity: apiBase + 1,
+  edrms: apiBase + 2,
+  bpm: apiBase + 3,
+  intake: apiBase + 4,
+  nats: apiBase + 5,
+  postgres: apiBase + 6,
+  bao: apiBase + 7, // E2E_BAO=real; its cluster port is the next one
+  'land-records': apiBase + 9,
+  audit: apiBase + 10,
+  docs: apiBase + 11, // the API docs container (npm run test:docker)
+  web: Number(process.env.E2E_WEB_PORT || 4300),
 };
 export const WEB_URL = `http://localhost:${PORTS.web}`;
 export const GATEWAY_URL = `http://localhost:${PORTS.gateway}`;
@@ -42,8 +42,8 @@ export const DEMO_PASSWORD = 'e2e-demo-password-2026';
  * check the escaping. The tests' own stack uses the defaults (angular-app/public/config.json).
  */
 export const E2E_ORG = {
-    name: 'Land Titles Office',
-    subtitle: 'Test "Republic" \\ e2e',
-    parent: 'Ministry of Test Lands',
-    place: 'Testville'
+  name: 'Land Titles Office',
+  subtitle: 'Test "Republic" \\ e2e',
+  parent: 'Ministry of Test Lands',
+  place: 'Testville',
 };

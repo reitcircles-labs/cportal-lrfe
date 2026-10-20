@@ -8,41 +8,57 @@
  * Land records name documents by EDRMS number in their changes, edrms and intake by id and number:
  * both are kept, so either links them.
  */
-export const KINDS = ['record', 'document', 'edrmsNo', 'intake', 'process', 'user'];
+export const KINDS = [
+  'record',
+  'document',
+  'edrmsNo',
+  'intake',
+  'process',
+  'user',
+];
 
 /** bpm processes whose business key is another subject (bpm/src/definitions). */
-const BUSINESS_KEY = { 'land-record-review': 'record', 'document-amendment': 'document' };
+const BUSINESS_KEY = {
+  'land-record-review': 'record',
+  'document-amendment': 'document',
+};
 
+/** The subjects (`kind:id`) an event is about, as listed above. */
 export function subjectsOf(event) {
-    const d = event.data || {};
-    const out = new Set();
-    const add = (kind, id) => { if (id !== undefined && id !== null && id !== '') out.add(`${kind}:${id}`); };
+  const d = event.data || {};
+  const out = new Set();
+  const add = (kind, id) => {
+    if (id !== undefined && id !== null && id !== '') out.add(`${kind}:${id}`);
+  };
 
-    add('user', event.actor?.id);
-    add('record', d.recordId);
-    if (event.source === 'intake') add('intake', d.documentId);
-    else if (event.source === 'edrms') add('document', d.documentId);
-    add('document', d.edrmsDocumentId);
-    add('edrmsNo', d.edrmsNo);
-    if (event.source === 'edrms') add('intake', d.sourceId);               // filed from this intake document
-    add('edrmsNo', d.change?.edrmsNo);                                     // land record: document linked, updated, unlinked
-    add('document', d.flag?.edrmsDocumentId);                              // land record flagged: a pinned document was amended
-    add('edrmsNo', d.flag?.edrmsNo);
-    add('process', d.instanceId);
-    add('process', d.reviewInstanceId);
-    if (d.instanceId && BUSINESS_KEY[d.definitionKey]) add(BUSINESS_KEY[d.definitionKey], d.businessKey);
-    add('user', d.userId);
-    add('user', d.submittedBy?.id);
-    add('user', d.approvedBy?.id);
-    return [...out];
+  add('user', event.actor?.id);
+  add('record', d.recordId);
+  if (event.source === 'intake') add('intake', d.documentId);
+  else if (event.source === 'edrms') add('document', d.documentId);
+  add('document', d.edrmsDocumentId);
+  add('edrmsNo', d.edrmsNo);
+  if (event.source === 'edrms') add('intake', d.sourceId); // filed from this intake document
+  add('edrmsNo', d.change?.edrmsNo); // land record: document linked, updated, unlinked
+  add('document', d.flag?.edrmsDocumentId); // land record flagged: a pinned document was amended
+  add('edrmsNo', d.flag?.edrmsNo);
+  add('process', d.instanceId);
+  add('process', d.reviewInstanceId);
+  if (d.instanceId && BUSINESS_KEY[d.definitionKey]) {
+    add(BUSINESS_KEY[d.definitionKey], d.businessKey);
+  }
+  add('user', d.userId);
+  add('user', d.submittedBy?.id);
+  add('user', d.approvedBy?.id);
+  return [...out];
 }
 
 /** "record:…" → ['record', '…'], or null when it is not a subject. */
 export function parseSubject(s) {
-    const i = String(s ?? '').indexOf(':');
-    if (i < 1) return null;
-    const kind = s.slice(0, i), id = s.slice(i + 1);
-    return KINDS.includes(kind) && id ? [kind, id] : null;
+  const i = String(s ?? '').indexOf(':');
+  if (i < 1) return null;
+  const kind = s.slice(0, i);
+  const id = s.slice(i + 1);
+  return KINDS.includes(kind) && id ? [kind, id] : null;
 }
 
 /**

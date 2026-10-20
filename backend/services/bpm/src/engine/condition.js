@@ -6,11 +6,12 @@ import jsonLogic from 'json-logic-js';
  * JsonLogic can only read and combine the data it is handed.
  */
 export function evaluate(rule, data) {
-    if (rule === undefined) return undefined;
-    return jsonLogic.apply(rule, data);
+  if (rule === undefined) return undefined;
+  return jsonLogic.apply(rule, data);
 }
 
+/** Whether a condition holds; no condition (or `true`) always holds. */
 export function evaluateCondition(rule, data) {
-    if (rule === true || rule === undefined) return true;
-    return !!evaluate(rule, data);
+  if (rule === true || rule === undefined) return true;
+  return !!evaluate(rule, data);
 }
