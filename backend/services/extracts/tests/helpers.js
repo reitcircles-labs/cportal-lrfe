@@ -1,5 +1,8 @@
 import {createEventBus, createServiceTokenSigner} from '@lrfe/common';
+import {createMemoryStore} from '@lrfe/storage';
 import {ExtractsService} from '../src/extracts.service.js';
+import {createTestSealer} from '../src/seal/sealers.js';
+import {extractSettingsFromEnv} from '../src/settings.js';
 import {ExtractCheck} from '../src/public-check.js';
 import {createRecordsClient} from '../src/records-client.js';
 import {createMemoryRepo} from '../src/repo/memory.js';
@@ -94,6 +97,83 @@ export function fakeVersionCheck(records) {
   };
 }
 
+/** The check page's address in the tests' settings. */
+export const CHECK_URL_BASE = 'https://registry.example/check';
+
+/** The site's settings the tests' PDFs are made with: a made-up registry, dates in UTC. */
+export function testSettings() {
+  return extractSettingsFromEnv({
+    LRFE_ORG_NAME: 'Land Titles Office',
+    LRFE_ORG_SUBTITLE: 'Republic of Testland',
+    EXTRACTS_CHECK_URL_BASE: CHECK_URL_BASE,
+    EXTRACTS_LEGAL_TEXT: 'Legal wording of the test registry.',
+    EXTRACTS_TIME_ZONE: 'UTC',
+  });
+}
+
+/**
+ * The audit service's proof of a land record version as the extracts service reads it (POST
+ * /audit/anchoring/proof): confirmed in batch 7, for the seal land-records holds; with
+ * `result[key]` (key `<recordId>:<n>`) that answer instead; with `down`, the client's 503.
+ */
+export function fakeProofs(records) {
+  const result = {};
+  return {
+    result,
+    down: false,
+    async recordProof(recordId, versionNumber) {
+      if (this.down) {
+        const err = new Error('The proof cannot be read now');
+        err.statusCode = 503;
+        throw err;
+      }
+      const key = `${recordId}:${versionNumber}`;
+      if (key in result) return result[key];
+      const version = await records.repo.getVersion(recordId, versionNumber);
+      return {
+        proof: {
+          format: 'lrfe-audit-proof/1',
+          status: 'confirmed',
+          item: {
+            kind: 'record-version',
+            recordId,
+            version: versionNumber,
+            seal: version.seal,
+          },
+          leaf: {
+            key: `record-version:${recordId}:${versionNumber}`,
+            type: 'record-version',
+            item: version.seal,
+            index: 3,
+            hash: 'cd'.repeat(32),
+          },
+          tree: {
+            size: 8,
+            path: ['ef'.repeat(32)],
+            peaks: [],
+            root: '12'.repeat(32),
+          },
+          anchor: {
+            network: 'preview',
+            label: 8890,
+            batch: 7,
+            tx: TX,
+            root: '12'.repeat(32),
+            size: 8,
+            address: 'addr_test1example',
+            block: 100,
+            blockIs: 'included',
+            confirmations: 10,
+            status: 'confirmed',
+            confirmedAt: '2026-10-21T07:00:00.000Z',
+          },
+        },
+        explorerUrl: `https://preview.cexplorer.io/tx/${TX}`,
+      };
+    },
+  };
+}
+
 /**
  * The extracts service behind its HTTP app, reading a real in-process land-records app (its routes,
  * its guard on the extracts service token) over app.inject, and the audit service's anchoring
@@ -118,11 +198,17 @@ export async function makeExtracts() {
   events.subscribe('*', e => published.push(e));
   const clock = makeClock();
   const anchoring = fakeAnchoring();
+  const proofs = fakeProofs(records);
+  const files = createMemoryStore();
   const service = new ExtractsService({
     repo,
     events,
     clock,
     anchoring,
+    proofs,
+    files,
+    sealer: await sharedTestSealer(),
+    settings: testSettings(),
     records: createRecordsClient({
       baseUrl: 'http://records',
       serviceToken: createServiceTokenSigner({
@@ -151,11 +237,21 @@ export async function makeExtracts() {
     published,
     clock,
     anchoring,
+    proofs,
+    files,
     versions,
     check,
     app,
     as,
   };
+}
+
+let testSealer = null;
+
+/** One test seal for all the tests: making its key and certificate takes a moment. */
+export async function sharedTestSealer() {
+  testSealer ??= await createTestSealer({name: 'Land Titles Office'});
+  return testSealer;
 }
 
 /** Erf 1873 with version 1 committed: three owners (README.md of land-records, section 2). */

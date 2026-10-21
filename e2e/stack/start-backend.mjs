@@ -58,6 +58,7 @@ const COMMON = {
   RECORDS_STORE: 'memory',
   AUDIT_STORE: 'memory',
   EXTRACTS_STORE: 'memory',
+  EXTRACTS_STORAGE: 'memory',
   INTAKE_STORAGE: 'memory',
   EXTRACTION_PROVIDER: 'mock',
   SEED_DEMO_PASSWORD: DEMO_PASSWORD,
@@ -113,6 +114,8 @@ if (POSTGRES) {
     EDRMS_LOCAL_DIR: join(STACK_DIR, 'files', 'edrms'),
     INTAKE_STORAGE: 'local',
     INTAKE_LOCAL_DIR: join(STACK_DIR, 'files', 'intake'),
+    EXTRACTS_STORAGE: 'local',
+    EXTRACTS_LOCAL_DIR: join(STACK_DIR, 'files', 'extracts'),
   });
 }
 

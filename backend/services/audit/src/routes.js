@@ -165,6 +165,27 @@ export async function auditRoutes(
     async req => proofs.versionCheck(req.body.recordId, req.body.version),
   );
 
+  // the proof of a land record version, the same as in the evidence pack, attached to an ownership
+  // extract's PDF (API-691): the extracts service only
+  app.post(
+    '/audit/anchoring/proof',
+    {
+      onRequest: app.requireService('extracts'),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['recordId', 'version'],
+          additionalProperties: false,
+          properties: {
+            recordId: {type: 'string', format: 'uuid'},
+            version: item.version,
+          },
+        },
+      },
+    },
+    async req => proofs.recordProof(req.body.recordId, req.body.version),
+  );
+
   // ------------------------------------------------ anchorings (API-671): every signed-in user
   const canSeeAnchorings = app.requirePerm('anchors.view');
 

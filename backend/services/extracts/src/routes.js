@@ -1,7 +1,7 @@
 const uuid = {type: 'string', format: 'uuid'};
 const actorOf = req => ({id: req.user.sub, name: req.user.name});
 
-/** The extracts HTTP routes: issuing, listing and revoking ownership extracts (staff). */
+/** The extracts HTTP routes: issuing, listing, downloading again and revoking ownership extracts (staff). */
 export async function extractsRoutes(app, {service}) {
   const canIssue = app.requirePerm('extract.issue');
 
@@ -50,6 +50,32 @@ export async function extractsRoutes(app, {service}) {
       },
     },
     async req => service.listForRecord(req.query.recordId),
+  );
+
+  // "Download again": the sealed PDF as issued, the same bytes
+  app.get(
+    '/extracts/:id/pdf',
+    {
+      onRequest: canIssue,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {id: uuid},
+        },
+      },
+    },
+    async (req, reply) => {
+      const {extract, pdf} = await service.pdf(req.params.id);
+      return reply
+        .header('content-type', 'application/pdf')
+        .header(
+          'content-disposition',
+          `attachment; filename="extract-${extract.recordNo}-v${extract.versionNumber}.pdf"`,
+        )
+        .header('cache-control', 'no-store')
+        .send(pdf);
+    },
   );
 
   app.post(

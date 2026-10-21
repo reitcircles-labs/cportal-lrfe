@@ -31,6 +31,11 @@ services:
       CARDANO_PROVIDER: test
       AUDIT_TEST_ANCHORINGS: "true"
 
+  extracts:
+    environment:
+      # no OpenBao in the e2e stack: extracts are sealed with the test seal (never with production)
+      NODE_ENV: test
+
   gateway:
     ports:
       - "127.0.0.1:${E2E_API_PORT:-3600}:3500"

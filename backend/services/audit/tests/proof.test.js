@@ -882,6 +882,44 @@ describe('proofs and verification (API-658)', () => {
     );
   });
 
+  it("the proof for an ownership extract's PDF (API-691): the extracts service only, the evidence pack's proof and the explorer link", async () => {
+    const a = await anchoredRegister();
+    await a.runUntil(x => x.action === 'confirmed');
+    const [anchor] = a.repo.anchors;
+    const proofOf = headers =>
+      a.auditApp.inject({
+        method: 'POST',
+        url: '/audit/anchoring/proof',
+        headers,
+        payload: {recordId: a.record.id, version: 1},
+      });
+    const asBearer = service => ({
+      authorization: `Bearer ${asService(service)()}`,
+    });
+    const res = await proofOf(asBearer('extracts'));
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.deepEqual(Object.keys(body).sort(), ['explorerUrl', 'proof']);
+    // what the evidence pack writes as proofs/record-v1.json
+    assert.deepEqual(
+      body.proof,
+      JSON.parse(
+        JSON.stringify(await a.proofs.proof('record-version', a.record.id, 1)),
+      ),
+    );
+    assert.equal(body.proof.status, 'confirmed');
+    assert.equal(body.proof.item.seal, a.record.current.seal);
+    assert.ok(body.explorerUrl.endsWith(anchor.txHash));
+    for (const service of ['land-records', 'bpm']) {
+      assert.equal((await proofOf(asBearer(service))).statusCode, 403, service);
+    }
+    const auditor = {
+      authorization: `Bearer ${a.auditApp.jwt.sign({typ: 'access', sub: 'u9', name: 'Auditor', perms: ['audit.view']})}`,
+    };
+    assert.equal((await proofOf(auditor)).statusCode, 401);
+    assert.equal((await proofOf({})).statusCode, 401);
+  });
+
   it("the offline verifier's tree arithmetic agrees with the service's for every leaf of trees up to 70 leaves", async () => {
     const repo = createMemoryRepo();
     const tree = new TreeService({repo, logger: quiet});

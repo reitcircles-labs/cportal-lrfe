@@ -80,7 +80,10 @@ describe('ownership extracts (API-692)', () => {
         recordNo: record.recordNo,
         versionNumber: 1,
         issuedFor: {name: 'Maria Nghishidi'},
+        // the issued PDF's SHA-256 (API-691)
+        pdfSha256: extract.pdfSha256,
       });
+      expect(extract.pdfSha256).to.match(/^[0-9a-f]{64}$/);
       // the audit trail files it under the land record (and the officer)
       expect(subjectsOf(event)).to.include(`record:${record.id}`);
     });

@@ -35,6 +35,9 @@ export function defineModels(sequelize) {
       revokedById: s(),
       revokedByName: s(),
       revokeReason: {type: DataTypes.TEXT},
+      // the sealed PDF as issued: its SHA-256 (also in the issued event) and where it is stored
+      pdfSha256: {type: DataTypes.STRING(64), allowNull: false},
+      pdfKey: {type: DataTypes.STRING, allowNull: false},
     },
     {
       schema: SCHEMA,

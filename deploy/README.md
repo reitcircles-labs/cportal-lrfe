@@ -202,14 +202,21 @@ holders have unsealed it, after every restart of its container.
 
    Create a new one only when needed, with the key holders (`bao operator generate-root`).
 5. In `.env`: `EDRMS_ENCRYPTION=bao` and `INTAKE_ENCRYPTION=bao`. Then `docker compose up -d`.
+6. **The organisation seal on ownership extracts.** The setup also creates the key `extracts-seal`
+   (ECDSA P-256, never exportable): every extract's PDF is sealed with it, inside OpenBao. The
+   registry needs a seal certificate for that key from its certificate authority; the key's public
+   key is shown by `bao read transit/keys/extracts-seal` (with a token). Put the certificate in
+   `.env` as `LRFE_SEAL_CERT` (PEM on one line, `\n` for each line break), set `LRFE_SEAL=bao`, then
+   `docker compose up -d`. Until then no extract can be issued (staff are told the seal is not set
+   up); a certificate for another key is refused before anything is signed.
 
 **How it is protected, and what to know.** OpenBao has no port on the host: it is on a network of
-its own that only edrms, intake, audit and the setup reach, and it speaks plain HTTP there. Each
+its own that only edrms, intake, audit, extracts and the setup reach, and it speaks plain HTTP there. Each
 service logs in with its own AppRole, whose secret ID lies in that service's own volume, readable
 only by the service; a secret ID does not expire. To replace one (for example after a suspected
 leak), delete it and run the setup again: `docker compose run --rm --entrypoint rm openbao-setup
 /approle/edrms/secret-id`, then `docker compose run --rm openbao-setup` and `docker compose up -d
---force-recreate edrms` (likewise `intake`, `audit`). The old one keeps working until it is
+--force-recreate edrms` (likewise `intake`, `audit`, `extracts`). The old one keeps working until it is
 destroyed in OpenBao, with a token: `bao list auth/approle/role/edrms/secret-id` shows the
 accessors, `bao write auth/approle/role/edrms/secret-id-accessor/destroy secret_id_accessor=…`
 destroys one.
@@ -260,7 +267,7 @@ start again. In the bundle's folder:
 ```bash
 mkdir -p -m 700 backup && docker compose stop web gateway identity edrms bpm intake land-records audit extracts nats
 docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backup/database.dump
-for v in edrms-files intake-files natsdata bao-data bao-edrms bao-intake bao-audit; do
+for v in edrms-files intake-files extracts-files natsdata bao-data bao-edrms bao-intake bao-audit bao-extracts; do
   docker run --rm --user 0 --entrypoint tar -v "lrfe_$v:/v:ro" -v "$PWD/backup:/b" \
     "lrfe-backend:$(grep ^LRFE_VERSION= .env | cut -d= -f2)" -czf "/b/$v.tgz" -C /v .
 done
@@ -270,7 +277,8 @@ docker compose up -d
 With an existing database server, leave out the `pg_dump` line and back up the database with the
 server's own backup while the services are stopped. With OpenBao, stop it too before saving
 (`docker compose stop openbao`), so its data is saved consistently; after `docker compose up -d` the key holders unseal it again. `bao-data` is OpenBao's
-(sealed) data; `bao-edrms`, `bao-intake` and `bao-audit` hold each service's OpenBao login. Without
+(sealed) data; `bao-edrms`, `bao-intake`, `bao-audit` and `bao-extracts` hold each service's OpenBao login;
+`extracts-files` the sealed extract PDFs as issued. Without
 OpenBao they are empty and cost nothing. Keep the backup and a copy of `.env` safely, readable only
 by those who run the site: together they hold every secret.
 
@@ -280,7 +288,7 @@ by those who run the site: together they hold every secret.
 ```bash
 docker compose up -d --wait postgres
 docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < backup/database.dump
-for v in edrms-files intake-files natsdata bao-data bao-edrms bao-intake bao-audit; do
+for v in edrms-files intake-files extracts-files natsdata bao-data bao-edrms bao-intake bao-audit bao-extracts; do
   docker volume create "lrfe_$v" >/dev/null
   docker run --rm --user 0 --entrypoint tar -v "lrfe_$v:/v" -v "$PWD/backup:/b:ro" \
     "lrfe-backend:$(grep ^LRFE_VERSION= .env | cut -d= -f2)" -xzf "/b/$v.tgz" -C /v

@@ -57,6 +57,13 @@ export const ENDPOINTS = {
       description:
         'Body `{ recordId, version }`. The version checked as `POST /audit/verify` checks it, without the proof: `{ valid, status, checks: { item, path, chain }, seal, batch, tx, confirmedAt, explorerUrl, checkedAt }`; each check true, false or null (could not be made now). 404 when the version is not in the tree.',
     },
+    'POST /audit/anchoring/proof': {
+      tag: 'Proofs',
+      summary:
+        "The proof of a land record version, for an ownership extract's PDF (extracts)",
+      description:
+        "Body `{ recordId, version }`. `{ proof, explorerUrl }`: the proof as `GET /audit/proofs/record-version/:id` gives it and the evidence pack holds it (`proofs/record-v<n>.json`), and the transaction's page on a public blockchain explorer (null while waiting). 404 when the version is not in the tree.",
+    },
     'GET /audit/records': {
       tag: 'Sign-off',
       summary: 'The land records list of the Audit screen',

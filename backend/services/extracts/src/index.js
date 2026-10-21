@@ -16,7 +16,11 @@ import {
 import {buildApp} from './app.js';
 import {ExtractsService} from './extracts.service.js';
 import {ExtractCheck} from './public-check.js';
+import {createPdfStoreFromEnv} from './pdf-store.js';
+import {createProofClient} from './proof-client.js';
 import {createRecordsClient} from './records-client.js';
+import {sealerFromEnv} from './seal/sealers.js';
+import {extractSettingsFromEnv} from './settings.js';
 import {createVersionCheckClient} from './version-check-client.js';
 import {createMemoryRepo} from './repo/memory.js';
 import {createSequelizeRepo} from './repo/sequelize.js';
@@ -70,7 +74,27 @@ const anchoring = createAnchoringClient({
     service: 'extracts',
   }),
 });
-const service = new ExtractsService({repo, events, records, anchoring});
+// the PDF's texts that belong to the site: the organisation, the check page, the legal wording
+const settings = extractSettingsFromEnv();
+// the organisation seal: its key in OpenBao (EXTRACTS_SEAL=bao), a test seal outside production
+const sealer = await sealerFromEnv({name: settings.org.name});
+const service = new ExtractsService({
+  repo,
+  events,
+  records,
+  anchoring,
+  // the version's proof, attached inside the PDF
+  proofs: createProofClient({
+    baseUrl: env('AUDIT_URL', 'http://localhost:3506'),
+    serviceToken: createServiceTokenSigner({
+      secret: jwtSecret,
+      service: 'extracts',
+    }),
+  }),
+  files: createPdfStoreFromEnv(),
+  sealer,
+  settings,
+});
 // the public check: the version checked now by the audit service (seal, tree, blockchain)
 const check = new ExtractCheck({
   repo,
@@ -91,6 +115,16 @@ const app = await buildApp({
   revocations: createRevocationList({events}),
   logger: {level: env('LOG_LEVEL', 'info')},
 });
+
+if (!sealer) {
+  app.log.warn(
+    'No organisation seal is set up (EXTRACTS_SEAL): extracts cannot be issued until it is',
+  );
+} else if (sealer.kind === 'test') {
+  app.log.warn(
+    'Extracts are sealed with a test seal made at start: for development and tests only',
+  );
+}
 
 await startService(app, {
   port: envInt('PORT', 3507),

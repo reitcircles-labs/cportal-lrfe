@@ -45,10 +45,12 @@ paths:
         `{ recordId, versionNumber, ownerIndex, idNo, documentSeen }`: the owner chosen on the current version, the ID number typed from the
         identity document shown, and `documentSeen: true`. 201 with the register row: `id`, `recordId`, `recordNo`, `versionNumber`,
         `issuedById`, `issuedByName`, `ownerIndex`, `ownerName`, `ownerIdLast4` (the last four characters of the owner's ID number; the rest
-        is not kept), `documentSeen`, `issuedAt`, `token` (random, for the public check), `status` `valid`, `isCurrentVersion`. 400 without
-        `documentSeen: true`. 409 when the record has no approved version, `versionNumber` is no longer the current one, there is no such
-        owner, the ID number does not match the owner's on the version, or the version is not on the blockchain yet (its anchoring
-        confirmed); 503 when that cannot be checked; 404 when there is no such record.
+        is not kept), `documentSeen`, `issuedAt`, `token` (random, for the public check), `status` `valid`, `pdfSha256` (the SHA-256 of the
+        sealed PDF, also in the issued event), `isCurrentVersion`. The extract's PDF, sealed by the registry with the version's proof
+        attached, is made and stored first; `GET /extracts/{id}/pdf` gives it. 400 without `documentSeen: true`. 409 when the record has no
+        approved version, `versionNumber` is no longer the current one, there is no such owner, the ID number does not match the owner's on
+        the version, or the version is not on the blockchain yet (its anchoring confirmed); 503 when that cannot be checked, the proof
+        cannot be read, or the registry's seal is not set up or cannot be applied now; 404 when there is no such record.
 
 
         **Access:** Signed-in user with permission `extract.issue`.
@@ -160,6 +162,62 @@ paths:
         allOf:
           - extract.issue
       x-gateway-path: /api/extracts
+  /extracts/{id}/pdf:
+    get:
+      tags:
+        - Extracts
+      summary: "Download an extract again: its sealed PDF as issued"
+      description: >-
+        `application/pdf`, as an attachment: the exact bytes issued, checked against `pdfSha256` in the register. The PDF carries the
+        registry's electronic seal (a PAdES signature) and, attached inside, the version's proof (`record-v<n>.proof.json`). 409 when the
+        extract is revoked; 404 when there is no such extract.
+
+
+        **Access:** Signed-in user with permission `extract.issue`.
+      operationId: getExtractsIdPdf
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - extract.issue
+      x-gateway-path: /api/extracts/{id}/pdf
   /extracts/{id}/revoke:
     post:
       tags:

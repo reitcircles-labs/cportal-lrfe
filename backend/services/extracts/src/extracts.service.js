@@ -1,4 +1,4 @@
-import {randomBytes, randomUUID} from 'node:crypto';
+import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import {
   AppError,
   BadRequestError,
@@ -6,6 +6,10 @@ import {
   NotFoundError,
 } from '@lrfe/common';
 import {checkOnChain, checkOwner, lastFour} from './issue-checks.js';
+import {renderExtract} from './pdf/extract-pdf.js';
+import {pdfKeyOf} from './pdf-store.js';
+import {NO_SEAL_MESSAGE} from './seal/sealers.js';
+import {sealPdf} from './seal/seal-pdf.js';
 
 /** Who an action is recorded as when no person makes it: tests. */
 const SYSTEM = {id: 'system', name: 'System'};
@@ -25,6 +29,10 @@ export class ExtractsService {
     events,
     records = null,
     anchoring = null,
+    proofs = null,
+    files = null,
+    sealer = null,
+    settings = null,
     clock = () => new Date(),
     token = newToken,
   }) {
@@ -32,6 +40,10 @@ export class ExtractsService {
     this.events = events;
     this.records = records; // land-records, read with the extracts service's token
     this.anchoring = anchoring; // the audit service: is a version on the blockchain
+    this.proofs = proofs; // the audit service: the version's proof, attached to the PDF
+    this.files = files; // where the sealed PDFs are kept (packages/storage)
+    this.sealer = sealer; // the organisation seal (seal/sealers.js); none: issuing is refused
+    this.settings = settings; // the site's texts on the PDF (settings.js)
     this.clock = clock;
     this.token = token;
   }
@@ -44,14 +56,19 @@ export class ExtractsService {
   /**
    * Issue an extract of a land record's current version for one of its owners: `ownerIndex` on
    * version `versionNumber`, the ID number `idNo` typed from the identity document the staff member
-   * was shown, `documentSeen` true. checkOwner and checkOnChain say what is refused.
+   * was shown, `documentSeen` true. checkOwner and checkOnChain say what is refused. The extract's
+   * PDF is made, sealed and stored before the register row is written; the row and the issued
+   * event carry the PDF's SHA-256 (pdf() gives the PDF).
    */
   async issue(request, actor = SYSTEM) {
     const record = await this.requireRecord(request.recordId);
     const owner = checkOwner(record, request);
     await checkOnChain(this.anchoring, record, request.versionNumber);
+    if (!this.sealer) throw new AppError(503, NO_SEAL_MESSAGE);
+    const {proof, explorerUrl} = await this.requireProof(record);
+    const id = randomUUID();
     const extract = {
-      id: randomUUID(),
+      id,
       recordId: record.id,
       recordNo: record.recordNo,
       versionNumber: request.versionNumber,
@@ -68,17 +85,110 @@ export class ExtractsService {
       revokedById: null,
       revokedByName: null,
       revokeReason: null,
+      pdfSha256: null, // once the sealed PDF is stored
+      pdfKey: pdfKeyOf(id),
     };
+    const pdf = await this.sealedPdf(extract, record, proof, explorerUrl);
+    extract.pdfSha256 = (
+      await this.files.put({
+        key: extract.pdfKey,
+        body: pdf,
+        contentType: 'application/pdf',
+      })
+    ).sha256;
     // the register row and its event are committed together (API-613)
-    await this.atomic(async () => {
-      await this.repo.addExtract(extract);
-      await this.events?.publish(
-        'extracts.extract.issued',
-        {...this.eventData(extract), issuedFor: {name: extract.ownerName}},
-        {actor},
-      );
-    });
+    try {
+      await this.atomic(async () => {
+        await this.repo.addExtract(extract);
+        await this.events?.publish(
+          'extracts.extract.issued',
+          {
+            ...this.eventData(extract),
+            issuedFor: {name: extract.ownerName},
+            pdfSha256: extract.pdfSha256,
+          },
+          {actor},
+        );
+      });
+    } catch (err) {
+      // not in the register: the PDF is not kept either
+      await this.files.delete(extract.pdfKey).catch(() => {});
+      throw err;
+    }
     return withCurrent(extract, record);
+  }
+
+  /**
+   * The proof of the record's current version from the audit service, for the PDF: confirmed on
+   * the blockchain, and for the seal land-records holds for that version.
+   */
+  async requireProof(record) {
+    if (!this.proofs) {
+      throw new AppError(
+        503,
+        'The proof that the version is on the blockchain cannot be read now: try again later',
+      );
+    }
+    const found = await this.proofs.recordProof(
+      record.id,
+      record.current.versionNumber,
+    );
+    if (found.proof.status !== 'confirmed') {
+      throw new ConflictError(
+        `Version ${record.current.versionNumber} of ${record.recordNo} is not on the blockchain yet: an extract can be issued once it is`,
+        {status: found.proof.status},
+      );
+    }
+    if (found.proof.item?.seal !== record.current.seal) {
+      throw new ConflictError(
+        `The fingerprint of version ${record.current.versionNumber} of ${record.recordNo} does not match the one on the blockchain: no extract can be issued. Tell the administrator.`,
+      );
+    }
+    return found;
+  }
+
+  /** The extract's PDF, made and sealed (pdf/extract-pdf.js, seal/seal-pdf.js). */
+  async sealedPdf(extract, record, proof, explorerUrl) {
+    const pdfDoc = await renderExtract({
+      extract,
+      record,
+      proof,
+      explorerUrl,
+      settings: this.settings,
+    });
+    const {org} = this.settings;
+    return sealPdf(pdfDoc, this.sealer, {
+      name: org.subtitle ? `${org.name}, ${org.subtitle}` : org.name,
+      reason: `Ownership extract ${extract.id} of ${record.recordNo}, version ${extract.versionNumber}`,
+      signingTime: extract.issuedAt,
+    });
+  }
+
+  /**
+   * "Download again": the extract's sealed PDF, the exact bytes issued, checked against the SHA-256
+   * in the register. A revoked extract is not given out again.
+   * @return {!Promise<{extract: !Object, pdf: !Buffer}>}
+   */
+  async pdf(id) {
+    const extract = await this.repo.getExtract(id);
+    if (!extract) throw new NotFoundError('Extract not found');
+    if (extract.status !== 'valid') {
+      throw new ConflictError(
+        'The extract is revoked: it cannot be downloaded again. Issue a new one.',
+      );
+    }
+    const chunks = [];
+    for await (const chunk of await this.files.getStream(extract.pdfKey)) {
+      chunks.push(chunk);
+    }
+    const pdf = Buffer.concat(chunks);
+    if (createHash('sha256').update(pdf).digest('hex') !== extract.pdfSha256) {
+      throw new AppError(
+        500,
+        'The stored PDF of this extract does not match the register: it cannot be given out. Tell the administrator.',
+      );
+    }
+    return {extract, pdf};
   }
 
   /** The extracts of a land record, newest first, each saying whether its version is still current. */
@@ -118,7 +228,7 @@ export class ExtractsService {
     try {
       record = await this.requireRecord(revoked.recordId);
     } catch {
-      return {...revoked, isCurrentVersion: null};
+      return {...shown(revoked), isCurrentVersion: null};
     }
     return withCurrent(revoked, record);
   }
@@ -144,10 +254,19 @@ export class ExtractsService {
   }
 }
 
-/** The register row with `isCurrentVersion`: its version is still the record's current one. */
+/**
+ * The register row as answered, with `isCurrentVersion`: its version is still the record's current
+ * one. Where the PDF is stored stays inside the service.
+ */
 function withCurrent(extract, record) {
   return {
-    ...extract,
+    ...shown(extract),
     isCurrentVersion: extract.versionNumber === record.currentVersion,
   };
+}
+
+/** The register row without the PDF's storage key. */
+function shown(extract) {
+  const {pdfKey: _pdfKey, ...rest} = extract;
+  return rest;
 }

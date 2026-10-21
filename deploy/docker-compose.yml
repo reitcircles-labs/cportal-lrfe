@@ -5,7 +5,8 @@
 #   docker compose ps                        every container and its health
 #   COMPOSE_PROFILES=postgres                (in .env, the default) the bundled PostgreSQL; without
 #                                            it, an existing server (POSTGRES_HOST, README.md)
-#   COMPOSE_PROFILES=postgres,bao            (in .env) also OpenBao: stored files encrypted, the audit wallet key
+#   COMPOSE_PROFILES=postgres,bao            (in .env) also OpenBao: stored files encrypted, the audit wallet key,
+#                                            the organisation seal on extracts
 #   COMPOSE_PROFILES=postgres,bao,blockchain (in .env) also a blockchain node for anchoring
 #   COMPOSE_PROFILES=postgres,docs           (in .env) also the API docs (Swagger UI) on LRFE_DOCS_PORT
 #
@@ -60,7 +61,7 @@ x-healthcheck: &healthcheck
   retries: 6
   start_period: 30s
 
-# edrms, intake and audit: their OpenBao login (role ID and secret ID), written by the openbao-setup
+# edrms, intake, audit and extracts: their OpenBao login (role ID and secret ID), written by the openbao-setup
 # service into the service's own volume. Without OpenBao the files are not there and nothing is read.
 x-bao-command: &bao-command
   ["sh", "-c", "if [ -r /run/lrfe/bao/role-id ]; then BAO_ROLE_ID=$$(cat /run/lrfe/bao/role-id); export BAO_ROLE_ID; fi; exec node src/index.js"]
@@ -287,15 +288,36 @@ services:
   extracts:
     <<: *backend
     working_dir: /app/services/extracts
-    command: ["node", "src/index.js"]
+    command: *bao-command
     environment:
-      <<: *env
+      # the organisation's name is on the extract's PDF
+      <<: [*env, *org]
       PORT: "3507"
       EXTRACTS_STORE: postgres
-      # the record's current version and its owners, read when an extract is issued, and whether
-      # that version is on the blockchain yet
+      # the record's current version and its owners, read when an extract is issued, whether that
+      # version is on the blockchain yet, and its proof (attached inside the PDF)
       RECORDS_URL: http://land-records:3505
       AUDIT_URL: http://audit:3506
+      # the sealed PDFs, kept as issued for "download again": in the extracts-files volume
+      EXTRACTS_STORAGE: local
+      EXTRACTS_LOCAL_DIR: /data/extracts
+      # the public check page the extract's QR code opens: <address>/<token>
+      EXTRACTS_CHECK_URL_BASE: ${LRFE_EXTRACT_CHECK_URL:-${LRFE_PUBLIC_URL}/#/check}
+      # what the extract certifies, in the registry's words; empty: a placeholder saying so
+      EXTRACTS_LEGAL_TEXT: ${LRFE_EXTRACT_LEGAL_TEXT:-}
+      # the time zone of the dates printed on the extract (e.g. Africa/Windhoek); empty: UTC
+      EXTRACTS_TIME_ZONE: ${LRFE_TIME_ZONE:-}
+      # the organisation seal on the PDF: bao = its key in OpenBao (profile bao) and its certificate
+      # (LRFE_SEAL_CERT); empty = no seal, and no extract can be issued (README.md, part D)
+      EXTRACTS_SEAL: ${LRFE_SEAL:-}
+      EXTRACTS_SEAL_KEY: extracts-seal
+      EXTRACTS_SEAL_CERT: ${LRFE_SEAL_CERT:-}
+      BAO_ADDR: http://openbao:8200
+      BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
+    volumes:
+      - extracts-files:/data/extracts
+      - bao-extracts:/run/lrfe/bao:ro
+    networks: [default, bao]
     healthcheck: *healthcheck
     depends_on:
       db-setup: { condition: service_completed_successfully }
@@ -367,7 +389,8 @@ services:
       gateway: { condition: service_healthy }
 
   # ---- optional: OpenBao (profile bao) ----
-  # Keys for stored files (edrms, intake) and the audit service's blockchain wallet key. Started
+  # Keys for stored files (edrms, intake), the audit service's blockchain wallet key and the
+  # organisation seal on ownership extracts (extracts). Started
   # sealed: an administrator initialises it once and unseals it after every start (README.md).
   openbao:
     profiles: ["bao"]
@@ -398,6 +421,7 @@ services:
       - bao-edrms:/approle/edrms
       - bao-intake:/approle/intake
       - bao-audit:/approle/audit
+      - bao-extracts:/approle/extracts
     networks: [bao]
 
   # ---- optional: blockchain node with Ogmios (profile blockchain) ----
@@ -413,7 +437,8 @@ services:
 
 networks:
   default:
-  # OpenBao's network: only OpenBao, its setup and the services that use it (edrms, intake, audit)
+  # OpenBao's network: only OpenBao, its setup and the services that use it (edrms, intake, audit,
+  # extracts)
   # reach it; no way out of the machine (internal)
   bao:
     internal: true
@@ -423,8 +448,10 @@ volumes:
   natsdata:
   edrms-files:
   intake-files:
+  extracts-files:
   bao-data:
   bao-edrms:
   bao-intake:
   bao-audit:
+  bao-extracts:
   cardano-db:

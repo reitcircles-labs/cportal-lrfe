@@ -307,6 +307,21 @@ export class ProofService {
     };
   }
 
+  /**
+   * The proof of a land record version, as the evidence pack holds it (proofs/record-v<n>.json),
+   * and its transaction's page on a public blockchain explorer (null while waiting): attached to an
+   * ownership extract's PDF (API-691).
+   */
+  async recordProof(recordId, version) {
+    const proof = await this.proof('record-version', recordId, version);
+    return {
+      proof,
+      explorerUrl: proof.anchor
+        ? explorerUrl(proof.anchor.network, proof.anchor.tx)
+        : null,
+    };
+  }
+
   async checkItem(p) {
     if (p.item.kind === 'trail-entry') {
       const e = p.trail.entry;

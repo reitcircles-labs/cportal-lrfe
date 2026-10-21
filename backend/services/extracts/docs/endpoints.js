@@ -18,7 +18,7 @@ export const ENDPOINTS = {
       summary:
         "Issue an extract of a land record's current version for an owner",
       description:
-        "`{ recordId, versionNumber, ownerIndex, idNo, documentSeen }`: the owner chosen on the current version, the ID number typed from the identity document shown, and `documentSeen: true`. 201 with the register row: `id`, `recordId`, `recordNo`, `versionNumber`, `issuedById`, `issuedByName`, `ownerIndex`, `ownerName`, `ownerIdLast4` (the last four characters of the owner's ID number; the rest is not kept), `documentSeen`, `issuedAt`, `token` (random, for the public check), `status` `valid`, `isCurrentVersion`. 400 without `documentSeen: true`. 409 when the record has no approved version, `versionNumber` is no longer the current one, there is no such owner, the ID number does not match the owner's on the version, or the version is not on the blockchain yet (its anchoring confirmed); 503 when that cannot be checked; 404 when there is no such record.",
+        "`{ recordId, versionNumber, ownerIndex, idNo, documentSeen }`: the owner chosen on the current version, the ID number typed from the identity document shown, and `documentSeen: true`. 201 with the register row: `id`, `recordId`, `recordNo`, `versionNumber`, `issuedById`, `issuedByName`, `ownerIndex`, `ownerName`, `ownerIdLast4` (the last four characters of the owner's ID number; the rest is not kept), `documentSeen`, `issuedAt`, `token` (random, for the public check), `status` `valid`, `pdfSha256` (the SHA-256 of the sealed PDF, also in the issued event), `isCurrentVersion`. The extract's PDF, sealed by the registry with the version's proof attached, is made and stored first; `GET /extracts/{id}/pdf` gives it. 400 without `documentSeen: true`. 409 when the record has no approved version, `versionNumber` is no longer the current one, there is no such owner, the ID number does not match the owner's on the version, or the version is not on the blockchain yet (its anchoring confirmed); 503 when that cannot be checked, the proof cannot be read, or the registry's seal is not set up or cannot be applied now; 404 when there is no such record.",
     },
     'GET /extracts': {
       tag: 'Extracts',
@@ -32,6 +32,12 @@ export const ENDPOINTS = {
       description:
         "One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, recordNo, versionNumber, issuedAt, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt }`. `state`: `current` (the version's seal, held by land-records, is in a confirmed batch on the blockchain and the version is the record's current one), `replaced` (the same, but the record has a newer version: `replacedAt` is when the version after the extract's was committed), `revoked` (withdrawn on `revokedAt`; the reason is not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or `unavailable` (it cannot be checked right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners, their ID numbers or shares, or the parcel.",
       auth: 'public',
+    },
+    'GET /extracts/{id}/pdf': {
+      tag: 'Extracts',
+      summary: 'Download an extract again: its sealed PDF as issued',
+      description:
+        "`application/pdf`, as an attachment: the exact bytes issued, checked against `pdfSha256` in the register. The PDF carries the registry's electronic seal (a PAdES signature) and, attached inside, the version's proof (`record-v<n>.proof.json`). 409 when the extract is revoked; 404 when there is no such extract.",
     },
     'POST /extracts/{id}/revoke': {
       tag: 'Extracts',

@@ -422,6 +422,11 @@ record version with its service token: `POST /audit/anchoring/check { recordId, 
 `valid`, `status`, each check's `ok` (true, false, or null when it cannot be made now), the seal and
 the anchoring (`batch`, `tx`, `confirmedAt`, `explorerUrl`), never the proof.
 
+An ownership extract's PDF (extracts service, API-691) has the proof of its version attached:
+`POST /audit/anchoring/proof { recordId, version }`, for the extracts service's token only, answers
+`{ proof, explorerUrl }`, the proof as `GET /audit/proofs/record-version/:id` gives it and the
+evidence pack holds it (`proofs/record-v<n>.json`).
+
 **The offline verifier** (`verifier/lrfe-verify.mjs`) checks a proof file with no access to the
 portal: one file, Node 18 or later, nothing to install. It recomputes the leaf (for a trail entry,
 the entry's hashes and the chain to the checkpoint), the path to the root, and reads the

@@ -1,8 +1,9 @@
 # extracts service
 
 *Ownership extracts (epic API-689). The register and its staff endpoints are built in API-692, the
-public check's endpoint in API-693; the extract's PDF is API-691, the screens (Issue extract on the
-land record page, the register list, the public check page) wait for the design, API-690.*
+public check's endpoint in API-693, the extract's sealed PDF in API-691; the screens (Issue extract
+on the land record page, the register list with "Download again", the public check page) wait for
+the design, API-690.*
 
 An ownership extract states who owns a parcel, as the land record's **current committed version**
 says. It is issued at the counter for one of the owners, once their identity document has been seen,
@@ -22,7 +23,14 @@ they were shown, and confirms they have seen it (`documentSeen: true`). The serv
 3. asks the audit service whether the version is on the blockchain (`POST /audit/anchoring`, key
    `record-version:<id>:<n>`) and refuses until its anchoring is **confirmed**; when the audit
    service cannot be asked, it refuses with 503 rather than issue unchecked;
-4. writes the register row and publishes `extracts.extract.issued` in one transaction (outbox).
+4. reads the version's proof from the audit service (`POST /audit/anchoring/proof`, with its
+   service token): the proof must be confirmed and for the seal land-records holds for the version;
+5. makes the extract's PDF, seals it with the organisation seal and stores it (below); refuses with
+   503 when no seal is set up or the seal cannot be applied now, and when the proof cannot be read;
+6. writes the register row and publishes `extracts.extract.issued` in one transaction (outbox). When
+   that fails, the stored PDF is deleted again.
+
+The answer is the register row (201); `GET /extracts/:id/pdf` gives the PDF.
 
 ## The register
 
@@ -31,7 +39,8 @@ Table `extracts.extract`, one row per extract, never deleted: `id`, `recordId`, 
 four characters of the owner's ID number: the full number is not kept), `documentSeen`,
 `issuedAt`, `token` (32 random bytes, URL-safe, unique: the public check of an extract will find it
 by this), `status` `valid` | `revoked`, `revokedAt`, `revokedById`, `revokedByName`,
-`revokeReason`.
+`revokeReason`, `pdfSha256` (the SHA-256 of the sealed PDF as issued) and `pdfKey` (where the PDF
+is stored; never in an answer).
 
 `GET /extracts?recordId=` lists a record's extracts newest first. Every row returned also has
 `isCurrentVersion`: its version is still the record's current one (a valid extract of a replaced
@@ -40,6 +49,67 @@ version is still valid, but no longer shows the current owners).
 `POST /extracts/:id/revoke` with `{ reason }` revokes a valid extract (409 when it is already
 revoked) and publishes `extracts.extract.revoked`. When the land record cannot be read just after
 the revocation is saved, the row comes back with `isCurrentVersion: null` rather than an error.
+
+## The PDF
+
+Made on the server with pdf-lib (`src/pdf/extract-pdf.js`), one A4 page (more for many owners,
+with the footer on each), as the design draft of API-690 lays it out:
+
+- the registry's name and subtitle (the site's settings, below), "Ownership extract", the extract's
+  id and the issue date and time;
+- the land record's version as it stands: parcel, land record number and version, township,
+  registration division, extent, tenure, the title deed(s) the owners hold under;
+- the registered owners with their shares; of each ID number only the last 4 digits
+  (`•••••••0418`): the full number is nowhere in the file. "Issued to <owner>, registered owner,
+  identity document seen at the counter.";
+- the check against the blockchain: a QR code holding the public check page's address
+  `<EXTRACTS_CHECK_URL_BASE>/<token>`, the same address printed for typing in, and the version's
+  fingerprint (its seal) in full, its batch and since when it is on the blockchain, the transaction
+  id and the explorer link. The design's short typed check code is not there: it needs a lookup of
+  its own; the address with the token is printed instead;
+- the "Always scan the QR code" box, the seal notice ("Sealed by …") and the legal wording
+  (`EXTRACTS_LEGAL_TEXT`; until it is set, a placeholder says it is to be confirmed by the
+  registry's legal advisers);
+- attached inside the file, `record-v<n>.proof.json`: the version's proof, byte for byte as the
+  evidence pack holds it (`proofs/record-v<n>.json`), so the extract can be checked offline.
+
+The texts say "blockchain", never the network, and name no tool behind the portal. Characters the
+standard PDF fonts cannot print are written without their accents (or as "?").
+
+## The seal
+
+The PDF carries the registry's **organisation seal**: a PAdES baseline (B-B) signature, SubFilter
+`ETSI.CAdES.detached`, over the whole file but the signature itself. It is a detached CMS
+SignedData (`src/seal/cms.js`) with the seal certificate and three signed attributes: the content
+type, the digest of the signed bytes, and the certificate's hash (signing-certificate-v2); the
+signing time is the signature's `/M`, the issue date. @signpdf places the signature in the PDF; the
+CMS is built with pkijs. A `Sealer` (`src/seal/sealers.js`) signs the signed attributes:
+
+| `EXTRACTS_SEAL` | Sealer |
+|---|---|
+| `bao` | The key `EXTRACTS_SEAL_KEY` (default `extracts-seal`, ECDSA P-256 or RSA, never exportable) in OpenBao's transit engine. The service logs in with its own AppRole (`BAO_ADDR`, `BAO_ROLE_ID`, `BAO_SECRET_ID_FILE`) and sends only the SHA-256 digest of the signed attributes (`transit/sign`, prehashed): neither the key nor the PDF leaves where it is. The seal certificate for that key, PEM, is in `EXTRACTS_SEAL_CERT` (`\n` for line breaks) or the file `EXTRACTS_SEAL_CERT_FILE`; before the first signature the key's public key is checked against it. |
+| not set | Outside production: a test seal, a key made at start with a self-signed certificate "… (test seal, not valid)", for the tests, development and the e2e stack. With `NODE_ENV=production`: none, and issuing is refused ("the registry's electronic seal is not set up"). |
+
+The audit trail records the PDF's SHA-256 in the issued event.
+
+## Download again
+
+The sealed PDF is stored as issued, as edrms and intake store their files (`@lrfe/storage`):
+`EXTRACTS_STORAGE` `local` (a folder, `EXTRACTS_LOCAL_DIR`; the containers' `extracts-files`
+volume), `memory` or `s3`, under `extracts/<id>/v1/extract.pdf`. `GET /extracts/:id/pdf`
+(`extract.issue`) gives back exactly those bytes, after checking them against `pdfSha256`; never
+re-rendered or re-sealed. A revoked extract is not given out again (409).
+
+## Settings
+
+| Setting | |
+|---|---|
+| `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | The registry's name on the extract and in its seal notice, as identity and audit read them |
+| `EXTRACTS_CHECK_URL_BASE` | The public check page the QR code opens; required with `NODE_ENV=production` |
+| `EXTRACTS_LEGAL_TEXT` | What the extract certifies; a placeholder until the registry has confirmed it |
+| `EXTRACTS_TIME_ZONE` | The IANA time zone of the dates printed, e.g. `Africa/Windhoek` (the server's when unset) |
+| `EXTRACTS_SEAL`, `EXTRACTS_SEAL_KEY`, `EXTRACTS_SEAL_CERT`, `EXTRACTS_SEAL_CERT_FILE`, `BAO_*` | The seal, above |
+| `EXTRACTS_STORAGE`, `EXTRACTS_LOCAL_DIR` | Where the PDFs are kept, above |
 
 ## The public check
 
@@ -82,5 +152,5 @@ check the extract. There is no search: the token is the only way in.
 ## Events
 
 Both events carry `extractId`, `recordId`, `recordNo` and `versionNumber` (issued: also
-`issuedFor: { name }`; revoked: `reason`), never the token or the ID number. The audit service reads
+`issuedFor: { name }` and `pdfSha256`; revoked: `reason`), never the token or the ID number. The audit service reads
 them like every durable event, so they are in the land record's trail.
