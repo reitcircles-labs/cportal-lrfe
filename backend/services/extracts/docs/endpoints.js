@@ -28,7 +28,7 @@ export const ENDPOINTS = {
       tag: 'Extracts',
       summary: 'Revoke an extract, with the reason',
       description:
-        '`{ reason }`. The updated register row, `status` `revoked`; it stays in the register. 409 when it is already revoked.',
+        '`{ reason }`. The updated register row, `status` `revoked`; it stays in the register. 409 when it is already revoked. `isCurrentVersion` is null when the land record cannot be read just after the revocation is saved.',
     },
   },
 };

@@ -38,7 +38,8 @@ by this), `status` `valid` | `revoked`, `revokedAt`, `revokedById`, `revokedByNa
 version is still valid, but no longer shows the current owners).
 
 `POST /extracts/:id/revoke` with `{ reason }` revokes a valid extract (409 when it is already
-revoked) and publishes `extracts.extract.revoked`.
+revoked) and publishes `extracts.extract.revoked`. When the land record cannot be read just after
+the revocation is saved, the row comes back with `isCurrentVersion: null` rather than an error.
 
 ## Events
 

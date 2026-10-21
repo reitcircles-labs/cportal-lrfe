@@ -1,5 +1,5 @@
 import {expect} from 'chai';
-import {createServiceTokenSigner} from '@lrfe/common';
+import {AppError, createServiceTokenSigner} from '@lrfe/common';
 import {newToken} from '../src/extracts.service.js';
 import {subjectsOf} from '../../audit/src/subjects.js';
 import {
@@ -291,6 +291,30 @@ describe('ownership extracts (API-692)', () => {
         reason: 'Issued for the wrong owner',
       });
       expect(subjectsOf(event)).to.include(`record:${record.id}`);
+    });
+    it('revokes even when the land record cannot be read just after: isCurrentVersion is then null', async () => {
+      const {records, service, published} = await makeExtracts();
+      const record = await committedErf1873(records);
+      const extract = await service.issue(forMaria(record), rec);
+      service.records = {
+        async getRecord() {
+          throw new AppError(503, 'The land records cannot be reached');
+        },
+      };
+      const revoked = await service.revoke(
+        extract.id,
+        {reason: 'Issued for the wrong owner'},
+        rec,
+      );
+      expect(revoked).to.include({
+        id: extract.id,
+        status: 'revoked',
+        isCurrentVersion: null,
+      });
+      expect((await service.repo.getExtract(extract.id)).status).to.equal(
+        'revoked',
+      );
+      expect(published.map(e => e.type)).to.include('extracts.extract.revoked');
     });
   });
 

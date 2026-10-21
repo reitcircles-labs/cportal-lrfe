@@ -113,7 +113,14 @@ export class ExtractsService {
         {actor},
       );
     });
-    return withCurrent(revoked, await this.requireRecord(revoked.recordId));
+    // the revocation is saved: a land record that cannot be read now must not turn it into an error
+    let record;
+    try {
+      record = await this.requireRecord(revoked.recordId);
+    } catch {
+      return {...revoked, isCurrentVersion: null};
+    }
+    return withCurrent(revoked, record);
   }
 
   /** The land record with its current version, from land-records. */

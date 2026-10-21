@@ -163,8 +163,10 @@ paths:
       tags:
         - Extracts
       summary: Revoke an extract, with the reason
-      description: |-
+      description: >-
         `{ reason }`. The updated register row, `status` `revoked`; it stays in the register. 409 when it is already revoked.
+        `isCurrentVersion` is null when the land record cannot be read just after the revocation is saved.
+
 
         **Access:** Signed-in user with permission `extract.issue`.
       operationId: postExtractsIdRevoke
