@@ -174,9 +174,10 @@ import {linkedText, parcelLabel, statusOf} from './link-format';
     .docs { margin-top: 6px; border: 1px solid var(--color-divider); border-radius: 8px; max-height: 220px; overflow-y: auto; }
     .doc-row { display: flex; gap: 10px; align-items: center; padding: 2px 6px 2px 12px; border-top: 1px solid var(--color-divider); }
     .doc-row:first-child { border-top: 0; }
-    .doc-row b { width: 130px; flex: none; white-space: nowrap; }
+    /* at least the width of a deed number, wider for a document named by its EDRMS number (API-778) */
+    .doc-row b { min-width: 130px; flex: none; white-space: nowrap; }
     .hint { flex: 1 1 auto; margin-right: auto; }
-    @media (max-width: 600px) { .doc-row b { width: auto; } }
+    @media (max-width: 600px) { .doc-row b { min-width: 0; } }
   `,
   ],
 })
