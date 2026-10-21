@@ -1,4 +1,4 @@
-# Demo (epic API-715)
+# Demo (epic API-715; demo v2, API-774)
 
 What a demo of the portal needs, next to the install in `deploy/`.
 
