@@ -72,7 +72,9 @@ with the footer on each), as the design draft of API-690 lays it out:
   (`EXTRACTS_LEGAL_TEXT`; until it is set, a placeholder says it is to be confirmed by the
   registry's legal advisers);
 - attached inside the file, `record-v<n>.proof.json`: the version's proof, byte for byte as the
-  evidence pack holds it (`proofs/record-v<n>.json`), so the extract can be checked offline.
+  evidence pack holds it (`proofs/record-v<n>.json`), so the extract can be checked offline:
+  `node lrfe-verify.mjs extract.pdf --address <published wallet>` (the audit service's offline
+  verifier, API-694).
 
 The texts (`src/pdf/wording.js`) say "blockchain", never the network, and name no tool behind the
 portal. Characters the standard PDF fonts cannot print are written as the closest ones they can: a

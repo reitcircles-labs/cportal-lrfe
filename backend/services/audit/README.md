@@ -458,6 +458,26 @@ id and version it belongs to, from the proof and says so: recomputing the seal n
 data, which the evidence pack (§6) adds. For a trail entry everything is recomputed, and the chain
 must be exactly as long as from the entry to the checkpoint.
 
+**An ownership extract** (API-694): `node lrfe-verify.mjs extract.pdf --address <published wallet>`
+reads the proof attached inside the PDF (`record-v<n>.proof.json`) without a PDF library: the
+cross-reference table, the catalog's `/EmbeddedFiles` name tree and the file's stream, inflated with
+`node:zlib`. It checks that proof as a proof file is checked (the leaf from the seal, the path to the
+root, the transaction with label 8890, sent from the wallet), that the proof's batch is the one on
+chain, and the registry's seal: the `/ByteRange` covers the whole file but the signature, the
+CMS's message digest is that of those bytes, its signing-certificate-v2 names the certificate in it,
+and the signature over the signed attributes holds with that certificate's key (ECDSA or RSA with
+`node:crypto`; another algorithm is reported as not checked, never as a failure of the blockchain
+checks). It prints the certificate's subject to compare with the registry's; the certificate is not
+checked against an authority. The answer is VALID with the batch and the transaction's date (from
+the public source; the proof's `confirmedAt` when it gives none) or NOT VALID with the reason, and
+says when only the seal failed. The version's seal is not recomputed: its data holds the owners' full
+ID numbers, which the extract leaves out; the seal of the PDF ties the printed details to the proof.
+It always notes that an offline check cannot show a newer version or a revocation: the public check
+(the QR code) can. For banks and conveyancers: the user guide
+[Checking an ownership extract](../../../angular-app/docs/user-guide/checking-an-ownership-extract.md).
+Tested in `tests/extract-verify.test.js`, with PDFs made by the extracts service's own builder and
+test seal.
+
 **The anchoring status next to each version.** land-records' History (`GET /records/:id/history`)
 and edrms' documents (`GET /documents/:id`, for users) show each version's status: `waiting` for the
 next anchoring, `anchored`, `confirmed` (with the batch and the transaction). They ask the audit

@@ -305,6 +305,7 @@ and recompute the seal.
 | See the raw metadata | The batch's **View on a blockchain explorer**, then the transaction's metadata, label 8890 |
 | Check one item without the portal | **Download proof**, then the offline verifier from the public page **Check a proof yourself** (`node lrfe-verify.mjs proof.json --address <the registry's wallet>`) |
 | Check a whole land record, recomputing every seal | **Audit** → the record → **Export evidence pack**, then the same verifier with the zip file |
+| Check an ownership extract's PDF | `node lrfe-verify.mjs extract.pdf --address <the registry's wallet>`: see [Checking an ownership extract](checking-an-ownership-extract.md) |
 | Know the registry's wallet | The public page **Check a proof yourself** |
 
 ## 10. Glossary
