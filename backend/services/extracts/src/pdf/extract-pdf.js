@@ -12,8 +12,12 @@ import {
 import {COLOURS, MARGIN, PageWriter} from './page-writer.js';
 import {qrModules} from './qr.js';
 import {
+  CHECK_INTRO,
+  SEAL_TITLE,
+  WARNING,
   extentText,
   idNumberShown,
+  sealNotice,
   shareText,
   tenureText,
   titleDeeds,
@@ -276,8 +280,7 @@ function check(writer, {extract, proof, explorerUrl, settings}) {
   const {bold, mono} = writer.fonts;
   const url = checkUrl(settings.checkUrlBase, extract.token);
   const textX = QR_SIDE + 16;
-  const intro =
-    'Scan the QR code. The check page says whether this extract matches the registry’s record, and whether it is still the current version. No login is needed.';
+  const intro = CHECK_INTRO;
   writer.ensure(QR_SIDE + 150);
   writer.space(4);
   const top = writer.y;
@@ -332,9 +335,7 @@ function box(writer, {fillColour, edgeColour, height, padding = 10}, draw) {
 }
 
 function warning(writer) {
-  const title = 'Always scan the QR code. Don’t rely on this paper alone.';
-  const body =
-    'The extract shows the record on its issue date. The record may have changed since, or the registry may have withdrawn this extract: only the check page can tell you.';
+  const {title, body} = WARNING;
   const width = writer.width - 20;
   const height =
     writer.text(title, {
@@ -362,8 +363,8 @@ function warning(writer) {
 }
 
 function seal(writer, {settings, registry}) {
-  const title = `Sealed by the ${settings.org.name}`;
-  const body = `This PDF carries the electronic seal of the ${registry} and, attached inside the file, the proof that ties this record version to the blockchain transaction above. A printout carries the QR code only; the PDF file can be checked in full.`;
+  const title = SEAL_TITLE;
+  const body = sealNotice(registry);
   const width = writer.width - 20;
   const legal = settings.legalText;
   const height =

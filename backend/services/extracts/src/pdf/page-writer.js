@@ -13,13 +13,38 @@ export const COLOURS = Object.freeze({
 /** Page margins, in points (A4 is 595 × 842). */
 export const MARGIN = 48;
 
+/**
+ * The closest printable form of letters the standard fonts lack and that have no accent to drop:
+ * the Khoekhoe clicks (in names such as "Johannes ǃGawaseb", typed "!Gawaseb" in the portal) and
+ * letters with a stroke.
+ */
+const CLOSEST = Object.freeze({
+  ǃ: '!',
+  ǀ: '|',
+  ǁ: '||',
+  ǂ: '‡',
+  ł: 'l',
+  Ł: 'L',
+  đ: 'd',
+  Đ: 'D',
+  ħ: 'h',
+  Ħ: 'H',
+  ı: 'i',
+  ŧ: 't',
+  Ŧ: 'T',
+  ŋ: 'n',
+  Ŋ: 'N',
+  ə: 'e',
+  Ə: 'E',
+});
+
 /** Room kept free at the bottom of every page for the footer. */
 const FOOTER_ROOM = 56;
 
 /**
  * Writes the extract top to bottom over as many A4 pages as it needs: text wrapped to a width, a
  * new page when the next block does not fit. Characters the standard fonts cannot print are
- * written without their accents, or as "?" (printable).
+ * written as the closest ones they can (printable).
  */
 export class PageWriter {
   constructor(pdfDoc, fonts) {
@@ -45,19 +70,27 @@ export class PageWriter {
     if (this.y - height < FOOTER_ROOM) this.newPage();
   }
 
-  /** `text` as the font can print it: accents dropped where needed, else "?". */
+  /**
+   * `text` as the font can print it (the standard fonts know only Western European letters): a
+   * Khoekhoe click as the sign names are written with on a keyboard (ǃ as "!"), a letter with its
+   * accents dropped, a compatibility form as its plain one; "?" only for what has no such form.
+   */
   printable(text, font) {
     if (!this.charsets.has(font)) {
       this.charsets.set(font, new Set(font.getCharacterSet()));
     }
     const charset = this.charsets.get(font);
     const fits = ch => [...ch].every(c => charset.has(c.codePointAt(0)));
+    const closest = ch => {
+      const candidates = [
+        CLOSEST[ch],
+        ch.normalize('NFD').replace(/\p{M}/gu, ''),
+        ch.normalize('NFKD').replace(/\p{M}/gu, ''),
+      ];
+      return candidates.find(c => c && fits(c)) ?? '?';
+    };
     return [...String(text ?? '').normalize('NFC')]
-      .map(ch => {
-        if (fits(ch)) return ch;
-        const plain = ch.normalize('NFD').replace(/\p{M}/gu, '');
-        return plain && fits(plain) ? plain : '?';
-      })
+      .map(ch => (fits(ch) ? ch : closest(ch)))
       .join('');
   }
 

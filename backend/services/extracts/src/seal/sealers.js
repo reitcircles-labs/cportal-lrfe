@@ -107,7 +107,8 @@ const KEY_TYPES = {
  * audit service's wallet key (audit/src/cardano/signer.js): the extracts service logs in with its
  * own AppRole and has transit sign the SHA-256 digest of the signed attributes (prehashed): neither
  * the key nor the PDF leaves where it is. `certificatePem` is the registry's seal certificate for
- * that key; before the first signature, the key's public key is checked against it.
+ * that key: the signature is made with the key version whose public key is the certificate's,
+ * found again whenever the key is rotated (checkedKey).
  */
 export function createBaoSealer({
   addr,
@@ -134,7 +135,7 @@ export function createBaoSealer({
   const base = addr.replace(/\/+$/, '');
   let token = null;
   let renewAt = 0;
-  let keyType = null;
+  let checked = null; // {type, version, latest}: the key version the certificate is for
 
   async function call(method, path, body, withToken = token) {
     let res;
@@ -197,10 +198,15 @@ export function createBaoSealer({
     }
   }
 
-  /** The key's type, once its public key is known to be the certificate's. */
-  async function checkedKeyType() {
-    if (keyType) return keyType;
+  /**
+   * The key's type and the version of it the certificate is for. Read on every seal: the version
+   * found is checked again only when the key's latest version has changed (it was rotated), and
+   * the signature is always made with that version (key_version), never with a newer one the
+   * certificate is not for.
+   */
+  async function checkedKey() {
     const {data} = await authed('GET', `transit/keys/${keyName}`);
+    if (checked?.latest === data.latest_version) return checked;
     if (!KEY_TYPES[data.type]) {
       throw sealFailed(
         new Error(
@@ -208,16 +214,25 @@ export function createBaoSealer({
         ),
       );
     }
-    const latest = data.keys[String(data.latest_version)];
-    if (spkiOf(createPublicKey(latest.public_key)) !== certificateKey) {
+    const version = Object.entries(data.keys ?? {})
+      .filter(([, key]) => key?.public_key)
+      .find(
+        ([, key]) => spkiOf(createPublicKey(key.public_key)) === certificateKey,
+      )?.[0];
+    if (!version) {
+      checked = null;
       throw sealFailed(
         new Error(
-          `The seal certificate is not for OpenBao key ${keyName} (version ${data.latest_version})`,
+          `The seal certificate is for no version of OpenBao key ${keyName} (latest version ${data.latest_version}): set the certificate for the key`,
         ),
       );
     }
-    keyType = data.type;
-    return keyType;
+    checked = {
+      type: data.type,
+      version: Number(version),
+      latest: data.latest_version,
+    };
+    return checked;
   }
 
   return {
@@ -226,13 +241,14 @@ export function createBaoSealer({
       return certificateDer;
     },
     async sign(bytes) {
-      const type = await checkedKeyType();
+      const key = await checkedKey();
       const digest = createHash('sha256').update(bytes).digest();
       const {data} = await authed('POST', `transit/sign/${keyName}`, {
         input: digest.toString('base64'),
         prehashed: true,
         hash_algorithm: 'sha2-256',
-        ...KEY_TYPES[type],
+        key_version: key.version,
+        ...KEY_TYPES[key.type],
       });
       return Buffer.from(data.signature.split(':').pop(), 'base64');
     },

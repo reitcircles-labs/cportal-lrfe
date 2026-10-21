@@ -14,6 +14,8 @@ import * as pkijs from 'pkijs';
 /** The characters of Windows-1252 (WinAnsi) between 0x80 and 0x9F the extract can use. */
 const WIN_ANSI = {
   0x85: '…',
+  0x86: '†',
+  0x87: '‡',
   0x91: '‘',
   0x92: '’',
   0x93: '“',

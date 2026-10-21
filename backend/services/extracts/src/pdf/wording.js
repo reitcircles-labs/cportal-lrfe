@@ -36,3 +36,20 @@ export function tenureText(tenure) {
 export function titleDeeds(owners = []) {
   return [...new Set(owners.map(o => o.since).filter(Boolean))].join(', ');
 }
+
+/** The check box's introduction. */
+export const CHECK_INTRO =
+  'Scan the QR code. The check page says whether this extract matches the registry’s record, and whether it is still the current version. No login is needed.';
+
+/** The warning box: the paper alone proves nothing. */
+export const WARNING = Object.freeze({
+  title: 'Always scan the QR code. Don’t rely on this paper alone.',
+  body: 'The extract shows the record on its issue date. The record may have changed since, or the registry may have withdrawn this extract: only the check page can tell you.',
+});
+
+/** The seal box's title: the registry is named in its sentence, as the site's settings write it. */
+export const SEAL_TITLE = 'Electronic seal';
+
+/** The seal box's sentence for `registry`, e.g. "Deeds Registry, Republic of Namibia". */
+export const sealNotice = registry =>
+  `This PDF carries the electronic seal of ${registry} and, attached inside the file, the proof that ties this record version to the blockchain transaction above. A printout carries the QR code only; the PDF file can be checked in full.`;

@@ -1,4 +1,4 @@
-import {X509Certificate, createHash} from 'node:crypto';
+import {X509Certificate, createHash, generateKeyPairSync} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -89,8 +89,7 @@ describe('the extract PDF (API-691)', () => {
       `Transaction ${TX}`,
       'Always scan the QR code. Don’t rely on this paper alone.',
       'only the check page can tell you.',
-      'Sealed by the Land Titles Office',
-      'the electronic seal of the Land Titles Office, Republic of Testland',
+      'Electronic seal This PDF carries the electronic seal of Land Titles Office, Republic of Testland and',
       'Legal wording of the test registry.',
       `attached: record-v1.proof.json`,
       'Page 1 of 1',
@@ -272,6 +271,47 @@ describe('the extract PDF (API-691)', () => {
     expect(files.blobs.size).to.equal(0);
   });
 
+  it('prints names with Khoekhoe clicks and other letters the standard fonts lack as closely as they can', async () => {
+    const {records, service} = await makeExtracts();
+    const record = await committedErf1873(records);
+    const names = {
+      'Johannes ǃGawaseb': 'Johannes !Gawaseb',
+      'Petrus ǀAwases': 'Petrus |Awases',
+      'Anna ǁKhaba': 'Anna ||Khaba',
+      'Josef ǂNûseb': 'Josef ‡Nûseb',
+      'Łukasz Dvořák': 'Lukasz Dvorák',
+      'Ṭhabo Ŋcube': 'Thabo Ncube',
+    };
+    record.current.data.owners = Object.keys(names).map((name, i) => ({
+      name,
+      idNo: `7506020041${i}`,
+      share: '1/6',
+      since: 'T 4521/2019',
+    }));
+    const pdf = await service.sealedPdf(
+      {
+        ...forMaria(record),
+        id: 'e1',
+        recordNo: record.recordNo,
+        token: 't'.repeat(43),
+        issuedAt: new Date(),
+        ownerName: 'Johannes ǃGawaseb',
+      },
+      record,
+      (await service.proofs.recordProof(record.id, 1)).proof,
+      null,
+    );
+    const {lines, text} = await readPdf(pdf);
+    for (const printed of Object.values(names)) {
+      expect(lines).to.include(printed);
+    }
+    expect(text).to.include('Issued to Johannes !Gawaseb, registered owner');
+    // no "?" in place of a letter: only the check box's question
+    expect(lines.filter(line => line.includes('?'))).to.deep.equal([
+      'No camera? Open this address:',
+    ]);
+  });
+
   it('runs onto a second page for many owners, the footer on each', async () => {
     const {records, service} = await makeExtracts();
     const record = await committedErf1873(records);
@@ -319,24 +359,34 @@ describe('the seal and the settings (API-691)', () => {
     expect(error?.message).to.include('EXTRACTS_SEAL must be bao');
   });
 
-  it('the vault seal needs its settings, and signs only with the key of its certificate, prehashed', async () => {
+  it('the vault seal needs its settings, and signs only with the key version of its certificate, prehashed', async () => {
     const testSealer = await sharedTestSealer();
-    const certificatePem = `-----BEGIN CERTIFICATE-----\n${(await testSealer.certificate()).toString('base64')}\n-----END CERTIFICATE-----\n`;
+    const pemOf = der =>
+      `-----BEGIN CERTIFICATE-----\n${der.toString('base64')}\n-----END CERTIFICATE-----\n`;
+    const certificatePem = pemOf(await testSealer.certificate());
     expect(() =>
       createBaoSealer({addr: 'http://bao', keyName: 'extracts-seal'}),
     ).to.throw('BAO_ROLE_ID is required');
 
     const secretIdFile = join(tmpdir(), `extracts-seal-secret-${process.pid}`);
     await writeFile(secretIdFile, 'secret-id\n');
-    const calls = [];
-    // a stand-in for OpenBao: its key is the test seal's (its public key from the certificate)
-    const publicKey = new X509Certificate(
+    // a stand-in for OpenBao: version 1 of its key is the test seal's (its public key from the
+    // certificate); `vault.keys` and `vault.latest` change when it is rotated
+    const certifiedKey = new X509Certificate(
       await testSealer.certificate(),
     ).publicKey.export({type: 'spki', format: 'pem'});
-    let signedInput = null;
+    const otherKey = generateKeyPairSync('ec', {
+      namedCurve: 'P-256',
+    }).publicKey.export({type: 'spki', format: 'pem'});
+    const vault = {
+      latest: 1,
+      keys: {1: {public_key: certifiedKey}},
+      calls: [],
+      signed: [],
+    };
     const fakeBao = async (url, init) => {
       const path = new URL(url).pathname;
-      calls.push(`${init.method} ${path}`);
+      vault.calls.push(`${init.method} ${path}`);
       const body = init.body ? JSON.parse(init.body) : null;
       const answer = json => ({ok: true, status: 200, json: async () => json});
       if (path === '/v1/auth/approle/login') {
@@ -346,54 +396,78 @@ describe('the seal and the settings (API-691)', () => {
         return answer({
           data: {
             type: 'ecdsa-p256',
-            latest_version: 1,
-            keys: {1: {public_key: publicKey}},
+            latest_version: vault.latest,
+            keys: vault.keys,
           },
         });
       }
       if (path === '/v1/transit/sign/extracts-seal') {
-        signedInput = body;
+        vault.signed.push(body);
         return answer({data: {signature: 'vault:v1:c2lnbmF0dXJl'}});
       }
       return {ok: false, status: 404, json: async () => ({errors: ['no']})};
     };
-    const sealer = createBaoSealer({
+    const settings = {
       addr: 'http://bao:8200',
       roleId: 'role',
       secretIdFile,
       keyName: 'extracts-seal',
-      certificatePem,
       fetch: fakeBao,
-    });
+    };
+    const sealer = createBaoSealer({...settings, certificatePem});
     const signature = await sealer.sign(Buffer.from('signed attributes'));
     expect(signature.toString()).to.equal('signature');
-    // only the digest goes to the vault, never the document
-    expect(signedInput).to.deep.equal({
-      input: createHash('sha256').update('signed attributes').digest('base64'),
-      prehashed: true,
-      hash_algorithm: 'sha2-256',
-      marshaling_algorithm: 'asn1',
-    });
-    expect(calls).to.deep.equal([
+    // only the digest goes to the vault, never the document; signed with version 1
+    expect(vault.signed).to.deep.equal([
+      {
+        input: createHash('sha256')
+          .update('signed attributes')
+          .digest('base64'),
+        prehashed: true,
+        hash_algorithm: 'sha2-256',
+        key_version: 1,
+        marshaling_algorithm: 'asn1',
+      },
+    ]);
+    expect(vault.calls).to.deep.equal([
       'POST /v1/auth/approle/login',
       'GET /v1/transit/keys/extracts-seal',
       'POST /v1/transit/sign/extracts-seal',
     ]);
 
-    // a certificate for another key: refused before anything is signed
+    // rotated: version 2 is another key; the certificate is still for version 1, so it signs with 1
+    vault.keys = {...vault.keys, 2: {public_key: otherKey}};
+    vault.latest = 2;
+    await sealer.sign(Buffer.from('x'));
+    expect(vault.signed.at(-1).key_version).to.equal(1);
+
+    // version 1 no longer there: refused before anything is signed
+    vault.keys = {2: {public_key: otherKey}};
+    vault.latest = 3;
+    const count = vault.signed.length;
+    const rotated = await rejects(sealer.sign(Buffer.from('x')), 503);
+    expect(rotated.cause.message).to.include(
+      'The seal certificate is for no version of OpenBao key extracts-seal',
+    );
+    expect(vault.signed).to.have.length(count);
+
+    // the certificate's key is version 4, the newest, after another rotation
+    vault.keys = {...vault.keys, 4: {public_key: certifiedKey}};
+    vault.latest = 4;
+    await sealer.sign(Buffer.from('x'));
+    expect(vault.signed.at(-1).key_version).to.equal(4);
+
+    // a certificate for another key: refused, with a message for staff that names no tool
     const other = createBaoSealer({
-      addr: 'http://bao:8200',
-      roleId: 'role',
-      secretIdFile,
-      keyName: 'extracts-seal',
-      certificatePem: `-----BEGIN CERTIFICATE-----\n${(await (await sealerFromEnv({env: {}})).certificate()).toString('base64')}\n-----END CERTIFICATE-----`,
-      fetch: fakeBao,
+      ...settings,
+      certificatePem: pemOf(
+        await (await sealerFromEnv({env: {}})).certificate(),
+      ),
     });
-    signedInput = null;
     const err = await rejects(other.sign(Buffer.from('x')), 503);
     expect(err.message).to.not.match(/bao|vault/i);
-    expect(err.cause.message).to.include('not for OpenBao key extracts-seal');
-    expect(signedInput).to.equal(null);
+    expect(err.cause.message).to.include('for no version of OpenBao key');
+    expect(vault.signed).to.have.length(count + 1);
   });
 
   it('the site settings: the organisation, the check page, the legal wording, the time zone', () => {
@@ -404,8 +478,15 @@ describe('the seal and the settings (API-691)', () => {
     expect(settings.org.name).to.equal('Land Titles Office');
     expect(settings.checkUrlBase).to.equal('https://titles.example/#/check');
     expect(settings.legalText).to.equal(DEFAULT_LEGAL_TEXT);
+    // not set: the portal's own address
+    expect(
+      extractSettingsFromEnv({
+        NODE_ENV: 'production',
+        LRFE_PUBLIC_URL: 'https://deeds.example.gov/',
+      }).checkUrlBase,
+    ).to.equal('https://deeds.example.gov/#/check');
     expect(() => extractSettingsFromEnv({NODE_ENV: 'production'})).to.throw(
-      'EXTRACTS_CHECK_URL_BASE is required',
+      'EXTRACTS_CHECK_URL_BASE or LRFE_PUBLIC_URL is required',
     );
     expect(() =>
       extractSettingsFromEnv({EXTRACTS_TIME_ZONE: 'Nowhere/Town'}),

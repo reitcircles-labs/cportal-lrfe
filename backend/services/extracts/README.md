@@ -67,14 +67,17 @@ with the footer on each), as the design draft of API-690 lays it out:
   fingerprint (its seal) in full, its batch and since when it is on the blockchain, the transaction
   id and the explorer link. The design's short typed check code is not there: it needs a lookup of
   its own; the address with the token is printed instead;
-- the "Always scan the QR code" box, the seal notice ("Sealed by …") and the legal wording
+- the "Always scan the QR code" box, the seal notice ("Electronic seal", naming the registry) and
+  the legal wording
   (`EXTRACTS_LEGAL_TEXT`; until it is set, a placeholder says it is to be confirmed by the
   registry's legal advisers);
 - attached inside the file, `record-v<n>.proof.json`: the version's proof, byte for byte as the
   evidence pack holds it (`proofs/record-v<n>.json`), so the extract can be checked offline.
 
-The texts say "blockchain", never the network, and name no tool behind the portal. Characters the
-standard PDF fonts cannot print are written without their accents (or as "?").
+The texts (`src/pdf/wording.js`) say "blockchain", never the network, and name no tool behind the
+portal. Characters the standard PDF fonts cannot print are written as the closest ones they can: a
+Khoekhoe click as typed on a keyboard (ǃ "!", ǀ "|", ǁ "||", ǂ "‡"), a letter without its accents
+or stroke; "?" only for a character with no such form.
 
 ## The seal
 
@@ -105,7 +108,7 @@ re-rendered or re-sealed. A revoked extract is not given out again (409).
 | Setting | |
 |---|---|
 | `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | The registry's name on the extract and in its seal notice, as identity and audit read them |
-| `EXTRACTS_CHECK_URL_BASE` | The public check page the QR code opens; required with `NODE_ENV=production` |
+| `EXTRACTS_CHECK_URL_BASE` | The public check page the QR code opens; not set: `<LRFE_PUBLIC_URL>/#/check`. One of the two is required with `NODE_ENV=production` |
 | `EXTRACTS_LEGAL_TEXT` | What the extract certifies; a placeholder until the registry has confirmed it |
 | `EXTRACTS_TIME_ZONE` | The IANA time zone of the dates printed, e.g. `Africa/Windhoek` (the server's when unset) |
 | `EXTRACTS_SEAL`, `EXTRACTS_SEAL_KEY`, `EXTRACTS_SEAL_CERT`, `EXTRACTS_SEAL_CERT_FILE`, `BAO_*` | The seal, above |

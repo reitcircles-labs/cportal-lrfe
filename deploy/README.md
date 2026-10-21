@@ -203,7 +203,9 @@ holders have unsealed it, after every restart of its container.
    Create a new one only when needed, with the key holders (`bao operator generate-root`).
 5. In `.env`: `EDRMS_ENCRYPTION=bao` and `INTAKE_ENCRYPTION=bao`. Then `docker compose up -d`.
 6. **The organisation seal on ownership extracts.** The setup also creates the key `extracts-seal`
-   (ECDSA P-256, never exportable): every extract's PDF is sealed with it, inside OpenBao. The
+   (ECDSA P-256, never exportable) and the extracts service's login: every extract's PDF is sealed
+   with it, inside OpenBao. An install whose OpenBao was prepared before this version has neither:
+   run `docker compose run --rm openbao-setup` again first (it keeps what works). The
    registry needs a seal certificate for that key from its certificate authority; the key's public
    key is shown by `bao read transit/keys/extracts-seal` (with a token). Put the certificate in
    `.env` as `LRFE_SEAL_CERT` (PEM on one line, `\n` for each line break), set `LRFE_SEAL=bao`, then
@@ -222,6 +224,9 @@ accessors, `bao write auth/approle/role/edrms/secret-id-accessor/destroy secret_
 destroys one.
 
 Files stored before encryption was switched on stay readable as they are; new files are encrypted.
+The sealed extract PDFs in the `extracts-files` volume are not encrypted yet, unlike edrms and
+intake files with OpenBao: they hold the owners' names and shares (of their ID numbers only the
+last 4 digits), so protect the volume and its backups like the database.
 While OpenBao is sealed, edrms and intake wait for it and then restart until it is unsealed. Back up
 the `bao-data` volume with the rest (part F): without it encrypted files cannot be read.
 
