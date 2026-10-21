@@ -1,0 +1,21 @@
+{
+  "name": "@lrfe/extracts",
+  "version": "0.1.0",
+  "description": "Ownership extracts: the register of extracts issued for a land record's current version, each with a random token, valid or revoked",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "dependencies": {
+    "@lrfe/common": "0.1.0",
+    "sequelize": "^6.37.3"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3"
+  }
+}

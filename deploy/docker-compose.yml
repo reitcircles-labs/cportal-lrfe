@@ -1,4 +1,4 @@
-# The whole application in containers, from images: the web app, the gateway, the six backend
+# The whole application in containers, from images: the web app, the gateway, the seven backend
 # services, PostgreSQL and NATS. How to install it at a site: README.md (next to this file).
 #
 #   docker compose up -d                     start (or upgrade to the LRFE_VERSION in .env)
@@ -284,6 +284,23 @@ services:
       db-setup: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
 
+  extracts:
+    <<: *backend
+    working_dir: /app/services/extracts
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3507"
+      EXTRACTS_STORE: postgres
+      # the record's current version and its owners, read when an extract is issued, and whether
+      # that version is on the blockchain yet
+      RECORDS_URL: http://land-records:3505
+      AUDIT_URL: http://audit:3506
+    healthcheck: *healthcheck
+    depends_on:
+      db-setup: { condition: service_completed_successfully }
+      nats: { condition: service_healthy }
+
   gateway:
     <<: *backend
     working_dir: /app/services/gateway
@@ -298,6 +315,7 @@ services:
       INTAKE_URL: http://intake:3504
       RECORDS_URL: http://land-records:3505
       AUDIT_URL: http://audit:3506
+      EXTRACTS_URL: http://extracts:3507
       CORS_ORIGINS: ${LRFE_PUBLIC_URL}
     healthcheck: *healthcheck
     depends_on:
@@ -307,6 +325,7 @@ services:
       intake: { condition: service_healthy }
       land-records: { condition: service_healthy }
       audit: { condition: service_healthy }
+      extracts: { condition: service_healthy }
 
   # The web app, and /api/... passed to the gateway: the only container published on the host
   web:

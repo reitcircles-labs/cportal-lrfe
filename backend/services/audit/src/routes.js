@@ -116,11 +116,12 @@ export async function auditRoutes(
     async req => proofs.verify(req.body.kind, req.body.id, req.body.version),
   );
 
-  // the anchoring status of versions, for land-records and edrms to show next to them
+  // the anchoring status of versions, for land-records and edrms to show next to them, and for the
+  // extracts service: an extract is issued only of a version on the blockchain (API-692)
   app.post(
     '/audit/anchoring',
     {
-      onRequest: app.requireService('land-records', 'edrms'),
+      onRequest: app.requireService('land-records', 'edrms', 'extracts'),
       schema: {
         body: {
           type: 'object',

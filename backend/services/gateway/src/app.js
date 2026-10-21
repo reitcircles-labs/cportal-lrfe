@@ -44,6 +44,7 @@ export const ROUTES = [
   {prefix: '/api/intake', service: 'intake', rewritePrefix: ''},
   {prefix: '/api/records', service: 'land-records', rewritePrefix: '/records'},
   {prefix: '/api/audit', service: 'audit', rewritePrefix: '/audit'},
+  {prefix: '/api/extracts', service: 'extracts', rewritePrefix: '/extracts'},
   // Next: search (/api/search).
 ];
 

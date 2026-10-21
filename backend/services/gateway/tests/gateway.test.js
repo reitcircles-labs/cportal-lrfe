@@ -29,6 +29,7 @@ describe('gateway', () => {
         intake: url,
         'land-records': url,
         audit: url,
+        extracts: url,
       },
       corsOrigins: ['http://localhost:4200'],
     });
@@ -60,6 +61,12 @@ describe('gateway', () => {
       (await gateway.inject({url: '/api/audit/trail?subject=record:r1'})).json()
         .path,
     ).to.equal('/audit/trail?subject=record:r1');
+  });
+
+  it('proxies /api/extracts/* to extracts /extracts/*', async () => {
+    expect(
+      (await gateway.inject({url: '/api/extracts?recordId=r1'})).json().path,
+    ).to.equal('/extracts?recordId=r1');
   });
 
   it('proxies /api/records/* to land-records /records/*', async () => {

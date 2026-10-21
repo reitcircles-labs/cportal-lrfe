@@ -45,7 +45,8 @@ export const ENDPOINTS = {
     },
     'POST /audit/anchoring': {
       tag: 'Proofs',
-      summary: 'The anchoring status of versions (land-records, edrms)',
+      summary:
+        'The anchoring status of versions (land-records, edrms, extracts)',
       description:
         'Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx, network, confirmedAt } | null } }`; null when the version is not in the tree.',
     },

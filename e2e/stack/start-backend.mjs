@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Start the six backend services for the end-to-end tests: everything in memory (a fresh, known
+ * Start the seven backend services for the end-to-end tests: everything in memory (a fresh, known
  * state each run), the AI replaced by its canned answer, emails written to files, the demo users
  * seeded, and a NATS server of its own as the event bus between them (backend/scripts/nats.js).
  * Playwright runs this (see playwright.config.ts); it can also be run by hand to keep a test stack
@@ -47,6 +47,7 @@ const COMMON = {
   INTAKE_URL: url('intake'),
   RECORDS_URL: url('land-records'),
   AUDIT_URL: url('audit'),
+  EXTRACTS_URL: url('extracts'),
   EVENT_BUS_DRIVER: 'nats',
   NATS_URL: `nats://127.0.0.1:${PORTS.nats}`,
   IDENTITY_STORE: 'memory',
@@ -56,6 +57,7 @@ const COMMON = {
   INTAKE_STORE: 'memory',
   RECORDS_STORE: 'memory',
   AUDIT_STORE: 'memory',
+  EXTRACTS_STORE: 'memory',
   INTAKE_STORAGE: 'memory',
   EXTRACTION_PROVIDER: 'mock',
   SEED_DEMO_PASSWORD: DEMO_PASSWORD,
@@ -92,6 +94,7 @@ const SERVICES = [
   'intake',
   'land-records',
   'audit',
+  'extracts',
 ];
 const POSTGRES = process.env.E2E_DB === 'postgres';
 const pgData = join(STACK_DIR, 'pg');
@@ -103,6 +106,7 @@ if (POSTGRES) {
     INTAKE_STORE: 'postgres',
     RECORDS_STORE: 'postgres',
     AUDIT_STORE: 'postgres',
+    EXTRACTS_STORE: 'postgres',
     DB_CONNECTION_STRING: `postgres://lrfe@127.0.0.1:${PORTS.postgres}/e2e`,
     DB_SYNC: 'true',
     EDRMS_STORAGE: 'local',

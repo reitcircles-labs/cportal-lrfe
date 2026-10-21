@@ -930,19 +930,22 @@ describe('proofs and verification (API-658)', () => {
     assert.equal(v.statusCode, 200);
     assert.equal(v.json().valid, true);
 
-    // the anchoring status is for land-records and edrms only
+    // the anchoring status is for land-records, edrms and extracts (API-692) only
     const keys = [`record-version:${a.record.id}:1`];
-    assert.equal(
-      (
-        await a.auditApp.inject({
-          method: 'POST',
-          url: '/audit/anchoring',
-          headers: {authorization: `Bearer ${asService('land-records')()}`},
-          payload: {keys},
-        })
-      ).json().items[keys[0]].status,
-      'confirmed',
-    );
+    for (const service of ['land-records', 'extracts']) {
+      assert.equal(
+        (
+          await a.auditApp.inject({
+            method: 'POST',
+            url: '/audit/anchoring',
+            headers: {authorization: `Bearer ${asService(service)()}`},
+            payload: {keys},
+          })
+        ).json().items[keys[0]].status,
+        'confirmed',
+        service,
+      );
+    }
     assert.equal(
       (
         await a.auditApp.inject({

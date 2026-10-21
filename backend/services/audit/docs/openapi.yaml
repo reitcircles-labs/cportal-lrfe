@@ -368,13 +368,13 @@ paths:
     post:
       tags:
         - Proofs
-      summary: The anchoring status of versions (land-records, edrms)
+      summary: The anchoring status of versions (land-records, edrms, extracts)
       description: >-
         Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx,
         network, confirmedAt } | null } }`; null when the version is not in the tree.
 
 
-        **Access:** Service token only, from: `land-records`, `edrms`. Browsers cannot call this.
+        **Access:** Service token only, from: `land-records`, `edrms`, `extracts`. Browsers cannot call this.
       operationId: postAuditAnchoring
       requestBody:
         required: true
@@ -422,6 +422,7 @@ paths:
         services:
           - land-records
           - edrms
+          - extracts
       x-gateway-path: /api/audit/anchoring
   /audit/anchors:
     get:

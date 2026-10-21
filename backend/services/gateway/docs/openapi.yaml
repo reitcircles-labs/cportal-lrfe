@@ -65,6 +65,8 @@ tags:
     description: Auditors' sign-offs and findings, with segregation of duties (sod2).
   - name: audit · Evidence
     description: "Evidence packs: a land record with everything needed to check it outside the portal."
+  - name: extracts · Extracts
+    description: The register of ownership extracts.
   - name: gateway
     description: The gateway itself.
 paths:
@@ -139,13 +141,13 @@ paths:
     post:
       tags:
         - audit · Proofs
-      summary: The anchoring status of versions (land-records, edrms)
+      summary: The anchoring status of versions (land-records, edrms, extracts)
       description: >-
         Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx,
         network, confirmedAt } | null } }`; null when the version is not in the tree.
 
 
-        **Access:** Service token only, from: `land-records`, `edrms`. Browsers cannot call this.
+        **Access:** Service token only, from: `land-records`, `edrms`, `extracts`. Browsers cannot call this.
       operationId: audit_postAuditAnchoring
       requestBody:
         required: true
@@ -193,6 +195,7 @@ paths:
         services:
           - land-records
           - edrms
+          - extracts
   /api/audit/anchoring/health:
     get:
       tags:
@@ -2513,6 +2516,194 @@ paths:
       x-access:
         services:
           - audit
+  /api/extracts:
+    post:
+      tags:
+        - extracts · Extracts
+      summary: Issue an extract of a land record's current version for an owner
+      description: >-
+        `{ recordId, versionNumber, ownerIndex, idNo, documentSeen }`: the owner chosen on the current version, the ID number typed from the
+        identity document shown, and `documentSeen: true`. 201 with the register row: `id`, `recordId`, `recordNo`, `versionNumber`,
+        `issuedById`, `issuedByName`, `ownerIndex`, `ownerName`, `ownerIdLast4` (the last four characters of the owner's ID number; the rest
+        is not kept), `documentSeen`, `issuedAt`, `token` (random, for the public check), `status` `valid`, `isCurrentVersion`. 400 without
+        `documentSeen: true`. 409 when the record has no approved version, `versionNumber` is no longer the current one, there is no such
+        owner, the ID number does not match the owner's on the version, or the version is not on the blockchain yet (its anchoring
+        confirmed); 503 when that cannot be checked; 404 when there is no such record.
+
+
+        **Access:** Signed-in user with permission `extract.issue`.
+      operationId: extracts_postExtracts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - recordId
+                - versionNumber
+                - ownerIndex
+                - idNo
+                - documentSeen
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                versionNumber:
+                  type: integer
+                  minimum: 1
+                ownerIndex:
+                  type: integer
+                  minimum: 0
+                idNo:
+                  type: string
+                  minLength: 1
+                  maxLength: 40
+                documentSeen:
+                  type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - extract.issue
+    get:
+      tags:
+        - extracts · Extracts
+      summary: The extracts of a land record, newest first
+      description: >-
+        `{ items }`: the register rows of `recordId`, valid and revoked (`revokedAt`, `revokedByName`, `revokeReason`), each with
+        `isCurrentVersion`: its version is still the record's current one.
+
+
+        **Access:** Signed-in user with permission `extract.issue`.
+      operationId: extracts_getExtracts
+      parameters:
+        - name: recordId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - extract.issue
+  /api/extracts/{id}/revoke:
+    post:
+      tags:
+        - extracts · Extracts
+      summary: Revoke an extract, with the reason
+      description: |-
+        `{ reason }`. The updated register row, `status` `revoked`; it stays in the register. 409 when it is already revoked.
+
+        **Access:** Signed-in user with permission `extract.issue`.
+      operationId: extracts_postExtractsIdRevoke
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - extract.issue
   /api/intake/batches:
     get:
       tags:
@@ -4350,7 +4541,7 @@ paths:
       tags:
         - land-records · Records
       summary: One land record with its current version and open draft
-      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`, `extracts`."
       operationId: land-records_getRecordsId
       parameters:
         - name: id
@@ -4397,6 +4588,7 @@ paths:
           - record.view
         services:
           - audit
+          - extracts
   /api/records/{id}/bin:
     post:
       tags:

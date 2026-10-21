@@ -2,7 +2,7 @@
 /**
  * Run every backend service in watch mode from one terminal:
  *
- *   npm run dev                      NATS, all six services, and the API docs on http://localhost:3510
+ *   npm run dev                      NATS, all seven services, and the API docs on http://localhost:3510
  *   npm run dev -- identity intake   only these (add `nats` for the event bus, `docs` for the API docs,
  *                                    `bao` for OpenBao, `cardano` for the Cardano node; each is added
  *                                    anyway when one of them needs it)
@@ -66,6 +66,10 @@ const PROCESSES = {
     cwd: join(ROOT, 'services', 'audit'),
     args: ['--watch', 'src/index.js'],
   },
+  extracts: {
+    cwd: join(ROOT, 'services', 'extracts'),
+    args: ['--watch', 'src/index.js'],
+  },
   gateway: {
     cwd: join(ROOT, 'services', 'gateway'),
     args: ['--watch', 'src/index.js'],
@@ -74,7 +78,7 @@ const PROCESSES = {
   docs: {cwd: ROOT, args: ['scripts/docs-server.js'], optional: true},
 };
 const SERVICES = Object.keys(PROCESSES);
-const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 34, 96, 90];
+const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 34, 95, 96, 90];
 
 const wanted = process.argv.slice(2);
 const unknown = wanted.filter(s => !SERVICES.includes(s));

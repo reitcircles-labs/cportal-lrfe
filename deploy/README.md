@@ -6,7 +6,7 @@ standard ones:
 | Container | Image | What it is |
 |---|---|---|
 | web | `lrfe-web:<version>` | The web app, and `/api/...` passed to the gateway. The only one reachable from outside |
-| gateway, identity, edrms, bpm, intake, land-records, audit | `lrfe-backend:<version>` | The backend services (one image, each container runs one service) |
+| gateway, identity, edrms, bpm, intake, land-records, audit, extracts | `lrfe-backend:<version>` | The backend services (one image, each container runs one service) |
 | db-setup | `lrfe-backend:<version>` | Runs on every start before the services: sets up the database's schemas and tables, then exits |
 | postgres (the default) | `postgres:16.15` | The database. Or an existing PostgreSQL server instead: part B, "An existing PostgreSQL server" |
 | nats | `nats:2.15.1-alpine` | The event bus between the services |
@@ -258,7 +258,7 @@ going back to one works only with it, not with an existing server.
 start again. In the bundle's folder:
 
 ```bash
-mkdir -p -m 700 backup && docker compose stop web gateway identity edrms bpm intake land-records audit nats
+mkdir -p -m 700 backup && docker compose stop web gateway identity edrms bpm intake land-records audit extracts nats
 docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backup/database.dump
 for v in edrms-files intake-files natsdata bao-data bao-edrms bao-intake bao-audit; do
   docker run --rm --user 0 --entrypoint tar -v "lrfe_$v:/v:ro" -v "$PWD/backup:/b" \

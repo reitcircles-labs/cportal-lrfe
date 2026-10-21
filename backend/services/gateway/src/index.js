@@ -9,6 +9,7 @@ const app = await buildApp({
     intake: env('INTAKE_URL', 'http://localhost:3504'),
     'land-records': env('RECORDS_URL', 'http://localhost:3505'),
     audit: env('AUDIT_URL', 'http://localhost:3506'),
+    extracts: env('EXTRACTS_URL', 'http://localhost:3507'),
   },
   corsOrigins: envList('CORS_ORIGINS', 'http://localhost:4200'),
   logger: {level: env('LOG_LEVEL', 'info')},

@@ -28,6 +28,7 @@ export const PORTS = {
   'land-records': apiBase + 9,
   audit: apiBase + 10,
   docs: apiBase + 11, // the API docs container (npm run test:docker)
+  extracts: apiBase + 12,
   web: Number(process.env.E2E_WEB_PORT || 4300),
 };
 export const WEB_URL = `http://localhost:${PORTS.web}`;
