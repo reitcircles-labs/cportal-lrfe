@@ -1294,11 +1294,10 @@ function pdfObjects(pdf) {
 }
 
 /**
- * The files attached inside a PDF (its /EmbeddedFiles name tree), by name, as Buffers. Streams are
- * read as stored or inflated (FlateDecode); nothing else is needed for an extract.
+ * The objects of a PDF, read on demand: `read(n)` gives { value, stream? } of object n, `deref(v)`
+ * the value a reference points to (or v itself); and the trailer.
  */
-export function pdfAttachments(bytes) {
-  const pdf = Buffer.from(bytes);
+function pdfReader(pdf) {
   const {text, offsets, trailer} = pdfObjects(pdf);
   const read = number => {
     const at = offsets.get(number);
@@ -1321,6 +1320,19 @@ export function pdfAttachments(bytes) {
     value && typeof value === 'object' && 'ref' in value
       ? read(value.ref).value
       : value;
+  return {trailer, read, deref};
+}
+
+/** The same file name attached twice: which one is the extract's cannot be told. */
+export class DuplicateAttachment extends Error {}
+
+/**
+ * The files attached inside a PDF (its /EmbeddedFiles name tree), by name, as Buffers. Streams are
+ * read as stored or inflated (FlateDecode); nothing else is needed for an extract.
+ */
+export function pdfAttachments(bytes) {
+  const pdf = Buffer.from(bytes);
+  const {trailer, read, deref} = pdfReader(pdf);
   // all attachments together within MAX_ATTACHMENT_BYTES: a small PDF cannot unpack into gigabytes
   let budget = MAX_ATTACHMENT_BYTES;
   const decoded = ref => {
@@ -1368,7 +1380,9 @@ export function pdfAttachments(bytes) {
       const name = pdfText(deref(names[i])) ?? pdfText(spec?.UF);
       const embedded = deref(spec?.EF);
       if (!name || !embedded) continue;
-      if (files.has(name)) throw new Error(`${name} is attached twice`);
+      if (files.has(name)) {
+        throw new DuplicateAttachment(`${name} is attached twice`);
+      }
       files.set(name, decoded(embedded.F ?? embedded.UF));
     }
     for (const kid of deref(node.Kids) ?? []) walk(kid, depth + 1);
@@ -1445,6 +1459,35 @@ const SIGNATURE_ALGORITHMS = new Set([
   '1.2.840.113549.1.1.13',
 ]);
 
+/**
+ * The signature dictionaries of the PDF's signature fields, reached as a PDF reader reaches them:
+ * the catalog's /AcroForm, its /Fields (and their /Kids), each field's value /V with a /ByteRange.
+ */
+function signatureDictionaries(pdf) {
+  const {trailer, deref} = pdfReader(pdf);
+  const form = deref(deref(trailer.Root)?.AcroForm);
+  const found = [];
+  const visited = new Set();
+  const walk = (entry, depth) => {
+    if (entry && typeof entry === 'object' && 'ref' in entry) {
+      if (visited.has(entry.ref)) return;
+      visited.add(entry.ref);
+    }
+    if (visited.size > MAX_NAME_TREE_NODES || depth > 16) {
+      throw new Error('the form is too large');
+    }
+    const field = deref(entry);
+    if (!field || typeof field !== 'object' || Array.isArray(field)) return;
+    const value = deref(field.V);
+    if (value && typeof value === 'object' && 'ByteRange' in value) {
+      found.push({...value, ByteRange: deref(value.ByteRange)});
+    }
+    for (const kid of deref(field.Kids) ?? []) walk(kid, depth + 1);
+  };
+  for (const field of deref(form?.Fields) ?? []) walk(field, 0);
+  return found;
+}
+
 /** A certificate fingerprint as typed or copied: hex, with or without colons or spaces, any case. */
 const fingerprintOf = text =>
   String(text ?? '')
@@ -1464,36 +1507,57 @@ const fingerprintOf = text =>
  */
 export function checkPdfSeal(bytes, {fingerprint} = {}) {
   const pdf = Buffer.from(bytes);
-  const ranges = [
-    ...pdf
-      .toString('latin1')
-      .matchAll(/\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g),
-  ];
-  if (ranges.length === 0) {
+  const notSealed = detail => ({
+    status: 'invalid',
+    detail,
+    subject: null,
+    sha256: null,
+  });
+  let signatures;
+  try {
+    signatures = signatureDictionaries(pdf);
+  } catch (err) {
+    return notSealed(`the seal cannot be read: ${err.message}`);
+  }
+  // every /ByteRange written in the file: a second one, in or out of the form, is not the registry's
+  const written =
+    pdf.toString('latin1').match(/\/ByteRange\s*\[/g)?.length ?? 0;
+  if (signatures.length === 0 && written === 0) {
     return {
       status: 'none',
       detail:
         'the PDF has no seal: it is not an extract as the registry issued it',
       subject: null,
+      sha256: null,
     };
   }
-  const [start, length, after, rest] = ranges.at(-1).slice(1).map(Number);
+  if (signatures.length !== 1 || written !== 1) {
+    return notSealed(
+      'the PDF has more than one seal, or a seal outside its signature field: it is not an extract as the registry issued it',
+    );
+  }
+  const range = signatures[0].ByteRange;
+  if (range.length !== 4 || !range.every(n => Number.isSafeInteger(n))) {
+    return notSealed('the seal cannot be read: its byte range is damaged');
+  }
+  const [start, length, after, rest] = range;
   if (start !== 0 || after < length || after + rest !== pdf.length) {
-    return {
-      status: 'invalid',
-      detail:
-        'the seal does not cover the whole file: the PDF was changed after it was sealed',
-      subject: null,
-    };
+    return notSealed(
+      'the seal does not cover the whole file: the PDF was changed after it was sealed',
+    );
+  }
+  // what the seal does not cover must be the signature and nothing else: one hex string, as a PDF
+  // reader requires; anything hidden beside it would be outside the seal
+  const gap = pdf.subarray(length, after).toString('latin1');
+  if (!/^<(?:[0-9A-Fa-f]{2})*>$/.test(gap)) {
+    return notSealed(
+      'the space left for the seal holds more than the seal: the PDF was changed after it was sealed',
+    );
   }
   let subject = null;
   let sha256 = null;
   try {
-    const hex = pdf
-      .subarray(length, after)
-      .toString('latin1')
-      .replace(/[<>\s]/g, '');
-    const cms = Buffer.from(hex, 'hex');
+    const cms = Buffer.from(gap.slice(1, -1), 'hex');
     const contentInfo = derChildren(cms, derAt(cms, 0));
     if (derOid(cms, contentInfo[0]) !== SEAL_OID.signedData) {
       throw new Error('the signature is not a CMS SignedData');
@@ -1717,8 +1781,19 @@ export async function verifyExtract(
     'An offline check cannot show whether a newer version of the land record exists, or whether the registry has revoked this extract. Use the public check page for that: scan the QR code on the extract.',
   ];
   const sealResult = checkPdfSeal(bytes, {fingerprint: seal});
-  const files = pdfAttachments(bytes);
   const unproven = {seal: sealResult, batch: null, date: null, dateFrom: null};
+  let files;
+  try {
+    files = pdfAttachments(bytes);
+  } catch (err) {
+    if (!(err instanceof DuplicateAttachment)) throw err;
+    check(
+      'attached proof',
+      false,
+      `${err.message}: it is not an extract as the registry issued it`,
+    );
+    return {valid: false, checks, notes, ...unproven};
+  }
   const attached = [...files.keys()].filter(n => EXTRACT_PROOF_NAME.test(n));
   if (attached.length !== 1) {
     check(

@@ -364,9 +364,11 @@ describe('the public check of an extract (API-693)', () => {
     });
     expect(res.headers['cache-control']).to.equal('no-store');
     ctx.service.sealer = null;
-    expect(
-      (await ctx.app.inject({url: '/public/extracts/seal'})).statusCode,
-    ).to.equal(503);
+    const none = await ctx.app.inject({url: '/public/extracts/seal'});
+    expect(none.statusCode).to.equal(503);
+    expect(none.json().message).to.equal(
+      'The registry’s seal certificate is not available now.',
+    );
   });
 
   describe('the audit service client', () => {

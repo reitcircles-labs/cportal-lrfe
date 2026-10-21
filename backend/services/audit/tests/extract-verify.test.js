@@ -139,6 +139,68 @@ function cli(
   }
 }
 
+/**
+ * The review's shadow forgery (poc2): a genuine sealed extract whose signature space is widened to
+ * hide a cross-reference table, catalog and attachments after the signature's hex, with a second
+ * /ByteRange (in a comment) that describes the widened space. A reader that stopped at the end of
+ * the hex would find the hidden catalog.
+ */
+function shadowed(genuine, proofJson) {
+  const text = genuine.toString('latin1');
+  const [, coveredEnd, gapEnd, restLength] = [
+    ...text.matchAll(/\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g),
+  ]
+    .at(-1)
+    .slice(1)
+    .map(Number);
+  const startxref = Number([...text.matchAll(/startxref\s+(\d+)/g)].at(-1)[1]);
+  assert.ok(startxref > gapEnd);
+  const before = text.slice(0, coveredEnd);
+  const signatureHex = text.slice(coveredEnd, gapEnd);
+  const after = text.slice(gapEnd);
+  const objects = {
+    9001: '<< /Type /Catalog /Pages 9002 0 R /Names << /EmbeddedFiles 9004 0 R >> >>',
+    9002: '<< /Type /Pages /Kids [9003 0 R] /Count 1 >>',
+    9003: '<< /Type /Page /Parent 9002 0 R /MediaBox [0 0 595 842] >>',
+    9004: '<< /Names [(record-v1.proof.json) 9005 0 R] >>',
+    9005: '<< /Type /Filespec /F (record-v1.proof.json) /EF << /F 9006 0 R >> >>',
+  };
+  const streams = {9006: proofJson};
+  const numbers = [9001, 9002, 9003, 9004, 9005, 9006];
+  let hidden = '\n%shadow\n';
+  const hiddenAt = coveredEnd + signatureHex.length;
+  // the hidden table sits where the genuine startxref points
+  hidden += ' '.repeat(startxref - (hiddenAt + hidden.length));
+  const tableLength =
+    `xref\n9001 ${numbers.length}\n`.length + 20 * numbers.length;
+  const trailer = `trailer\n<< /Size 9007 /Root 9001 0 R >>\n`;
+  const offsets = {};
+  let body = '';
+  const bodyAt = startxref + tableLength + trailer.length;
+  for (const n of numbers) {
+    offsets[n] = bodyAt + body.length;
+    body +=
+      streams[n] === undefined
+        ? `${n} 0 obj\n${objects[n]}\nendobj\n`
+        : `${n} 0 obj\n<< /Length ${streams[n].length} >>\nstream\n${streams[n]}\nendstream\nendobj\n`;
+  }
+  hidden +=
+    `xref\n9001 ${numbers.length}\n` +
+    numbers
+      .map(n => `${String(offsets[n]).padStart(10, '0')} 00000 n \n`)
+      .join('') +
+    trailer +
+    body;
+  const base = before.length + signatureHex.length + hidden.length;
+  let widenedEnd = base + 60;
+  let fake = '';
+  for (let i = 0; i < 4; i++) {
+    fake = `%/ByteRange [0 ${coveredEnd} ${widenedEnd} ${restLength}]\n`;
+    widenedEnd = base + fake.length;
+  }
+  return Buffer.from(before + signatureHex + hidden + fake + after, 'latin1');
+}
+
 describe('checking an ownership extract offline (API-694)', () => {
   it('a valid extract: its attached proof is on the blockchain, sent from the published address, and the registry seal holds', async () => {
     const {a, proof, fingerprint, pinned, pdf} = await anchoredExtract();
@@ -372,7 +434,11 @@ describe('checking an ownership extract offline (API-694)', () => {
     // no seal at all
     const plain = await PDFDocument.create();
     plain.addPage();
-    assert.equal(checkPdfSeal(Buffer.from(await plain.save())).status, 'none');
+    assert.equal(
+      checkPdfSeal(Buffer.from(await plain.save({useObjectStreams: false})))
+        .status,
+      'none',
+    );
   });
 
   it('a forged extract sealed with a self-made certificate of the same name is not valid (forgery A)', async () => {
@@ -475,5 +541,71 @@ describe('checking an ownership extract offline (API-694)', () => {
     const run = cli(bigPdf);
     assert.equal(run.status, 2);
     assert.match(run.stderr, /larger than any extract holds/);
+  });
+
+  it('a genuine extract with a shadow catalog hidden next to its signature is not valid (the review’s shadow forgery)', async () => {
+    const {proof, pinned, pdf} = await anchoredExtract();
+    const forged = shadowed(pdf, `${JSON.stringify(proof, null, 2)}\n`);
+    const seal = checkPdfSeal(forged, {fingerprint: pinned.seal});
+    assert.equal(seal.status, 'invalid');
+    const r = await verifyExtract(forged, pinned);
+    assert.equal(r.valid, false);
+    // the hidden catalog is read, but the seal is not the registry's genuine one any more
+    assert.deepEqual(failed(r), ['registry seal']);
+    assert.match(
+      seal.detail,
+      /^the PDF has more than one seal, or a seal outside its signature field/,
+    );
+    assert.doesNotMatch(extractVerdict(r), /as the registry sealed it/);
+    // anything but one hex string in the space the seal leaves out fails, a single space too
+    const text = pdf.toString('latin1');
+    const [, coveredEnd] = /\/ByteRange\s*\[\s*(\d+)\s+(\d+)/
+      .exec(text)
+      .slice(1)
+      .map(Number);
+    const spaced = Buffer.from(pdf);
+    spaced[coveredEnd + 1] = ' '.charCodeAt(0);
+    assert.match(
+      checkPdfSeal(spaced, {fingerprint: pinned.seal}).detail,
+      /^the space left for the seal holds more than the seal/,
+    );
+  });
+
+  it('a proof attached twice is not valid, with exit code 1', async () => {
+    const {proof} = await anchoredExtract();
+    const {sealer, fingerprint} = await registrySeal();
+    const pdfDoc = await PDFDocument.create();
+    pdfDoc.addPage();
+    for (let i = 0; i < 2; i++) {
+      await pdfDoc.attach(
+        Buffer.from(`${JSON.stringify(proof, null, 2)}\n`),
+        'record-v1.proof.json',
+        {mimeType: 'application/json'},
+      );
+    }
+    const pdf = await sealPdf(pdfDoc, sealer, {
+      name: 'Land Titles Office',
+      reason: 'Ownership extract',
+      signingTime: new Date('2026-10-11T10:00:00Z'),
+    });
+    const r = await verifyExtract(pdf, {
+      address: 'addr_test1x',
+      seal: fingerprint,
+      fetchImpl: () => assert.fail('no blockchain call'),
+    });
+    assert.deepEqual(
+      [r.valid, failed(r), r.checks[0].detail],
+      [
+        false,
+        ['attached proof'],
+        'record-v1.proof.json is attached twice: it is not an extract as the registry issued it',
+      ],
+    );
+    const run = cli(pdf);
+    assert.equal(run.status, 1, run.stderr);
+    assert.match(
+      run.stdout,
+      /\nNOT VALID: attached proof: record-v1\.proof\.json is attached twice/,
+    );
   });
 });

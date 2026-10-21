@@ -61,7 +61,13 @@ export class ExtractsService {
    * @return {!Promise<{subject: string, sha256: string, validFrom: string, validTo: string}>}
    */
   async sealCertificate() {
-    if (!this.sealer) throw new AppError(503, NO_SEAL_MESSAGE);
+    // for the public: neutral, not the staff message about setting the seal up
+    if (!this.sealer) {
+      throw new AppError(
+        503,
+        'The registry’s seal certificate is not available now.',
+      );
+    }
     const der = Buffer.from(await this.sealer.certificate());
     const certificate = new X509Certificate(der);
     return {
