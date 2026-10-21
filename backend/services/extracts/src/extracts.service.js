@@ -1,4 +1,9 @@
-import {createHash, randomBytes, randomUUID} from 'node:crypto';
+import {
+  X509Certificate,
+  createHash,
+  randomBytes,
+  randomUUID,
+} from 'node:crypto';
 import {
   AppError,
   BadRequestError,
@@ -46,6 +51,29 @@ export class ExtractsService {
     this.settings = settings; // the site's texts on the PDF (settings.js)
     this.clock = clock;
     this.token = token;
+  }
+
+  /**
+   * The registry's seal certificate as anyone may compare it (API-694): its subject, its validity
+   * and `sha256`, the SHA-256 of the certificate (DER), lowercase hex. The offline verifier takes
+   * that fingerprint (--seal) and refuses an extract sealed with another certificate, also one with
+   * the same name. 503 when no seal is set up.
+   * @return {!Promise<{subject: string, sha256: string, validFrom: string, validTo: string}>}
+   */
+  async sealCertificate() {
+    if (!this.sealer) throw new AppError(503, NO_SEAL_MESSAGE);
+    const der = Buffer.from(await this.sealer.certificate());
+    const certificate = new X509Certificate(der);
+    return {
+      // one line, without the escapes Node puts before commas inside a value
+      subject: certificate.subject
+        .split('\n')
+        .map(part => part.replace(/\\(.)/g, '$1'))
+        .join(', '),
+      sha256: createHash('sha256').update(der).digest('hex'),
+      validFrom: new Date(certificate.validFrom).toISOString(),
+      validTo: new Date(certificate.validTo).toISOString(),
+    };
   }
 
   /** Run `fn` so its writes and the events it publishes are committed together (API-613). */

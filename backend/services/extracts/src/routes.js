@@ -104,7 +104,13 @@ export async function extractsRoutes(app, {service}) {
  * The public check of an extract (API-693), from its QR code: no sign-in, through the gateway's
  * rate-limited /api/public prefix. Every check is logged with its state and the extract's id only.
  */
-export async function publicRoutes(app, {check}) {
+export async function publicRoutes(app, {check, service}) {
+  // the registry's seal certificate, to compare an extract's seal with (API-694); a token is never
+  // "seal" (43 URL-safe characters), and this static path wins over the token's
+  app.get('/public/extracts/seal', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    return service.sealCertificate();
+  });
   app.get(
     '/public/extracts/:token',
     {

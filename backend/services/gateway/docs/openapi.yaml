@@ -4608,6 +4608,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
       security: []
+  /api/public/extracts/seal:
+    get:
+      tags:
+        - extracts · Public check
+      summary: The registry's seal certificate, to compare an extract's seal with
+      description: >-
+        `{ subject, sha256, validFrom, validTo }`: `sha256` is the SHA-256 of the seal certificate (DER), lowercase hex, the fingerprint the
+        offline verifier takes (`node lrfe-verify.mjs extract.pdf --address <wallet> --seal <sha256>`). An extract sealed with another
+        certificate, even one with the same name, is not valid. 503 when no seal is set up.
+
+
+        **Access:** Public: no token needed.
+      operationId: extracts_getPublicExtractsSeal
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
   /api/records:
     get:
       tags:

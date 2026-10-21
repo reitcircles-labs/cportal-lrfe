@@ -10,8 +10,9 @@
  *   node lrfe-verify.mjs proof.json --json                the result as JSON
  *   node lrfe-verify.mjs evidence-LR-….zip --address …     an evidence pack (or the folder it was unpacked
  *                                                         into): every file, seal, trail entry and proof
- *   node lrfe-verify.mjs extract.pdf --address …           an ownership extract: the proof attached inside
+ *   node lrfe-verify.mjs extract.pdf --address … --seal …  an ownership extract: the proof attached inside
  *                                                         it against the blockchain, and the registry's seal
+ *                                                         against its published certificate fingerprint
  *
  * One file, Node 18 or later, nothing to install. It checks that:
  *   1. the leaf is the item's seal (a land record or document version) or the trail checkpoint;
@@ -1128,8 +1129,10 @@ export async function verifyPack(
 
 /** The name of the proof attached inside an ownership extract's PDF: record-v<n>.proof.json. */
 const EXTRACT_PROOF_NAME = /^record-v(\d+)\.proof\.json$/;
-/** The most an attached file may inflate to: a proof is a few kilobytes. */
+/** The most all attached files together may inflate to: a proof is a few kilobytes. */
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+/** The most nodes of the attachments' name tree read: an extract has one. */
+const MAX_NAME_TREE_NODES = 1000;
 const PDF_DELIMITERS = '()<>[]{}/% \t\r\n\f\0';
 
 /**
@@ -1318,23 +1321,47 @@ export function pdfAttachments(bytes) {
     value && typeof value === 'object' && 'ref' in value
       ? read(value.ref).value
       : value;
+  // all attachments together within MAX_ATTACHMENT_BYTES: a small PDF cannot unpack into gigabytes
+  let budget = MAX_ATTACHMENT_BYTES;
   const decoded = ref => {
     const {value, stream} = read(ref?.ref);
     if (!stream) throw new Error('an attachment is not a stream');
     const filters = [deref(value.Filter) ?? []].flat();
-    if (filters.length === 0) return Buffer.from(stream);
-    if (
+    let file;
+    if (filters.length === 0) file = Buffer.from(stream);
+    else if (
       filters.length === 1 &&
       filters[0] === '/FlateDecode' &&
       value.DecodeParms === undefined
     ) {
-      return inflateSync(stream, {maxOutputLength: MAX_ATTACHMENT_BYTES});
+      try {
+        file = inflateSync(stream, {maxOutputLength: Math.max(budget, 1)});
+      } catch (err) {
+        if (err.code !== 'ERR_BUFFER_TOO_LARGE') throw err;
+        file = null;
+      }
+    } else {
+      throw new Error(`an attachment is stored as ${filters.join(' ')}`);
     }
-    throw new Error(`an attachment is stored as ${filters.join(' ')}`);
+    if (!file || file.length > budget) {
+      throw new Error('the attached files are larger than any extract holds');
+    }
+    budget -= file.length;
+    return file;
   };
   const files = new Map();
-  const walk = (node, depth) => {
-    if (!node || depth > 16) return;
+  // each node of the tree once: a /Kids that points back up would otherwise never end
+  const visited = new Set();
+  const walk = (entry, depth) => {
+    if (entry && typeof entry === 'object' && 'ref' in entry) {
+      if (visited.has(entry.ref)) return;
+      visited.add(entry.ref);
+    }
+    if (visited.size > MAX_NAME_TREE_NODES) {
+      throw new Error('the list of attached files is too large');
+    }
+    const node = deref(entry);
+    if (!node || typeof node !== 'object' || depth > 16) return;
     const names = deref(node.Names) ?? [];
     for (let i = 0; i + 1 < names.length; i += 2) {
       const spec = deref(names[i + 1]);
@@ -1344,10 +1371,10 @@ export function pdfAttachments(bytes) {
       if (files.has(name)) throw new Error(`${name} is attached twice`);
       files.set(name, decoded(embedded.F ?? embedded.UF));
     }
-    for (const kid of deref(node.Kids) ?? []) walk(deref(kid), depth + 1);
+    for (const kid of deref(node.Kids) ?? []) walk(kid, depth + 1);
   };
   const catalog = deref(trailer.Root);
-  walk(deref(deref(catalog?.Names)?.EmbeddedFiles), 0);
+  walk(deref(catalog?.Names)?.EmbeddedFiles, 0);
   return files;
 }
 
@@ -1418,15 +1445,24 @@ const SIGNATURE_ALGORITHMS = new Set([
   '1.2.840.113549.1.1.13',
 ]);
 
+/** A certificate fingerprint as typed or copied: hex, with or without colons or spaces, any case. */
+const fingerprintOf = text =>
+  String(text ?? '')
+    .replace(/[\s:]/g, '')
+    .toLowerCase();
+
 /**
  * The PDF's organisation seal checked as a PDF reader checks it: the signature's /ByteRange covers
  * the whole file but the signature itself, the digest of those bytes is the one signed, and the
  * signature over the signed attributes holds with the public key of the certificate in it (and
- * that certificate is the one the signature names). The certificate is not checked against a
- * trusted authority: its subject is given to compare with the registry's.
- * Returns { status: 'valid' | 'invalid' | 'none' | 'unchecked', detail, subject }.
+ * that certificate is the one the signature names). The certificate is not checked against an
+ * authority but pinned: with `fingerprint`, the SHA-256 of the registry's seal certificate (DER)
+ * as the registry publishes it (GET /api/public/extracts/seal), the certificate must be that one;
+ * a certificate made by anyone else, with the same name or not, fails.
+ * Returns { status: 'valid' | 'invalid' | 'none' | 'unchecked', detail, subject, sha256 }; only
+ * 'valid' vouches for the PDF ('unchecked': made in a way this checker cannot verify).
  */
-export function checkPdfSeal(bytes) {
+export function checkPdfSeal(bytes, {fingerprint} = {}) {
   const pdf = Buffer.from(bytes);
   const ranges = [
     ...pdf
@@ -1451,6 +1487,7 @@ export function checkPdfSeal(bytes) {
     };
   }
   let subject = null;
+  let sha256 = null;
   try {
     const hex = pdf
       .subarray(length, after)
@@ -1503,6 +1540,7 @@ export function checkPdfSeal(bytes) {
       .split('\n')
       .map(part => part.replace(/\\(.)/g, '$1'))
       .join(', ');
+    sha256 = createHash('sha256').update(certificateDer).digest('hex');
     if (
       !digestName ||
       !signedAttrs ||
@@ -1510,8 +1548,9 @@ export function checkPdfSeal(bytes) {
     ) {
       return {
         status: 'unchecked',
-        detail: `the seal is made in a way this checker does not read (algorithm ${signatureAlgorithm}); check it in a PDF reader`,
+        detail: `the seal is made in a way this checker cannot verify (${signedAttrs ? `algorithm ${signatureAlgorithm}` : 'no signed attributes'}), so it does not vouch for the PDF`,
         subject,
+        sha256,
       };
     }
     const attributes = new Map(
@@ -1564,6 +1603,7 @@ export function checkPdfSeal(bytes) {
         detail:
           'the seal does not match the file: the PDF was changed after it was sealed',
         subject,
+        sha256,
       };
     }
     if (!signatureHolds || !certificateNamed) {
@@ -1572,34 +1612,102 @@ export function checkPdfSeal(bytes) {
         detail:
           'the seal’s signature does not hold: it was not made with the key of its certificate',
         subject,
+        sha256,
+      };
+    }
+    if (fingerprint !== undefined && fingerprintOf(fingerprint) !== sha256) {
+      return {
+        status: 'invalid',
+        detail: `the seal was not made with the registry's certificate: its certificate (${subject}) has the fingerprint ${sha256}, not the registry's ${fingerprintOf(fingerprint)}`,
+        subject,
+        sha256,
       };
     }
     return {
       status: 'valid',
-      detail: `sealed by ${subject}; the whole file is as sealed`,
+      detail: `sealed with the registry's certificate (${subject}, fingerprint ${sha256.slice(0, 16)}…); the whole file is as sealed`,
       subject,
+      sha256,
     };
   } catch (err) {
     return {
       status: 'invalid',
       detail: `the seal cannot be read: ${err.message}`,
       subject,
+      sha256,
     };
   }
 }
 
 /**
+ * A check of verifyProof's as an extract's reader reads it: "blockchain", no network or source
+ * names, the registry's address rather than the anchoring wallet.
+ */
+function extractCheck(c, {proof, anchoring}) {
+  const tx = proof.anchor?.tx;
+  switch (c.name) {
+    case 'item':
+      return {
+        name: 'fingerprint',
+        ok: c.ok,
+        detail: c.ok
+          ? `the version's fingerprint ${String(proof.item.seal).slice(0, 16)}…`
+          : 'the proof’s fingerprint is not the one it proves',
+      };
+    case 'path to the root':
+      return {
+        name: 'in the batch',
+        ok: c.ok,
+        detail: c.ok
+          ? `the fingerprint is inside the batch's combined fingerprint (${proof.tree.size} items)`
+          : "the fingerprint is not inside the batch's combined fingerprint",
+      };
+    case 'transaction on chain':
+      return {
+        name: 'transaction on the blockchain',
+        ok: c.ok,
+        detail: c.ok
+          ? `transaction ${tx}, block ${anchoring.blockHeight}, ${anchoring.confirmations ?? '?'} confirmations`
+          : `transaction ${tx} is not on the blockchain`,
+      };
+    case 'root in the transaction':
+      return {
+        name: 'batch fingerprint in the transaction',
+        ok: c.ok,
+        detail: c.ok
+          ? `the transaction carries the batch's combined fingerprint (label ${LABEL})`
+          : `the transaction does not carry the batch's combined fingerprint (label ${LABEL})`,
+      };
+    case 'paid by the anchoring wallet':
+      return {
+        name: "sent from the registry's address",
+        ok: c.ok,
+        detail: c.detail,
+      };
+    default:
+      return c;
+  }
+}
+
+/**
  * Check an ownership extract's PDF (API-694): the proof attached inside it (record-v<n>.proof.json),
- * checked as a proof file is (verifyProof: the fingerprint's leaf, the path to the batch's root, the
- * transaction on the blockchain with that root under label 8890, sent from the anchoring wallet, or
- * the given `address`), its batch the one on the blockchain; and the registry's seal over the PDF.
- * Returns { valid, checks, notes, seal, batch, date, anchoring }; throws Unreachable when the
- * blockchain cannot be read, and an Error when the file cannot be read as a PDF.
+ * checked as a proof file is (verifyProof: the fingerprint's leaf, the path to the batch's combined
+ * fingerprint, the transaction on the blockchain carrying it under label 8890, sent from `address`,
+ * the registry's published address), its batch the one on the blockchain; and the registry's seal
+ * over the PDF, made with the certificate whose SHA-256 is `seal` (published by the registry).
+ * `address` and `seal` are required: without them nothing can be vouched for.
+ * Returns { valid, checks, notes, seal, batch, date, dateFrom, versionNumber, anchoring }; throws
+ * Unreachable when the blockchain cannot be read, and an Error when the file cannot be read as a PDF.
  */
 export async function verifyExtract(
   bytes,
-  {source = 'koios', key, address, fetchImpl = globalThis.fetch} = {},
+  {source = 'koios', key, address, seal, fetchImpl = globalThis.fetch} = {},
 ) {
+  if (!address || !seal) {
+    throw new TypeError(
+      "An extract is checked against the registry's published address and seal fingerprint: both are needed",
+    );
+  }
   const checks = [];
   const check = (name, ok, detail) => {
     checks.push({name, ok: !!ok, detail});
@@ -1608,8 +1716,9 @@ export async function verifyExtract(
   const notes = [
     'An offline check cannot show whether a newer version of the land record exists, or whether the registry has revoked this extract. Use the public check page for that: scan the QR code on the extract.',
   ];
-  const seal = checkPdfSeal(bytes);
+  const sealResult = checkPdfSeal(bytes, {fingerprint: seal});
   const files = pdfAttachments(bytes);
+  const unproven = {seal: sealResult, batch: null, date: null, dateFrom: null};
   const attached = [...files.keys()].filter(n => EXTRACT_PROOF_NAME.test(n));
   if (attached.length !== 1) {
     check(
@@ -1619,7 +1728,7 @@ export async function verifyExtract(
         ? 'the PDF has no proof attached (record-v<n>.proof.json): it is not an ownership extract as the registry issued it, or the proof was removed'
         : `more than one proof is attached: ${attached.join(', ')}`,
     );
-    return {valid: false, checks, notes, seal, batch: null, date: null};
+    return {valid: false, checks, notes, ...unproven};
   }
   const [name] = attached;
   const versionNumber = Number(EXTRACT_PROOF_NAME.exec(name)[1]);
@@ -1637,16 +1746,20 @@ export async function verifyExtract(
       !proof
         ? `${name} cannot be read`
         : item?.kind !== 'record-version'
-          ? `${name} is not the proof of a land record version (${item?.kind})`
+          ? `${name} is not the proof of a land record version`
           : item.version !== versionNumber
             ? `${name} is the proof of version ${item.version}`
             : `${name}: land record ${item.recordId}, version ${versionNumber}`,
     )
   ) {
-    return {valid: false, checks, notes, seal, batch: null, date: null};
+    return {valid: false, checks, notes, ...unproven};
   }
   const result = await verifyProof(proof, {source, key, address, fetchImpl});
-  checks.push(...result.checks);
+  checks.push(
+    ...result.checks.map(c =>
+      extractCheck(c, {proof, anchoring: result.anchoring}),
+    ),
+  );
   const md = result.anchoring?.metadata;
   if (md) {
     check(
@@ -1657,23 +1770,21 @@ export async function verifyExtract(
         : `the proof says batch ${proof.anchor.batch}, the blockchain batch ${md.batch}`,
     );
   }
-  // the seal is checked apart from the blockchain, and its outcome always shown
-  if (seal.status === 'unchecked') {
-    notes.push(`The registry's seal was not checked: ${seal.detail}.`);
-  } else {
-    check('registry seal', seal.status === 'valid', seal.detail);
-  }
+  // the seal is its own check, apart from the blockchain's: only a verified seal of the registry's
+  // certificate vouches for what the PDF shows
+  check('registry seal', sealResult.status === 'valid', sealResult.detail);
   notes.push(
-    "The fingerprint cannot be recomputed from the extract: the version's full data (with the owners' full ID numbers) is not in the PDF, on purpose. The registry's seal ties what the extract shows to its attached proof; compare the seal's name with the registry's.",
+    "The fingerprint cannot be recomputed from the extract: the version's full data (with the owners' full ID numbers) is not in the PDF, on purpose. The registry's seal ties what the extract shows to its attached proof.",
   );
-  notes.push(...(result.notes || []).filter(n => !n.startsWith('Which ')));
+  const blockTime = result.anchoring?.blockTime ?? null;
   return {
     valid: checks.every(c => c.ok),
     checks,
     notes,
-    seal,
+    seal: sealResult,
     batch: md ? Number(md.batch) : null,
-    date: result.anchoring?.blockTime ?? proof.anchor?.confirmedAt ?? null,
+    date: blockTime ?? proof.anchor?.confirmedAt ?? null,
+    dateFrom: blockTime ? 'blockchain' : 'proof',
     versionNumber,
     anchoring: result.anchoring,
   };
@@ -1682,14 +1793,20 @@ export async function verifyExtract(
 /** The verdict on an extract in plain words, for the command line. */
 export function extractVerdict(result) {
   if (result.valid) {
-    const date = result.date ? ` of ${result.date.slice(0, 10)}` : '';
+    let date = '';
+    if (result.date) {
+      date = ` of ${result.date.slice(0, 10)}`;
+      if (result.dateFrom !== 'blockchain') {
+        date += ' (the date as the attached proof gives it)';
+      }
+    }
     return `VALID: version ${result.versionNumber} of the land record is on the blockchain, in batch ${result.batch}${date}, sent from the registry's address, and the PDF is as the registry sealed it.`;
   }
   const failed = result.checks.filter(c => !c.ok);
   const reason = failed.map(c => `${c.name}: ${c.detail}`).join('; ');
   const sealOnly = failed.length === 1 && failed[0].name === 'registry seal';
   return sealOnly
-    ? `NOT VALID: ${reason}. The checks against the blockchain passed: the attached proof is genuine, but what the PDF shows may have been changed.`
+    ? `NOT VALID: ${reason}. The checks against the blockchain passed: the attached proof is genuine, but what the PDF shows is not vouched for by the registry.`
     : `NOT VALID: ${reason}.`;
 }
 
@@ -1709,10 +1826,11 @@ async function main(argv) {
   const source = flag('--source') || 'koios';
   const keyFile = flag('--key-file');
   const address = flag('--address');
+  const seal = flag('--seal');
   const file = args[0];
   if (!file || file === '--help' || file === '-h') {
     process.stdout.write(
-      'usage: node lrfe-verify.mjs <proof.json | evidence pack .zip or folder | extract .pdf> [--address <anchoring wallet>] [--source koios|blockfrost] [--key-file <file>] [--json]\n',
+      'usage: node lrfe-verify.mjs <proof.json | evidence pack .zip or folder | extract .pdf> [--address <anchoring wallet>] [--seal <seal fingerprint>, for an extract] [--source koios|blockfrost] [--key-file <file>] [--json]\n',
     );
     return file ? 0 : 2;
   }
@@ -1730,7 +1848,7 @@ async function main(argv) {
   }
   if (isPack) return checkPack(file, {source, key, address, json});
   if (file.toLowerCase().endsWith('.pdf')) {
-    return checkExtract(file, {source, key, address, json});
+    return checkExtract(file, {source, key, address, seal, json});
   }
   let proof;
   try {
@@ -1803,10 +1921,22 @@ async function checkPack(path, {source, key, address, json}) {
   return result.valid ? 0 : 1;
 }
 
-async function checkExtract(path, {source, key, address, json}) {
+async function checkExtract(path, {source, key, address, seal, json}) {
+  if (!address || !seal) {
+    process.stderr.write(
+      "usage: node lrfe-verify.mjs extract.pdf --address <the registry's address> --seal <the registry's seal fingerprint>\n" +
+        "Both are published by the registry (its public page, or GET /api/public/extracts/seal for the seal's fingerprint): an extract is checked against them, never against what the PDF says of itself.\n",
+    );
+    return 2;
+  }
   let result;
   try {
-    result = await verifyExtract(readFileSync(path), {source, key, address});
+    result = await verifyExtract(readFileSync(path), {
+      source,
+      key,
+      address,
+      seal,
+    });
   } catch (err) {
     if (err instanceof Unreachable) {
       process.stderr.write(

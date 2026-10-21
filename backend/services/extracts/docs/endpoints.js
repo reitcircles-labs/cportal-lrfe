@@ -33,6 +33,14 @@ export const ENDPOINTS = {
         "One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, recordNo, versionNumber, issuedAt, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt }`. `state`: `current` (the version's seal, held by land-records, is in a confirmed batch on the blockchain and the version is the record's current one), `replaced` (the same, but the record has a newer version: `replacedAt` is when the version after the extract's was committed), `revoked` (withdrawn on `revokedAt`; the reason is not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or `unavailable` (it cannot be checked right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners, their ID numbers or shares, or the parcel.",
       auth: 'public',
     },
+    'GET /public/extracts/seal': {
+      tag: 'Public check',
+      summary:
+        "The registry's seal certificate, to compare an extract's seal with",
+      description:
+        '`{ subject, sha256, validFrom, validTo }`: `sha256` is the SHA-256 of the seal certificate (DER), lowercase hex, the fingerprint the offline verifier takes (`node lrfe-verify.mjs extract.pdf --address <wallet> --seal <sha256>`). An extract sealed with another certificate, even one with the same name, is not valid. 503 when no seal is set up.',
+      auth: 'public',
+    },
     'GET /extracts/{id}/pdf': {
       tag: 'Extracts',
       summary: 'Download an extract again: its sealed PDF as issued',

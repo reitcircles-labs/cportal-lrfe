@@ -458,22 +458,28 @@ id and version it belongs to, from the proof and says so: recomputing the seal n
 data, which the evidence pack (§6) adds. For a trail entry everything is recomputed, and the chain
 must be exactly as long as from the entry to the checkpoint.
 
-**An ownership extract** (API-694): `node lrfe-verify.mjs extract.pdf --address <published wallet>`
-reads the proof attached inside the PDF (`record-v<n>.proof.json`) without a PDF library: the
-cross-reference table, the catalog's `/EmbeddedFiles` name tree and the file's stream, inflated with
-`node:zlib`. It checks that proof as a proof file is checked (the leaf from the seal, the path to the
-root, the transaction with label 8890, sent from the wallet), that the proof's batch is the one on
-chain, and the registry's seal: the `/ByteRange` covers the whole file but the signature, the
-CMS's message digest is that of those bytes, its signing-certificate-v2 names the certificate in it,
-and the signature over the signed attributes holds with that certificate's key (ECDSA or RSA with
-`node:crypto`; another algorithm is reported as not checked, never as a failure of the blockchain
-checks). It prints the certificate's subject to compare with the registry's; the certificate is not
-checked against an authority. The answer is VALID with the batch and the transaction's date (from
-the public source; the proof's `confirmedAt` when it gives none) or NOT VALID with the reason, and
-says when only the seal failed. The version's seal is not recomputed: its data holds the owners' full
-ID numbers, which the extract leaves out; the seal of the PDF ties the printed details to the proof.
-It always notes that an offline check cannot show a newer version or a revocation: the public check
-(the QR code) can. For banks and conveyancers: the user guide
+**An ownership extract** (API-694): `node lrfe-verify.mjs extract.pdf --address <published wallet>
+--seal <published seal fingerprint>`; both are required (exit 2 without them). The seal
+fingerprint is the SHA-256 of the registry's seal certificate (DER), lowercase hex (colons and
+capitals are accepted), published without a sign-in at `GET /api/public/extracts/seal` (extracts
+service). The verifier reads the proof attached inside the PDF (`record-v<n>.proof.json`) without a
+PDF library: the cross-reference table, the catalog's `/EmbeddedFiles` name tree (each node once,
+at most 1,000) and the file's stream, inflated with `node:zlib` (all attachments together at most
+10 MB). It checks that proof as a proof file is checked (the leaf from the seal, the path to the
+batch's combined fingerprint, the transaction with label 8890, sent from the given address), that
+the proof's batch is the one on chain, and the registry's seal: the `/ByteRange` covers the whole
+file but the signature, the CMS's message digest is that of those bytes, its signing-certificate-v2
+names the certificate in it, the signature over the signed attributes holds with that
+certificate's key (ECDSA or RSA with `node:crypto`), and the certificate's SHA-256 is the published
+fingerprint: a certificate made by anyone else, with the registry's name or not, fails. A seal it
+cannot verify (another algorithm, no signed attributes) fails too: only a verified seal of the
+registry's certificate vouches for the PDF. The answer is VALID with the batch and the
+transaction's date (from the public source; the proof's `confirmedAt`, said so, when it gives none)
+or NOT VALID with the reason, and says when only the seal failed. Its check lines say "blockchain"
+and name no network or source. The version's seal is not recomputed: its data holds the owners'
+full ID numbers, which the extract leaves out; the seal of the PDF ties the printed details to the
+proof. It always notes that an offline check cannot show a newer version or a revocation: the
+public check (the QR code) can. For banks and conveyancers: the user guide
 [Checking an ownership extract](../../../angular-app/docs/user-guide/checking-an-ownership-extract.md).
 Tested in `tests/extract-verify.test.js`, with PDFs made by the extracts service's own builder and
 test seal.

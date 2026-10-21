@@ -1,3 +1,4 @@
+import {X509Certificate, createHash} from 'node:crypto';
 import {expect} from 'chai';
 import {AppError} from '@lrfe/common';
 import {newToken} from '../src/extracts.service.js';
@@ -348,6 +349,24 @@ describe('the public check of an extract (API-693)', () => {
       (await ctx.app.inject({url: `/extracts?recordId=${record.id}`}))
         .statusCode,
     ).to.equal(401);
+  });
+
+  it("gives the registry's seal certificate fingerprint without a sign-in (API-694), and 503 without a seal", async () => {
+    const ctx = await makeExtracts();
+    const res = await ctx.app.inject({url: '/public/extracts/seal'});
+    expect(res.statusCode).to.equal(200);
+    const der = Buffer.from(await ctx.service.sealer.certificate());
+    expect(res.json()).to.deep.equal({
+      subject: 'CN=Land Titles Office (test seal, not valid)',
+      sha256: createHash('sha256').update(der).digest('hex'),
+      validFrom: new Date(new X509Certificate(der).validFrom).toISOString(),
+      validTo: new Date(new X509Certificate(der).validTo).toISOString(),
+    });
+    expect(res.headers['cache-control']).to.equal('no-store');
+    ctx.service.sealer = null;
+    expect(
+      (await ctx.app.inject({url: '/public/extracts/seal'})).statusCode,
+    ).to.equal(503);
   });
 
   describe('the audit service client', () => {

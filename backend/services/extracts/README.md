@@ -73,8 +73,8 @@ with the footer on each), as the design draft of API-690 lays it out:
   registry's legal advisers);
 - attached inside the file, `record-v<n>.proof.json`: the version's proof, byte for byte as the
   evidence pack holds it (`proofs/record-v<n>.json`), so the extract can be checked offline:
-  `node lrfe-verify.mjs extract.pdf --address <published wallet>` (the audit service's offline
-  verifier, API-694).
+  `node lrfe-verify.mjs extract.pdf --address <published wallet> --seal <seal fingerprint>` (the
+  audit service's offline verifier, API-694).
 
 The texts (`src/pdf/wording.js`) say "blockchain", never the network, and name no tool behind the
 portal. Characters the standard PDF fonts cannot print are written as the closest ones they can: a
@@ -96,6 +96,13 @@ CMS is built with pkijs. A `Sealer` (`src/seal/sealers.js`) signs the signed att
 | not set | Outside production: a test seal, a key made at start with a self-signed certificate "… (test seal, not valid)", for the tests, development and the e2e stack. With `NODE_ENV=production`: none, and issuing is refused ("the registry's electronic seal is not set up"). |
 
 The audit trail records the PDF's SHA-256 in the issued event.
+
+**The seal's fingerprint** (API-694): `GET /public/extracts/seal` (`/api/public/extracts/seal`
+through the gateway, no sign-in, rate-limited like the public check) answers `{ subject, sha256,
+validFrom, validTo }` of the seal certificate; `sha256` is the SHA-256 of the certificate (DER),
+lowercase hex, the fingerprint the offline verifier takes with `--seal`. 503 when no seal is set
+up. Replacing the seal certificate changes the fingerprint: extracts sealed before then are checked
+with the fingerprint of their time.
 
 ## Download again
 
