@@ -45,7 +45,8 @@ export async function recordsRoutes(app, {service}) {
   // the audit service: verifying a proof (API-658), reading a version's approver and documents for
   // a sign-off or finding (API-659), the evidence pack (API-660), the Audit screen's list (API-661)
   const canViewOrAudit = canViewOrService('audit');
-  // also the extracts service: the current version's owners, before an extract is issued (API-692)
+  // also the extracts service: the current version's owners, before an extract is issued (API-692),
+  // and when the version after an extract's was committed, for its public check (API-693)
   const canViewOrAuditOrExtracts = canViewOrService('audit', 'extracts');
 
   app.get('/records/catalogue', {onRequest: app.authenticate}, async () =>
@@ -544,7 +545,7 @@ export async function recordsRoutes(app, {service}) {
   );
   app.get(
     '/records/:id/versions/:n',
-    {onRequest: canViewOrAudit, schema: idParams(versionParam)},
+    {onRequest: canViewOrAuditOrExtracts, schema: idParams(versionParam)},
     async req => service.getVersion(req.params.id, req.params.n),
   );
   app.get(

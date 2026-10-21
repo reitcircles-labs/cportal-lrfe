@@ -104,6 +104,8 @@ async function publicRoutes(scope, {upstreams, rateLimit: limit}) {
       rewritePrefix: route.rewritePrefix,
       httpMethods: ['GET'],
       http2: false,
+      // the proxy's own lines name the upstream URL, token and all; the request logs (redacted) stay
+      disableRequestLogging: true,
       replyOptions: {rewriteRequestHeaders: dropCredentials},
     });
   }

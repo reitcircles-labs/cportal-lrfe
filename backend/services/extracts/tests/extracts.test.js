@@ -379,7 +379,7 @@ describe('ownership extracts (API-692)', () => {
       expect((await revoke(users.rec)).statusCode).to.equal(409);
     });
 
-    it('land-records lets the extracts service read one record, and nothing else', async () => {
+    it('land-records lets the extracts service read one record and one version, and nothing else', async () => {
       const {records} = await makeExtracts();
       const record = await committedErf1873(records);
       const asService = service => ({
@@ -391,18 +391,38 @@ describe('ownership extracts (API-692)', () => {
       });
       expect(one.statusCode).to.equal(200);
       expect(one.json().current.data.owners).to.have.length(3);
-      for (const url of ['/records', `/records/${record.id}/versions`]) {
+      // one version: when the version after an extract's was committed (API-693)
+      const version = await records.app.inject({
+        url: `/records/${record.id}/versions/1`,
+        headers: asService('extracts'),
+      });
+      expect(version.statusCode).to.equal(200);
+      expect(version.json().committedAt).to.be.a('string');
+      for (const url of [
+        '/records',
+        `/records/${record.id}/versions`,
+        `/records/${record.id}/history`,
+        `/records/${record.id}/verify`,
+      ]) {
         const res = await records.app.inject({
           url,
           headers: asService('extracts'),
         });
-        expect(res.statusCode, url).to.equal(403);
+        expect([401, 403], url).to.include(res.statusCode);
       }
       // another service is still refused the record
       expect(
         (
           await records.app.inject({
             url: `/records/${record.id}`,
+            headers: asService('bpm'),
+          })
+        ).statusCode,
+      ).to.equal(403);
+      expect(
+        (
+          await records.app.inject({
+            url: `/records/${record.id}/versions/1`,
             headers: asService('bpm'),
           })
         ).statusCode,

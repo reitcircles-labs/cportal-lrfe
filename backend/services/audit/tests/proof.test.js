@@ -502,6 +502,23 @@ describe('proofs and verification (API-658)', () => {
         .chain.problem,
       'the transaction is not on the chain',
     );
+    // the chain cannot be asked whether it is there: the check cannot be made now, not failed
+    a.driver.output = async () => {
+      throw new Error('ECONNREFUSED');
+    };
+    const unreachable = await a.proofs.verify(
+      'document-version',
+      a.doc('sg').id,
+      1,
+    );
+    assert.deepEqual(
+      [unreachable.valid, unreachable.checks.chain.ok],
+      [false, null],
+    );
+    assert.match(
+      unreachable.checks.chain.problem,
+      /the chain cannot be reached now/,
+    );
     a.driver.output = output;
     // a transaction that is not on the chain at all, read by the offline verifier
     const gone = clone(p);

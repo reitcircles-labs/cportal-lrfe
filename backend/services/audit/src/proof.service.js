@@ -398,10 +398,18 @@ export class ProofService {
       }
       if (md !== undefined) {
         if (md === null) {
-          const onChain = await this.cardano.status(a.tx).then(
-            x => x.onChain,
-            () => false,
-          );
+          let onChain;
+          try {
+            onChain = (await this.cardano.status(a.tx)).onChain;
+          } catch (err) {
+            // whether it is on the chain cannot be asked now: not a failed check
+            return {
+              ok: null,
+              source: this.cardano.provider,
+              tx: a.tx,
+              problem: `the chain cannot be reached now: ${err.message}`,
+            };
+          }
           return {
             ok: false,
             source: this.cardano.provider,

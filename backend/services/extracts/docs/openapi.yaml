@@ -238,10 +238,10 @@ paths:
         One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, recordNo, versionNumber,
         issuedAt, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt }`. `state`: `current` (the version's
         seal, held by land-records, is in a confirmed batch on the blockchain and the version is the record's current one), `replaced` (the
-        same, but the record has a newer version, its current one since `replacedAt`), `revoked` (withdrawn on `revokedAt`; the reason is
-        not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or `unavailable` (it cannot be checked
-        right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners, their ID numbers or shares, or the
-        parcel.
+        same, but the record has a newer version: `replacedAt` is when the version after the extract's was committed), `revoked` (withdrawn
+        on `revokedAt`; the reason is not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or
+        `unavailable` (it cannot be checked right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners,
+        their ID numbers or shares, or the parcel.
 
 
         **Access:** Public: no token needed.

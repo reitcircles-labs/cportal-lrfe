@@ -1839,7 +1839,7 @@ paths:
       tags:
         - Records
       summary: One version, with its data (core, attributes, pinned documents)
-      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`, `extracts`."
       operationId: getRecordsIdVersionsN
       parameters:
         - name: id
@@ -1892,6 +1892,7 @@ paths:
           - record.view
         services:
           - audit
+          - extracts
       x-gateway-path: /api/records/{id}/versions/{n}
   /records/{id}/verify:
     get:

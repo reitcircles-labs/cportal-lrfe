@@ -116,6 +116,37 @@ describe('the public check of an extract (API-693)', () => {
     expectNoPersonalData(raw);
   });
 
+  it('replaced: v1 with v3 current is replaced since v2 was committed', async () => {
+    const ctx = await makeExtracts();
+    const {record, extract} = await issued(ctx);
+    for (const n of [2, 3]) {
+      ctx.clock.advance(24 * 3_600_000);
+      ctx.records.clock.advance(24 * 3_600_000);
+      await ctx.records.service.openDraft(record.id, rec);
+      const data = erf1873Data();
+      if (n === 2) data.owners.reverse();
+      await commitVersion(ctx.records, record.id, n, data);
+    }
+    const v2 = await ctx.records.service.getVersion(record.id, 2);
+    const v3 = (await ctx.records.service.getRecord(record.id)).current;
+    expect(v3.versionNumber).to.equal(3);
+    expect(v3.committedAt).to.not.deep.equal(v2.committedAt);
+    const {body} = await checkOver(ctx.app, extract.token);
+    expect(body).to.include({state: 'replaced', versionNumber: 1});
+    expect(body.replacedAt).to.equal(new Date(v2.committedAt).toISOString());
+
+    // the next version cannot be read now: unavailable, not a guessed date
+    ctx.check.records = {
+      getRecord: ctx.check.records.getRecord,
+      async getVersion() {
+        throw new AppError(503, 'The land records cannot be reached');
+      },
+    };
+    expect((await checkOver(ctx.app, extract.token)).body.state).to.equal(
+      'unavailable',
+    );
+  });
+
   it('revoked: the date only, never the reason', async () => {
     const ctx = await makeExtracts();
     const {extract} = await issued(ctx);
@@ -252,7 +283,7 @@ describe('the public check of an extract (API-693)', () => {
     expect(body.state).to.equal('mismatch');
   });
 
-  it('logs every check with its state and the extract id only', async () => {
+  it('logs every check with its state and the extract id only, and never the token', async () => {
     const lines = [];
     const ctx = await makeExtracts();
     const {extract} = await issued(ctx);
@@ -277,6 +308,13 @@ describe('the public check of an extract (API-693)', () => {
       ['unknown', null, null],
     ]);
     for (const line of checks) expectNoPersonalData(JSON.stringify(line));
+    // the request logs show the path without the token: it is what lets anyone check the extract
+    const requests = lines.filter(l => l.req);
+    expect(requests.map(l => l.req.url)).to.deep.equal([
+      '/public/extracts/<token>',
+      '/public/extracts/<token>',
+    ]);
+    expect(JSON.stringify(lines)).to.not.include(extract.token);
   });
 
   it('exposes nothing else under /public: no search, no listing, no other method', async () => {

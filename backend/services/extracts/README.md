@@ -52,7 +52,7 @@ fields, null where they do not apply:
 | `state` | When | Also given |
 |---|---|---|
 | `current` | the version checked now matches and is the record's current one | `fingerprintEnd`, `batch`, `transactionId`, `explorerUrl` |
-| `replaced` | it matches, but the record has a newer version | the same, and `replacedAt`: when the current version was committed |
+| `replaced` | it matches, but the record has a newer version | the same, and `replacedAt`: when the version after the extract's was committed (for an extract of version 1 with version 3 current, version 2's date) |
 | `revoked` | the registry withdrew it | `revokedAt` (never the reason, which may name people) |
 | `mismatch` | a check failed: the version's data or seal no longer matches what is on the blockchain | |
 | `unknown` | no extract has this token (or it is not a token at all) | nothing: every other field null |
@@ -67,12 +67,17 @@ the audit service to check the version now (`POST /audit/anchoring/check`, with 
 token): the seal recomputed by land-records from the version's data equals the seal in the audit
 tree, the path to the anchored root holds, and the root is in the transaction on the blockchain. It
 answers `current` or `replaced` only when all of that holds and the batch is confirmed, and the
-current version's seal in land-records is the one checked. A check that fails is `mismatch`; one
-that cannot be made now is `unavailable`, never `current`.
+current version's seal in land-records is the one checked. For `replaced` it also reads the version
+after the extract's (`GET /records/:id/versions/:n`, which land-records lets the extracts service
+read, like the record itself) for its commit date. A check that fails is `mismatch`; one that
+cannot be made now (a part cannot be read, the blockchain cannot be reached) is `unavailable`,
+never `current`.
 
 Each check is logged (`extract checked`) with its state and the extract's id, and for
 `unavailable` or `mismatch` which part was the cause (`register`, `land-records`, `audit`); never
-personal data. There is no search: the token is the only way in.
+personal data. The request logs, here and in the gateway, show the path with `<token>` in place of
+the token, and the gateway's proxy lines for the public route are off: whoever holds the token can
+check the extract. There is no search: the token is the only way in.
 
 ## Events
 

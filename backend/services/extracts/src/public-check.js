@@ -8,7 +8,7 @@ const FINGERPRINT_SHOWN = 8;
  * The public check of an ownership extract (API-693): anyone holding an extract scans its QR code
  * and is told one state:
  *   current       it matches the registry's record, the version is on the blockchain, still current
- *   replaced      it matches, but the record has a newer version since `replacedAt`
+ *   replaced      it matches, but the record has a newer version: the next one since `replacedAt`
  *   revoked       the registry withdrew it on `revokedAt`
  *   mismatch      it does not match the registry's record (a check failed)
  *   unknown       there is no such extract
@@ -89,10 +89,21 @@ export class ExtractCheck {
     if (current.versionNumber < extract.versionNumber) {
       return this.mismatch(extract, 'land-records');
     }
+    // replaced when the version after it was committed, however many came since
+    let next;
+    try {
+      next = await this.records.getVersion(
+        extract.recordId,
+        extract.versionNumber + 1,
+      );
+    } catch {
+      return this.unavailable(extract, 'land-records');
+    }
+    if (!next?.committedAt) return this.mismatch(extract, 'land-records');
     return {
       answer: this.answer('replaced', extract, {
         ...verifiedFacts,
-        replacedAt: current.committedAt ?? null,
+        replacedAt: next.committedAt,
       }),
       reason: null,
     };

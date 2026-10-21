@@ -284,6 +284,39 @@ describe('gateway', () => {
       }
     });
 
+    it('logs the public path without the token', async () => {
+      const lines = [];
+      const url = `http://127.0.0.1:${upstream.server.address().port}`;
+      const logged = await buildApp({
+        upstreams: Object.fromEntries(
+          [
+            'identity',
+            'edrms',
+            'bpm',
+            'intake',
+            'land-records',
+            'audit',
+            'extracts',
+          ].map(name => [name, url]),
+        ),
+        logger: {
+          level: 'info',
+          stream: {write: line => lines.push(JSON.parse(line))},
+        },
+      });
+      await logged.ready();
+      const token = 'Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5';
+      const res = await logged.inject({url: `/api/public/extracts/${token}`});
+      expect(res.statusCode).to.equal(200);
+      await logged.inject({url: '/api/records?q=1873'});
+      await logged.close();
+      expect(lines.filter(l => l.req).map(l => l.req.url)).to.deep.equal([
+        '/api/public/extracts/<token>',
+        '/api/records?q=1873',
+      ]);
+      expect(JSON.stringify(lines)).to.not.include(token);
+    });
+
     it('rate-limits each client address: a low burst, then 429 with a neutral message', async () => {
       for (let i = 0; i < 3; i++) {
         expect((await from('203.0.113.7')).statusCode).to.equal(200);

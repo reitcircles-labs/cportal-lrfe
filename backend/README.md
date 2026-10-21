@@ -134,6 +134,8 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
   to the extracts service without the caller's `Authorization` or cookies, and rate-limited per
   client address (`PUBLIC_RATE_LIMIT_MAX` requests per `PUBLIC_RATE_LIMIT_WINDOW_MS`, by default
   10 a minute; the count is kept in memory, per gateway instance). Anything else under it is 404.
+  Request logs show its path with `<token>` in place of the token (`createBaseApp` in
+  `@lrfe/common` does this for every service given a `logger`).
 - **Every service verifies the JWT and checks permissions itself** (`app.authenticate`,
   `app.requirePerm(...)` from `@lrfe/common`), with the shared `JWT_SECRET`. The frontend's
   route guards are only for display. Guards are registered as `onRequest` hooks, so an
