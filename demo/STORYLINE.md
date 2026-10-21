@@ -1,4 +1,4 @@
-# Demo storyline (API-720)
+# Demo storyline (API-720; demo v2, API-777)
 
 The script for whoever gives the demo: who to sign in as, what to click, what to say, and what the audience should
 see, from the scanned deeds to two committed land records and their audit. Keep it open next to the portal.
@@ -8,7 +8,9 @@ It follows the demo documents ([`documents/`](documents/README.md)): two propert
 optional steps add 10.
 
 Checked step by step in the browser on 16 October 2026 (version 0.1.0-95320f9, real AI): on a rehearsal install, and
-then on the demo install itself with anchoring on (preview blockchain), including the auditor's sign-off.
+then on the demo install itself with anchoring on (preview blockchain), including the auditor's sign-off. Checked again
+for demo v2 on 21 October 2026 (version 0.1.0-668e5d8, real AI), on a rehearsal install with anchoring off: Acts 1 to
+5.14.
 
 ## Before you start
 
@@ -164,7 +166,8 @@ out the owners and the chain of title from the deeds; the officer decides."
 
 | # | Do | They see |
 |---|---|---|
-| 3.1 | **New record**, **Find a filed document**: type **T 2876/2014**, pick it, **Create record** | "Erf 2417, Olympia created": **LR-NA-2026-000001 · Draft version 1**, registration division K, T 2876/2014 linked. The parcel was read from the deed |
+| 3.1 | **New record**, **Find a filed document**: type **T 2876/2014**, pick it, **Next: check the parcel** | **Step 2 of 2 · Parcel**: "The document says … “ERF NO. 2417 OLYMPIA” · Registration division K", and the parcel filled in from it: Erf, 2417, Olympia, K. Under **Other documents for this property**: "All 6 match", each with what it says the property is |
+| | **Create record** | "Erf 2417, Olympia created": **LR-NA-2026-000001 · Draft version 1**, registration division K, T 2876/2014 linked |
 | 3.2 | Look at **Add documents from the EDRMS**, **Matching this parcel** | The other five documents, each with why it matches: "SG diagram cited by T 2876/2014", "Cites T 2876/2014 as prior title" (the bond), and so on |
 | 3.3 | **+ Add** on each of them | "… added to Erf 2417, Olympia" each time; **Documents 6** |
 | 3.4 | **Registered owners** (on the right, or below the tab on a laptop screen: scroll down): "From the documents: SIMON HAUFIKU 1/2, FRIEDA HAUFIKU 1/2". Click **Use these owners** | "Owners taken from the documents": both owners with ID number, share and "Under T 2876/2014". Frieda's ID is the corrected 81071100562 |
@@ -173,6 +176,9 @@ out the owners and the chain of title from the deeds; the officer decides."
 | 3.7 | **Chain of title** tab | 1991 Deed of grant G 64/1991: Government → Municipal Council of Windhoek; 1998 T 3120/1998: Municipal Council → Andreas Kambonde; 2014 T 2876/2014: Andreas Kambonde → Simon and Frieda Haufiku, "held under T 3120/1998" |
 | 3.8 | **Record checks** (under **Registered owners**) | **5 / 5 required**: Shares add up to 1 · Chain of title (G 64/1991 → T 3120/1998 → T 2876/2014) · Extent matches the SG diagram (A 318/1989) · ID numbers · Documents describe this parcel. Also ✓ Documents are current, Values from the documents |
 | 3.9 | **Submit for review**, then **Submit for review** in the box | "Erf 2417, Olympia submitted for review": status **In review**, "Waiting for approval by a second person". Nothing can be changed now |
+
+*Say, at 3.1:* "The parcel is read from the deed and compared with every other filed document for it, before the
+record exists. Had the AI misread the erf or the township, it would show here, and the officer corrects it."
 
 *Say, at the checks:* "These checks must all pass before the record can go for approval: every share adds up, every
 seller was the previous owner, the area matches the survey, every ID number is valid. A misread name or a wrong ID
@@ -185,7 +191,7 @@ property is mortgaged, and to whom."
 
 | # | Do | They see |
 |---|---|---|
-| 3.10 | **New record** from **T 5530/2021**; **+ Add** the three matching documents (T 1659/1987, A 1127/1972, the rates clearance) | Erf 815, Ludwigsdorf, 4 linked documents |
+| 3.10 | **New record** from **T 5530/2021**, **Next: check the parcel** ("All 4 match"), **Create record**; **+ Add** the three matching documents (T 1659/1987, A 1127/1972, the rates clearance) | Erf 815, Ludwigsdorf, 4 linked documents |
 | 3.11 | **Use these owners** | HELENA NDAPANDULA SHIPANGA 1/2, JOHANNES TUHAFENI SHIPANGA 1/2: the late father's erf passed to his two children |
 | 3.12 | **Details**: **Use 1 487 m² from the documents**, Tenure Freehold, **Save details**. **Chain of title** | T 1659/1987: Hendrik Johannes Visagie → Petrus Nangolo Shipanga; T 5530/2021: Estate Late Petrus Nangolo Shipanga → the two children |
 | 3.13 | **5 / 5 required**, **Submit for review** twice | Submitted for review |
