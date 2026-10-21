@@ -129,6 +129,11 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
 
 - The browser only talks to the **gateway** (`/api/...`). The gateway strips the prefix and
   proxies; it does **not** check tokens.
+- **`/api/public/...`** is the only part meant for anyone without a sign-in: today only
+  `GET /api/public/extracts/:token` (the public check of an ownership extract, API-693), forwarded
+  to the extracts service without the caller's `Authorization` or cookies, and rate-limited per
+  client address (`PUBLIC_RATE_LIMIT_MAX` requests per `PUBLIC_RATE_LIMIT_WINDOW_MS`, by default
+  10 a minute; the count is kept in memory, per gateway instance). Anything else under it is 404.
 - **Every service verifies the JWT and checks permissions itself** (`app.authenticate`,
   `app.requirePerm(...)` from `@lrfe/common`), with the shared `JWT_SECRET`. The frontend's
   route guards are only for display. Guards are registered as `onRequest` hooks, so an

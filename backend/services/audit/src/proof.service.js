@@ -282,6 +282,31 @@ export class ProofService {
     };
   }
 
+  /**
+   * A land record version checked now, as verify() checks it, in the few facts the public check of
+   * an ownership extract needs (API-693): whether it is valid, each check's `ok`, the seal and the
+   * anchoring. Never the proof itself.
+   */
+  async versionCheck(recordId, version) {
+    const v = await this.verify('record-version', recordId, version);
+    const anchor = v.proof.anchor;
+    return {
+      valid: v.valid,
+      status: v.status,
+      checks: {
+        item: v.checks.item?.ok ?? null,
+        path: v.checks.path?.ok ?? null,
+        chain: v.checks.chain?.ok ?? null,
+      },
+      seal: v.proof.item.seal,
+      batch: anchor?.batch ?? null,
+      tx: anchor?.tx ?? null,
+      confirmedAt: anchor?.confirmedAt ?? null,
+      explorerUrl: v.explorerUrl,
+      checkedAt: v.checkedAt,
+    };
+  }
+
   async checkItem(p) {
     if (p.item.kind === 'trail-entry') {
       const e = p.trail.entry;

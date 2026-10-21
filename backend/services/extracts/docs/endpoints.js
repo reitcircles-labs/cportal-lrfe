@@ -7,6 +7,8 @@ export const ENDPOINTS = {
     "Ownership extracts: the register of extracts issued for an owner on a land record's current approved version once it is on the blockchain, each valid or revoked. Design: services/extracts/README.md.",
   tags: {
     Extracts: 'The register of ownership extracts.',
+    'Public check':
+      "Checking an extract from its QR code, with no sign-in (through the gateway's rate-limited /api/public).",
     Service: 'Health and metadata.',
   },
   routes: {
@@ -23,6 +25,13 @@ export const ENDPOINTS = {
       summary: 'The extracts of a land record, newest first',
       description:
         "`{ items }`: the register rows of `recordId`, valid and revoked (`revokedAt`, `revokedByName`, `revokeReason`), each with `isCurrentVersion`: its version is still the record's current one.",
+    },
+    'GET /public/extracts/{token}': {
+      tag: 'Public check',
+      summary: 'Check an extract by its token, from its QR code',
+      description:
+        "One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, recordNo, versionNumber, issuedAt, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt }`. `state`: `current` (the version's seal, held by land-records, is in a confirmed batch on the blockchain and the version is the record's current one), `replaced` (the same, but the record has a newer version, its current one since `replacedAt`), `revoked` (withdrawn on `revokedAt`; the reason is not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or `unavailable` (it cannot be checked right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners, their ID numbers or shares, or the parcel.",
+      auth: 'public',
     },
     'POST /extracts/{id}/revoke': {
       tag: 'Extracts',

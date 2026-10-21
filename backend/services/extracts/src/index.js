@@ -15,7 +15,9 @@ import {
 } from '@lrfe/common';
 import {buildApp} from './app.js';
 import {ExtractsService} from './extracts.service.js';
+import {ExtractCheck} from './public-check.js';
 import {createRecordsClient} from './records-client.js';
+import {createVersionCheckClient} from './version-check-client.js';
 import {createMemoryRepo} from './repo/memory.js';
 import {createSequelizeRepo} from './repo/sequelize.js';
 import {SCHEMA} from './repo/models.js';
@@ -69,9 +71,22 @@ const anchoring = createAnchoringClient({
   }),
 });
 const service = new ExtractsService({repo, events, records, anchoring});
+// the public check: the version checked now by the audit service (seal, tree, blockchain)
+const check = new ExtractCheck({
+  repo,
+  records,
+  versions: createVersionCheckClient({
+    baseUrl: env('AUDIT_URL', 'http://localhost:3506'),
+    serviceToken: createServiceTokenSigner({
+      secret: jwtSecret,
+      service: 'extracts',
+    }),
+  }),
+});
 
 const app = await buildApp({
   service,
+  check,
   jwtSecret,
   revocations: createRevocationList({events}),
   logger: {level: env('LOG_LEVEL', 'info')},

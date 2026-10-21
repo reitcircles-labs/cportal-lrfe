@@ -144,6 +144,27 @@ export async function auditRoutes(
     async req => ({items: await proofs.statusOf(req.body.keys)}),
   );
 
+  // a land record version checked now (seal, path, blockchain) for the public check of an ownership
+  // extract (API-693): the extracts service only
+  app.post(
+    '/audit/anchoring/check',
+    {
+      onRequest: app.requireService('extracts'),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['recordId', 'version'],
+          additionalProperties: false,
+          properties: {
+            recordId: {type: 'string', format: 'uuid'},
+            version: item.version,
+          },
+        },
+      },
+    },
+    async req => proofs.versionCheck(req.body.recordId, req.body.version),
+  );
+
   // ------------------------------------------------ anchorings (API-671): every signed-in user
   const canSeeAnchorings = app.requirePerm('anchors.view');
 

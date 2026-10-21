@@ -417,6 +417,11 @@ now, three checks, each with `ok` and, when it fails, a `problem`:
 owning service or the chain cannot be reached, that check's `ok` is null and `valid` false, and its
 `problem` says why; verify is a check, not a cached result.
 
+The public check of an ownership extract (extracts service, API-693) asks the same of one land
+record version with its service token: `POST /audit/anchoring/check { recordId, version }` answers
+`valid`, `status`, each check's `ok` (true, false, or null when it cannot be made now), the seal and
+the anchoring (`batch`, `tx`, `confirmedAt`, `explorerUrl`), never the proof.
+
 **The offline verifier** (`verifier/lrfe-verify.mjs`) checks a proof file with no access to the
 portal: one file, Node 18 or later, nothing to install. It recomputes the leaf (for a trail entry,
 the entry's hashes and the chain to the checkpoint), the path to the root, and reads the

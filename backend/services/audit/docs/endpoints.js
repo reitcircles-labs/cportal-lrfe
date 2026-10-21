@@ -50,6 +50,13 @@ export const ENDPOINTS = {
       description:
         'Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx, network, confirmedAt } | null } }`; null when the version is not in the tree.',
     },
+    'POST /audit/anchoring/check': {
+      tag: 'Proofs',
+      summary:
+        'Check a land record version now, for the public check of an ownership extract (extracts)',
+      description:
+        'Body `{ recordId, version }`. The version checked as `POST /audit/verify` checks it, without the proof: `{ valid, status, checks: { item, path, chain }, seal, batch, tx, confirmedAt, explorerUrl, checkedAt }`; each check true, false or null (could not be made now). 404 when the version is not in the tree.',
+    },
     'GET /audit/records': {
       tag: 'Sign-off',
       summary: 'The land records list of the Audit screen',

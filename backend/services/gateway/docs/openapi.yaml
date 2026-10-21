@@ -67,6 +67,8 @@ tags:
     description: "Evidence packs: a land record with everything needed to check it outside the portal."
   - name: extracts · Extracts
     description: The register of ownership extracts.
+  - name: extracts · Public check
+    description: Checking an extract from its QR code, with no sign-in (through the gateway's rate-limited /api/public).
   - name: gateway
     description: The gateway itself.
 paths:
@@ -195,6 +197,65 @@ paths:
         services:
           - land-records
           - edrms
+          - extracts
+  /api/audit/anchoring/check:
+    post:
+      tags:
+        - audit · Proofs
+      summary: Check a land record version now, for the public check of an ownership extract (extracts)
+      description: >-
+        Body `{ recordId, version }`. The version checked as `POST /audit/verify` checks it, without the proof: `{ valid, status, checks: {
+        item, path, chain }, seal, batch, tx, confirmedAt, explorerUrl, checkedAt }`; each check true, false or null (could not be made
+        now). 404 when the version is not in the tree.
+
+
+        **Access:** Service token only, from: `extracts`. Browsers cannot call this.
+      operationId: audit_postAuditAnchoringCheck
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recordId
+                - version
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                version:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
           - extracts
   /api/audit/anchoring/health:
     get:
@@ -4389,6 +4450,48 @@ paths:
       security:
         - bearerAuth: []
         - serviceToken: []
+  /api/public/extracts/{token}:
+    get:
+      tags:
+        - extracts · Public check
+      summary: Check an extract by its token, from its QR code
+      description: >-
+        One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, recordNo, versionNumber,
+        issuedAt, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt }`. `state`: `current` (the version's
+        seal, held by land-records, is in a confirmed batch on the blockchain and the version is the record's current one), `replaced` (the
+        same, but the record has a newer version, its current one since `replacedAt`), `revoked` (withdrawn on `revokedAt`; the reason is
+        not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or `unavailable` (it cannot be checked
+        right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners, their ID numbers or shares, or the
+        parcel.
+
+
+        **Access:** Public: no token needed.
+      operationId: extracts_getPublicExtractsToken
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security: []
   /api/records:
     get:
       tags:

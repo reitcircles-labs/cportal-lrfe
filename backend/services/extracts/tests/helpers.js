@@ -1,5 +1,6 @@
 import {createEventBus, createServiceTokenSigner} from '@lrfe/common';
 import {ExtractsService} from '../src/extracts.service.js';
+import {ExtractCheck} from '../src/public-check.js';
 import {createRecordsClient} from '../src/records-client.js';
 import {createMemoryRepo} from '../src/repo/memory.js';
 import {buildApp} from '../src/app.js';
@@ -57,10 +58,47 @@ export function fakeAnchoring() {
   };
 }
 
+/** The transaction id the fake audit check names. */
+export const TX = 'ab'.repeat(32);
+
+/**
+ * The audit service's check of a land record version as the public check reads it: every version
+ * valid, its seal the one land-records holds (from `records`), confirmed in batch 7; with
+ * `result[key]` (key `<recordId>:<n>`) that answer instead; with `down`, no answer (the client's
+ * null when the audit service cannot be reached).
+ */
+export function fakeVersionCheck(records) {
+  const result = {};
+  return {
+    result,
+    down: false,
+    calls: 0,
+    async checkVersion(recordId, versionNumber) {
+      this.calls += 1;
+      if (this.down) return null;
+      const key = `${recordId}:${versionNumber}`;
+      if (key in result) return result[key];
+      const version = await records.repo.getVersion(recordId, versionNumber);
+      return {
+        valid: true,
+        status: 'confirmed',
+        checks: {item: true, path: true, chain: true},
+        seal: version.seal,
+        batch: 7,
+        tx: TX,
+        confirmedAt: '2026-10-21T07:00:00.000Z',
+        explorerUrl: `https://preview.cexplorer.io/tx/${TX}`,
+        checkedAt: '2026-10-21T08:00:00.000Z',
+      };
+    },
+  };
+}
+
 /**
  * The extracts service behind its HTTP app, reading a real in-process land-records app (its routes,
  * its guard on the extracts service token) over app.inject, and the audit service's anchoring
- * status from fakeAnchoring. `records` is that land-records context: `service`, `repo`, `clock`,
+ * status from fakeAnchoring; the public check (`check`) reads the audit service's version check from
+ * fakeVersionCheck (`versions`). `records` is that land-records context: `service`, `repo`, `clock`,
  * for making records and committing versions.
  */
 export async function makeExtracts() {
@@ -94,12 +132,30 @@ export async function makeExtracts() {
       fetchImpl,
     }),
   });
-  const app = await buildApp({service, jwtSecret: SECRET});
+  const versions = fakeVersionCheck(records);
+  const check = new ExtractCheck({
+    repo,
+    records: service.records,
+    versions,
+    clock,
+  });
+  const app = await buildApp({service, check, jwtSecret: SECRET});
   await app.ready();
   const as = u => ({
     authorization: `Bearer ${app.jwt.sign({typ: 'access', sub: u.id, name: u.name, perms: u.perms})}`,
   });
-  return {records, repo, service, published, clock, anchoring, app, as};
+  return {
+    records,
+    repo,
+    service,
+    published,
+    clock,
+    anchoring,
+    versions,
+    check,
+    app,
+    as,
+  };
 }
 
 /** Erf 1873 with version 1 committed: three owners (README.md of land-records, section 2). */

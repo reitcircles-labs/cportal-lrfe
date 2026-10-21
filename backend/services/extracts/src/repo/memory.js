@@ -20,6 +20,11 @@ export function createMemoryRepo() {
     async getExtract(id) {
       return clone(extracts.get(id)) ?? null;
     },
+    /** The extract with this token (the public check), or null. */
+    async getExtractByToken(token) {
+      const found = [...extracts.values()].find(e => e.token === token);
+      return clone(found) ?? null;
+    },
     /** The extracts of a land record, newest first. */
     async listExtracts(recordId) {
       return [...extracts.values()]

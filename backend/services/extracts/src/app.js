@@ -1,9 +1,13 @@
 import {createBaseApp, authPlugin} from '@lrfe/common';
-import {extractsRoutes} from './routes.js';
+import {extractsRoutes, publicRoutes} from './routes.js';
 
-/** The extracts service: its HTTP app with authentication and the extracts routes. */
+/**
+ * The extracts service: its HTTP app with authentication, the extracts routes and the public
+ * check of an extract (`check`, an ExtractCheck).
+ */
 export async function buildApp({
   service,
+  check,
   jwtSecret,
   revocations,
   ...fastifyOptions
@@ -15,5 +19,6 @@ export async function buildApp({
   });
   await app.register(authPlugin, {secret: jwtSecret, revocations});
   await app.register(extractsRoutes, {service});
+  await app.register(publicRoutes, {check});
   return app;
 }

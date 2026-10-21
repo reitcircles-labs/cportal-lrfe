@@ -809,6 +809,62 @@ describe('proofs and verification (API-658)', () => {
     );
   });
 
+  it('the check for the public check of an extract (API-693): the extracts service only, the facts and never the proof', async () => {
+    const a = await anchoredRegister();
+    await a.runUntil(x => x.action === 'confirmed');
+    const [anchor] = a.repo.anchors;
+    const check = headers =>
+      a.auditApp.inject({
+        method: 'POST',
+        url: '/audit/anchoring/check',
+        headers,
+        payload: {recordId: a.record.id, version: 1},
+      });
+    const asBearer = service => ({
+      authorization: `Bearer ${asService(service)()}`,
+    });
+    const res = await check(asBearer('extracts'));
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.deepEqual(Object.keys(body).sort(), [
+      'batch',
+      'checkedAt',
+      'checks',
+      'confirmedAt',
+      'explorerUrl',
+      'seal',
+      'status',
+      'tx',
+      'valid',
+    ]);
+    assert.deepEqual(
+      [body.valid, body.status, body.seal, body.batch, body.tx],
+      [true, 'confirmed', a.record.current.seal, anchor.batch, anchor.txHash],
+    );
+    assert.deepEqual(body.checks, {item: true, path: true, chain: true});
+    assert.ok(body.explorerUrl.endsWith(anchor.txHash));
+    for (const service of ['land-records', 'bpm']) {
+      assert.equal((await check(asBearer(service))).statusCode, 403, service);
+    }
+    const auditor = {
+      authorization: `Bearer ${a.auditApp.jwt.sign({typ: 'access', sub: 'u9', name: 'Auditor', perms: ['audit.view']})}`,
+    };
+    assert.equal((await check(auditor)).statusCode, 401);
+    assert.equal((await check({})).statusCode, 401);
+
+    // land-records cannot recompute the seal now: that check is null, not false
+    a.proofs.sources = {
+      recordVersion: async () => {
+        throw new AppError(503, 'The land records service cannot be reached');
+      },
+    };
+    const down = (await check(asBearer('extracts'))).json();
+    assert.deepEqual(
+      [down.valid, down.checks],
+      [false, {item: null, path: true, chain: true}],
+    );
+  });
+
   it("the offline verifier's tree arithmetic agrees with the service's for every leaf of trees up to 70 leaves", async () => {
     const repo = createMemoryRepo();
     const tree = new TreeService({repo, logger: quiet});

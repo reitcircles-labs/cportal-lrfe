@@ -335,11 +335,14 @@ function addOp(paths, path, method, op) {
   (paths[path] ||= {})[method.toLowerCase()] = op;
 }
 
-const {ROUTES} = await load(join(ROOT, 'services', 'gateway', 'src', 'app.js'));
+const {ROUTES, PUBLIC_ROUTES} = await load(
+  join(ROOT, 'services', 'gateway', 'src', 'app.js'),
+);
+const GATEWAY_ROUTES = [...ROUTES, ...PUBLIC_ROUTES];
 
 /** The /api/... path a service route has through the gateway, or null when it is not exposed. */
 function gatewayPath(service, url) {
-  const match = ROUTES.filter(
+  const match = GATEWAY_ROUTES.filter(
     r =>
       r.service === service &&
       (r.rewritePrefix === '' ||

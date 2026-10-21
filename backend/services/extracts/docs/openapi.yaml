@@ -17,6 +17,8 @@ servers:
 tags:
   - name: Extracts
     description: The register of ownership extracts.
+  - name: Public check
+    description: Checking an extract from its QR code, with no sign-in (through the gateway's rate-limited /api/public).
   - name: Service
     description: Health and metadata.
 paths:
@@ -227,6 +229,49 @@ paths:
         allOf:
           - extract.issue
       x-gateway-path: /api/extracts/{id}/revoke
+  /public/extracts/{token}:
+    get:
+      tags:
+        - Public check
+      summary: Check an extract by its token, from its QR code
+      description: >-
+        One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, recordNo, versionNumber,
+        issuedAt, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt }`. `state`: `current` (the version's
+        seal, held by land-records, is in a confirmed batch on the blockchain and the version is the record's current one), `replaced` (the
+        same, but the record has a newer version, its current one since `replacedAt`), `revoked` (withdrawn on `revokedAt`; the reason is
+        not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or `unavailable` (it cannot be checked
+        right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners, their ID numbers or shares, or the
+        parcel.
+
+
+        **Access:** Public: no token needed.
+      operationId: getPublicExtractsToken
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security: []
+      x-gateway-path: /api/public/extracts/{token}
 components:
   securitySchemes:
     bearerAuth:

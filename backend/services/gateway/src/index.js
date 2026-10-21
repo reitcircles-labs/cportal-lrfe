@@ -1,5 +1,5 @@
 import {env, envInt, envList, startService} from '@lrfe/common';
-import {buildApp} from './app.js';
+import {PUBLIC_RATE_LIMIT, buildApp} from './app.js';
 
 const app = await buildApp({
   upstreams: {
@@ -12,6 +12,14 @@ const app = await buildApp({
     extracts: env('EXTRACTS_URL', 'http://localhost:3507'),
   },
   corsOrigins: envList('CORS_ORIGINS', 'http://localhost:4200'),
+  // the public check of an extract: requests per client address per window (API-693)
+  publicRateLimit: {
+    max: envInt('PUBLIC_RATE_LIMIT_MAX', PUBLIC_RATE_LIMIT.max),
+    timeWindow: envInt(
+      'PUBLIC_RATE_LIMIT_WINDOW_MS',
+      PUBLIC_RATE_LIMIT.timeWindow,
+    ),
+  },
   logger: {level: env('LOG_LEVEL', 'info')},
 });
 

@@ -28,6 +28,10 @@ export function createSequelizeRepo(sequelize) {
     async getExtract(id) {
       return plain(await m.Extract.findByPk(id));
     },
+    /** The extract with this token (the public check), or null. */
+    async getExtractByToken(token) {
+      return plain(await m.Extract.findOne({where: {token}}));
+    },
     /** The extracts of a land record, newest first. */
     async listExtracts(recordId) {
       const rows = await m.Extract.findAll({

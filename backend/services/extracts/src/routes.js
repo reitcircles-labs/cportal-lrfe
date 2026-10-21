@@ -73,3 +73,31 @@ export async function extractsRoutes(app, {service}) {
     async req => service.revoke(req.params.id, req.body, actorOf(req)),
   );
 }
+
+/**
+ * The public check of an extract (API-693), from its QR code: no sign-in, through the gateway's
+ * rate-limited /api/public prefix. Every check is logged with its state and the extract's id only.
+ */
+export async function publicRoutes(app, {check}) {
+  app.get(
+    '/public/extracts/:token',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['token'],
+          properties: {token: {type: 'string'}},
+        },
+      },
+    },
+    async (req, reply) => {
+      const {answer, reason} = await check.check(req.params.token);
+      req.log.info(
+        {extractId: answer.extractId, state: answer.state, reason},
+        'extract checked',
+      );
+      reply.header('cache-control', 'no-store');
+      return answer;
+    },
+  );
+}
