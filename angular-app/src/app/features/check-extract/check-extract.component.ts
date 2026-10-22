@@ -334,8 +334,9 @@ export class CheckExtractComponent {
     const r = this.result();
     if (r.kind === 'limited') return 'limited';
     if (r.kind !== 'answer') return 'unavailable';
-    const bad = this.file() === 'nomatch' || this.file() === 'notpdf';
-    if (bad && r.answer.state !== 'revoked') return 'file';
+    // a changed PDF overrules the answer; another kind of file is only answered in its section
+    if (this.file() === 'nomatch' && r.answer.state !== 'revoked')
+      {return 'file';}
     return r.answer.state;
   });
   protected readonly tone = computed<Tone>(() => {

@@ -239,6 +239,8 @@ test.describe
       await expect(file).toContainText(
         '✓ The file matches: it is exactly the PDF the registry sealed for this extract.',
       );
+      // the file check's answer in the picture, not only the top of the page
+      await file.scrollIntoViewIfNeeded();
       await evidence(
         page,
         'API-693',
@@ -272,6 +274,12 @@ test.describe
       });
       await expect(file).toContainText(
         "✗ This isn't a PDF file, so it isn't the registry's extract.",
+      );
+      await file.scrollIntoViewIfNeeded();
+      await evidence(
+        page,
+        'API-693',
+        "Another kind of file: it isn't the registry's extract PDF",
       );
       // the files were never sent anywhere
       expect(uploads).toEqual([]);
