@@ -1,9 +1,10 @@
 import {printedCheckCode} from '../src/check-code.js';
 import {X509Certificate, createHash, generateKeyPairSync} from 'node:crypto';
-import {writeFile} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {expect} from 'chai';
+import {PDFDocument, PDFName} from 'pdf-lib';
 import {createProofClient} from '../src/proof-client.js';
 import {createBaoSealer, sealerFromEnv} from '../src/seal/sealers.js';
 import {DEFAULT_LEGAL_TEXT, extractSettingsFromEnv} from '../src/settings.js';
@@ -25,6 +26,10 @@ import {
 } from './pdf-reader.js';
 
 const rec = actor(users.rec);
+
+/** A PNG of one pixel: a stand-in for a registry's coat of arms. */
+const ONE_PIXEL_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 /** The ID numbers of the three owners of Erf 1873 (land-records tests). */
 const ID_NUMBERS = ['75060200418', '98030100562', '01112500379'];
@@ -500,6 +505,50 @@ describe('the seal and the settings (API-691)', () => {
     expect(() =>
       extractSettingsFromEnv({EXTRACTS_TIME_ZONE: 'Nowhere/Town'}),
     ).to.throw(RangeError);
+    expect(settings.coatOfArms).to.equal(null);
+  });
+
+  it('prints the coat of arms beside the registry name when the site has one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'arms-'));
+    try {
+      const file = join(dir, 'arms.png');
+      await writeFile(file, Buffer.from(ONE_PIXEL_PNG, 'base64'));
+      const {coatOfArms} = extractSettingsFromEnv({
+        EXTRACTS_COAT_OF_ARMS_FILE: file,
+      });
+      expect(coatOfArms.type).to.equal('png');
+      const imagesOn = async pdf => {
+        const page = (await PDFDocument.load(pdf)).getPages()[0];
+        const xObjects = page.node.Resources().lookup(PDFName.of('XObject'));
+        return xObjects ? xObjects.keys().length : 0;
+      };
+
+      const without = await issued();
+      expect(await imagesOn(without.pdf)).to.equal(0);
+      const context = await makeExtracts();
+      context.service.settings = {...context.service.settings, coatOfArms};
+      const record = await committedErf1873(context.records);
+      const extract = await context.service.issue(forMaria(record), rec);
+      const {pdf} = await context.service.pdf(extract.id);
+      expect(await imagesOn(pdf)).to.equal(1);
+      expect((await readPdf(pdf)).text).to.include('Land Titles Office');
+      expect(await checkSignature(pdf)).to.include({
+        digestMatches: true,
+        signatureValid: true,
+      });
+
+      // another kind of file, or none: the service does not start
+      const text = join(dir, 'arms.txt');
+      await writeFile(text, 'not an image');
+      expect(() =>
+        extractSettingsFromEnv({EXTRACTS_COAT_OF_ARMS_FILE: text}),
+      ).to.throw('must be a PNG or JPEG image');
+      expect(() =>
+        extractSettingsFromEnv({EXTRACTS_COAT_OF_ARMS_FILE: `${text}.gone`}),
+      ).to.throw('ENOENT');
+    } finally {
+      await rm(dir, {recursive: true, force: true});
+    }
   });
 });
 

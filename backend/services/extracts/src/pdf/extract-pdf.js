@@ -64,7 +64,7 @@ export function dateTimeText(value, timeZone, month = 'long') {
  * proof of the version is attached inside it.
  * @param {{extract: !Object, record: !Object, proof: !Object, explorerUrl: ?string,
  *     settings: !Object}} input
- *     settings: {org, checkUrlBase, legalText, timeZone} (extractSettingsFromEnv)
+ *     settings: {org, checkUrlBase, legalText, timeZone, coatOfArms} (extractSettingsFromEnv)
  * @return {!Promise<!PDFDocument>}
  */
 export async function renderExtract({
@@ -93,7 +93,12 @@ export async function renderExtract({
     mono: await pdfDoc.embedFont(StandardFonts.Courier),
   };
   const writer = new PageWriter(pdfDoc, fonts);
+  const arms = settings.coatOfArms;
+  let coatOfArms = null;
+  if (arms?.type === 'png') coatOfArms = await pdfDoc.embedPng(arms.bytes);
+  if (arms?.type === 'jpg') coatOfArms = await pdfDoc.embedJpg(arms.bytes);
   const facts = {
+    coatOfArms,
     extract,
     record,
     version: record.current,
@@ -129,7 +134,10 @@ function registryName(org) {
   return org.subtitle ? `${org.name}, ${org.subtitle}` : org.name;
 }
 
-function header(writer, {extract, settings}) {
+/** The coat of arms' side, in points: it fits a square this size, the header's least height. */
+const ARMS_SIDE = 48;
+
+function header(writer, {extract, settings, coatOfArms}) {
   const {bold, regular, mono} = writer.fonts;
   writer.textRight('Ownership extract', {font: bold, size: 16, top: 0});
   writer.textRight(extract.extractNo, {font: mono, size: 8, top: 22});
@@ -137,17 +145,35 @@ function header(writer, {extract, settings}) {
     `Issued ${dateTimeText(extract.issuedAt, settings.timeZone)}`,
     {size: 9, top: 34, colour: COLOURS.muted},
   );
-  const nameWidth = writer.width * 0.55;
-  writer.text(settings.org.name, {font: bold, size: 14, width: nameWidth});
+  // the coat of arms, when the site has one, left of the registry's name
+  let nameX = 0;
+  if (coatOfArms) {
+    const {width, height} = coatOfArms.scaleToFit(ARMS_SIDE, ARMS_SIDE);
+    writer.page.drawImage(coatOfArms, {
+      x: MARGIN + (ARMS_SIDE - width) / 2,
+      y: writer.y - ARMS_SIDE + (ARMS_SIDE - height) / 2,
+      width,
+      height,
+    });
+    nameX = ARMS_SIDE + 12;
+  }
+  const nameWidth = writer.width * 0.55 - nameX;
+  writer.text(settings.org.name, {
+    font: bold,
+    size: 14,
+    x: nameX,
+    width: nameWidth,
+  });
   if (settings.org.subtitle) {
     writer.text(settings.org.subtitle, {
       font: regular,
       size: 10,
+      x: nameX,
       width: nameWidth,
       colour: COLOURS.muted,
     });
   }
-  writer.y = Math.min(writer.y, writer.page.getHeight() - MARGIN - 48);
+  writer.y = Math.min(writer.y, writer.page.getHeight() - MARGIN - ARMS_SIDE);
   writer.rule(12);
 }
 

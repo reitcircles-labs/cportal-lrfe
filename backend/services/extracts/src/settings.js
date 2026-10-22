@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import {orgFromEnv} from '@lrfe/common';
 
 /** The legal wording until the registry's legal advisers have settled it (EXTRACTS_LEGAL_TEXT). */
@@ -15,6 +16,8 @@ const DEV_CHECK_URL_BASE = 'http://localhost:4200/#/check';
  *   legalText     EXTRACTS_LEGAL_TEXT: what the extract certifies, in the registry's words
  *   timeZone      EXTRACTS_TIME_ZONE: the IANA time zone of the dates printed (the server's if unset)
  *   country       EXTRACTS_COUNTRY_CODE: the country in the extract number (EX-NA-2026-000012), NA if unset
+ *   coatOfArms    EXTRACTS_COAT_OF_ARMS_FILE: a PNG or JPEG printed beside the registry's name; none
+ *                 if unset
  * One of the two is required with NODE_ENV=production: a QR code must never point to a development
  * machine.
  */
@@ -37,5 +40,31 @@ export function extractSettingsFromEnv(source = process.env) {
     legalText: (source.EXTRACTS_LEGAL_TEXT ?? '').trim() || DEFAULT_LEGAL_TEXT,
     timeZone,
     country: (source.EXTRACTS_COUNTRY_CODE ?? '').trim() || 'NA',
+    coatOfArms: coatOfArmsFrom(source.EXTRACTS_COAT_OF_ARMS_FILE),
   };
+}
+
+/** The first bytes of the image types the PDF can hold. */
+const IMAGE_TYPES = Object.freeze({
+  png: [0x89, 0x50, 0x4e, 0x47],
+  jpg: [0xff, 0xd8, 0xff],
+});
+
+/**
+ * The coat of arms in `path`: {type, bytes}, or null without a path. A missing file or another
+ * image type fails here, at start, not when an extract is issued.
+ */
+function coatOfArmsFrom(path) {
+  const file = (path ?? '').trim();
+  if (!file) return null;
+  const bytes = readFileSync(file);
+  const type = Object.keys(IMAGE_TYPES).find(t =>
+    IMAGE_TYPES[t].every((b, i) => bytes[i] === b),
+  );
+  if (!type) {
+    throw new Error(
+      `EXTRACTS_COAT_OF_ARMS_FILE must be a PNG or JPEG image: ${file}`,
+    );
+  }
+  return {type, bytes};
 }

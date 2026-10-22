@@ -61,18 +61,18 @@ the revocation is saved, the row comes back with `isCurrentVersion: null` rather
 Made on the server with pdf-lib (`src/pdf/extract-pdf.js`), one A4 page (more for many owners,
 with the footer on each), as the design draft of API-690 lays it out:
 
-- the registry's name and subtitle (the site's settings, below), "Ownership extract", the extract's
-  id and the issue date and time;
-- the land record's version as it stands: parcel, land record number and version, township,
-  registration division, extent, tenure, the title deed(s) the owners hold under;
+- the registry's coat of arms when the site has one (`EXTRACTS_COAT_OF_ARMS_FILE`), its name and
+  subtitle (the site's settings, below), "Ownership extract", the extract's number and the issue
+  date and time;
+- the land record's version as it stands: parcel (with its township), land record number and
+  version, registration division, extent, tenure, the title deed(s) the owners hold under;
 - the registered owners with their shares; of each ID number only the last 4 digits
   (`•••••••0418`): the full number is nowhere in the file. "Issued to <owner>, registered owner,
   identity document seen at the counter.";
-- the check against the blockchain: a QR code holding the public check page's address
-  `<EXTRACTS_CHECK_URL_BASE>/<token>`, the same address printed for typing in, and the version's
-  fingerprint (its seal) in full, its batch and since when it is on the blockchain, the transaction
-  id and the explorer link. The design's short typed check code is not there: it needs a lookup of
-  its own; the address with the token is printed instead;
+- the check against the blockchain, framed in one box: a QR code holding the public check page's
+  address `<EXTRACTS_CHECK_URL_BASE>/<token>`; for those without a camera, the check page's
+  address and the extract's check code to type in; and the version's fingerprint (its seal) in
+  full, its batch and since when it is on the blockchain, the transaction id and the explorer link;
 - the "Always scan the QR code" box, the seal notice ("Electronic seal", naming the registry) and
   the legal wording
   (`EXTRACTS_LEGAL_TEXT`; until it is set, a placeholder says it is to be confirmed by the
@@ -126,6 +126,7 @@ re-rendered or re-sealed. A revoked extract is not given out again (409).
 | `EXTRACTS_CHECK_URL_BASE` | The public check page the QR code opens; not set: `<LRFE_PUBLIC_URL>/#/check`. One of the two is required with `NODE_ENV=production` |
 | `EXTRACTS_LEGAL_TEXT` | What the extract certifies; a placeholder until the registry has confirmed it |
 | `EXTRACTS_TIME_ZONE` | The IANA time zone of the dates printed, e.g. `Africa/Windhoek` (the server's when unset); also the year of the extract number |
+| `EXTRACTS_COAT_OF_ARMS_FILE` | A PNG or JPEG of the registry's coat of arms, printed beside its name; mount the file into the container. None when unset; a missing file or another type stops the service at start |
 | `EXTRACTS_COUNTRY_CODE` | The country in the extract number, e.g. `NA` (the default); the bundle sets it from `LRFE_COUNTRY_CODE` |
 | `EXTRACTS_SEAL`, `EXTRACTS_SEAL_KEY`, `EXTRACTS_SEAL_CERT`, `EXTRACTS_SEAL_CERT_FILE`, `BAO_*` | The seal, above |
 | `EXTRACTS_STORAGE`, `EXTRACTS_LOCAL_DIR` | Where the PDFs are kept, above |

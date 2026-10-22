@@ -311,6 +311,8 @@ services:
       EXTRACTS_TIME_ZONE: ${LRFE_TIME_ZONE:-}
       # the country in the extract number (EX-NA-2026-000012), as in record numbers
       EXTRACTS_COUNTRY_CODE: ${LRFE_COUNTRY_CODE:-NA}
+      # the registry's coat of arms beside its name (LRFE_COAT_OF_ARMS, mounted below); empty: none
+      EXTRACTS_COAT_OF_ARMS_FILE: ${LRFE_COAT_OF_ARMS:+/run/lrfe/coat-of-arms}
       # the organisation seal on the PDF: bao = its key in OpenBao (profile bao) and its certificate
       # (LRFE_SEAL_CERT); empty = no seal, and no extract can be issued (README.md, part D)
       EXTRACTS_SEAL: ${LRFE_SEAL:-}
@@ -321,6 +323,8 @@ services:
     volumes:
       - extracts-files:/data/extracts
       - bao-extracts:/run/lrfe/bao:ro
+      # without a coat of arms, an empty file in its place that is never read
+      - ${LRFE_COAT_OF_ARMS:-/dev/null}:/run/lrfe/coat-of-arms:ro
     networks: [default, bao]
     healthcheck: *healthcheck
     depends_on:
