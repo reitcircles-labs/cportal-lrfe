@@ -16,6 +16,9 @@ Mined from the session transcripts (API-789, 476 user messages and every tool er
   through the environment.
 - **Old git** (no `merge-tree --write-tree`) → dry-run a merge in a throwaway worktree. **No `gh`
   CLI** → the user gives the PR links. **No `pdftoppm`** → render PDFs with `gs -sDEVICE=png16m`.
+- **`eslint --fix` after `prettier --write`** can leave a file unformatted (it added braces), and CI's
+  `npm run format:check` fails → run prettier last, then both checks on a clean copy of the branch
+  (`git worktree add` of the commit), since local scratch files can hide or add findings.
 
 ## Dependencies and environment
 
