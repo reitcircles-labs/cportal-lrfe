@@ -76,7 +76,6 @@ describe('the extract PDF (API-691)', () => {
       'The land record, version 1 (current on the issue date)',
       `Parcel ${record.label}`,
       `Land record ${record.recordNo} · version 1`,
-      'Township Klein Windhoek',
       'Registration division K',
       'Extent 1 214 square metres',
       'Tenure Freehold',
@@ -103,6 +102,8 @@ describe('the extract PDF (API-691)', () => {
     expect(text.replace(/\s+/g, '')).to.include(
       `https://preview.cexplorer.io/tx/${TX}`,
     );
+    // the township is in the parcel's name, not a row of its own (design, API-690)
+    expect(text).to.not.include('Township');
     // always "blockchain", never the network or the tools behind it
     expect(text.toLowerCase()).to.not.match(/cardano|ada\b|openbao|vault/);
   });

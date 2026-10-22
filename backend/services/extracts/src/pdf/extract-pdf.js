@@ -151,23 +151,40 @@ function header(writer, {extract, settings}) {
   writer.rule(12);
 }
 
-/** One label and its value, the label in the left column. */
-function row(writer, label, value, {valueFont, valueSize = 10} = {}) {
-  if (value == null || value === '') return;
+/**
+ * One label and its value, the label in the left column; `x` and `width` place the pair inside a
+ * box. Returns the height used; with `dryRun`, only measures.
+ */
+function row(
+  writer,
+  label,
+  value,
+  {valueFont, valueSize = 10, x = 0, width = writer.width - x, dryRun} = {},
+) {
+  if (value == null || value === '') return 0;
   const labelWidth = 130;
   const font = valueFont ?? writer.fonts.regular;
+  const valueAt = {x: x + labelWidth, width: width - labelWidth};
   const height = writer.text(value, {
     font,
     size: valueSize,
-    x: labelWidth,
+    ...valueAt,
     dryRun: true,
   });
+  // a row is at least one label line high, and 3 points below it
+  if (dryRun) return Math.max(height, 13) + 3;
   writer.ensure(height + 4);
   const top = writer.y;
-  writer.text(label, {size: 9, width: labelWidth - 8, colour: COLOURS.muted});
+  writer.text(label, {
+    size: 9,
+    x,
+    width: labelWidth - 8,
+    colour: COLOURS.muted,
+  });
   writer.y = top;
-  writer.text(value, {font, size: valueSize, x: labelWidth});
+  writer.text(value, {font, size: valueSize, ...valueAt});
   writer.y = Math.min(writer.y, top - 13) - 3;
+  return top - writer.y;
 }
 
 function heading(writer, text, size = 11) {
@@ -188,7 +205,6 @@ function landRecord(writer, {extract, record, version}) {
     'Land record',
     `${record.recordNo} · version ${extract.versionNumber}`,
   );
-  row(writer, 'Township', data.parcel?.township);
   row(writer, 'Registration division', data.parcel?.regDiv);
   row(writer, 'Extent', extentText(data.extent));
   row(writer, 'Tenure', tenureText(data.tenure));
@@ -277,51 +293,83 @@ function drawQr(page, text, {x, y, side}) {
   page.pushOperators(...operators);
 }
 
+/** Room inside the check box's frame, in points. */
+const CHECK_PADDING = 12;
+
+/** The check box: the QR code and how to check by hand, then the blockchain facts, framed. */
 function check(writer, {extract, proof, explorerUrl, settings}) {
   const {bold, mono} = writer.fonts;
   const url = checkUrl(settings.checkUrlBase, extract.token);
-  const textX = QR_SIDE + 16;
-  const intro = CHECK_INTRO;
-  writer.ensure(QR_SIDE + 150);
-  writer.space(4);
-  const top = writer.y;
-  drawQr(writer.page, url, {
-    x: MARGIN,
-    y: top - QR_SIDE,
-    side: QR_SIDE,
-  });
-  writer.text('Check this extract against the blockchain', {
-    font: bold,
-    size: 11,
-    x: textX,
-  });
-  writer.space(3);
-  writer.text(intro, {size: 9.5, x: textX});
-  writer.space(4);
-  // the check page's address and the check code, for typing in (API-692)
-  writer.text('No camera? Open this address and type the check code:', {
-    size: 9,
-    x: textX,
-    colour: COLOURS.muted,
-  });
-  writer.text(settings.checkUrlBase, {font: mono, size: 7.5, x: textX});
-  writer.space(2);
-  writer.text(printedCheckCode(extract.checkCode), {
-    font: mono,
-    size: 12,
-    x: textX,
-  });
-  writer.y = Math.min(writer.y, top - QR_SIDE) - 10;
-
+  const textX = CHECK_PADDING + QR_SIDE + 16;
+  const textAt = {x: textX, width: writer.width - textX - CHECK_PADDING};
+  const inBox = {x: CHECK_PADDING, width: writer.width - 2 * CHECK_PADDING};
   const anchor = proof.anchor ?? {};
   const since = anchor.confirmedAt
     ? `, on the blockchain since ${dateTimeText(anchor.confirmedAt, settings.timeZone, 'short')}`
     : '';
-  row(writer, 'Fingerprint', proof.item?.seal, {valueFont: mono, valueSize: 8});
-  row(writer, 'Batch', `${anchor.batch}${since}`);
-  row(writer, 'Transaction', anchor.tx, {valueFont: mono, valueSize: 8});
-  row(writer, 'Explorer', explorerUrl, {valueFont: mono, valueSize: 7.5});
-  writer.space(8);
+  // beside the QR code, each text with the space after it; the check page's address and the
+  // check code are for typing in (API-692)
+  const texts = [
+    ['Check this extract against the blockchain', {font: bold, size: 11}, 3],
+    [CHECK_INTRO, {size: 9.5}, 4],
+    [
+      'No camera? Open this address and type the check code:',
+      {size: 9, colour: COLOURS.muted},
+      0,
+    ],
+    [settings.checkUrlBase, {font: mono, size: 7.5}, 2],
+    [printedCheckCode(extract.checkCode), {font: mono, size: 12}, 0],
+  ];
+  const facts = [
+    ['Fingerprint', proof.item?.seal, {valueFont: mono, valueSize: 8}],
+    ['Batch', `${anchor.batch}${since}`, {}],
+    ['Transaction', anchor.tx, {valueFont: mono, valueSize: 8}],
+    ['Explorer', explorerUrl, {valueFont: mono, valueSize: 7.5}],
+  ];
+
+  // measured first, so the whole box is on one page
+  const besideQr = texts.reduce(
+    (sum, [text, options, after]) =>
+      sum + writer.text(text, {...options, ...textAt, dryRun: true}) + after,
+    0,
+  );
+  const top = Math.max(QR_SIDE, besideQr) + 10;
+  const rows = facts.reduce(
+    (sum, [label, value, options]) =>
+      sum + row(writer, label, value, {...options, ...inBox, dryRun: true}),
+    0,
+  );
+  const height = top + rows + 2 * CHECK_PADDING - 3;
+  writer.ensure(height + 4);
+  writer.space(4);
+  const frameTop = writer.y;
+
+  writer.space(CHECK_PADDING);
+  const qrTop = writer.y;
+  drawQr(writer.page, url, {
+    x: MARGIN + CHECK_PADDING,
+    y: qrTop - QR_SIDE,
+    side: QR_SIDE,
+  });
+  for (const [text, options, after] of texts) {
+    writer.text(text, {...options, ...textAt});
+    writer.space(after);
+  }
+  writer.y = qrTop - top;
+  for (const [label, value, options] of facts) {
+    row(writer, label, value, {...options, ...inBox});
+  }
+  // the last row leaves 3 points below it: the padding makes up the rest
+  writer.space(CHECK_PADDING - 3);
+  writer.page.drawRectangle({
+    x: MARGIN,
+    y: writer.y,
+    width: writer.width,
+    height: frameTop - writer.y,
+    borderColor: COLOURS.rule,
+    borderWidth: 0.8,
+  });
+  writer.space(14);
 }
 
 /** A box around `draw`, measured first so it fits on one page. */
