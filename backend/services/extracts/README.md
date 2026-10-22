@@ -150,9 +150,11 @@ fields, null where they do not apply:
 | `unknown` | no extract has this token (or it is not a token at all) | nothing: every other field null |
 | `unavailable` | the register, land-records or the audit service cannot be read now, or a check cannot be made now | |
 
-Every state but `unknown` also gives `extractId`, `recordNo`, `versionNumber` and `issuedAt` from
-the register; never the owner's name, ID number or share, or the parcel. `fingerprintEnd` is the
-last 8 characters of the version's seal.
+Every state but `unknown` also gives `extractId`, `extractNo`, `recordNo`, `versionNumber`,
+`issuedAt` and `pdfSha256` (the SHA-256 of the PDF as issued) from the register; never the owner's
+name, ID number or share, or the parcel. `fingerprintEnd` is the last 8 characters of the
+version's seal. The check page compares a PDF file with `pdfSha256` in the browser: the file is
+never uploaded.
 
 For a valid extract the service reads the record from land-records (`GET /records/:id`) and asks
 the audit service to check the version now (`POST /audit/anchoring/check`, with its service

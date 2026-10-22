@@ -24,6 +24,9 @@ import {ThemeService} from './state/theme.service';
 import {IntakeApi} from './api/intake.api';
 import {SiteConfigService} from './state/site-config.service';
 
+/** The pages without the staff app's frame: signing in, and the public checks (API-676, API-693). */
+const PUBLIC_PAGE = /^\/(login|invite|check-a-proof|check)(\/|\?|$)/;
+
 /** The app shell: side menu, top bar, and the screen of the current route. */
 @Component({
   selector: 'app-root',
@@ -170,7 +173,7 @@ export class AppComponent {
   /** Documents waiting for review (intake), refreshed on every navigation. */
   inReview = signal(0);
   drawer = signal(false);
-  isLogin = signal(/^#\/(login|invite|check-a-proof)/.test(location.hash));
+  isLogin = signal(PUBLIC_PAGE.test(location.hash.slice(1)));
   title = signal('Dashboard');
   crumb = signal('');
 
@@ -291,9 +294,7 @@ export class AppComponent {
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe(e => {
-        this.isLogin.set(
-          /^\/(login|invite|check-a-proof)/.test(e.urlAfterRedirects),
-        );
+        this.isLogin.set(PUBLIC_PAGE.test(e.urlAfterRedirects));
         let r = this.route.firstChild;
         while (r?.firstChild) r = r.firstChild;
         const d = r?.snapshot.data || {};

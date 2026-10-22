@@ -66,6 +66,11 @@ const COMMON = {
   MAIL_FILE_DIR: MAIL_DIR,
   MAIL_FROM: 'Deeds Registry (e2e) <noreply@example.com>',
   IDENTITY_INVITE_URL_BASE: `${WEB_URL}/#/invite`,
+  // the extract's QR code and printed address open the test web app's check page (API-693)
+  EXTRACTS_CHECK_URL_BASE: `${WEB_URL}/#/check`,
+  // the public check's rate limit, high: the tests share one client address. The limit itself is
+  // tested in the gateway's unit tests, the check page's message for it with a made-up answer
+  PUBLIC_RATE_LIMIT_MAX: '1000',
   // plain http on localhost: a Secure cookie would not be sent back by every client
   COOKIE_SECURE: 'false',
   // the test blockchain, in memory (only with NODE_ENV=test): no anchoring job runs; tests make batches

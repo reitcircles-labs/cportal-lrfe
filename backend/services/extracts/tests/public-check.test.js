@@ -17,6 +17,7 @@ const FIELDS = [
   'extractNo',
   'fingerprintEnd',
   'issuedAt',
+  'pdfSha256',
   'recordNo',
   'replacedAt',
   'revokedAt',
@@ -95,6 +96,10 @@ describe('the public check of an extract (API-693)', () => {
       revokedAt: null,
     });
     expect(body.issuedAt).to.equal(extract.issuedAt.toISOString());
+    // the PDF as issued, for the check page's comparison of a file in the browser
+    expect(body.pdfSha256)
+      .to.equal(extract.pdfSha256)
+      .and.match(/^[0-9a-f]{64}$/);
     expectNoPersonalData(raw);
   });
 

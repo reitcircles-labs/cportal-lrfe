@@ -20,6 +20,11 @@ import {DeniedComponent} from './features/denied/denied.component';
 import {CheckProofComponent} from './features/check-proof/check-proof.component';
 
 const g = [authGuard, permGuard];
+/** The public extract check page (API-693), in a file of its own. */
+const checkExtract = () =>
+  import('./features/check-extract/check-extract.component').then(
+    m => m.CheckExtractComponent,
+  );
 /** Anyone who works with documents in any stage may browse the EDRMS (same rule as the edrms service). */
 const DOC_READERS = [
   'capture.view',
@@ -36,6 +41,10 @@ export const routes: Routes = [
   { path: 'invite', component: InviteComponent },
   // public, no sign-in: for anyone given a proof (API-676)
   { path: 'check-a-proof', component: CheckProofComponent, data: { title: 'Check a proof yourself' } },
+  // public, no sign-in: an ownership extract's QR code or typed check code (API-693); loaded only
+  // when opened, so the staff app's first load does not grow
+  { path: 'check', loadComponent: checkExtract, data: { title: 'Check an ownership extract' } },
+  { path: 'check/:code', loadComponent: checkExtract, data: { title: 'Check an ownership extract' } },
   { path: '', component: DashboardComponent, canActivate: g, data: { perm: 'dashboard.view', title: 'Dashboard' } },
   { path: 'flow', component: FlowComponent, canActivate: g, data: { perm: 'dashboard.view', title: 'Process & metadata schema', crumb: 'Programme · Phase 1' } },
   { path: 'capture', component: CaptureComponent, canActivate: g, data: { perm: 'capture.view', title: 'Capture', crumb: 'Workspace · Scan station' } },

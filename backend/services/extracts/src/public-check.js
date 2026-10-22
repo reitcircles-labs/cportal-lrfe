@@ -127,7 +127,9 @@ export class ExtractCheck {
 
   /**
    * One answer, every field always there. Of the register row only what is printed on the extract
-   * and is not personal: its id and number, the record number, the version and the issue date.
+   * and is not personal: its id and number, the record number, the version and the issue date; and
+   * the SHA-256 of the PDF as issued, so the check page can compare a file in the browser without
+   * it being uploaded.
    */
   answer(state, extract = null, facts = {}) {
     return {
@@ -137,6 +139,7 @@ export class ExtractCheck {
       recordNo: extract?.recordNo ?? null,
       versionNumber: extract?.versionNumber ?? null,
       issuedAt: extract?.issuedAt ?? null,
+      pdfSha256: extract?.pdfSha256 ?? null,
       fingerprintEnd: null,
       batch: null,
       transactionId: null,
