@@ -335,8 +335,9 @@ export class CheckExtractComponent {
     if (r.kind === 'limited') return 'limited';
     if (r.kind !== 'answer') return 'unavailable';
     // a changed PDF overrules the answer; another kind of file is only answered in its section
-    if (this.file() === 'nomatch' && r.answer.state !== 'revoked')
-      {return 'file';}
+    if (this.file() === 'nomatch' && r.answer.state !== 'revoked') {
+      return 'file';
+    }
     return r.answer.state;
   });
   protected readonly tone = computed<Tone>(() => {
