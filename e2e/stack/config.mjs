@@ -34,6 +34,9 @@ export const PORTS = {
 export const WEB_URL = `http://localhost:${PORTS.web}`;
 export const GATEWAY_URL = `http://localhost:${PORTS.gateway}`;
 
+/** The secret the stack's services sign and check tokens with (JWT_SECRET); the load tests sign their own. */
+export const JWT_SECRET = 'e2e-only-jwt-secret-not-used-anywhere-else';
+
 /** Password of every seeded demo user (identity's SEED_DEMO_PASSWORD). The stack is in memory only. */
 export const DEMO_PASSWORD = 'e2e-demo-password-2026';
 

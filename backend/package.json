@@ -32,7 +32,9 @@
     "nats": "node scripts/nats.js",
     "bao": "node scripts/bao.js",
     "cardano": "node scripts/cardano.js",
-    "cardano:status": "node scripts/cardano-status.js"
+    "cardano:status": "node scripts/cardano-status.js",
+    "scale:generate": "node scripts/scale/generate.js",
+    "scale:load": "node scripts/scale/load-test.js"
   },
   "devDependencies": {
     "js-yaml": "^4.3.2"
