@@ -9,6 +9,7 @@ import {
   rectangle,
   setFillingColor,
 } from 'pdf-lib';
+import {printedCheckCode} from '../check-code.js';
 import {COLOURS, MARGIN, PageWriter} from './page-writer.js';
 import {qrModules} from './qr.js';
 import {
@@ -76,7 +77,7 @@ export async function renderExtract({
   const pdfDoc = await PDFDocument.create();
   const issuedAt = new Date(extract.issuedAt);
   const registry = registryName(settings.org);
-  pdfDoc.setTitle(`Ownership extract ${extract.id}`);
+  pdfDoc.setTitle(`Ownership extract ${extract.extractNo}`);
   pdfDoc.setSubject(
     `${record.recordNo}, version ${extract.versionNumber}: ${record.label ?? ''}`,
   );
@@ -131,7 +132,7 @@ function registryName(org) {
 function header(writer, {extract, settings}) {
   const {bold, regular, mono} = writer.fonts;
   writer.textRight('Ownership extract', {font: bold, size: 16, top: 0});
-  writer.textRight(extract.id, {font: mono, size: 8, top: 22});
+  writer.textRight(extract.extractNo, {font: mono, size: 8, top: 22});
   writer.textRight(
     `Issued ${dateTimeText(extract.issuedAt, settings.timeZone)}`,
     {size: 9, top: 34, colour: COLOURS.muted},
@@ -297,12 +298,19 @@ function check(writer, {extract, proof, explorerUrl, settings}) {
   writer.space(3);
   writer.text(intro, {size: 9.5, x: textX});
   writer.space(4);
-  writer.text('No camera? Open this address:', {
+  // the check page's address and the check code, for typing in (API-692)
+  writer.text('No camera? Open this address and type the check code:', {
     size: 9,
     x: textX,
     colour: COLOURS.muted,
   });
-  writer.text(url, {font: mono, size: 7.5, x: textX});
+  writer.text(settings.checkUrlBase, {font: mono, size: 7.5, x: textX});
+  writer.space(2);
+  writer.text(printedCheckCode(extract.checkCode), {
+    font: mono,
+    size: 12,
+    x: textX,
+  });
   writer.y = Math.min(writer.y, top - QR_SIDE) - 10;
 
   const anchor = proof.anchor ?? {};
@@ -401,7 +409,7 @@ function seal(writer, {settings, registry}) {
 /** On every page: the extract, the record version and the attached proof; "Page i of n". */
 function footers(pdfDoc, fonts, {extract, record}) {
   const pages = pdfDoc.getPages();
-  const left = `${extract.id} · ${record.recordNo} v${extract.versionNumber} · attached: ${proofFileName(extract.versionNumber)}`;
+  const left = `${extract.extractNo} · ${record.recordNo} v${extract.versionNumber} · attached: ${proofFileName(extract.versionNumber)}`;
   pages.forEach((page, index) => {
     const right = `Page ${index + 1} of ${pages.length}`;
     page.drawText(left, {

@@ -10,6 +10,11 @@ import {
   ConflictError,
   NotFoundError,
 } from '@lrfe/common';
+import {
+  newCheckCode,
+  normalizeCheckCode,
+  printedCheckCode,
+} from './check-code.js';
 import {checkOnChain, checkOwner, lastFour} from './issue-checks.js';
 import {renderExtract} from './pdf/extract-pdf.js';
 import {pdfKeyOf} from './pdf-store.js';
@@ -21,6 +26,12 @@ const SYSTEM = {id: 'system', name: 'System'};
 
 /** A token nobody can guess: 32 random bytes, URL-safe (it goes into the extract's QR code). */
 export const newToken = () => randomBytes(32).toString('base64url');
+
+export {newCheckCode, normalizeCheckCode, printedCheckCode};
+
+/** The number printed on an extract: EX-<country>-<year>-<nnnnnn>, like record numbers. */
+export const formatExtractNo = (country, year, seq) =>
+  `EX-${country}-${year}-${String(seq).padStart(6, '0')}`;
 
 /**
  * The register of ownership extracts (README.md). An extract is issued for an owner on a land
@@ -40,6 +51,7 @@ export class ExtractsService {
     settings = null,
     clock = () => new Date(),
     token = newToken,
+    checkCode = newCheckCode,
   }) {
     this.repo = repo;
     this.events = events;
@@ -51,6 +63,7 @@ export class ExtractsService {
     this.settings = settings; // the site's texts on the PDF (settings.js)
     this.clock = clock;
     this.token = token;
+    this.checkCode = checkCode;
   }
 
   /**
@@ -90,9 +103,10 @@ export class ExtractsService {
   /**
    * Issue an extract of a land record's current version for one of its owners: `ownerIndex` on
    * version `versionNumber`, the ID number `idNo` typed from the identity document the staff member
-   * was shown, `documentSeen` true. checkOwner and checkOnChain say what is refused. The extract's
-   * PDF is made, sealed and stored before the register row is written; the row and the issued
-   * event carry the PDF's SHA-256 (pdf() gives the PDF).
+   * was shown, `documentSeen` true. checkOwner and checkOnChain say what is refused. The extract
+   * takes the year's next number while its PDF is made, sealed and stored, and the register row is
+   * written in the same transaction, so a failed issue uses no number. The row and the issued event
+   * carry the PDF's SHA-256 (pdf() gives the PDF).
    */
   async issue(request, actor = SYSTEM) {
     const record = await this.requireRecord(request.recordId);
@@ -101,8 +115,11 @@ export class ExtractsService {
     if (!this.sealer) throw new AppError(503, NO_SEAL_MESSAGE);
     const {proof, explorerUrl} = await this.requireProof(record);
     const id = randomUUID();
-    const extract = {
+    const issuedAt = this.clock();
+    const draft = {
       id,
+      extractNo: null, // with the year's next number, in addExtract
+      checkCode: this.checkCode(),
       recordId: record.id,
       recordNo: record.recordNo,
       versionNumber: request.versionNumber,
@@ -112,7 +129,7 @@ export class ExtractsService {
       ownerName: owner.name,
       ownerIdLast4: lastFour(owner.idNo),
       documentSeen: true,
-      issuedAt: this.clock(),
+      issuedAt,
       token: this.token(),
       status: 'valid',
       revokedAt: null,
@@ -122,18 +139,32 @@ export class ExtractsService {
       pdfSha256: null, // once the sealed PDF is stored
       pdfKey: pdfKeyOf(id),
     };
-    const pdf = await this.sealedPdf(extract, record, proof, explorerUrl);
-    extract.pdfSha256 = (
-      await this.files.put({
-        key: extract.pdfKey,
-        body: pdf,
-        contentType: 'application/pdf',
-      })
-    ).sha256;
-    // the register row and its event are committed together (API-613)
+    const year = Number(
+      new Intl.DateTimeFormat('en-GB', {
+        year: 'numeric',
+        timeZone: this.settings?.timeZone,
+      }).format(issuedAt),
+    );
+    const build = async seq => {
+      const extract = {
+        ...draft,
+        extractNo: formatExtractNo(this.settings?.country ?? 'NA', year, seq),
+      };
+      const pdf = await this.sealedPdf(extract, record, proof, explorerUrl);
+      extract.pdfSha256 = (
+        await this.files.put({
+          key: extract.pdfKey,
+          body: pdf,
+          contentType: 'application/pdf',
+        })
+      ).sha256;
+      return extract;
+    };
+    // the number, the register row and its event are committed together (API-613)
+    let extract;
     try {
       await this.atomic(async () => {
-        await this.repo.addExtract(extract);
+        extract = await this.repo.addExtract({year, build});
         await this.events?.publish(
           'extracts.extract.issued',
           {
@@ -146,7 +177,7 @@ export class ExtractsService {
       });
     } catch (err) {
       // not in the register: the PDF is not kept either
-      await this.files.delete(extract.pdfKey).catch(() => {});
+      await this.files.delete(draft.pdfKey).catch(() => {});
       throw err;
     }
     return withCurrent(extract, record);
@@ -193,7 +224,7 @@ export class ExtractsService {
     const {org} = this.settings;
     return sealPdf(pdfDoc, this.sealer, {
       name: org.subtitle ? `${org.name}, ${org.subtitle}` : org.name,
-      reason: `Ownership extract ${extract.id} of ${record.recordNo}, version ${extract.versionNumber}`,
+      reason: `Ownership extract ${extract.extractNo} of ${record.recordNo}, version ${extract.versionNumber}`,
       signingTime: extract.issuedAt,
     });
   }
@@ -281,6 +312,7 @@ export class ExtractsService {
   eventData(extract) {
     return {
       extractId: extract.id,
+      extractNo: extract.extractNo,
       recordId: extract.recordId,
       recordNo: extract.recordNo,
       versionNumber: extract.versionNumber,

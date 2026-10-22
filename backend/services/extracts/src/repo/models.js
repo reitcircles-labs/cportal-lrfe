@@ -14,6 +14,10 @@ export function defineModels(sequelize) {
     'extract',
     {
       id: {type: DataTypes.UUID, primaryKey: true},
+      // EX-<country>-<year>-<nnnnnn>, printed on the extract (API-692); from the yearly counter
+      extractNo: {type: DataTypes.STRING},
+      // 12 characters for typing in on the check page, printed on the extract next to the QR code
+      checkCode: {type: DataTypes.STRING(12)},
       recordId: {type: DataTypes.UUID, allowNull: false},
       recordNo: {type: DataTypes.STRING, allowNull: false},
       // the land record's committed version the extract shows
@@ -43,9 +47,20 @@ export function defineModels(sequelize) {
       schema: SCHEMA,
       freezeTableName: true,
       timestamps: false,
+      // the unique indexes on extractNo and checkCode are made in repo.sync() (fixed names)
       indexes: [{fields: ['recordId', 'issuedAt']}],
     },
   );
 
-  return {Extract};
+  // The last extract number used per year: a number is used only when its extract is saved.
+  const Counter = sequelize.define(
+    'counter',
+    {
+      year: {type: DataTypes.INTEGER, primaryKey: true},
+      last: {type: DataTypes.INTEGER, allowNull: false},
+    },
+    {schema: SCHEMA, freezeTableName: true, timestamps: false},
+  );
+
+  return {Extract, Counter};
 }

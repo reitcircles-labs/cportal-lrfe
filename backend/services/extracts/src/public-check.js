@@ -1,4 +1,6 @@
-/** What a token looks like: 32 random bytes, base64url (newToken). Anything else is unknown. */
+import {normalizeCheckCode} from './check-code.js';
+
+/** What a token looks like: 32 random bytes, base64url (newToken). */
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 /** How many characters of the fingerprint (the version's seal) the answer shows. */
@@ -13,6 +15,7 @@ const FINGERPRINT_SHOWN = 8;
  *   mismatch      it does not match the registry's record (a check failed)
  *   unknown       there is no such extract
  *   unavailable   it cannot be checked right now
+ * An extract is found by its QR code's token or by its check code, typed in from the extract.
  * Current and replaced are answered only when the version has just been checked: its seal held by
  * land-records, in the audit tree, and in a confirmed batch on the blockchain. Every answer has the
  * same fields, null where they do not apply, and never anything about the owners or the parcel.
@@ -26,16 +29,21 @@ export class ExtractCheck {
   }
 
   /**
-   * The answer for `token`, and for the log why a check could not be made (`reason`: the part
-   * that could not be read).
+   * The answer for `token`: the QR code's token, or the check code typed in from the extract
+   * (API-692); and for the log why a check could not be made (`reason`: the part that could not be
+   * read). Anything else is unknown.
    * @return {Promise<{answer: object, reason: (string|null)}>}
    */
   async check(token) {
-    let extract;
+    let extract = null;
     try {
-      extract = TOKEN.test(token)
-        ? await this.repo.getExtractByToken(token)
-        : null;
+      const isToken = TOKEN.test(token);
+      const code = isToken ? null : normalizeCheckCode(token);
+      if (isToken) {
+        extract = await this.repo.getExtractByToken(token);
+      } else if (code) {
+        extract = await this.repo.getExtractByCheckCode(code);
+      }
     } catch {
       return this.unavailable(null, 'register');
     }
@@ -119,12 +127,13 @@ export class ExtractCheck {
 
   /**
    * One answer, every field always there. Of the register row only what is printed on the extract
-   * and is not personal: its id, the record number, the version and the issue date.
+   * and is not personal: its id and number, the record number, the version and the issue date.
    */
   answer(state, extract = null, facts = {}) {
     return {
       state,
       extractId: extract?.id ?? null,
+      extractNo: extract?.extractNo ?? null,
       recordNo: extract?.recordNo ?? null,
       versionNumber: extract?.versionNumber ?? null,
       issuedAt: extract?.issuedAt ?? null,

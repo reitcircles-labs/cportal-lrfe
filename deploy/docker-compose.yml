@@ -309,6 +309,8 @@ services:
       EXTRACTS_LEGAL_TEXT: ${LRFE_EXTRACT_LEGAL_TEXT:-}
       # the time zone of the dates printed on the extract (e.g. Africa/Windhoek); empty: UTC
       EXTRACTS_TIME_ZONE: ${LRFE_TIME_ZONE:-}
+      # the country in the extract number (EX-NA-2026-000012), as in record numbers
+      EXTRACTS_COUNTRY_CODE: ${LRFE_COUNTRY_CODE:-NA}
       # the organisation seal on the PDF: bao = its key in OpenBao (profile bao) and its certificate
       # (LRFE_SEAL_CERT); empty = no seal, and no extract can be issued (README.md, part D)
       EXTRACTS_SEAL: ${LRFE_SEAL:-}

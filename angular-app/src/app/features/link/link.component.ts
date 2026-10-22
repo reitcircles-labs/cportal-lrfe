@@ -29,6 +29,8 @@ import {LinkDocumentsSearch} from './link-documents-search';
 import {LinkDiscussion} from './link-discussion';
 import {LinkReviewFlow} from './link-review-flow';
 import {LinkLifecycle} from './link-lifecycle';
+import {LinkExtracts} from './link-extracts';
+import {LinkExtractsTabComponent} from './link-extracts-tab.component';
 
 /**
  * Land records (#/link) on the land-records service: list and search records; a record's documents
@@ -54,6 +56,7 @@ import {LinkLifecycle} from './link-lifecycle';
     LinkCreateDialogComponent,
     LinkOwnersDialogComponent,
     LinkBinDialogComponent,
+    LinkExtractsTabComponent,
   ],
   providers: [
     LinkStore,
@@ -64,6 +67,7 @@ import {LinkLifecycle} from './link-lifecycle';
     LinkDiscussion,
     LinkReviewFlow,
     LinkLifecycle,
+    LinkExtracts,
   ],
   template: `
     <div class="ws" [class.list-hidden]="!store.listOpen()">
@@ -83,6 +87,9 @@ import {LinkLifecycle} from './link-lifecycle';
                 <button role="tab" [attr.aria-selected]="store.tab() === 'details'" [class.on]="store.tab() === 'details'" (click)="store.tab.set('details')">Details</button>
                 <button role="tab" [attr.aria-selected]="store.tab() === 'history'" [class.on]="store.tab() === 'history'" (click)="store.tab.set('history'); store.loadHistory()">History</button>
                 <button role="tab" [attr.aria-selected]="store.tab() === 'discussion'" [class.on]="store.tab() === 'discussion'" (click)="store.tab.set('discussion'); store.loadDiscussion()">Discussion <span>{{ store.events().length }}</span></button>
+                @if (extracts.allowed()) {
+                  <button role="tab" [attr.aria-selected]="store.tab() === 'extracts'" [class.on]="store.tab() === 'extracts'" (click)="store.tab.set('extracts')">Extracts <span>{{ extracts.validCount() }}</span></button>
+                }
                 @if (store.rbac.can('record.finalize')) {
                   <button role="tab" [attr.aria-selected]="store.tab() === 'review'" [class.on]="store.tab() === 'review'" (click)="store.openReview()">Review &amp; approve @if (store.myTask()) { <span class="due" aria-hidden="true">1</span><span class="sr-only">(waiting for you)</span> }</button>
                 }
@@ -94,6 +101,7 @@ import {LinkLifecycle} from './link-lifecycle';
               @if (store.tab() === 'history') { <app-link-history-tab /> }
               @if (store.tab() === 'discussion') { <app-link-discussion-tab /> }
               @if (store.tab() === 'review') { <app-link-review-tab /> }
+              @if (store.tab() === 'extracts') { <app-link-extracts-tab /> }
             </div>
 
             <aside class="stack side" style="gap:16px"><app-link-side /></aside>
@@ -140,6 +148,8 @@ import {LinkLifecycle} from './link-lifecycle';
 })
 export class LinkComponent {
   protected readonly store = inject(LinkStore);
+  // created with the page, so a record's extracts are loaded when it is opened (API-692)
+  protected readonly extracts = inject(LinkExtracts);
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);

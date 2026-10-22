@@ -1,3 +1,4 @@
+import {printedCheckCode} from '../src/check-code.js';
 import {X509Certificate, createHash, generateKeyPairSync} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -67,7 +68,10 @@ describe('the extract PDF (API-691)', () => {
       'Land Titles Office',
       'Republic of Testland',
       'Ownership extract',
-      extract.id,
+      'EX-NA-2026-000001',
+      // the check page's address and the check code, for typing in (API-692)
+      CHECK_URL_BASE,
+      printedCheckCode(extract.checkCode),
       'Issued 21 October 2026, 08:00',
       'The land record, version 1 (current on the issue date)',
       `Parcel ${record.label}`,
@@ -125,10 +129,10 @@ describe('the extract PDF (API-691)', () => {
     const {extract, pdf} = await issued();
     const {pages, text} = await readPdf(pdf);
     expect(readQr(pages[0])).to.equal(`${CHECK_URL_BASE}/${extract.token}`);
-    // also printed for typing in
-    expect(text.replace(/\s+/g, '')).to.include(
-      `${CHECK_URL_BASE}/${extract.token}`,
-    );
+    // for typing in, the check page's address and the check code are printed; the token is not
+    expect(text).to.include(CHECK_URL_BASE);
+    expect(text).to.include(printedCheckCode(extract.checkCode));
+    expect(text).not.to.include(extract.token);
   });
 
   it("has the version's proof attached inside, the same JSON as the evidence pack's", async () => {
@@ -292,6 +296,8 @@ describe('the extract PDF (API-691)', () => {
       {
         ...forMaria(record),
         id: 'e1',
+        extractNo: 'EX-NA-2026-000001',
+        checkCode: 'K7QF2M9DXH4T',
         recordNo: record.recordNo,
         token: 't'.repeat(43),
         issuedAt: new Date(),
@@ -308,7 +314,7 @@ describe('the extract PDF (API-691)', () => {
     expect(text).to.include('Issued to Johannes !Gawaseb, registered owner');
     // no "?" in place of a letter: only the check box's question
     expect(lines.filter(line => line.includes('?'))).to.deep.equal([
-      'No camera? Open this address:',
+      'No camera? Open this address and type the check code:',
     ]);
   });
 
@@ -326,6 +332,8 @@ describe('the extract PDF (API-691)', () => {
       {
         ...forMaria(record),
         id: 'e1',
+        extractNo: 'EX-NA-2026-000001',
+        checkCode: 'K7QF2M9DXH4T',
         recordNo: record.recordNo,
         token: 't'.repeat(43),
         issuedAt: new Date(),

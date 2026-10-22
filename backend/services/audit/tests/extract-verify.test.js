@@ -71,6 +71,8 @@ async function extractPdf(a, proof, {sealer, ownerName} = {}) {
   const pdfDoc = await renderExtract({
     extract: {
       id: '7d3f0c2e-1b8a-4c55-9e61-2a4b8c9d0e1f',
+      extractNo: 'EX-NA-2026-000001',
+      checkCode: 'K7QF2M9DXH4T',
       token: 'test-token',
       issuedAt,
       versionNumber: 1,

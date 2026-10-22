@@ -24,7 +24,13 @@ import {DiscussionVersion, discussionEvents} from './discussion';
 import {matches} from './link-format';
 
 export type Tab =
-  'documents' | 'chain' | 'details' | 'history' | 'discussion' | 'review';
+  | 'documents'
+  | 'chain'
+  | 'details'
+  | 'history'
+  | 'discussion'
+  | 'review'
+  | 'extracts';
 export type DFilter = 'all' | 'comments' | 'decisions';
 export type SFilter =
   | 'all'

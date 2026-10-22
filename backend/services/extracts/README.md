@@ -34,13 +34,19 @@ The answer is the register row (201); `GET /extracts/:id/pdf` gives the PDF.
 
 ## The register
 
-Table `extracts.extract`, one row per extract, never deleted: `id`, `recordId`, `recordNo`,
+Table `extracts.extract`, one row per extract, never deleted: `id`, `extractNo`
+(`EX-<country>-<year>-<nnnnnn>`, printed on the extract, API-692), `checkCode` (12 characters
+without I, L, O or U, printed on the extract for typing in on the check page), `recordId`, `recordNo`,
 `versionNumber`, `issuedById`, `issuedByName`, `ownerIndex`, `ownerName`, `ownerIdLast4` (the last
 four characters of the owner's ID number: the full number is not kept), `documentSeen`,
 `issuedAt`, `token` (32 random bytes, URL-safe, unique: the public check of an extract will find it
 by this), `status` `valid` | `revoked`, `revokedAt`, `revokedById`, `revokedByName`,
 `revokeReason`, `pdfSha256` (the SHA-256 of the sealed PDF as issued) and `pdfKey` (where the PDF
 is stored; never in an answer).
+
+The number comes from table `extracts.counter` (one row per year): it is taken while the PDF is
+made, sealed and stored, and the row is written in the same transaction, so a failed issue uses no
+number and the numbers have no gaps.
 
 `GET /extracts?recordId=` lists a record's extracts newest first. Every row returned also has
 `isCurrentVersion`: its version is still the record's current one (a valid extract of a replaced
@@ -119,14 +125,17 @@ re-rendered or re-sealed. A revoked extract is not given out again (409).
 | `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | The registry's name on the extract and in its seal notice, as identity and audit read them |
 | `EXTRACTS_CHECK_URL_BASE` | The public check page the QR code opens; not set: `<LRFE_PUBLIC_URL>/#/check`. One of the two is required with `NODE_ENV=production` |
 | `EXTRACTS_LEGAL_TEXT` | What the extract certifies; a placeholder until the registry has confirmed it |
-| `EXTRACTS_TIME_ZONE` | The IANA time zone of the dates printed, e.g. `Africa/Windhoek` (the server's when unset) |
+| `EXTRACTS_TIME_ZONE` | The IANA time zone of the dates printed, e.g. `Africa/Windhoek` (the server's when unset); also the year of the extract number |
+| `EXTRACTS_COUNTRY_CODE` | The country in the extract number, e.g. `NA` (the default); the bundle sets it from `LRFE_COUNTRY_CODE` |
 | `EXTRACTS_SEAL`, `EXTRACTS_SEAL_KEY`, `EXTRACTS_SEAL_CERT`, `EXTRACTS_SEAL_CERT_FILE`, `BAO_*` | The seal, above |
 | `EXTRACTS_STORAGE`, `EXTRACTS_LOCAL_DIR` | Where the PDFs are kept, above |
 
 ## The public check
 
 `GET /public/extracts/:token` (`/api/public/extracts/:token` through the gateway) needs no sign-in:
-anyone holding the extract scans its QR code, which carries the token. The gateway forwards only
+anyone holding the extract scans its QR code, which carries the token, or types the check code
+printed on it (spaces, dashes and lower case don't matter; O is read as 0, I and L as 1). The
+gateway forwards only
 GET on that path, without the caller's credentials, and rate-limits it per client address; nothing
 else of the service is reachable without a sign-in. The answer is one state, always with the same
 fields, null where they do not apply:
@@ -159,10 +168,10 @@ Each check is logged (`extract checked`) with its state and the extract's id, an
 `unavailable` or `mismatch` which part was the cause (`register`, `land-records`, `audit`); never
 personal data. The request logs, here and in the gateway, show the path with `<token>` in place of
 the token, and the gateway's proxy lines for the public route are off: whoever holds the token can
-check the extract. There is no search: the token is the only way in.
+check the extract. There is no search: the token or the check code is the only way in.
 
 ## Events
 
-Both events carry `extractId`, `recordId`, `recordNo` and `versionNumber` (issued: also
+Both events carry `extractId`, `extractNo`, `recordId`, `recordNo` and `versionNumber` (issued: also
 `issuedFor: { name }` and `pdfSha256`; revoked: `reason`), never the token or the ID number. The audit service reads
 them like every durable event, so they are in the land record's trail.

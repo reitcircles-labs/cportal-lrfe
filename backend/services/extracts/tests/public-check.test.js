@@ -14,6 +14,7 @@ const FIELDS = [
   'checkedAt',
   'explorerUrl',
   'extractId',
+  'extractNo',
   'fingerprintEnd',
   'issuedAt',
   'recordNo',
@@ -83,6 +84,7 @@ describe('the public check of an extract (API-693)', () => {
     expect(body).to.include({
       state: 'current',
       extractId: extract.id,
+      extractNo: 'EX-NA-2026-000001',
       recordNo: record.recordNo,
       versionNumber: 1,
       fingerprintEnd: record.current.seal.slice(-8),
@@ -175,7 +177,14 @@ describe('the public check of an extract (API-693)', () => {
   it('unknown: the same fields, all empty, for a token never issued, a malformed one or a long one', async () => {
     const ctx = await makeExtracts();
     await issued(ctx);
-    for (const token of [newToken(), 'abc', 'x'.repeat(43), '../extracts']) {
+    for (const token of [
+      newToken(),
+      'abc',
+      'x'.repeat(43),
+      '../extracts',
+      'K7QF 2M9D XH4T', // a well-formed check code never issued
+      'K7QF 2M9D XH4U', // U is not in a check code
+    ]) {
       const {status, body} = await checkOver(ctx.app, token);
       expect(status, token).to.equal(200);
       expect(Object.keys(body).sort()).to.deep.equal(FIELDS);

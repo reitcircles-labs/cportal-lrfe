@@ -76,6 +76,7 @@ describe('ownership extracts (API-692)', () => {
       expect(event.actor).to.deep.equal(rec);
       expect(event.data).to.deep.equal({
         extractId: extract.id,
+        extractNo: 'EX-NA-2026-000001',
         recordId: record.id,
         recordNo: record.recordNo,
         versionNumber: 1,
@@ -288,6 +289,7 @@ describe('ownership extracts (API-692)', () => {
       expect(event.actor).to.deep.equal(rec);
       expect(event.data).to.deep.equal({
         extractId: extract.id,
+        extractNo: 'EX-NA-2026-000001',
         recordId: record.id,
         recordNo: record.recordNo,
         versionNumber: 1,

@@ -14,6 +14,7 @@ const DEV_CHECK_URL_BASE = 'http://localhost:4200/#/check';
  *                 Not set: <LRFE_PUBLIC_URL>/#/check, the portal's own address
  *   legalText     EXTRACTS_LEGAL_TEXT: what the extract certifies, in the registry's words
  *   timeZone      EXTRACTS_TIME_ZONE: the IANA time zone of the dates printed (the server's if unset)
+ *   country       EXTRACTS_COUNTRY_CODE: the country in the extract number (EX-NA-2026-000012), NA if unset
  * One of the two is required with NODE_ENV=production: a QR code must never point to a development
  * machine.
  */
@@ -35,5 +36,6 @@ export function extractSettingsFromEnv(source = process.env) {
     checkUrlBase: checkUrlBase || DEV_CHECK_URL_BASE,
     legalText: (source.EXTRACTS_LEGAL_TEXT ?? '').trim() || DEFAULT_LEGAL_TEXT,
     timeZone,
+    country: (source.EXTRACTS_COUNTRY_CODE ?? '').trim() || 'NA',
   };
 }
