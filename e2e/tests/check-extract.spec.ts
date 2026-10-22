@@ -126,7 +126,7 @@ test.describe
 
   test(
     'the check code typed in: the extract matches the record and is current, and nothing personal is shown',
-    {tag: ['@API-693']},
+    {tag: ['@API-693', '@API-694']},
     async ({page}) => {
       await page.goto('/#/check');
       // the registry, from the site's settings, and no sign-in
@@ -191,6 +191,18 @@ test.describe
       await expect(
         page.getByRole('link', {name: 'Download the offline checker'}),
       ).toBeVisible();
+      // the offline checker's command, with the registry's address and seal fingerprint (API-694)
+      const command = page.locator('.cmd code');
+      await expect(command).toContainText(
+        /^node lrfe-verify\.mjs extract\.pdf --address \S+ --seal [0-9a-f]{64}$/,
+      );
+      await expect(command).not.toContainText('<the');
+      await command.scrollIntoViewIfNeeded();
+      await evidence(
+        page,
+        'API-694',
+        'The offline checker on the check page: download it, and its command with the registry address and seal fingerprint',
+      );
       await evidence(
         page,
         'API-693',

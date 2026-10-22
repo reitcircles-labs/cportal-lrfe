@@ -216,6 +216,19 @@ type Tone = 'ok' | 'warn' | 'bad' | 'plain';
             <span>The registry's seal fingerprint (SHA-256): <code class="mono">{{ s.sha256 }}</code></span>
           }
           <span><a [href]="verifierUrl" download="lrfe-verify.mjs">Download the offline checker</a>: on your own computer, it checks the registry's seal and the proof attached to the PDF against the blockchain, with the two values above.</span>
+          <h3 class="guide-h">Running the offline checker</h3>
+          <ol class="steps">
+            <li>Install Node.js 18 or later (nodejs.org) if the computer doesn't have it. Nothing else is needed.</li>
+            <li>Put the checker and the extract's PDF in one folder, and run there:
+              <div class="cmd">
+                <code class="mono">{{ command() }}</code>
+                <button type="button" class="btn btn-secondary btn-sm" aria-label="Copy the command" (click)="copyCommand()">{{ copied() ? 'Copied' : 'Copy' }}</button>
+              </div>
+              <span class="sr-only" aria-live="polite">{{ copied() ? 'Copied' : '' }}</span>
+            </li>
+            <li><b>VALID</b> means the PDF is as the registry sealed it, and its record version is on the blockchain. <b>NOT VALID</b> says which check failed: don't rely on the extract. If the blockchain can't be reached, it says so: try again later.</li>
+          </ol>
+          <span class="small muted">An offline check can't tell whether the record has a newer version or the extract was withdrawn: only this page can, so always scan the QR code too.</span>
         </div>
       </details>
 
@@ -268,6 +281,11 @@ type Tone = 'ok' | 'warn' | 'bad' | 'plain';
     .own summary { cursor: pointer; padding: 14px 0; font-weight: 600; }
     .own-in { display: flex; flex-direction: column; gap: 8px; padding-bottom: 16px; }
     .own code { overflow-wrap: anywhere; }
+    .guide-h { margin: 8px 0 0; font-size: 15px; }
+    .steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+    .cmd { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+    .cmd code { flex: 1 1 280px; min-width: 0; padding: 8px 10px; border-radius: 8px; background: var(--color-surface-2); border: 1px solid var(--color-divider); font-size: 13px; }
+    .btn-sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
     .foot { display: flex; flex-direction: column; gap: 4px; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   `,
@@ -295,6 +313,12 @@ export class CheckExtractComponent {
   protected readonly dragging = signal(false);
   protected readonly wallet = signal<string | null>(null);
   protected readonly seal = signal<SealCertificate | null>(null);
+  protected readonly copied = signal(false);
+  /** The offline checker's command, with the registry's address and seal fingerprint (API-694). */
+  protected readonly command = computed(
+    () =>
+      `node lrfe-verify.mjs extract.pdf --address ${this.wallet() ?? '<the address above>'} --seal ${this.seal()?.sha256 ?? '<the seal fingerprint above>'}`,
+  );
 
   protected readonly answer = computed(() => {
     const r = this.result();
@@ -380,6 +404,16 @@ export class CheckExtractComponent {
 
   protected value(event: Event): string {
     return (event.target as HTMLInputElement).value;
+  }
+
+  protected async copyCommand() {
+    try {
+      await navigator.clipboard.writeText(this.command());
+      this.copied.set(true);
+      setTimeout(() => this.copied.set(false), 2_000);
+    } catch {
+      // the clipboard can be blocked; the command stays on screen to copy by hand
+    }
   }
 
   protected choose(event: Event) {
