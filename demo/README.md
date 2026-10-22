@@ -201,8 +201,9 @@ issuing an extract is refused. The seal's key lives in OpenBao, like the wallet 
    The certificate is accepted only for that key: the service checks it before it signs anything.
 3. **The settings** in `deploy/.env`: `LRFE_SEAL=bao`, `LRFE_SEAL_CERT=` the line printed above,
    `EXTRACTS_ENCRYPTION=bao` (the extract PDFs encrypted like the documents), optionally `LRFE_COAT_OF_ARMS` (a PNG or
-   JPEG; its path starts with `./` or `/`). `LRFE_PUBLIC_URL` is the address printed on the extract and held by its
-   QR code: for the demo through the SSH tunnel, `http://localhost:8088`. Then `docker compose up -d --wait`.
+   JPEG; its path starts with `./` or `/`), and `LRFE_TIME_ZONE=Africa/Windhoek`: the time printed on the extract
+   (unset, it is UTC and differs from the screens). `LRFE_PUBLIC_URL` is the address printed on the extract and held
+   by its QR code: for the demo through the SSH tunnel, `http://localhost:8088`. Then `docker compose up -d --wait`.
 4. **Check:** as the records officer, a land record whose version is on the blockchain, tab **Extracts**: **Issue
    extract** is enabled once the version is confirmed. Do not issue one on the demo install before the demo: a fresh
    start (step 1 of "Before every demo") resets the register.

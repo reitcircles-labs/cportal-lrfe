@@ -11,9 +11,8 @@ optional steps add 15.
 Checked step by step in the browser on 16 October 2026 (version 0.1.0-95320f9, real AI): on a rehearsal install, and
 then on the demo install itself with anchoring on (preview blockchain), including the auditor's sign-off. Checked again
 for demo v2 on 21 October 2026 (version 0.1.0-668e5d8, real AI), on a rehearsal install with anchoring off: Acts 1 to
-5.14. Act 6 (the ownership extract, 22 October 2026) follows the screens as the automated tests show them
-(`e2e/tests/ownership-extracts.spec.ts`, `e2e/tests/check-extract.spec.ts`); it is still to be walked through on an
-install.
+5.14. Act 6 (the ownership extract) was walked through on the demo install itself on 22 October 2026 (version
+0.1.0-4afce25, anchoring on, the demo seal), including the offline checker (VALID against the preview blockchain).
 
 ## Before you start
 
@@ -390,4 +389,5 @@ Questions often asked, and where to show the answer:
 | **Changes match: mark checked** is not there | The version is not on the blockchain yet: come back to it after 5.19 to 5.21 |
 | **Issue extract** is disabled, "Waiting for next batch" | The version is not on the blockchain yet: come back after 5.15 |
 | "The registry's electronic seal is not set up" | The seal is not configured on this install: [README.md](README.md), "Ownership extracts for the demo". Show the check page with the automated tests' screenshots instead |
+| The extract's issue time differs from the check page's by an hour or more | The browser shows the check page in its own time zone, the extract in the registry's (`LRFE_TIME_ZONE`): present from a computer set to the registry's time zone |
 | The check page says "Too many checks from this connection" | The public check allows about 10 requests a minute per connection (each opening of the page makes two): wait a minute |
