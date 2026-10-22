@@ -71,7 +71,7 @@ const DEMO_USERS = [
 
 /** The containers that use the data volumes; OpenBao and the blockchain node are not among them. */
 const APP_SERVICES =
-  'web gateway identity edrms bpm intake land-records audit db-setup nats postgres';
+  'web gateway identity edrms bpm intake land-records audit extracts db-setup nats postgres';
 
 const OK = 'ok';
 const WARN = 'warn';
@@ -196,6 +196,7 @@ function checkContainers(env) {
     'intake',
     'land-records',
     'audit',
+    'extracts',
     'gateway',
     'web',
   ];
@@ -294,6 +295,7 @@ async function checkApps(env) {
     ['intake', '/api/intake/batches'],
     ['land-records', '/api/records'],
     ['audit', '/api/audit/anchoring/wallet'],
+    ['extracts', '/api/extracts'],
   ];
   for (const [service, path] of servicePaths) {
     const res = await get(`${web}${path}`);
@@ -355,7 +357,7 @@ console.log(JSON.stringify({ users, counts }));
 
 function checkUsersAndData(env) {
   const freshStart = profilesOf(env).includes('postgres')
-    ? `${composeCmd} rm -sf ${APP_SERVICES}, then docker volume rm ${project}_pgdata ${project}_edrms-files ${project}_intake-files ${project}_natsdata, ` +
+    ? `${composeCmd} rm -sf ${APP_SERVICES}, then docker volume rm ${project}_pgdata ${project}_edrms-files ${project}_intake-files ${project}_extracts-files ${project}_natsdata, ` +
       `then ${composeCmd} up -d. OpenBao and the blockchain node keep running and keep their data (not down -v: it deletes the services' OpenBao logins)`
     : 'the database is an existing server: empty it there (its administrator), and the edrms-files and intake-files volumes';
   const answer = inContainer('identity', IDENTITY_PROGRAM, {
@@ -545,6 +547,44 @@ function checkDocuments() {
   );
 }
 
+/** The registry's seal on ownership extracts (Act 6): without it, no extract can be issued. */
+async function checkExtracts(env) {
+  const res = await get(
+    `http://127.0.0.1:${env.LRFE_HTTP_PORT || 8080}/api/public/extracts/seal`,
+  );
+  let seal = null;
+  try {
+    seal = JSON.parse(res.text);
+  } catch {
+    // reported below
+  }
+  if (res.status !== 200 || !seal?.sha256) {
+    report(
+      'Ownership extracts',
+      WARN,
+      'seal',
+      `not set up${res.status ? ` (HTTP ${res.status})` : ''}: no extract can be issued (Act 6)`,
+      'README.md, "Ownership extracts for the demo"',
+    );
+    return;
+  }
+  const until = seal.validTo.slice(0, 10);
+  report(
+    'Ownership extracts',
+    OK,
+    'seal',
+    `set up: ${seal.subject}, valid until ${until}, fingerprint ${seal.sha256.slice(0, 16)}…`,
+  );
+  report(
+    'Ownership extracts',
+    env.EXTRACTS_ENCRYPTION === 'bao' ? OK : WARN,
+    'stored PDFs',
+    env.EXTRACTS_ENCRYPTION === 'bao'
+      ? 'encrypted with keys from OpenBao'
+      : 'not encrypted (EXTRACTS_ENCRYPTION is not bao)',
+  );
+}
+
 async function checkAnchoring(env) {
   if (!env.CARDANO_PROVIDER) {
     report(
@@ -677,6 +717,7 @@ if (!existsSync(envFile)) {
   if (identityUp) checkUsersAndData(env);
   checkAi(env);
   checkDocuments();
+  await checkExtracts(env);
   await checkAnchoring(env);
 }
 if (asJson) {
