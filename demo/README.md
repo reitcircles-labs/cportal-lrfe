@@ -167,6 +167,30 @@ ADA (preview) to that address; each batch costs about 0.2 ADA.
 The fresh start (step 1 of "Before every demo") keeps OpenBao, its wallet key and the node: only the portal's data
 goes. Each fresh install numbers its batches from 1 again; the wallet's earlier transactions stay on the blockchain.
 
+## A new demo version from main
+
+`demo/release.mjs` (API-794) makes a new demo version from `origin/main`, the same way every time, with
+the guards of the steps above. In Claude Code, ask for it ("a new demo version from main"): the
+`demo-release` agent (`.claude/agents/demo-release.md`) runs it, after you have said whether to keep
+the demo's data. By hand, from the repository root:
+
+```bash
+node demo/release.mjs build                                 # the images of origin/main, e.g. 0.1.0-3b19fe7
+node demo/release.mjs rehearse --version 0.1.0-3b19fe7      # a throwaway install with its own OpenBao: READY?
+node demo/release.mjs test --version 0.1.0-3b19fe7          # the docker e2e on the images
+node demo/release.mjs deploy --version 0.1.0-3b19fe7 --mode upgrade   # or --mode fresh: data erased
+```
+
+or all four, stopping at the first failure: `node demo/release.mjs all --mode upgrade`.
+
+- **upgrade** keeps the data and the authenticator set-ups; **fresh** is step 1 of "Before every demo"
+  (and the users set up their authenticators again).
+- The deploy refuses, before changing anything, if the blockchain node's or OpenBao's configuration
+  would change; afterwards it checks they are the same containers, never restarted, and that
+  `lrfe_cardano-db` and `lrfe_bao-data` are there. It copies `deploy/.env` to
+  `~/lrfe-env.backup-<date>` and changes only `LRFE_VERSION`.
+- **Going back:** the older images are kept: `node demo/release.mjs deploy --version <previous> --mode upgrade`.
+
 ## Ownership extracts for the demo
 
 Act 6 of the storyline issues an ownership extract (epic API-689) and checks it on the public check page. It needs
