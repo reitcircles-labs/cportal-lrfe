@@ -1866,7 +1866,12 @@ test.describe
       await row
         .getByRole('link', {name: 'Open Erf 1873, Klein Windhoek for audit'})
         .click();
-      await expect(page.getByText('Trail chain intact')).toBeVisible();
+      // the page asks for the whole trail's check only after the record, its audit check, its
+      // history and every version have loaded, so on a busy machine it can take longer than the
+      // default 5 s (the requests themselves take well under a second)
+      await expect(page.getByText('Trail chain intact')).toBeVisible({
+        timeout: 15_000,
+      });
       const trail = page.locator('app-audit-trail');
       await expect(trail).toContainText('Committed version');
       // newest first, 25 at a time: back to the first steps, the capture and filing of its documents

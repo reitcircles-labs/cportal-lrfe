@@ -173,6 +173,12 @@ export const PERMS: Perm[] = [
     desc: 'Commit a version for tokenization',
   },
   {
+    id: 'extract.issue',
+    group: 'Land records',
+    label: 'Issue ownership extracts',
+    desc: 'Issue an extract of a record for its owner, revoke one',
+  },
+  {
     id: 'audit.view',
     group: 'Audit',
     label: 'View audit trail & evidence',

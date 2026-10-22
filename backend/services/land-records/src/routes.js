@@ -20,28 +20,34 @@ const actorOf = req => ({id: req.user.sub, name: req.user.name});
 /** The land-records HTTP routes. */
 export async function recordsRoutes(app, {service}) {
   const canView = app.requirePerm('record.view');
-  // users who may view records, and the audit service: verifying a proof (API-658), reading a
-  // version's approver and documents for a sign-off or finding (API-659), the evidence pack (API-660),
-  // the Audit screen's list (API-661)
-  async function canViewOrAudit(req, reply) {
-    try {
-      await req.jwtVerify();
-    } catch {
-      throw new UnauthorizedError('Invalid or expired token');
-    }
-    if (req.user.typ === 'service') {
-      if (req.user.sub !== 'audit') {
-        throw new ForbiddenError('Not permitted', {service: req.user.sub});
+  /** Users who may view records, and the services named. */
+  function canViewOrService(...services) {
+    async function guard(req, reply) {
+      try {
+        await req.jwtVerify();
+      } catch {
+        throw new UnauthorizedError('Invalid or expired token');
       }
-      return;
+      if (req.user.typ === 'service') {
+        if (!services.includes(req.user.sub)) {
+          throw new ForbiddenError('Not permitted', {service: req.user.sub});
+        }
+        return;
+      }
+      return canView(req, reply);
     }
-    return canView(req, reply);
+    return describeGuard(guard, {
+      kind: 'user-or-service',
+      allOf: ['record.view'],
+      services,
+    });
   }
-  describeGuard(canViewOrAudit, {
-    kind: 'user-or-service',
-    allOf: ['record.view'],
-    services: ['audit'],
-  });
+  // the audit service: verifying a proof (API-658), reading a version's approver and documents for
+  // a sign-off or finding (API-659), the evidence pack (API-660), the Audit screen's list (API-661)
+  const canViewOrAudit = canViewOrService('audit');
+  // also the extracts service: the current version's owners, before an extract is issued (API-692),
+  // and when the version after an extract's was committed, for its public check (API-693)
+  const canViewOrAuditOrExtracts = canViewOrService('audit', 'extracts');
 
   app.get('/records/catalogue', {onRequest: app.authenticate}, async () =>
     service.catalogue(),
@@ -524,7 +530,7 @@ export async function recordsRoutes(app, {service}) {
 
   app.get(
     '/records/:id',
-    {onRequest: canViewOrAudit, schema: idParams()},
+    {onRequest: canViewOrAuditOrExtracts, schema: idParams()},
     async req => service.getRecord(req.params.id),
   );
   app.get(
@@ -539,7 +545,7 @@ export async function recordsRoutes(app, {service}) {
   );
   app.get(
     '/records/:id/versions/:n',
-    {onRequest: canViewOrAudit, schema: idParams(versionParam)},
+    {onRequest: canViewOrAuditOrExtracts, schema: idParams(versionParam)},
     async req => service.getVersion(req.params.id, req.params.n),
   );
   app.get(

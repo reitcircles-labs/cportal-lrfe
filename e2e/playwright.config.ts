@@ -51,6 +51,9 @@ const containers: PlaywrightTestConfig['webServer'] = {
   stdout: 'pipe',
 };
 
+/** Specs that make their own confirmed batches (POST /api/audit/test/anchorings) besides land-record.spec.ts. */
+const BATCHES_OF_THEIR_OWN = /(ownership-extracts|check-extract)\.spec\.ts/;
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -72,6 +75,23 @@ export default defineConfig({
       name: 'chromium',
       use: {...devices['Desktop Chrome'], channel: 'chromium'},
       dependencies: ['setup'],
+      testIgnore: BATCHES_OF_THEIR_OWN,
+    },
+    // tests that put their own batch on the test blockchain run after all the others: a batch takes
+    // every version waiting, so made in parallel it would take the batch another test expects (API-692)
+    {
+      name: 'own batches',
+      testMatch: /ownership-extracts\.spec\.ts/,
+      use: {...devices['Desktop Chrome'], channel: 'chromium'},
+      dependencies: ['chromium'],
+    },
+    // the extract check makes its own batches too: after 'own batches', not beside it, as
+    // ownership-extracts first expects a version still waiting for its batch
+    {
+      name: 'extract check',
+      testMatch: /check-extract\.spec\.ts/,
+      use: {...devices['Desktop Chrome'], channel: 'chromium'},
+      dependencies: ['own batches'],
     },
   ],
   webServer: process.env.E2E_DOCKER ? containers : ownStack,

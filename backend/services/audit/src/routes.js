@@ -116,11 +116,12 @@ export async function auditRoutes(
     async req => proofs.verify(req.body.kind, req.body.id, req.body.version),
   );
 
-  // the anchoring status of versions, for land-records and edrms to show next to them
+  // the anchoring status of versions, for land-records and edrms to show next to them, and for the
+  // extracts service: an extract is issued only of a version on the blockchain (API-692)
   app.post(
     '/audit/anchoring',
     {
-      onRequest: app.requireService('land-records', 'edrms'),
+      onRequest: app.requireService('land-records', 'edrms', 'extracts'),
       schema: {
         body: {
           type: 'object',
@@ -141,6 +142,48 @@ export async function auditRoutes(
       },
     },
     async req => ({items: await proofs.statusOf(req.body.keys)}),
+  );
+
+  // a land record version checked now (seal, path, blockchain) for the public check of an ownership
+  // extract (API-693): the extracts service only
+  app.post(
+    '/audit/anchoring/check',
+    {
+      onRequest: app.requireService('extracts'),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['recordId', 'version'],
+          additionalProperties: false,
+          properties: {
+            recordId: {type: 'string', format: 'uuid'},
+            version: item.version,
+          },
+        },
+      },
+    },
+    async req => proofs.versionCheck(req.body.recordId, req.body.version),
+  );
+
+  // the proof of a land record version, the same as in the evidence pack, attached to an ownership
+  // extract's PDF (API-691): the extracts service only
+  app.post(
+    '/audit/anchoring/proof',
+    {
+      onRequest: app.requireService('extracts'),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['recordId', 'version'],
+          additionalProperties: false,
+          properties: {
+            recordId: {type: 'string', format: 'uuid'},
+            version: item.version,
+          },
+        },
+      },
+    },
+    async req => proofs.recordProof(req.body.recordId, req.body.version),
   );
 
   // ------------------------------------------------ anchorings (API-671): every signed-in user

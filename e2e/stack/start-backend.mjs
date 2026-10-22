@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Start the six backend services for the end-to-end tests: everything in memory (a fresh, known
+ * Start the seven backend services for the end-to-end tests: everything in memory (a fresh, known
  * state each run), the AI replaced by its canned answer, emails written to files, the demo users
  * seeded, and a NATS server of its own as the event bus between them (backend/scripts/nats.js).
  * Playwright runs this (see playwright.config.ts); it can also be run by hand to keep a test stack
@@ -47,6 +47,7 @@ const COMMON = {
   INTAKE_URL: url('intake'),
   RECORDS_URL: url('land-records'),
   AUDIT_URL: url('audit'),
+  EXTRACTS_URL: url('extracts'),
   EVENT_BUS_DRIVER: 'nats',
   NATS_URL: `nats://127.0.0.1:${PORTS.nats}`,
   IDENTITY_STORE: 'memory',
@@ -56,6 +57,8 @@ const COMMON = {
   INTAKE_STORE: 'memory',
   RECORDS_STORE: 'memory',
   AUDIT_STORE: 'memory',
+  EXTRACTS_STORE: 'memory',
+  EXTRACTS_STORAGE: 'memory',
   INTAKE_STORAGE: 'memory',
   EXTRACTION_PROVIDER: 'mock',
   SEED_DEMO_PASSWORD: DEMO_PASSWORD,
@@ -63,6 +66,11 @@ const COMMON = {
   MAIL_FILE_DIR: MAIL_DIR,
   MAIL_FROM: 'Deeds Registry (e2e) <noreply@example.com>',
   IDENTITY_INVITE_URL_BASE: `${WEB_URL}/#/invite`,
+  // the extract's QR code and printed address open the test web app's check page (API-693)
+  EXTRACTS_CHECK_URL_BASE: `${WEB_URL}/#/check`,
+  // the public check's rate limit, high: the tests share one client address. The limit itself is
+  // tested in the gateway's unit tests, the check page's message for it with a made-up answer
+  PUBLIC_RATE_LIMIT_MAX: '1000',
   // plain http on localhost: a Secure cookie would not be sent back by every client
   COOKIE_SECURE: 'false',
   // the test blockchain, in memory (only with NODE_ENV=test): no anchoring job runs; tests make batches
@@ -76,13 +84,17 @@ if (process.env.E2E_JEV === 'fake') {
 }
 // E2E_BAO=fake: stored files encrypted, with in-memory keys instead of OpenBao (nothing sent).
 // E2E_BAO=real: a throwaway OpenBao for this run (scripts/bao.js --dev on its own port and folder);
-// edrms and intake encrypt with it, each logged in with its own AppRole (SERVICE_ENV, set once it is up).
+// edrms, intake and extracts encrypt with it, each logged in with its own AppRole (SERVICE_ENV, set once it is up).
 const E2E_BAO = process.env.E2E_BAO || 'off';
 if (!['off', 'fake', 'real'].includes(E2E_BAO)) {
   throw new Error(`E2E_BAO must be fake or real, got "${E2E_BAO}"`);
 }
 if (E2E_BAO === 'fake') {
-  Object.assign(COMMON, {EDRMS_ENCRYPTION: 'fake', INTAKE_ENCRYPTION: 'fake'});
+  Object.assign(COMMON, {
+    EDRMS_ENCRYPTION: 'fake',
+    INTAKE_ENCRYPTION: 'fake',
+    EXTRACTS_ENCRYPTION: 'fake',
+  });
 }
 const SERVICE_ENV = {};
 const SERVICES = [
@@ -92,6 +104,7 @@ const SERVICES = [
   'intake',
   'land-records',
   'audit',
+  'extracts',
 ];
 const POSTGRES = process.env.E2E_DB === 'postgres';
 const pgData = join(STACK_DIR, 'pg');
@@ -103,12 +116,15 @@ if (POSTGRES) {
     INTAKE_STORE: 'postgres',
     RECORDS_STORE: 'postgres',
     AUDIT_STORE: 'postgres',
+    EXTRACTS_STORE: 'postgres',
     DB_CONNECTION_STRING: `postgres://lrfe@127.0.0.1:${PORTS.postgres}/e2e`,
     DB_SYNC: 'true',
     EDRMS_STORAGE: 'local',
     EDRMS_LOCAL_DIR: join(STACK_DIR, 'files', 'edrms'),
     INTAKE_STORAGE: 'local',
     INTAKE_LOCAL_DIR: join(STACK_DIR, 'files', 'intake'),
+    EXTRACTS_STORAGE: 'local',
+    EXTRACTS_LOCAL_DIR: join(STACK_DIR, 'files', 'extracts'),
   });
 }
 
@@ -384,6 +400,7 @@ function startBao(timeoutMs = 180_000) {
           });
           SERVICE_ENV.edrms = login('edrms', 'edrms-files');
           SERVICE_ENV.intake = login('intake', 'intake-files');
+          SERVICE_ENV.extracts = login('extracts', 'extracts-files');
           resolve();
         }
       }

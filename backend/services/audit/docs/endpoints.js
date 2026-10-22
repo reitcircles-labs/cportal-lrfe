@@ -45,9 +45,24 @@ export const ENDPOINTS = {
     },
     'POST /audit/anchoring': {
       tag: 'Proofs',
-      summary: 'The anchoring status of versions (land-records, edrms)',
+      summary:
+        'The anchoring status of versions (land-records, edrms, extracts)',
       description:
         'Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx, network, confirmedAt } | null } }`; null when the version is not in the tree.',
+    },
+    'POST /audit/anchoring/check': {
+      tag: 'Proofs',
+      summary:
+        'Check a land record version now, for the public check of an ownership extract (extracts)',
+      description:
+        'Body `{ recordId, version }`. The version checked as `POST /audit/verify` checks it, without the proof: `{ valid, status, checks: { item, path, chain }, seal, batch, tx, confirmedAt, explorerUrl, checkedAt }`; each check true, false or null (could not be made now). 404 when the version is not in the tree.',
+    },
+    'POST /audit/anchoring/proof': {
+      tag: 'Proofs',
+      summary:
+        "The proof of a land record version, for an ownership extract's PDF (extracts)",
+      description:
+        "Body `{ recordId, version }`. `{ proof, explorerUrl }`: the proof as `GET /audit/proofs/record-version/:id` gives it and the evidence pack holds it (`proofs/record-v<n>.json`), and the transaction's page on a public blockchain explorer (null while waiting). 404 when the version is not in the tree.",
     },
     'GET /audit/records': {
       tag: 'Sign-off',

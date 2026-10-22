@@ -231,6 +231,27 @@ describe('offices', () => {
     ).to.equal(true);
   });
 
+  it('extract.issue (API-692): the records officer holds it, and a database on catalogue version 3 grants it once', async () => {
+    expect(
+      ROLES.filter(r => r.perms.includes('extract.issue')).map(r => r.id),
+    ).to.deep.equal(['rec']);
+    const repo = createMemoryRepo();
+    for (const r of ROLES) {
+      await repo.upsertRole({
+        ...r,
+        perms: r.perms.filter(p => p !== 'extract.issue'),
+      });
+    }
+    await repo.setSetting('catalogue.version', 3);
+    await seedIdentity(repo, {});
+    const roles = await repo.listRoles();
+    expect(roles.find(r => r.id === 'rec').perms).to.include('extract.issue');
+    expect(
+      roles.filter(r => r.perms.includes('extract.issue')).map(r => r.id),
+    ).to.deep.equal(['rec']);
+    expect(await repo.getSetting('catalogue.version')).to.equal(4);
+  });
+
   it('grants the new permission once to existing roles, and respects its later removal', async () => {
     const repo = createMemoryRepo();
     // a database seeded before offices existed: roles without admin.offices, no catalogue version

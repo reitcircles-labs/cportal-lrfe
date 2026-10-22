@@ -417,6 +417,16 @@ now, three checks, each with `ok` and, when it fails, a `problem`:
 owning service or the chain cannot be reached, that check's `ok` is null and `valid` false, and its
 `problem` says why; verify is a check, not a cached result.
 
+The public check of an ownership extract (extracts service, API-693) asks the same of one land
+record version with its service token: `POST /audit/anchoring/check { recordId, version }` answers
+`valid`, `status`, each check's `ok` (true, false, or null when it cannot be made now), the seal and
+the anchoring (`batch`, `tx`, `confirmedAt`, `explorerUrl`), never the proof.
+
+An ownership extract's PDF (extracts service, API-691) has the proof of its version attached:
+`POST /audit/anchoring/proof { recordId, version }`, for the extracts service's token only, answers
+`{ proof, explorerUrl }`, the proof as `GET /audit/proofs/record-version/:id` gives it and the
+evidence pack holds it (`proofs/record-v<n>.json`).
+
 **The offline verifier** (`verifier/lrfe-verify.mjs`) checks a proof file with no access to the
 portal: one file, Node 18 or later, nothing to install. It recomputes the leaf (for a trail entry,
 the entry's hashes and the chain to the checkpoint), the path to the root, and reads the
@@ -447,6 +457,34 @@ holds the proof. For a land record or document version it takes the seal, and th
 id and version it belongs to, from the proof and says so: recomputing the seal needs the version's
 data, which the evidence pack (§6) adds. For a trail entry everything is recomputed, and the chain
 must be exactly as long as from the entry to the checkpoint.
+
+**An ownership extract** (API-694): `node lrfe-verify.mjs extract.pdf --address <published wallet>
+--seal <published seal fingerprint>`; both are required (exit 2 without them). The seal
+fingerprint is the SHA-256 of the registry's seal certificate (DER), lowercase hex (colons and
+capitals are accepted), published without a sign-in at `GET /api/public/extracts/seal` (extracts
+service). The verifier reads the proof attached inside the PDF (`record-v<n>.proof.json`) without a
+PDF library: the cross-reference table, the catalog's `/EmbeddedFiles` name tree (each node once,
+at most 1,000) and the file's stream, inflated with `node:zlib` (all attachments together at most
+10 MB; a file name attached twice is NOT VALID). It checks that proof as a proof file is checked (the leaf from the seal, the path to the
+batch's combined fingerprint, the transaction with label 8890, sent from the given address), that
+the proof's batch is the one on chain, and the registry's seal: exactly one signature, reached from
+the catalog (`/AcroForm` → `/Fields` → `/V`), whose `/ByteRange` covers the whole file but the
+signature, the space it leaves out exactly one hex string (anything beside it would be unsealed),
+the CMS's message digest is that of those bytes, its signing-certificate-v2
+names the certificate in it, the signature over the signed attributes holds with that
+certificate's key (ECDSA or RSA with `node:crypto`), and the certificate's SHA-256 is the published
+fingerprint: a certificate made by anyone else, with the registry's name or not, fails. A seal it
+cannot verify (another algorithm, no signed attributes) fails too: only a verified seal of the
+registry's certificate vouches for the PDF. The answer is VALID with the batch and the
+transaction's date (from the public source; the proof's `confirmedAt`, said so, when it gives none)
+or NOT VALID with the reason, and says when only the seal failed. Its check lines say "blockchain"
+and name no network or source. The version's seal is not recomputed: its data holds the owners'
+full ID numbers, which the extract leaves out; the seal of the PDF ties the printed details to the
+proof. It always notes that an offline check cannot show a newer version or a revocation: the
+public check (the QR code) can. For banks and conveyancers: the user guide
+[Checking an ownership extract](../../../angular-app/docs/user-guide/checking-an-ownership-extract.md).
+Tested in `tests/extract-verify.test.js`, with PDFs made by the extracts service's own builder and
+test seal.
 
 **The anchoring status next to each version.** land-records' History (`GET /records/:id/history`)
 and edrms' documents (`GET /documents/:id`, for users) show each version's status: `waiting` for the

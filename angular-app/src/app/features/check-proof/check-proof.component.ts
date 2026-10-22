@@ -10,7 +10,7 @@ import {AuditApi} from '../../api/audit.api';
 import {SiteConfigService} from '../../state/site-config.service';
 
 /** Where the offline verifier is downloaded from (the audit service, no sign-in). */
-const VERIFIER_URL = '/api/audit/verifier/lrfe-verify.mjs';
+export const VERIFIER_URL = '/api/audit/verifier/lrfe-verify.mjs';
 
 /** A blockchain transaction id: 64 hexadecimal characters. */
 const TX_ID = /^[0-9a-f]{64}$/;

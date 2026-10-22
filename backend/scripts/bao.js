@@ -19,12 +19,14 @@
  * token in dev-init.json in the data folder (readable by this user only): fine for development,
  * never for production. Later starts unseal with it. Ctrl+C stops OpenBao.
  *
- * Every start then prepares document encryption (packages/storage/README.md) and the audit
- * service's Cardano wallet key, idempotently: the transit engine, one key per service
- * (edrms-files, intake-files; audit-anchor, ed25519), a policy per service allowing only what it
- * needs on its own key (datakey and decrypt; for audit sign and reading the public key), and an
- * AppRole per service (edrms, intake, audit; 1 h tokens, bound to 127.0.0.1). Each service's role ID and secret ID go to approle/ in the data folder
- * (this user only), and the settings for the services' .env files are printed.
+ * Every start then prepares document encryption (packages/storage/README.md), the audit
+ * service's Cardano wallet key and the extracts service's seal key, idempotently: the transit
+ * engine, one key per service (edrms-files, intake-files; audit-anchor, ed25519; extracts-seal,
+ * ecdsa-p256, and extracts-files for its stored PDFs), a policy per service allowing only what it
+ * needs on its own keys (datakey and decrypt; for audit and extracts sign and reading the public
+ * key), and an AppRole per service (edrms, intake, audit, extracts; 1 h tokens, bound to
+ * 127.0.0.1). Each service's role ID and secret ID go to approle/ in the data folder (this user
+ * only), and the settings for the services' .env files are printed.
  *
  * Production: OpenBao must not run as the same user as the portal. An administrator installs it
  * as a dedicated user and service; the script only points to the rules.
@@ -310,7 +312,8 @@ async function prepareEncryption(root) {
     }
     await new Promise(r => setTimeout(r, 500));
   }
-  // data keys for stored files; the audit service's Cardano wallet key signs anchorings (API-656)
+  // data keys for stored files; the audit service's Cardano wallet key signs anchorings (API-656);
+  // the extracts service's seal key signs ownership extracts (API-691)
   const files = key => ({
     type: 'aes256-gcm96',
     what: 'new data keys and unwrapping',
@@ -344,6 +347,22 @@ async function prepareEncryption(root) {
         'path "transit/keys/audit-anchor" { capabilities = ["read"] }',
       ],
     },
+    {
+      // the organisation seal on ownership extracts (API-691), and its stored PDFs (API-780)
+      name: 'extracts',
+      setting:
+        'EXTRACTS_SEAL=bao (with EXTRACTS_SEAL_CERT_FILE), EXTRACTS_ENCRYPTION=bao',
+      key: 'extracts-seal',
+      keySetting: 'EXTRACTS_SEAL_KEY',
+      type: 'ecdsa-p256',
+      also: [{key: 'extracts-files', type: 'aes256-gcm96'}],
+      what: 'signing and reading its public key; new data keys and unwrapping',
+      paths: [
+        'path "transit/sign/extracts-seal" { capabilities = ["update"] }',
+        'path "transit/keys/extracts-seal" { capabilities = ["read"] }',
+        ...files('extracts-files').paths,
+      ],
+    },
   ];
   const as = (method, path, body) =>
     api(path, {
@@ -373,16 +392,18 @@ async function prepareEncryption(root) {
   mkdirSync(dir, {recursive: true, mode: 0o700});
   const lines = [];
   for (const s of SERVICES) {
-    // the key: created once, never exportable (it never leaves OpenBao)
-    if (!(await exists(`transit/keys/${s.key}`))) {
-      await as('POST', `transit/keys/${s.key}`, {
-        type: s.type,
-        exportable: false,
-      });
+    // its keys: created once, never exportable (they never leave OpenBao)
+    for (const k of [{key: s.key, type: s.type}, ...(s.also ?? [])]) {
+      if (!(await exists(`transit/keys/${k.key}`))) {
+        await as('POST', `transit/keys/${k.key}`, {
+          type: k.type,
+          exportable: false,
+        });
+      }
     }
-    // the policy: only what the service needs, on its own key only
+    // the policy: only what the service needs, on its own keys only
     await as('PUT', `sys/policies/acl/${s.key}`, {
-      policy: `# ${s.name}: ${s.what}, on its own key only (written by bao.js)\n${s.paths.join('\n')}\n`,
+      policy: `# ${s.name}: ${s.what}, on its own keys only (written by bao.js)\n${s.paths.join('\n')}\n`,
     });
     // the AppRole: short-lived renewable tokens, usable from this machine only
     await as('POST', `auth/approle/role/${s.name}`, {

@@ -65,6 +65,10 @@ tags:
     description: Auditors' sign-offs and findings, with segregation of duties (sod2).
   - name: audit · Evidence
     description: "Evidence packs: a land record with everything needed to check it outside the portal."
+  - name: extracts · Extracts
+    description: The register of ownership extracts.
+  - name: extracts · Public check
+    description: Checking an extract from its QR code, with no sign-in (through the gateway's rate-limited /api/public).
   - name: gateway
     description: The gateway itself.
 paths:
@@ -139,13 +143,13 @@ paths:
     post:
       tags:
         - audit · Proofs
-      summary: The anchoring status of versions (land-records, edrms)
+      summary: The anchoring status of versions (land-records, edrms, extracts)
       description: >-
         Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx,
         network, confirmedAt } | null } }`; null when the version is not in the tree.
 
 
-        **Access:** Service token only, from: `land-records`, `edrms`. Browsers cannot call this.
+        **Access:** Service token only, from: `land-records`, `edrms`, `extracts`. Browsers cannot call this.
       operationId: audit_postAuditAnchoring
       requestBody:
         required: true
@@ -193,6 +197,66 @@ paths:
         services:
           - land-records
           - edrms
+          - extracts
+  /api/audit/anchoring/check:
+    post:
+      tags:
+        - audit · Proofs
+      summary: Check a land record version now, for the public check of an ownership extract (extracts)
+      description: >-
+        Body `{ recordId, version }`. The version checked as `POST /audit/verify` checks it, without the proof: `{ valid, status, checks: {
+        item, path, chain }, seal, batch, tx, confirmedAt, explorerUrl, checkedAt }`; each check true, false or null (could not be made
+        now). 404 when the version is not in the tree.
+
+
+        **Access:** Service token only, from: `extracts`. Browsers cannot call this.
+      operationId: audit_postAuditAnchoringCheck
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recordId
+                - version
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                version:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - extracts
   /api/audit/anchoring/health:
     get:
       tags:
@@ -233,6 +297,65 @@ paths:
         anyOf:
           - admin.policies
           - audit.view
+  /api/audit/anchoring/proof:
+    post:
+      tags:
+        - audit · Proofs
+      summary: The proof of a land record version, for an ownership extract's PDF (extracts)
+      description: >-
+        Body `{ recordId, version }`. `{ proof, explorerUrl }`: the proof as `GET /audit/proofs/record-version/:id` gives it and the
+        evidence pack holds it (`proofs/record-v<n>.json`), and the transaction's page on a public blockchain explorer (null while waiting).
+        404 when the version is not in the tree.
+
+
+        **Access:** Service token only, from: `extracts`. Browsers cannot call this.
+      operationId: audit_postAuditAnchoringProof
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recordId
+                - version
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                version:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - extracts
   /api/audit/anchoring/wallet:
     get:
       tags:
@@ -2513,6 +2636,253 @@ paths:
       x-access:
         services:
           - audit
+  /api/extracts:
+    post:
+      tags:
+        - extracts · Extracts
+      summary: Issue an extract of a land record's current version for an owner
+      description: >-
+        `{ recordId, versionNumber, ownerIndex, idNo, documentSeen }`: the owner chosen on the current version, the ID number typed from the
+        identity document shown, and `documentSeen: true`. 201 with the register row: `id`, `recordId`, `recordNo`, `versionNumber`,
+        `issuedById`, `issuedByName`, `ownerIndex`, `ownerName`, `ownerIdLast4` (the last four characters of the owner's ID number; the rest
+        is not kept), `documentSeen`, `issuedAt`, `token` (random, for the public check), `status` `valid`, `pdfSha256` (the SHA-256 of the
+        sealed PDF, also in the issued event), `isCurrentVersion`. The extract's PDF, sealed by the registry with the version's proof
+        attached, is made and stored first; `GET /extracts/{id}/pdf` gives it. 400 without `documentSeen: true`. 409 when the record has no
+        approved version, `versionNumber` is no longer the current one, there is no such owner, the ID number does not match the owner's on
+        the version, or the version is not on the blockchain yet (its anchoring confirmed); 503 when that cannot be checked, the proof
+        cannot be read, or the registry's seal is not set up or cannot be applied now; 404 when there is no such record.
+
+
+        **Access:** Signed-in user with permission `extract.issue`.
+      operationId: extracts_postExtracts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - recordId
+                - versionNumber
+                - ownerIndex
+                - idNo
+                - documentSeen
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                versionNumber:
+                  type: integer
+                  minimum: 1
+                ownerIndex:
+                  type: integer
+                  minimum: 0
+                idNo:
+                  type: string
+                  minLength: 1
+                  maxLength: 40
+                documentSeen:
+                  type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - extract.issue
+    get:
+      tags:
+        - extracts · Extracts
+      summary: The extracts of a land record, newest first
+      description: >-
+        `{ items }`: the register rows of `recordId`, valid and revoked (`revokedAt`, `revokedByName`, `revokeReason`), each with
+        `isCurrentVersion`: its version is still the record's current one.
+
+
+        **Access:** Signed-in user with permission `extract.issue`.
+      operationId: extracts_getExtracts
+      parameters:
+        - name: recordId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - extract.issue
+  /api/extracts/{id}/pdf:
+    get:
+      tags:
+        - extracts · Extracts
+      summary: "Download an extract again: its sealed PDF as issued"
+      description: >-
+        `application/pdf`, as an attachment: the exact bytes issued, checked against `pdfSha256` in the register. The PDF carries the
+        registry's electronic seal (a PAdES signature) and, attached inside, the version's proof (`record-v<n>.proof.json`). 409 when the
+        extract is revoked; 404 when there is no such extract.
+
+
+        **Access:** Signed-in user with permission `extract.issue`.
+      operationId: extracts_getExtractsIdPdf
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - extract.issue
+  /api/extracts/{id}/revoke:
+    post:
+      tags:
+        - extracts · Extracts
+      summary: Revoke an extract, with the reason
+      description: >-
+        `{ reason }`. The updated register row, `status` `revoked`; it stays in the register. 409 when it is already revoked.
+        `isCurrentVersion` is null when the land record cannot be read just after the revocation is saved.
+
+
+        **Access:** Signed-in user with permission `extract.issue`.
+      operationId: extracts_postExtractsIdRevoke
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - extract.issue
   /api/intake/batches:
     get:
       tags:
@@ -4196,6 +4566,68 @@ paths:
       security:
         - bearerAuth: []
         - serviceToken: []
+  /api/public/extracts/{token}:
+    get:
+      tags:
+        - extracts · Public check
+      summary: Check an extract by its token, from its QR code
+      description: >-
+        One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, recordNo, versionNumber,
+        issuedAt, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt }`. `state`: `current` (the version's
+        seal, held by land-records, is in a confirmed batch on the blockchain and the version is the record's current one), `replaced` (the
+        same, but the record has a newer version: `replacedAt` is when the version after the extract's was committed), `revoked` (withdrawn
+        on `revokedAt`; the reason is not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or
+        `unavailable` (it cannot be checked right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners,
+        their ID numbers or shares, or the parcel.
+
+
+        **Access:** Public: no token needed.
+      operationId: extracts_getPublicExtractsToken
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security: []
+  /api/public/extracts/seal:
+    get:
+      tags:
+        - extracts · Public check
+      summary: The registry's seal certificate, to compare an extract's seal with
+      description: >-
+        `{ subject, sha256, validFrom, validTo }`: `sha256` is the SHA-256 of the seal certificate (DER), lowercase hex, the fingerprint the
+        offline verifier takes (`node lrfe-verify.mjs extract.pdf --address <wallet> --seal <sha256>`). An extract sealed with another
+        certificate, even one with the same name, is not valid. 503 when no seal is set up.
+
+
+        **Access:** Public: no token needed.
+      operationId: extracts_getPublicExtractsSeal
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
   /api/records:
     get:
       tags:
@@ -4350,7 +4782,7 @@ paths:
       tags:
         - land-records · Records
       summary: One land record with its current version and open draft
-      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`, `extracts`."
       operationId: land-records_getRecordsId
       parameters:
         - name: id
@@ -4397,6 +4829,7 @@ paths:
           - record.view
         services:
           - audit
+          - extracts
   /api/records/{id}/bin:
     post:
       tags:
@@ -5518,7 +5951,7 @@ paths:
       tags:
         - land-records · Records
       summary: One version, with its data (core, attributes, pinned documents)
-      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`."
+      description: "**Access:** Signed-in user with permission `record.view`, or a service token from `audit`, `extracts`."
       operationId: land-records_getRecordsIdVersionsN
       parameters:
         - name: id
@@ -5571,6 +6004,7 @@ paths:
           - record.view
         services:
           - audit
+          - extracts
   /api/records/{id}/versions/{n}/commit:
     post:
       tags:

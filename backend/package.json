@@ -21,6 +21,7 @@
     "dev:intake": "npm run dev -w @lrfe/intake",
     "dev:land-records": "npm run dev -w @lrfe/land-records",
     "dev:audit": "npm run dev -w @lrfe/audit",
+    "dev:extracts": "npm run dev -w @lrfe/extracts",
     "audit:backfill": "npm run backfill -w @lrfe/audit",
     "db:setup": "node scripts/db-setup.js",
     "seed:identity": "npm run seed -w @lrfe/identity",

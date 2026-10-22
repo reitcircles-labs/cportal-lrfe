@@ -368,13 +368,13 @@ paths:
     post:
       tags:
         - Proofs
-      summary: The anchoring status of versions (land-records, edrms)
+      summary: The anchoring status of versions (land-records, edrms, extracts)
       description: >-
         Body `{ keys }`: up to 500 of `record-version:<id>:<n>` and `document-version:<id>:<n>`. `{ items: { <key>: { status, batch, tx,
         network, confirmedAt } | null } }`; null when the version is not in the tree.
 
 
-        **Access:** Service token only, from: `land-records`, `edrms`. Browsers cannot call this.
+        **Access:** Service token only, from: `land-records`, `edrms`, `extracts`. Browsers cannot call this.
       operationId: postAuditAnchoring
       requestBody:
         required: true
@@ -422,7 +422,128 @@ paths:
         services:
           - land-records
           - edrms
+          - extracts
       x-gateway-path: /api/audit/anchoring
+  /audit/anchoring/check:
+    post:
+      tags:
+        - Proofs
+      summary: Check a land record version now, for the public check of an ownership extract (extracts)
+      description: >-
+        Body `{ recordId, version }`. The version checked as `POST /audit/verify` checks it, without the proof: `{ valid, status, checks: {
+        item, path, chain }, seal, batch, tx, confirmedAt, explorerUrl, checkedAt }`; each check true, false or null (could not be made
+        now). 404 when the version is not in the tree.
+
+
+        **Access:** Service token only, from: `extracts`. Browsers cannot call this.
+      operationId: postAuditAnchoringCheck
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recordId
+                - version
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                version:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - extracts
+      x-gateway-path: /api/audit/anchoring/check
+  /audit/anchoring/proof:
+    post:
+      tags:
+        - Proofs
+      summary: The proof of a land record version, for an ownership extract's PDF (extracts)
+      description: >-
+        Body `{ recordId, version }`. `{ proof, explorerUrl }`: the proof as `GET /audit/proofs/record-version/:id` gives it and the
+        evidence pack holds it (`proofs/record-v<n>.json`), and the transaction's page on a public blockchain explorer (null while waiting).
+        404 when the version is not in the tree.
+
+
+        **Access:** Service token only, from: `extracts`. Browsers cannot call this.
+      operationId: postAuditAnchoringProof
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recordId
+                - version
+              additionalProperties: false
+              properties:
+                recordId:
+                  type: string
+                  format: uuid
+                version:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - extracts
+      x-gateway-path: /api/audit/anchoring/proof
   /audit/anchors:
     get:
       tags:

@@ -93,6 +93,13 @@ export const PERMS = [
     desc: 'Commit a version for tokenization',
   },
   {
+    id: 'extract.issue',
+    group: 'Land records',
+    label: 'Issue ownership extracts',
+    desc: 'Issue an extract of a record for its owner, revoke one',
+    since: 4,
+  },
+  {
     id: 'audit.view',
     group: 'Audit',
     label: 'View audit trail & evidence',
@@ -149,7 +156,7 @@ export const PERMS = [
  * database is on an older version, the seed grants it to the roles that hold it by default
  * (below), once, and never touches it again (an administrator may have removed it since).
  */
-export const CATALOGUE_VERSION = 3;
+export const CATALOGUE_VERSION = 4;
 
 export const PERM_IDS = PERMS.map(p => p.id);
 /** Whether `id` is a permission in the catalogue. */
@@ -231,6 +238,7 @@ export const ROLES = [
       'record.unlink',
       'record.comment',
       'record.finalize',
+      'extract.issue',
       'anchors.view',
     ],
   ),

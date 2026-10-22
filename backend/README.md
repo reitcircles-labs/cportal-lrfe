@@ -20,7 +20,8 @@ backend/
     ├── bpm/                :3503  workflow engine: processes, task inbox, four-eyes approvals
     ├── intake/             :3504  capture, AI extraction (Gemini), field review, filing into edrms
     ├── land-records/       :3505  land records: filed documents per parcel, reviewed versions, seals
-    └── audit/              :3506  tamper-evident trail of every domain event, Merkle tree anchored on Cardano
+    ├── audit/              :3506  tamper-evident trail of every domain event, Merkle tree anchored on Cardano
+    └── extracts/           :3507  ownership extracts: the register of extracts issued for a record's owners
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 ```
 
@@ -61,7 +62,7 @@ npm install
 cp .env_example services/identity/.env     # edit; see the comments in the file
 cp .env_example services/gateway/.env
 
-# All seven services + the API docs (http://localhost:3510) in one terminal
+# All eight services + the API docs (http://localhost:3510) in one terminal
 # (watch mode, each reads its own .env; Ctrl+C stops all)
 npm run dev
 npm run dev -- identity gateway            # only some of them (add `docs` for the API docs)
@@ -76,6 +77,7 @@ BPM_STORE=memory npm run dev:bpm
 INTAKE_STORE=memory npm run dev:intake     # extraction uses the mock model unless EXTRACTION_PROVIDER=gemini
 RECORDS_STORE=memory npm run dev:land-records
 AUDIT_STORE=memory npm run dev:audit       # sees other services' events only with EVENT_BUS_DRIVER=nats
+EXTRACTS_STORE=memory npm run dev:extracts
 npm run dev:gateway
 
 # With Postgres from docker compose (published on localhost:5433;
@@ -127,6 +129,13 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
 
 - The browser only talks to the **gateway** (`/api/...`). The gateway strips the prefix and
   proxies; it does **not** check tokens.
+- **`/api/public/...`** is the only part meant for anyone without a sign-in: today only
+  `GET /api/public/extracts/:token` (the public check of an ownership extract, API-693), forwarded
+  to the extracts service without the caller's `Authorization` or cookies, and rate-limited per
+  client address (`PUBLIC_RATE_LIMIT_MAX` requests per `PUBLIC_RATE_LIMIT_WINDOW_MS`, by default
+  10 a minute; the count is kept in memory, per gateway instance). Anything else under it is 404.
+  Request logs show its path with `<token>` in place of the token (`createBaseApp` in
+  `@lrfe/common` does this for every service given a `logger`).
 - **Every service verifies the JWT and checks permissions itself** (`app.authenticate`,
   `app.requirePerm(...)` from `@lrfe/common`), with the shared `JWT_SECRET`. The frontend's
   route guards are only for display. Guards are registered as `onRequest` hooks, so an

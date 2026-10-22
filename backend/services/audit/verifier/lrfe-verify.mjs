@@ -10,6 +10,9 @@
  *   node lrfe-verify.mjs proof.json --json                the result as JSON
  *   node lrfe-verify.mjs evidence-LR-….zip --address …     an evidence pack (or the folder it was unpacked
  *                                                         into): every file, seal, trail entry and proof
+ *   node lrfe-verify.mjs extract.pdf --address … --seal …  an ownership extract: the proof attached inside
+ *                                                         it against the blockchain, and the registry's seal
+ *                                                         against its published certificate fingerprint
  *
  * One file, Node 18 or later, nothing to install. It checks that:
  *   1. the leaf is the item's seal (a land record or document version) or the trail checkpoint;
@@ -23,17 +26,18 @@
  *      with the address the installation publishes, or pass that address with --address.
  * Not checked offline: which record or document id and version the seal belongs to (recomputing the
  * seal needs the version's data, which the evidence pack holds).
- * Exit code 0: valid; 1: not valid; 2: could not be checked (no proof, the chain unreachable).
+ * Exit code 0: valid; 1: not valid; 2: could not be checked (no proof file, a PDF that cannot be
+ * read, the chain unreachable).
  *
  * The hashing is that of the portal's audit service (services/audit/README.md sections 1 and 2):
  *   leaf = SHA-256(0x00 || type || item)    node = SHA-256(0x01 || left || right)
  *   root = SHA-256(0x02 || size as 8 bytes big-endian || peaks, largest first)
  *   trail: contentHash = SHA-256(canonical JSON of the entry), hash = SHA-256(prevHash || contentHash)
  */
-import {createHash} from 'node:crypto';
+import {X509Certificate, createHash, verify as cryptoVerify} from 'node:crypto';
 import {lstatSync, readdirSync, readFileSync, statSync} from 'node:fs';
 import {join, relative} from 'node:path';
-import {inflateRawSync} from 'node:zlib';
+import {inflateRawSync, inflateSync} from 'node:zlib';
 import {pathToFileURL} from 'node:url';
 
 export const LABEL = 8890;
@@ -156,6 +160,10 @@ const BLOCKFROST = {
 
 class Unreachable extends Error {}
 
+/** A time in seconds since 1970, as the public sources give it, in ISO form; null when not given. */
+const isoFromUnix = seconds =>
+  Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : null;
+
 async function getJson(url, init, fetchImpl) {
   let res;
   try {
@@ -174,8 +182,8 @@ async function getJson(url, init, fetchImpl) {
 
 /**
  * The anchoring transaction as a public source reports it: { found, metadata (label 8890), blockHeight,
- * confirmations, inputAddresses (who paid for it) }. Koios needs no key; Blockfrost a project key for
- * the network.
+ * blockTime (ISO, null when the source does not say), confirmations, inputAddresses (who paid for it) }.
+ * Koios needs no key; Blockfrost a project key for the network.
  */
 export async function readAnchoring({
   tx,
@@ -220,6 +228,7 @@ export async function readAnchoring({
       found,
       metadata: md?.[0]?.metadata?.[String(LABEL)] ?? null,
       blockHeight: found ? (info[0].block_height ?? null) : null,
+      blockTime: found ? isoFromUnix(info[0].tx_timestamp) : null,
       confirmations: status?.[0]?.num_confirmations ?? null,
       inputAddresses: found
         ? (info[0].inputs || []).map(i => i.payment_addr?.bech32 ?? null)
@@ -244,6 +253,7 @@ export async function readAnchoring({
         found: false,
         metadata: null,
         blockHeight: null,
+        blockTime: null,
         confirmations: null,
         inputAddresses: [],
       };
@@ -259,6 +269,7 @@ export async function readAnchoring({
         (rows || []).find(r => String(r.label) === String(LABEL))
           ?.json_metadata ?? null,
       blockHeight: info.block_height,
+      blockTime: isoFromUnix(info.block_time),
       confirmations: tip ? tip.height - info.block_height + 1 : null,
       inputAddresses: (utxos?.inputs || []).map(i => i.address ?? null),
     };
@@ -1114,6 +1125,766 @@ export async function verifyPack(
   return {valid: checks.every(c => c.ok), checks, unproven, notes};
 }
 
+// ------------------------------------------------------------------ ownership extracts (API-694)
+
+/** The name of the proof attached inside an ownership extract's PDF: record-v<n>.proof.json. */
+const EXTRACT_PROOF_NAME = /^record-v(\d+)\.proof\.json$/;
+/** The most all attached files together may inflate to: a proof is a few kilobytes. */
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+/** The most nodes of the attachments' name tree read: an extract has one. */
+const MAX_NAME_TREE_NODES = 1000;
+const PDF_DELIMITERS = '()<>[]{}/% \t\r\n\f\0';
+
+/**
+ * A small reader of the PDF objects an extract is made of (PDF 32000-1, section 7.3): numbers,
+ * names (as '/Name'), strings (as Buffers), arrays, dictionaries (plain objects keyed without the
+ * slash) and references ({ref: n}). Returns { value, end }.
+ */
+function pdfValue(text, start) {
+  let at = skipPdfSpace(text, start);
+  if (text.startsWith('<<', at)) {
+    const dict = {};
+    at = skipPdfSpace(text, at + 2);
+    while (!text.startsWith('>>', at)) {
+      if (at >= text.length) throw new Error('unterminated dictionary');
+      const key = pdfValue(text, at);
+      if (typeof key.value !== 'string' || !key.value.startsWith('/')) {
+        throw new Error(`a dictionary key is not a name at byte ${at}`);
+      }
+      const entry = pdfValue(text, key.end);
+      dict[key.value.slice(1)] = entry.value;
+      at = skipPdfSpace(text, entry.end);
+    }
+    return {value: dict, end: at + 2};
+  }
+  const first = text[at];
+  if (first === '[') {
+    const list = [];
+    at = skipPdfSpace(text, at + 1);
+    while (text[at] !== ']') {
+      if (at >= text.length) throw new Error('unterminated array');
+      const item = pdfValue(text, at);
+      list.push(item.value);
+      at = skipPdfSpace(text, item.end);
+    }
+    return {value: list, end: at + 1};
+  }
+  if (first === '/') {
+    let end = at + 1;
+    while (end < text.length && !PDF_DELIMITERS.includes(text[end])) end++;
+    return {value: text.slice(at, end), end};
+  }
+  if (first === '(') return literalString(text, at);
+  if (first === '<') {
+    const end = text.indexOf('>', at);
+    if (end < 0) throw new Error('unterminated hex string');
+    let hex = text.slice(at + 1, end).replace(/\s+/g, '');
+    if (hex.length % 2) hex += '0';
+    return {value: Buffer.from(hex, 'hex'), end: end + 1};
+  }
+  const ref = /^(\d+)\s+(\d+)\s+R(?![^()<>[\]{}/%\s])/.exec(
+    text.slice(at, at + 32),
+  );
+  if (ref) return {value: {ref: Number(ref[1])}, end: at + ref[0].length};
+  const word = /^[^()<>[\]{}/%\s]+/.exec(text.slice(at, at + 64));
+  if (!word) throw new Error(`unexpected "${first}" at byte ${at}`);
+  const keywords = {true: true, false: false, null: null};
+  const value =
+    word[0] in keywords ? keywords[word[0]] : Number.parseFloat(word[0]);
+  return {value, end: at + word[0].length};
+}
+
+/** White space and comments skipped. */
+function skipPdfSpace(text, start) {
+  let at = start;
+  while (at < text.length) {
+    if (' \t\r\n\f\0'.includes(text[at])) at++;
+    else if (text[at] === '%') {
+      while (at < text.length && text[at] !== '\n' && text[at] !== '\r') at++;
+    } else break;
+  }
+  return at;
+}
+
+/** A literal string (…), with its escapes and balanced parentheses, as a Buffer. */
+function literalString(text, start) {
+  const ESCAPES = {n: '\n', r: '\r', t: '\t', b: '\b', f: '\f'};
+  let out = '';
+  let depth = 0;
+  let at = start;
+  while (at < text.length) {
+    const c = text[at++];
+    if (c === '\\') {
+      const next = text[at++];
+      if (next in ESCAPES) out += ESCAPES[next];
+      else if (/[0-7]/.test(next)) {
+        const octal = /^[0-7]{1,3}/.exec(text.slice(at - 1, at + 2))[0];
+        out += String.fromCharCode(Number.parseInt(octal, 8) & 0xff);
+        at += octal.length - 1;
+      } else if (next === '\r') {
+        if (text[at] === '\n') at++;
+      } else if (next !== '\n') out += next;
+    } else if (c === '(') {
+      if (depth++ > 0) out += c;
+    } else if (c === ')') {
+      if (--depth === 0) return {value: Buffer.from(out, 'latin1'), end: at};
+      out += c;
+    } else out += c;
+  }
+  throw new Error('unterminated string');
+}
+
+/** A PDF text string (UTF-16 with its byte order mark, or PDFDocEncoding read as Latin-1). */
+function pdfText(value) {
+  if (!Buffer.isBuffer(value)) return null;
+  if (value[0] === 0xfe && value[1] === 0xff) {
+    return Buffer.from(value.subarray(2)).swap16().toString('utf16le');
+  }
+  return value.toString('latin1');
+}
+
+/**
+ * The objects of a PDF by number, from its cross-reference tables (newest first, following /Prev),
+ * and its trailer. A PDF saved with a cross-reference stream (by another program) is not read: an
+ * extract as the registry issued it has a table.
+ */
+function pdfObjects(pdf) {
+  const text = pdf.toString('latin1');
+  const startxref = [...text.matchAll(/startxref\s+(\d+)/g)].at(-1);
+  if (!startxref) throw new Error('not a PDF (no cross-reference table)');
+  const offsets = new Map();
+  let trailer = null;
+  const seen = new Set();
+  let at = Number(startxref[1]);
+  while (at !== undefined && !seen.has(at)) {
+    seen.add(at);
+    if (!text.startsWith('xref', at)) {
+      throw new Error(
+        'the PDF was saved again by another program (it has no cross-reference table): use the extract as the registry issued it',
+      );
+    }
+    let cursor = at + 4;
+    for (;;) {
+      const section = /^\s*(\d+)\s+(\d+)\s*?[\r\n]+/.exec(
+        text.slice(cursor, cursor + 64),
+      );
+      if (!section) break;
+      cursor += section[0].length;
+      const first = Number(section[1]);
+      for (let i = 0; i < Number(section[2]); i++) {
+        const line = /^(\d{10}) (\d{5}) ([nf])/.exec(
+          text.slice(cursor, cursor + 20),
+        );
+        if (!line) throw new Error('damaged cross-reference table');
+        if (line[3] === 'n' && !offsets.has(first + i)) {
+          offsets.set(first + i, Number(line[1]));
+        }
+        cursor += 20;
+      }
+    }
+    cursor = skipPdfSpace(text, cursor);
+    if (!text.startsWith('trailer', cursor)) {
+      throw new Error('damaged cross-reference table (no trailer)');
+    }
+    const dict = pdfValue(text, cursor + 7).value;
+    trailer ??= dict;
+    at = dict.Prev;
+  }
+  return {text, offsets, trailer};
+}
+
+/**
+ * The objects of a PDF, read on demand: `read(n)` gives { value, stream? } of object n, `deref(v)`
+ * the value a reference points to (or v itself); and the trailer.
+ */
+function pdfReader(pdf) {
+  const {text, offsets, trailer} = pdfObjects(pdf);
+  const read = number => {
+    const at = offsets.get(number);
+    if (at === undefined) throw new Error(`object ${number} is missing`);
+    const head = /^(\d+)\s+(\d+)\s+obj/.exec(text.slice(at, at + 32));
+    if (!head || Number(head[1]) !== number) {
+      throw new Error(`object ${number} is not where the table says`);
+    }
+    const {value, end} = pdfValue(text, at + head[0].length);
+    const keyword = /^\s*stream(\r\n|\n)/.exec(text.slice(end, end + 16));
+    if (!keyword) return {value};
+    const length = deref(value.Length);
+    if (!Number.isSafeInteger(length) || length < 0) {
+      throw new Error(`object ${number}: stream without a length`);
+    }
+    const start = end + keyword[0].length;
+    return {value, stream: pdf.subarray(start, start + length)};
+  };
+  const deref = value =>
+    value && typeof value === 'object' && 'ref' in value
+      ? read(value.ref).value
+      : value;
+  return {trailer, read, deref};
+}
+
+/** The same file name attached twice: which one is the extract's cannot be told. */
+export class DuplicateAttachment extends Error {}
+
+/**
+ * The files attached inside a PDF (its /EmbeddedFiles name tree), by name, as Buffers. Streams are
+ * read as stored or inflated (FlateDecode); nothing else is needed for an extract.
+ */
+export function pdfAttachments(bytes) {
+  const pdf = Buffer.from(bytes);
+  const {trailer, read, deref} = pdfReader(pdf);
+  // all attachments together within MAX_ATTACHMENT_BYTES: a small PDF cannot unpack into gigabytes
+  let budget = MAX_ATTACHMENT_BYTES;
+  const decoded = ref => {
+    const {value, stream} = read(ref?.ref);
+    if (!stream) throw new Error('an attachment is not a stream');
+    const filters = [deref(value.Filter) ?? []].flat();
+    let file;
+    if (filters.length === 0) file = Buffer.from(stream);
+    else if (
+      filters.length === 1 &&
+      filters[0] === '/FlateDecode' &&
+      value.DecodeParms === undefined
+    ) {
+      try {
+        file = inflateSync(stream, {maxOutputLength: Math.max(budget, 1)});
+      } catch (err) {
+        if (err.code !== 'ERR_BUFFER_TOO_LARGE') throw err;
+        file = null;
+      }
+    } else {
+      throw new Error(`an attachment is stored as ${filters.join(' ')}`);
+    }
+    if (!file || file.length > budget) {
+      throw new Error('the attached files are larger than any extract holds');
+    }
+    budget -= file.length;
+    return file;
+  };
+  const files = new Map();
+  // each node of the tree once: a /Kids that points back up would otherwise never end
+  const visited = new Set();
+  const walk = (entry, depth) => {
+    if (entry && typeof entry === 'object' && 'ref' in entry) {
+      if (visited.has(entry.ref)) return;
+      visited.add(entry.ref);
+    }
+    if (visited.size > MAX_NAME_TREE_NODES) {
+      throw new Error('the list of attached files is too large');
+    }
+    const node = deref(entry);
+    if (!node || typeof node !== 'object' || depth > 16) return;
+    const names = deref(node.Names) ?? [];
+    for (let i = 0; i + 1 < names.length; i += 2) {
+      const spec = deref(names[i + 1]);
+      const name = pdfText(deref(names[i])) ?? pdfText(spec?.UF);
+      const embedded = deref(spec?.EF);
+      if (!name || !embedded) continue;
+      if (files.has(name)) {
+        throw new DuplicateAttachment(`${name} is attached twice`);
+      }
+      files.set(name, decoded(embedded.F ?? embedded.UF));
+    }
+    for (const kid of deref(node.Kids) ?? []) walk(kid, depth + 1);
+  };
+  const catalog = deref(trailer.Root);
+  walk(deref(catalog?.Names)?.EmbeddedFiles, 0);
+  return files;
+}
+
+// a minimal DER reader, enough for the seal's CMS SignedData (RFC 5652)
+
+/** The element at `at`: { tag, start (of its header), body (of its content), end }. */
+function derAt(bytes, at) {
+  const tag = bytes[at];
+  let length = bytes[at + 1];
+  let body = at + 2;
+  if (length & 0x80) {
+    const count = length & 0x7f;
+    if (count < 1 || count > 4) throw new Error('unsupported DER length');
+    length = 0;
+    for (let i = 0; i < count; i++) length = length * 256 + bytes[body + i];
+    body += count;
+  }
+  if (tag === undefined || body + length > bytes.length) {
+    throw new Error('damaged DER');
+  }
+  return {tag, start: at, body, end: body + length};
+}
+/** The elements inside a constructed element. */
+function derChildren(bytes, element) {
+  const out = [];
+  for (let at = element.body; at < element.end;) {
+    const child = derAt(bytes, at);
+    out.push(child);
+    at = child.end;
+  }
+  return out;
+}
+/** An object identifier in dotted form. */
+function derOid(bytes, element) {
+  const body = bytes.subarray(element.body, element.end);
+  const parts = [Math.floor(body[0] / 40), body[0] % 40];
+  let value = 0;
+  for (const byte of body.subarray(1)) {
+    value = value * 128 + (byte & 0x7f);
+    if (!(byte & 0x80)) {
+      parts.push(value);
+      value = 0;
+    }
+  }
+  return parts.join('.');
+}
+const derBody = (bytes, element) => bytes.subarray(element.body, element.end);
+const derWhole = (bytes, element) => bytes.subarray(element.start, element.end);
+
+const SEAL_OID = {
+  signedData: '1.2.840.113549.1.7.2',
+  messageDigest: '1.2.840.113549.1.9.4',
+  signingCertificateV2: '1.2.840.113549.1.9.16.2.47',
+};
+const DIGESTS = {
+  '2.16.840.1.101.3.4.2.1': 'sha256',
+  '2.16.840.1.101.3.4.2.2': 'sha384',
+  '2.16.840.1.101.3.4.2.3': 'sha512',
+};
+// ECDSA and RSA (PKCS #1 v1.5): what the registry's seal uses (extracts service, src/seal/cms.js)
+const SIGNATURE_ALGORITHMS = new Set([
+  '1.2.840.10045.4.3.2',
+  '1.2.840.10045.4.3.3',
+  '1.2.840.10045.4.3.4',
+  '1.2.840.113549.1.1.1',
+  '1.2.840.113549.1.1.11',
+  '1.2.840.113549.1.1.12',
+  '1.2.840.113549.1.1.13',
+]);
+
+/**
+ * The signature dictionaries of the PDF's signature fields, reached as a PDF reader reaches them:
+ * the catalog's /AcroForm, its /Fields (and their /Kids), each field's value /V with a /ByteRange.
+ */
+function signatureDictionaries(pdf) {
+  const {trailer, deref} = pdfReader(pdf);
+  const form = deref(deref(trailer.Root)?.AcroForm);
+  const found = [];
+  const visited = new Set();
+  const walk = (entry, depth) => {
+    if (entry && typeof entry === 'object' && 'ref' in entry) {
+      if (visited.has(entry.ref)) return;
+      visited.add(entry.ref);
+    }
+    if (visited.size > MAX_NAME_TREE_NODES || depth > 16) {
+      throw new Error('the form is too large');
+    }
+    const field = deref(entry);
+    if (!field || typeof field !== 'object' || Array.isArray(field)) return;
+    const value = deref(field.V);
+    if (value && typeof value === 'object' && 'ByteRange' in value) {
+      found.push({...value, ByteRange: deref(value.ByteRange)});
+    }
+    for (const kid of deref(field.Kids) ?? []) walk(kid, depth + 1);
+  };
+  for (const field of deref(form?.Fields) ?? []) walk(field, 0);
+  return found;
+}
+
+/** A certificate fingerprint as typed or copied: hex, with or without colons or spaces, any case. */
+const fingerprintOf = text =>
+  String(text ?? '')
+    .replace(/[\s:]/g, '')
+    .toLowerCase();
+
+/**
+ * The PDF's organisation seal checked as a PDF reader checks it: the signature's /ByteRange covers
+ * the whole file but the signature itself, the digest of those bytes is the one signed, and the
+ * signature over the signed attributes holds with the public key of the certificate in it (and
+ * that certificate is the one the signature names). The certificate is not checked against an
+ * authority but pinned: with `fingerprint`, the SHA-256 of the registry's seal certificate (DER)
+ * as the registry publishes it (GET /api/public/extracts/seal), the certificate must be that one;
+ * a certificate made by anyone else, with the same name or not, fails.
+ * Returns { status: 'valid' | 'invalid' | 'none' | 'unchecked', detail, subject, sha256 }; only
+ * 'valid' vouches for the PDF ('unchecked': made in a way this checker cannot verify).
+ */
+export function checkPdfSeal(bytes, {fingerprint} = {}) {
+  const pdf = Buffer.from(bytes);
+  const notSealed = detail => ({
+    status: 'invalid',
+    detail,
+    subject: null,
+    sha256: null,
+  });
+  let signatures;
+  try {
+    signatures = signatureDictionaries(pdf);
+  } catch (err) {
+    return notSealed(`the seal cannot be read: ${err.message}`);
+  }
+  // every /ByteRange written in the file: a second one, in or out of the form, is not the registry's
+  const written =
+    pdf.toString('latin1').match(/\/ByteRange\s*\[/g)?.length ?? 0;
+  if (signatures.length === 0 && written === 0) {
+    return {
+      status: 'none',
+      detail:
+        'the PDF has no seal: it is not an extract as the registry issued it',
+      subject: null,
+      sha256: null,
+    };
+  }
+  if (signatures.length !== 1 || written !== 1) {
+    return notSealed(
+      'the PDF has more than one seal, or a seal outside its signature field: it is not an extract as the registry issued it',
+    );
+  }
+  const range = signatures[0].ByteRange;
+  if (range.length !== 4 || !range.every(n => Number.isSafeInteger(n))) {
+    return notSealed('the seal cannot be read: its byte range is damaged');
+  }
+  const [start, length, after, rest] = range;
+  if (start !== 0 || after < length || after + rest !== pdf.length) {
+    return notSealed(
+      'the seal does not cover the whole file: the PDF was changed after it was sealed',
+    );
+  }
+  // what the seal does not cover must be the signature and nothing else: one hex string, as a PDF
+  // reader requires; anything hidden beside it would be outside the seal
+  const gap = pdf.subarray(length, after).toString('latin1');
+  if (!/^<(?:[0-9A-Fa-f]{2})*>$/.test(gap)) {
+    return notSealed(
+      'the space left for the seal holds more than the seal: the PDF was changed after it was sealed',
+    );
+  }
+  let subject = null;
+  let sha256 = null;
+  try {
+    const cms = Buffer.from(gap.slice(1, -1), 'hex');
+    const contentInfo = derChildren(cms, derAt(cms, 0));
+    if (derOid(cms, contentInfo[0]) !== SEAL_OID.signedData) {
+      throw new Error('the signature is not a CMS SignedData');
+    }
+    const signedData = derChildren(cms, derChildren(cms, contentInfo[1])[0]);
+    const certificates = signedData.find(e => e.tag === 0xa0);
+    const signerInfo = derChildren(cms, signedData.at(-1))[0];
+    const signerParts = derChildren(cms, signerInfo);
+    const sid = signerParts[1];
+    const digestName =
+      DIGESTS[derOid(cms, derChildren(cms, signerParts[2])[0])];
+    const signedAttrs = signerParts.find(e => e.tag === 0xa0);
+    const signatureAlgorithm = derOid(
+      cms,
+      derChildren(
+        cms,
+        signerParts.find((e, i) => i > 2 && e.tag === 0x30),
+      )[0],
+    );
+    const signature = derBody(
+      cms,
+      signerParts.find(e => e.tag === 0x04),
+    );
+    const certificateList = certificates
+      ? derChildren(cms, certificates).map(c => derWhole(cms, c))
+      : [];
+    const serialOf = hexText => hexText.toUpperCase().replace(/^0+/, '');
+    const sidSerial =
+      sid.tag === 0x30
+        ? serialOf(derBody(cms, derChildren(cms, sid)[1]).toString('hex'))
+        : null;
+    const certificateDer =
+      certificateList.find(
+        der =>
+          sidSerial !== null &&
+          serialOf(new X509Certificate(der).serialNumber) === sidSerial,
+      ) ?? (certificateList.length === 1 ? certificateList[0] : null);
+    if (!certificateDer) {
+      throw new Error('the signature does not hold its certificate');
+    }
+    const certificate = new X509Certificate(certificateDer);
+    // one line, without the escapes Node puts before commas inside a value
+    subject = certificate.subject
+      .split('\n')
+      .map(part => part.replace(/\\(.)/g, '$1'))
+      .join(', ');
+    sha256 = createHash('sha256').update(certificateDer).digest('hex');
+    if (
+      !digestName ||
+      !signedAttrs ||
+      !SIGNATURE_ALGORITHMS.has(signatureAlgorithm)
+    ) {
+      return {
+        status: 'unchecked',
+        detail: `the seal is made in a way this checker cannot verify (${signedAttrs ? `algorithm ${signatureAlgorithm}` : 'no signed attributes'}), so it does not vouch for the PDF`,
+        subject,
+        sha256,
+      };
+    }
+    const attributes = new Map(
+      derChildren(cms, signedAttrs).map(a => {
+        const [type, values] = derChildren(cms, a);
+        return [derOid(cms, type), derChildren(cms, values)[0]];
+      }),
+    );
+    const content = Buffer.concat([
+      pdf.subarray(0, length),
+      pdf.subarray(after, after + rest),
+    ]);
+    const messageDigest = attributes.get(SEAL_OID.messageDigest);
+    const digestMatches =
+      !!messageDigest &&
+      derBody(cms, messageDigest).equals(
+        createHash(digestName).update(content).digest(),
+      );
+    // the signing-certificate-v2 attribute names the certificate by its hash, so it cannot be swapped
+    const signingCertificate = attributes.get(SEAL_OID.signingCertificateV2);
+    let certificateNamed = true;
+    if (signingCertificate) {
+      const essCertId = derChildren(
+        cms,
+        derChildren(cms, derChildren(cms, signingCertificate)[0])[0],
+      );
+      const algorithm =
+        essCertId[0].tag === 0x30
+          ? DIGESTS[derOid(cms, derChildren(cms, essCertId[0])[0])]
+          : 'sha256';
+      const hash = essCertId.find(e => e.tag === 0x04);
+      certificateNamed =
+        !!algorithm &&
+        !!hash &&
+        derBody(cms, hash).equals(
+          createHash(algorithm).update(certificateDer).digest(),
+        );
+    }
+    const signedBytes = Buffer.from(derWhole(cms, signedAttrs));
+    signedBytes[0] = 0x31; // signed as a SET OF, not with its [0] tag
+    const signatureHolds = cryptoVerify(
+      digestName,
+      signedBytes,
+      {key: certificate.publicKey, dsaEncoding: 'der'},
+      signature,
+    );
+    if (!digestMatches) {
+      return {
+        status: 'invalid',
+        detail:
+          'the seal does not match the file: the PDF was changed after it was sealed',
+        subject,
+        sha256,
+      };
+    }
+    if (!signatureHolds || !certificateNamed) {
+      return {
+        status: 'invalid',
+        detail:
+          'the seal’s signature does not hold: it was not made with the key of its certificate',
+        subject,
+        sha256,
+      };
+    }
+    if (fingerprint !== undefined && fingerprintOf(fingerprint) !== sha256) {
+      return {
+        status: 'invalid',
+        detail: `the seal was not made with the registry's certificate: its certificate (${subject}) has the fingerprint ${sha256}, not the registry's ${fingerprintOf(fingerprint)}`,
+        subject,
+        sha256,
+      };
+    }
+    return {
+      status: 'valid',
+      detail: `sealed with the registry's certificate (${subject}, fingerprint ${sha256.slice(0, 16)}…); the whole file is as sealed`,
+      subject,
+      sha256,
+    };
+  } catch (err) {
+    return {
+      status: 'invalid',
+      detail: `the seal cannot be read: ${err.message}`,
+      subject,
+      sha256,
+    };
+  }
+}
+
+/**
+ * A check of verifyProof's as an extract's reader reads it: "blockchain", no network or source
+ * names, the registry's address rather than the anchoring wallet.
+ */
+function extractCheck(c, {proof, anchoring}) {
+  const tx = proof.anchor?.tx;
+  switch (c.name) {
+    case 'item':
+      return {
+        name: 'fingerprint',
+        ok: c.ok,
+        detail: c.ok
+          ? `the version's fingerprint ${String(proof.item.seal).slice(0, 16)}…`
+          : 'the proof’s fingerprint is not the one it proves',
+      };
+    case 'path to the root':
+      return {
+        name: 'in the batch',
+        ok: c.ok,
+        detail: c.ok
+          ? `the fingerprint is inside the batch's combined fingerprint (${proof.tree.size} items)`
+          : "the fingerprint is not inside the batch's combined fingerprint",
+      };
+    case 'transaction on chain':
+      return {
+        name: 'transaction on the blockchain',
+        ok: c.ok,
+        detail: c.ok
+          ? `transaction ${tx}, block ${anchoring.blockHeight}, ${anchoring.confirmations ?? '?'} confirmations`
+          : `transaction ${tx} is not on the blockchain`,
+      };
+    case 'root in the transaction':
+      return {
+        name: 'batch fingerprint in the transaction',
+        ok: c.ok,
+        detail: c.ok
+          ? `the transaction carries the batch's combined fingerprint (label ${LABEL})`
+          : `the transaction does not carry the batch's combined fingerprint (label ${LABEL})`,
+      };
+    case 'paid by the anchoring wallet':
+      return {
+        name: "sent from the registry's address",
+        ok: c.ok,
+        detail: c.detail,
+      };
+    default:
+      return c;
+  }
+}
+
+/**
+ * Check an ownership extract's PDF (API-694): the proof attached inside it (record-v<n>.proof.json),
+ * checked as a proof file is (verifyProof: the fingerprint's leaf, the path to the batch's combined
+ * fingerprint, the transaction on the blockchain carrying it under label 8890, sent from `address`,
+ * the registry's published address), its batch the one on the blockchain; and the registry's seal
+ * over the PDF, made with the certificate whose SHA-256 is `seal` (published by the registry).
+ * `address` and `seal` are required: without them nothing can be vouched for.
+ * Returns { valid, checks, notes, seal, batch, date, dateFrom, versionNumber, anchoring }; throws
+ * Unreachable when the blockchain cannot be read, and an Error when the file cannot be read as a PDF.
+ */
+export async function verifyExtract(
+  bytes,
+  {source = 'koios', key, address, seal, fetchImpl = globalThis.fetch} = {},
+) {
+  if (!address || !seal) {
+    throw new TypeError(
+      "An extract is checked against the registry's published address and seal fingerprint: both are needed",
+    );
+  }
+  const checks = [];
+  const check = (name, ok, detail) => {
+    checks.push({name, ok: !!ok, detail});
+    return !!ok;
+  };
+  const notes = [
+    'An offline check cannot show whether a newer version of the land record exists, or whether the registry has revoked this extract. Use the public check page for that: scan the QR code on the extract.',
+  ];
+  const sealResult = checkPdfSeal(bytes, {fingerprint: seal});
+  const unproven = {seal: sealResult, batch: null, date: null, dateFrom: null};
+  let files;
+  try {
+    files = pdfAttachments(bytes);
+  } catch (err) {
+    if (!(err instanceof DuplicateAttachment)) throw err;
+    check(
+      'attached proof',
+      false,
+      `${err.message}: it is not an extract as the registry issued it`,
+    );
+    return {valid: false, checks, notes, ...unproven};
+  }
+  const attached = [...files.keys()].filter(n => EXTRACT_PROOF_NAME.test(n));
+  if (attached.length !== 1) {
+    check(
+      'attached proof',
+      false,
+      attached.length === 0
+        ? 'the PDF has no proof attached (record-v<n>.proof.json): it is not an ownership extract as the registry issued it, or the proof was removed'
+        : `more than one proof is attached: ${attached.join(', ')}`,
+    );
+    return {valid: false, checks, notes, ...unproven};
+  }
+  const [name] = attached;
+  const versionNumber = Number(EXTRACT_PROOF_NAME.exec(name)[1]);
+  let proof;
+  try {
+    proof = JSON.parse(files.get(name).toString('utf8'));
+  } catch {
+    proof = undefined;
+  }
+  const item = proof?.item;
+  if (
+    !check(
+      'attached proof',
+      item?.kind === 'record-version' && item.version === versionNumber,
+      !proof
+        ? `${name} cannot be read`
+        : item?.kind !== 'record-version'
+          ? `${name} is not the proof of a land record version`
+          : item.version !== versionNumber
+            ? `${name} is the proof of version ${item.version}`
+            : `${name}: land record ${item.recordId}, version ${versionNumber}`,
+    )
+  ) {
+    return {valid: false, checks, notes, ...unproven};
+  }
+  const result = await verifyProof(proof, {source, key, address, fetchImpl});
+  checks.push(
+    ...result.checks.map(c =>
+      extractCheck(c, {proof, anchoring: result.anchoring}),
+    ),
+  );
+  const md = result.anchoring?.metadata;
+  if (md) {
+    check(
+      'batch',
+      Number(md.batch) === proof.anchor.batch,
+      Number(md.batch) === proof.anchor.batch
+        ? `batch ${md.batch}`
+        : `the proof says batch ${proof.anchor.batch}, the blockchain batch ${md.batch}`,
+    );
+  }
+  // the seal is its own check, apart from the blockchain's: only a verified seal of the registry's
+  // certificate vouches for what the PDF shows
+  check('registry seal', sealResult.status === 'valid', sealResult.detail);
+  notes.push(
+    "The fingerprint cannot be recomputed from the extract: the version's full data (with the owners' full ID numbers) is not in the PDF, on purpose. The registry's seal ties what the extract shows to its attached proof.",
+  );
+  const blockTime = result.anchoring?.blockTime ?? null;
+  return {
+    valid: checks.every(c => c.ok),
+    checks,
+    notes,
+    seal: sealResult,
+    batch: md ? Number(md.batch) : null,
+    date: blockTime ?? proof.anchor?.confirmedAt ?? null,
+    dateFrom: blockTime ? 'blockchain' : 'proof',
+    versionNumber,
+    anchoring: result.anchoring,
+  };
+}
+
+/** The verdict on an extract in plain words, for the command line. */
+export function extractVerdict(result) {
+  if (result.valid) {
+    let date = '';
+    if (result.date) {
+      date = ` of ${result.date.slice(0, 10)}`;
+      if (result.dateFrom !== 'blockchain') {
+        date += ' (the date as the attached proof gives it)';
+      }
+    }
+    return `VALID: version ${result.versionNumber} of the land record is on the blockchain, in batch ${result.batch}${date}, sent from the registry's address, and the PDF is as the registry sealed it.`;
+  }
+  const failed = result.checks.filter(c => !c.ok);
+  const reason = failed.map(c => `${c.name}: ${c.detail}`).join('; ');
+  const sealOnly = failed.length === 1 && failed[0].name === 'registry seal';
+  return sealOnly
+    ? `NOT VALID: ${reason}. The checks against the blockchain passed: the attached proof is genuine, but what the PDF shows is not vouched for by the registry.`
+    : `NOT VALID: ${reason}.`;
+}
+
 // ------------------------------------------------------------------ command line
 
 async function main(argv) {
@@ -1130,10 +1901,11 @@ async function main(argv) {
   const source = flag('--source') || 'koios';
   const keyFile = flag('--key-file');
   const address = flag('--address');
+  const seal = flag('--seal');
   const file = args[0];
   if (!file || file === '--help' || file === '-h') {
     process.stdout.write(
-      'usage: node lrfe-verify.mjs <proof.json | evidence pack .zip or folder> [--address <anchoring wallet>] [--source koios|blockfrost] [--key-file <file>] [--json]\n',
+      'usage: node lrfe-verify.mjs <proof.json | evidence pack .zip or folder | extract .pdf> [--address <anchoring wallet>] [--seal <seal fingerprint>, for an extract] [--source koios|blockfrost] [--key-file <file>] [--json]\n',
     );
     return file ? 0 : 2;
   }
@@ -1150,6 +1922,9 @@ async function main(argv) {
     /* reported below */
   }
   if (isPack) return checkPack(file, {source, key, address, json});
+  if (file.toLowerCase().endsWith('.pdf')) {
+    return checkExtract(file, {source, key, address, seal, json});
+  }
   let proof;
   try {
     proof = JSON.parse(readFileSync(file, 'utf8'));
@@ -1217,6 +1992,45 @@ async function checkPack(path, {source, key, address, json}) {
           ? `\nVALID AS FAR AS ANCHORED: the pack is consistent and its anchored items are as exported; ${result.unproven.length} items are not proven on chain (see above): they may be newer than the last anchoring, or changed since the export.\n`
           : '\nVALID: the pack is consistent and as exported, and every version, document and trail entry in it existed unchanged when its root was put on Cardano.\n',
     );
+  }
+  return result.valid ? 0 : 1;
+}
+
+async function checkExtract(path, {source, key, address, seal, json}) {
+  if (!address || !seal) {
+    process.stderr.write(
+      "usage: node lrfe-verify.mjs extract.pdf --address <the registry's address> --seal <the registry's seal fingerprint>\n" +
+        "Both are published by the registry (its public page, or GET /api/public/extracts/seal for the seal's fingerprint): an extract is checked against them, never against what the PDF says of itself.\n",
+    );
+    return 2;
+  }
+  let result;
+  try {
+    result = await verifyExtract(readFileSync(path), {
+      source,
+      key,
+      address,
+      seal,
+    });
+  } catch (err) {
+    if (err instanceof Unreachable) {
+      process.stderr.write(
+        `Could not check against the blockchain: ${err.message}\n`,
+      );
+    } else {
+      process.stderr.write(`Cannot read the extract ${path}: ${err.message}\n`);
+    }
+    return 2;
+  }
+  if (json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  else {
+    for (const c of result.checks) {
+      process.stdout.write(
+        `${c.ok ? 'ok  ' : 'FAIL'}  ${c.name}: ${c.detail}\n`,
+      );
+    }
+    for (const n of result.notes) process.stdout.write(`note  ${n}\n`);
+    process.stdout.write(`\n${extractVerdict(result)}\n`);
   }
   return result.valid ? 0 : 1;
 }

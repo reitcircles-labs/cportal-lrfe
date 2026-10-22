@@ -21,6 +21,7 @@ const AREAS = [
   'backend/services/identity',
   'backend/services/edrms',
   'backend/services/intake',
+  'backend/services/extracts',
   'backend/scripts',
   'angular-app/src/app/features',
   'angular-app/src',

@@ -7,8 +7,9 @@
 # without changing what already works:
 #   - the transit engine and AppRole logins;
 #   - one key per service, never exportable: edrms-files and intake-files (stored files),
-#     audit-anchor (ed25519, the audit service's blockchain wallet key);
-#   - a policy per key that allows only what its service needs on that key;
+#     audit-anchor (ed25519, the audit service's blockchain wallet key), extracts-seal (ecdsa-p256,
+#     the organisation seal on ownership extracts) and extracts-files (its stored PDFs);
+#   - a policy per service that allows only what it needs on its own keys;
 #   - an AppRole per service (1 h tokens), whose role ID and secret ID go into that service's
 #     own volume, readable only by the service (the node user, uid 1000).
 # The same steps as backend/scripts/bao.js (in the source repository) for a development machine.
@@ -34,11 +35,16 @@ fi
 bao secrets list | grep -q '^transit/' || bao secrets enable transit >/dev/null
 bao auth list | grep -q '^approle/' || bao auth enable approle >/dev/null
 
-# service  key  key type  policy lines
+# a transit key, created once, never exportable: key  key type
+transit_key() {
+    bao read "transit/keys/$1" >/dev/null 2>&1 || bao write -f "transit/keys/$1" type="$2" exportable=false >/dev/null
+}
+
+# service  key  key type  policy lines (its policy is named after the key)
 prepare() {
     service=$1 key=$2 type=$3 policy=$4
-    bao read "transit/keys/$key" >/dev/null 2>&1 || bao write -f "transit/keys/$key" type="$type" exportable=false >/dev/null
-    printf '# %s: only what it needs, on its own key only (written by setup.sh)\n%s\n' "$service" "$policy" | bao policy write "$key" - >/dev/null
+    transit_key "$key" "$type"
+    printf '# %s: only what it needs, on its own keys only (written by setup.sh)\n%s\n' "$service" "$policy" | bao policy write "$key" - >/dev/null
     bao write "auth/approle/role/$service" token_policies="$key" token_ttl=1h token_max_ttl=24h >/dev/null
 
     dir="$APPROLE_DIR/$service"
@@ -63,5 +69,11 @@ prepare intake intake-files aes256-gcm96 'path "transit/datakey/plaintext/intake
 path "transit/decrypt/intake-files" { capabilities = ["update"] }'
 prepare audit audit-anchor ed25519 'path "transit/sign/audit-anchor" { capabilities = ["update"] }
 path "transit/keys/audit-anchor" { capabilities = ["read"] }'
+# the extracts service: its seal, and the key for its stored PDFs (API-780)
+transit_key extracts-files aes256-gcm96
+prepare extracts extracts-seal ecdsa-p256 'path "transit/sign/extracts-seal" { capabilities = ["update"] }
+path "transit/keys/extracts-seal" { capabilities = ["read"] }
+path "transit/datakey/plaintext/extracts-files" { capabilities = ["update"] }
+path "transit/decrypt/extracts-files" { capabilities = ["update"] }'
 
-echo "OpenBao is ready for the portal. Set EDRMS_ENCRYPTION=bao and INTAKE_ENCRYPTION=bao in .env, then: docker compose up -d"
+echo "OpenBao is ready for the portal. Set EDRMS_ENCRYPTION=bao, INTAKE_ENCRYPTION=bao and EXTRACTS_ENCRYPTION=bao in .env (and, once the seal certificate is in LRFE_SEAL_CERT, LRFE_SEAL=bao), then: docker compose up -d"

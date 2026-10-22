@@ -17,6 +17,8 @@ import {createSequelizeRepo as bpm} from '../services/bpm/src/repo/sequelize.js'
 import {SCHEMA as BPM} from '../services/bpm/src/repo/models.js';
 import {createSequelizeRepo as edrms} from '../services/edrms/src/repo/sequelize.js';
 import {SCHEMA as EDRMS} from '../services/edrms/src/repo/models.js';
+import {createSequelizeRepo as extracts} from '../services/extracts/src/repo/sequelize.js';
+import {SCHEMA as EXTRACTS} from '../services/extracts/src/repo/models.js';
 import {createSequelizeRepo as identity} from '../services/identity/src/repo/sequelize.js';
 import {SCHEMA as IDENTITY} from '../services/identity/src/repo/models.js';
 import {createSequelizeRepo as intake} from '../services/intake/src/repo/sequelize.js';
@@ -31,6 +33,7 @@ const SERVICES = [
   {name: 'intake', schema: INTAKE, createRepo: intake},
   {name: 'land-records', schema: RECORDS, createRepo: landRecords},
   {name: 'audit', schema: AUDIT, createRepo: audit},
+  {name: 'extracts', schema: EXTRACTS, createRepo: extracts},
 ];
 
 /**

@@ -2,13 +2,40 @@ import Fastify from 'fastify';
 import {errorHandler} from './errors.js';
 import {env} from './config.js';
 
+/** The token in the path of the public check of an extract (API-693): what follows /public/extracts/. */
+const PUBLIC_EXTRACT_TOKEN = /(\/public\/extracts\/)[^/?#]+/;
+
+/** A request path as the logs show it: the token of an extract's public check replaced. */
+export const redactUrl = url =>
+  String(url ?? '').replace(PUBLIC_EXTRACT_TOKEN, '$1<token>');
+
+/** Fastify's own request serializer, with the path through redactUrl. */
+function requestForLog(req) {
+  return {
+    method: req.method,
+    url: redactUrl(req.url),
+    version: req.headers?.['accept-version'],
+    host: req.host,
+    remoteAddress: req.ip,
+    remotePort: req.socket?.remotePort,
+  };
+}
+
 /**
  * Fastify instance with the shared error handler and a public GET /health.
  * `onRoute(routeOptions)` sees every route as it is registered (the API docs generator uses it).
+ * A `logger` given as options logs request paths without the token of an extract's public check:
+ * the token is what lets anyone check the extract.
  */
-export function createBaseApp({name, onRoute, ...fastifyOptions}) {
+export function createBaseApp({name, onRoute, logger, ...fastifyOptions}) {
   if (!name) throw new Error('createBaseApp: `name` is required');
-  const app = Fastify({logger: false, ...fastifyOptions});
+  const app = Fastify({
+    logger:
+      logger && typeof logger === 'object'
+        ? {...logger, serializers: {req: requestForLog, ...logger.serializers}}
+        : (logger ?? false),
+    ...fastifyOptions,
+  });
   if (onRoute) app.addHook('onRoute', onRoute);
   app.setErrorHandler(errorHandler);
   app.get('/health', async () => ({status: 'ok', service: name}));

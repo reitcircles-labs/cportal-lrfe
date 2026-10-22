@@ -282,6 +282,46 @@ export class ProofService {
     };
   }
 
+  /**
+   * A land record version checked now, as verify() checks it, in the few facts the public check of
+   * an ownership extract needs (API-693): whether it is valid, each check's `ok`, the seal and the
+   * anchoring. Never the proof itself.
+   */
+  async versionCheck(recordId, version) {
+    const v = await this.verify('record-version', recordId, version);
+    const anchor = v.proof.anchor;
+    return {
+      valid: v.valid,
+      status: v.status,
+      checks: {
+        item: v.checks.item?.ok ?? null,
+        path: v.checks.path?.ok ?? null,
+        chain: v.checks.chain?.ok ?? null,
+      },
+      seal: v.proof.item.seal,
+      batch: anchor?.batch ?? null,
+      tx: anchor?.tx ?? null,
+      confirmedAt: anchor?.confirmedAt ?? null,
+      explorerUrl: v.explorerUrl,
+      checkedAt: v.checkedAt,
+    };
+  }
+
+  /**
+   * The proof of a land record version, as the evidence pack holds it (proofs/record-v<n>.json),
+   * and its transaction's page on a public blockchain explorer (null while waiting): attached to an
+   * ownership extract's PDF (API-691).
+   */
+  async recordProof(recordId, version) {
+    const proof = await this.proof('record-version', recordId, version);
+    return {
+      proof,
+      explorerUrl: proof.anchor
+        ? explorerUrl(proof.anchor.network, proof.anchor.tx)
+        : null,
+    };
+  }
+
   async checkItem(p) {
     if (p.item.kind === 'trail-entry') {
       const e = p.trail.entry;
@@ -373,10 +413,18 @@ export class ProofService {
       }
       if (md !== undefined) {
         if (md === null) {
-          const onChain = await this.cardano.status(a.tx).then(
-            x => x.onChain,
-            () => false,
-          );
+          let onChain;
+          try {
+            onChain = (await this.cardano.status(a.tx)).onChain;
+          } catch (err) {
+            // whether it is on the chain cannot be asked now: not a failed check
+            return {
+              ok: null,
+              source: this.cardano.provider,
+              tx: a.tx,
+              problem: `the chain cannot be reached now: ${err.message}`,
+            };
+          }
           return {
             ok: false,
             source: this.cardano.provider,

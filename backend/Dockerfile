@@ -17,6 +17,7 @@ COPY services/bpm/package.json services/bpm/
 COPY services/intake/package.json services/intake/
 COPY services/land-records/package.json services/land-records/
 COPY services/audit/package.json services/audit/
+COPY services/extracts/package.json services/extracts/
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY packages ./packages
@@ -26,8 +27,8 @@ COPY scripts/db-setup.js ./scripts/
 # the API docs (Swagger UI), the optional docs container (deploy/docker-compose.yml, profile docs)
 COPY scripts/docs-server.js ./scripts/
 
-# Local blob storage (EDRMS_STORAGE=local / INTAKE_STORAGE=local); compose mounts volumes here
-RUN mkdir -p /data/edrms /data/intake && chown -R node:node /data
+# Local blob storage (EDRMS_STORAGE, INTAKE_STORAGE, EXTRACTS_STORAGE=local); compose mounts volumes here
+RUN mkdir -p /data/edrms /data/intake /data/extracts && chown -R node:node /data
 USER node
 
 # The version the image was built from, so a site can see what it runs (docker image inspect)

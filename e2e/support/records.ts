@@ -71,7 +71,16 @@ export async function committedRecord(
   );
   expect(submitted.status(), await submitted.text()).toBe(200);
   await rec.dispose();
+  return approved(playwright, baseURL, record, 1);
+}
 
+/** The registrar approves the version in review through their task: it becomes `version`. */
+async function approved(
+  playwright: PlaywrightWorkerArgs['playwright'],
+  baseURL: string,
+  record: {id: string; recordNo: string},
+  version: number,
+): Promise<RecordNow> {
   const reg = await apiAs(playwright, baseURL, userByRole('sup').email);
   let task: {id: string} | undefined;
   await expect
@@ -90,11 +99,11 @@ export async function committedRecord(
       {timeout: 20_000},
     )
     .toBe(true);
-  const approved = await reg.api.post(`/api/tasks/${task!.id}/complete`, {
+  const done = await reg.api.post(`/api/tasks/${task!.id}/complete`, {
     headers: reg.headers,
     data: {output: {outcome: 'approved'}},
   });
-  expect(approved.status(), await approved.text()).toBe(200);
+  expect(done.status(), await done.text()).toBe(200);
   await reg.dispose();
   await expect
     .poll(
@@ -102,6 +111,38 @@ export async function committedRecord(
         (await recordNow(playwright, baseURL, record.id)).currentVersion,
       {timeout: 20_000},
     )
-    .toBe(1);
+    .toBe(version);
   return recordNow(playwright, baseURL, record.id);
+}
+
+/**
+ * A new approved version of the committed record `id`: the records officer opens a draft, sets
+ * `attributes` (zoning and the like) and submits it; the registrar approves it.
+ */
+export async function approvedChange(
+  playwright: PlaywrightWorkerArgs['playwright'],
+  baseURL: string,
+  id: string,
+  attributes: Record<string, string>,
+): Promise<RecordNow> {
+  const rec = await apiAs(playwright, baseURL, userByRole('rec').email);
+  const h = {headers: rec.headers};
+  const opened = await rec.api.post(`/api/records/${id}/draft`, h);
+  expect(opened.status(), await opened.text()).toBe(201);
+  const record = await opened.json();
+  const edited = await rec.api.patch(`/api/records/${id}/draft`, {
+    ...h,
+    data: {
+      revision: record.draft.revision,
+      changes: {attributes: {...record.draft.data.attributes, ...attributes}},
+    },
+  });
+  expect(edited.status(), await edited.text()).toBe(200);
+  const submitted = await rec.api.post(`/api/records/${id}/draft/submit`, {
+    ...h,
+    data: {revision: (await edited.json()).draft.revision},
+  });
+  expect(submitted.status(), await submitted.text()).toBe(200);
+  await rec.dispose();
+  return approved(playwright, baseURL, record, record.draft.versionNumber);
 }
