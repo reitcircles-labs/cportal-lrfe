@@ -77,6 +77,12 @@ throwaway PostgreSQL instance under `.stack/pg` with the server binaries already
 (`PG_BIN`, or the newest `/usr/lib/postgresql/<version>/bin`), on port 3606, TCP only, and stops and
 removes it at the end. It never touches another database on the machine. No Docker needed.
 
+`E2E_PG_DIR=<folder>` as well keeps that database between runs, in that folder instead of
+`.stack/pg`: created on the first run, reused after, never removed, with statement statistics
+(`pg_stat_statements`) on. It is for the load tests and their test register
+([backend/scripts/scale](../backend/scripts/scale/README.md)), not for the Playwright tests, which
+expect an empty database.
+
 ## Against the containers
 
 `npm run test:docker` (or `E2E_DOCKER=1` with any Playwright command) runs the same tests against

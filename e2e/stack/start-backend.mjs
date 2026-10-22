@@ -13,6 +13,8 @@
  * with documents stored as files: a private, throwaway PostgreSQL instance is created under
  * .stack/pg with the server binaries already installed on the machine (PG_BIN, or the newest
  * /usr/lib/postgresql/<version>/bin), on its own port, TCP only, and removed with the stack.
+ * With E2E_PG_DIR as well, the database lives in that folder instead and is kept: created on the
+ * first run, reused after, never removed (the load tests' test register, backend/scripts/scale).
  * The gateway starts last, once the others answer /health, so "gateway up" means "stack ready".
  */
 import {execFileSync, spawn} from 'node:child_process';
@@ -24,11 +26,12 @@ import {
   rmSync,
 } from 'node:fs';
 import {connect} from 'node:net';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import {
   BACKEND_DIR,
   BAO_DIR,
   DEMO_PASSWORD,
+  JWT_SECRET,
   MAIL_DIR,
   PORTS,
   STACK_DIR,
@@ -40,7 +43,7 @@ const COMMON = {
   NODE_ENV: 'test',
   HOST: '127.0.0.1',
   LOG_LEVEL: process.env.E2E_LOG_LEVEL || 'warn',
-  JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
+  JWT_SECRET,
   IDENTITY_URL: url('identity'),
   EDRMS_URL: url('edrms'),
   BPM_URL: url('bpm'),
@@ -107,7 +110,11 @@ const SERVICES = [
   'extracts',
 ];
 const POSTGRES = process.env.E2E_DB === 'postgres';
-const pgData = join(STACK_DIR, 'pg');
+// E2E_PG_DIR: a database kept between runs, outside .stack/ (the load tests' test register)
+const KEPT_PG = !!process.env.E2E_PG_DIR;
+const pgData = KEPT_PG
+  ? resolve(process.env.E2E_PG_DIR)
+  : join(STACK_DIR, 'pg');
 if (POSTGRES) {
   Object.assign(COMMON, {
     IDENTITY_STORE: 'postgres',
@@ -145,50 +152,62 @@ function pgBin() {
   return join(root, versions[0], 'bin');
 }
 
-/** A fresh PostgreSQL instance for this run only, with an empty database `e2e`. */
+/**
+ * A fresh PostgreSQL instance for this run only, with an empty database `e2e`; with E2E_PG_DIR,
+ * the kept instance in that folder, created once.
+ */
 function startPostgres() {
   const bin = pgBin();
   const run = (cmd, args) =>
     execFileSync(join(bin, cmd), args, {stdio: ['ignore', 'pipe', 'pipe']});
-  run('initdb', [
-    '-D',
-    pgData,
-    '-U',
-    'lrfe',
-    '--auth=trust',
-    '-E',
-    'UTF8',
-    '--no-locale',
-  ]);
-  // TCP only (-k ''): a socket path under .stack/ can exceed the 107-byte limit; no fsync: data is thrown away
+  const created = !existsSync(join(pgData, 'PG_VERSION'));
+  if (created) {
+    run('initdb', [
+      '-D',
+      pgData,
+      '-U',
+      'lrfe',
+      '--auth=trust',
+      '-E',
+      'UTF8',
+      '--no-locale',
+    ]);
+  }
+  // TCP only (-k ''): a socket path under .stack/ can exceed the 107-byte limit; no fsync: test data only.
+  // A kept database is for load tests: statement statistics on, and a buffer cache of a real server's order.
+  const kept = KEPT_PG
+    ? ' -c shared_preload_libraries=pg_stat_statements -c shared_buffers=1GB'
+    : '';
   run('pg_ctl', [
     '-D',
     pgData,
     '-o',
-    `-p ${PORTS.postgres} -h 127.0.0.1 -k '' -c fsync=off -c synchronous_commit=off`,
+    `-p ${PORTS.postgres} -h 127.0.0.1 -k '' -c fsync=off -c synchronous_commit=off${kept}`,
     '-l',
     join(STACK_DIR, 'pg.log'),
     '-w',
     'start',
   ]);
-  run('psql', [
-    '-h',
-    '127.0.0.1',
-    '-p',
-    String(PORTS.postgres),
-    '-U',
-    'lrfe',
-    '-d',
-    'postgres',
-    '-qc',
-    'CREATE DATABASE e2e',
-  ]);
-  console.log(
-    `e2e PostgreSQL ${run('pg_ctl', ['--version'])
-      .toString()
-      .trim()
-      .replace(/^pg_ctl \(PostgreSQL\) /, '')} on port ${PORTS.postgres}`,
-  );
+  if (created) {
+    run('psql', [
+      '-h',
+      '127.0.0.1',
+      '-p',
+      String(PORTS.postgres),
+      '-U',
+      'lrfe',
+      '-d',
+      'postgres',
+      '-qc',
+      'CREATE DATABASE e2e',
+    ]);
+  }
+  const version = run('pg_ctl', ['--version'])
+    .toString()
+    .trim()
+    .replace(/^pg_ctl \(PostgreSQL\) /, '');
+  const where = KEPT_PG ? `, kept in ${pgData}` : '';
+  console.log(`e2e PostgreSQL ${version} on port ${PORTS.postgres}${where}`);
 }
 
 function stopPostgres() {
@@ -205,11 +224,11 @@ function stopPostgres() {
 }
 
 // A PostgreSQL left running by an interrupted run would keep its port: stop it before clearing.
-if (existsSync(join(STACK_DIR, 'pg', 'postmaster.pid'))) {
+if (POSTGRES && existsSync(join(pgData, 'postmaster.pid'))) {
   try {
     execFileSync(
       join(pgBin(), 'pg_ctl'),
-      ['-D', join(STACK_DIR, 'pg'), '-m', 'immediate', '-w', 'stop'],
+      ['-D', pgData, '-m', KEPT_PG ? 'fast' : 'immediate', '-w', 'stop'],
       {stdio: 'ignore'},
     );
   } catch {

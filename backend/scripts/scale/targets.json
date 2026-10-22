@@ -1,0 +1,33 @@
+{
+  "status": "Proposed, to be agreed with the client (API-769). Sized for Namibia, the first client; another country sets its own.",
+  "volumes": {
+    "parcels": 500000,
+    "landRecords": 500000,
+    "documentsHistorical": 3000000,
+    "documentsPerYear": 150000,
+    "filingsPerDay": 600,
+    "filingsPerDayPeak": 3000,
+    "filingsPerHourPeak": 600,
+    "bulkImportDocumentsPerDay": 20000,
+    "officersAtOnce": 150,
+    "officersAtOncePeak": 250,
+    "offices": "The registry and its sub-registries, plus records desks in each region"
+  },
+  "responseTimesMs": {
+    "Documents screen search": {"median": 300, "p95": 800},
+    "Record screen document search": {"median": 300, "p95": 800},
+    "Document details": {"median": 100, "p95": 300},
+    "Suggestions": {"median": 500, "p95": 1500},
+    "New record preview": {"median": 500, "p95": 1500},
+    "Record list": {"median": 300, "p95": 800},
+    "Record list search": {"median": 300, "p95": 800},
+    "Work list: in review": {"median": 300, "p95": 800},
+    "Work list: needs review": {"median": 300, "p95": 800},
+    "Work list: new document": {"median": 300, "p95": 800},
+    "Work list: drafts": {"median": 300, "p95": 800},
+    "Work list: bin": {"median": 300, "p95": 800}
+  },
+  "filingToFlagMs": {"median": 2000, "p95": 10000, "max": 60000},
+  "filingThroughputPerMinute": 60,
+  "catchUpAfterOneHourOutageMinutes": 15
+}

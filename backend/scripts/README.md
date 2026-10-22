@@ -9,6 +9,7 @@
 | `cardano-status.js` | `npm run cardano:status`: how the local Cardano node is doing (sync, time left, disk, warnings; `--log [n]`, `--follow`). Reads only |
 | `openapi.js` | `npm run docs` · `npm run docs:check` | Generates `services/<name>/docs/openapi.yaml` · checks they are up to date |
 | `docs-server.js` | `npm run docs:serve` | Swagger UI for the API docs on http://localhost:3510 |
+| `scale/generate.js` · `scale/load-test.js` | `npm run scale:generate -- --documents 50000` · `npm run scale:load` | A synthetic national-size test register in a PostgreSQL test stack, and the load tests against it (API-769); see [scale/README.md](scale/README.md) |
 | `remoteConnect.sh` | `./scripts/remoteConnect.sh 4200 3510` **on your laptop** | Opens the server's ports on your laptop over SSH, to test the app remotely |
 
 ## remoteConnect.sh: test the app from your laptop
