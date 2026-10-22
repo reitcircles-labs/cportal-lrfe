@@ -6,7 +6,7 @@ What a demo of the portal needs, next to the install in `deploy/`.
 |---|---|
 | `documents/` | The demo document set (API-716): fictitious scans of two chains of title, to scan in, verify, file and build land records from. Its README has the story, the suggested demo flow and what the AI reads. |
 | `check-readiness.mjs` | The readiness check (API-717): run it before every demo (below). |
-| `STORYLINE.md` | The storyline (API-720): what the demo giver does, role by role, from scanning to the audit. |
+| `STORYLINE.md` | The storyline (API-720): what the demo giver does, role by role, from scanning to the audit and the owner's extract that anyone can check. |
 
 ## Before every demo: a known starting state
 
@@ -25,14 +25,14 @@ All commands on the server. `deploy/` means `~/projects/cportal-lrfe/deploy`.
 In `deploy/`:
 
 ```bash
-docker compose rm -sf web gateway identity edrms bpm intake land-records audit db-setup nats postgres
-docker volume rm lrfe_pgdata lrfe_edrms-files lrfe_intake-files lrfe_natsdata
+docker compose rm -sf web gateway identity edrms bpm intake land-records audit extracts db-setup nats postgres
+docker volume rm lrfe_pgdata lrfe_edrms-files lrfe_intake-files lrfe_extracts-files lrfe_natsdata
 docker compose up -d --wait
 ```
 
 The first command stops and removes the portal's containers, the second deletes their data (the database, the filed
 and scanned documents, the event stream), the third starts again: the database is set up anew and the 14 demo users are
-created again with the demo password of `.env`. OpenBao and the blockchain node, when switched on, keep running
+created again with the demo password of `.env`. The extracts register starts again at EX-NA-2026-000001. OpenBao and the blockchain node, when switched on, keep running
 (OpenBao stays unsealed, the node stays synced).
 
 **Kept, whatever happens:** `lrfe_cardano-db` (the blockchain node's data: without it the node syncs again for hours)
@@ -40,9 +40,10 @@ and `lrfe_bao-data` (OpenBao with the wallet key: without it the wallet and its 
 declares them external (`compose.keep-volumes.yml`, switched on by `COMPOSE_FILE` in `deploy/.env`), so compose never
 deletes them, not even `docker compose down -v`. Only `docker volume rm` with their names, or `docker volume prune
 --all` while the portal is stopped, would. The services' OpenBao logins (`lrfe_bao-audit`, `lrfe_bao-edrms`,
-`lrfe_bao-intake`) are not locked: `down -v` deletes them, and the setup of "Anchoring for the demo" (step 2, the
+`lrfe_bao-intake`, `lrfe_bao-extracts`) are not locked: `down -v` deletes them, and the setup of "Anchoring for the demo" (step 2, the
 last command) makes them again. With an existing database server instead of the bundled one,
-its administrator empties the database; then remove only the volumes `lrfe_edrms-files` and `lrfe_intake-files`.
+its administrator empties the database; then remove only the volumes `lrfe_edrms-files`, `lrfe_intake-files` and
+`lrfe_extracts-files`.
 
 ### 2. Readiness check
 
@@ -165,6 +166,46 @@ ADA (preview) to that address; each batch costs about 0.2 ADA.
 
 The fresh start (step 1 of "Before every demo") keeps OpenBao, its wallet key and the node: only the portal's data
 goes. Each fresh install numbers its batches from 1 again; the wallet's earlier transactions stay on the blockchain.
+
+## Ownership extracts for the demo
+
+Act 6 of the storyline issues an ownership extract (epic API-689) and checks it on the public check page. It needs
+images built from main after 22 October 2026, and the registry's **electronic seal**: in production, without it,
+issuing an extract is refused. The seal's key lives in OpenBao, like the wallet key, and is never exported.
+
+1. **The keys and logins** for the extracts service (`extracts-seal`, `extracts-files`): run the setup of "Anchoring
+   for the demo" (step 2, the last command) again. It keeps what works, the wallet key included, and never touches
+   `lrfe_bao-data`'s other keys. Then make a new OpenBao snapshot (step 4).
+2. **A certificate for the seal key.** A registry gets it from its certificate authority (`deploy/README.md`, part
+   D, step 6). For the demo, a certificate from a demo authority made on the server is enough; it says "not valid" in
+   its names. In a folder of this user only, with the root token as in step 2:
+
+   ```bash
+   mkdir -p ~/lrfe-demo-seal && cd ~/lrfe-demo-seal && umask 077
+   # the seal key's public key, from OpenBao (the latest version); -f because this runs outside deploy/
+   BAO_TOKEN=$(python3 -c "import json,os,sys; sys.stdout.write(json.load(open(os.path.expanduser('~/lrfe-demo-openbao-init.json')))['root_token'])") \
+     docker compose -f ~/projects/cportal-lrfe/deploy/docker-compose.yml exec -T -e BAO_TOKEN openbao \
+     bao read -address=http://127.0.0.1:8200 -format=json transit/keys/extracts-seal \
+     | python3 -c "import json,sys; k=json.load(sys.stdin)['data']['keys']; print(k[max(k, key=int)]['public_key'])" \
+     > extracts-seal.pub.pem
+   # a demo authority, and the seal certificate it issues for that public key
+   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout demo-ca.key -out demo-ca.pem \
+     -days 365 -subj "/CN=Demo seal authority (not valid)"
+   openssl req -new -key demo-ca.key -subj "/O=Deeds Registry/CN=Deeds Registry (demo seal, not valid)" -out seal.csr
+   openssl x509 -req -in seal.csr -CA demo-ca.pem -CAkey demo-ca.key -CAcreateserial \
+     -force_pubkey extracts-seal.pub.pem -days 365 -out seal.pem
+   # one line, with \n for each line break, for .env
+   awk 'NF {printf "%s\\n", $0}' seal.pem; echo
+   ```
+
+   The certificate is accepted only for that key: the service checks it before it signs anything.
+3. **The settings** in `deploy/.env`: `LRFE_SEAL=bao`, `LRFE_SEAL_CERT=` the line printed above,
+   `EXTRACTS_ENCRYPTION=bao` (the extract PDFs encrypted like the documents), optionally `LRFE_COAT_OF_ARMS` (a PNG or
+   JPEG; its path starts with `./` or `/`). `LRFE_PUBLIC_URL` is the address printed on the extract and held by its
+   QR code: for the demo through the SSH tunnel, `http://localhost:8088`. Then `docker compose up -d --wait`.
+4. **Check:** as the records officer, a land record whose version is on the blockchain, tab **Extracts**: **Issue
+   extract** is enabled once the version is confirmed. Do not issue one on the demo install before the demo: a fresh
+   start (step 1 of "Before every demo") resets the register.
 
 ## Rehearsing without spoiling the demo install
 

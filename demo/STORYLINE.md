@@ -1,16 +1,19 @@
 # Demo storyline (API-720; demo v2, API-777)
 
 The script for whoever gives the demo: who to sign in as, what to click, what to say, and what the audience should
-see, from the scanned deeds to two committed land records and their audit. Keep it open next to the portal.
+see, from the scanned deeds to two committed land records, their audit, and an ownership extract that anyone can check
+for themselves. Keep it open next to the portal.
 
 It follows the demo documents ([`documents/`](documents/README.md)): two properties, ten fictitious scans.
-**Erf 2417, Olympia** is shown in detail; **Erf 815, Ludwigsdorf** goes faster. It takes 40 to 50 minutes; the
-optional steps add 10.
+**Erf 2417, Olympia** is shown in detail; **Erf 815, Ludwigsdorf** goes faster. It takes 50 to 60 minutes; the
+optional steps add 15.
 
 Checked step by step in the browser on 16 October 2026 (version 0.1.0-95320f9, real AI): on a rehearsal install, and
 then on the demo install itself with anchoring on (preview blockchain), including the auditor's sign-off. Checked again
 for demo v2 on 21 October 2026 (version 0.1.0-668e5d8, real AI), on a rehearsal install with anchoring off: Acts 1 to
-5.14.
+5.14. Act 6 (the ownership extract, 22 October 2026) follows the screens as the automated tests show them
+(`e2e/tests/ownership-extracts.spec.ts`, `e2e/tests/check-extract.spec.ts`); it is still to be walked through on an
+install.
 
 ## Before you start
 
@@ -25,6 +28,9 @@ for demo v2 on 21 October 2026 (version 0.1.0-668e5d8, real AI), on a rehearsal 
   unsealed first).
 - **The portal is open** at `http://localhost:8088` (through the SSH tunnel). Use a normal (not private) browser
   window at full screen.
+- **For Act 6, the registry's seal is set up** on the install, and its images include the ownership extracts (main
+  after 22 October 2026, API-689): see [README.md](README.md), "Ownership extracts for the demo". Without the seal,
+  **Issue extract** refuses ("the registry's electronic seal is not set up").
 
 ### The cast
 
@@ -35,6 +41,7 @@ for demo v2 on 21 October 2026 (version 0.1.0-668e5d8, real AI), on a rehearsal 
 | 3 | `j.gawaseb@deeds.gov.na`, Johannes !Gawaseb | Records officer | Builds the land records |
 | 4 | `e.shivute@deeds.gov.na`, Elina Shivute | Registrar (supervisor) | Approves them |
 | 5 | `m.nakale@oag.gov.na`, Maria Nakale | Auditor (Office of the Auditor-General) | Checks them |
+| 6 | `j.gawaseb@deeds.gov.na`, then **nobody** (no sign-in) | Records officer, then a bank or a buyer | Issues an ownership extract to an owner; anyone checks it themselves |
 
 ### Switching roles
 
@@ -305,12 +312,57 @@ blockchain too: no one can quietly undo it."
 
 Sign out.
 
+## Act 6 · Self-verification: an owner's extract, checked by anyone (10 min)
+
+The registry gives an owner an **ownership extract**: a sealed PDF of the land record as it stands, with a QR code. A
+bank, a buyer or the owner checks it themselves, without an account and without trusting the registry's systems.
+Do it after Act 5: Erf 2417's version 1 must be **On the blockchain** (5.15).
+
+*Say:* "So far everyone worked inside the registry. Now the owner wants proof of ownership for the bank. The registry
+issues an extract; the bank checks it in seconds, with no login and no call to the registry."
+
+Sign in as **`j.gawaseb@deeds.gov.na`**, then **Land record (create/finalize)**, and open **Erf 2417, Olympia**.
+
+| # | Do | They see |
+|---|---|---|
+| 6.1 | Tab **Extracts** | **Ownership extracts**: "On the blockchain", version 1 in its batch; **Issue extract** enabled; "No extracts issued for this record yet." (Version not on the blockchain yet? The tab says "Waiting for next batch" and **Issue extract** stays disabled: come back after 5.15) |
+| 6.2 | **Issue extract**; choose **SIMON HAUFIKU**; type the ID number **79022300474** (one digit wrong) | "Doesn't match the ID number on the record for SIMON HAUFIKU." **Issue extract** stays disabled. *Say:* "Only a registered owner gets one, and the officer checks their identity document at the counter." |
+| 6.3 | Correct it to **79022300471**; tick **I have seen the owner's identity document**; **Issue extract** | "✓ Matches the ID number on the record"; then **Extract EX-NA-2026-000001 issued to SIMON HAUFIKU**, with **Print** and **Download PDF** |
+| 6.4 | **Download PDF**, open it | One A4 page: the registry, **Ownership extract EX-NA-2026-000001**, the land record version 1 (parcel, extent, tenure, title deed T 2876/2014), both owners with only the last 4 digits of their ID numbers and their shares, "Issued to SIMON HAUFIKU", the **check box** (the QR code, the check page's address and a 12-character **check code**, the fingerprint, the batch, the transaction), the yellow **Always scan the QR code**, and the seal notice. In a PDF reader: the registry's electronic seal, and the attached `record-v1.proof.json`. With the demo certificate the reader says the signer is not trusted: expected, it is not from a real certificate authority |
+| 6.5 | **Close**; the register on the tab | The extract: number, issued, to SIMON HAUFIKU, v1, **Valid · current**. The tab reads **Extracts 1** |
+
+*Say:* "The PDF is sealed by the registry and carries the proof that ties this version to the blockchain transaction
+the auditor just checked. Its QR code opens a public check page."
+
+Sign out. Open a **private browser window** (nobody signed in) at `http://localhost:8088/#/check`. A phone can scan
+the QR code instead, but only when the portal's address is reachable from it, not through the SSH tunnel.
+
+| # | Do | They see |
+|---|---|---|
+| 6.6 | Type the **check code** from the PDF (spaces and lower case don't matter), **Check** | **Check an ownership extract**, "Extract EX-NA-2026-000001 · issued …", green **Matches the registry's record**: land record LR-NA-2026-000001, version 1, on the blockchain in its batch, "✓ Still the current version, checked just now". No sign-in |
+| 6.7 | **Compare with your extract** | The extract number, issue date, record and version, the last 8 characters of the fingerprint, the batch: the same as on the PDF. "This page shows no names, parcel or owner details." *Say:* "The page can't be used to look people up: only the code on the extract opens it." |
+| 6.8 | **Check the PDF file too**: drop the downloaded PDF on it (or **Choose the PDF**) | "✓ The file matches: it is exactly the PDF the registry sealed for this extract." *Say:* "Checked in the browser; the file is not uploaded." |
+| 6.9 | Drop another PDF, e.g. the deed `05-erf-2417-deed-of-transfer-T-2876-2014.pdf` | Red **This file doesn't match the registry's record**: "it may have been altered. Don't rely on it, and contact the registry." |
+| 6.10 | Open **Check it yourself, without this page** | The explorer link, the registry's address, its seal fingerprint, **Download the offline checker**, and the command to run it with both values filled in |
+
+### Optional: the offline check, and a withdrawn extract (5 min)
+
+| # | Do | They see |
+|---|---|---|
+| 6.11 | On the laptop (Node.js 18 or later): download the checker, **Copy** the command, run it next to the downloaded PDF | **VALID**: the registry's seal, the attached proof, the batch and the transaction from the registry's address, all checked against the public blockchain, without the portal. It also says that only the check page can show a newer version or a withdrawal |
+| 6.12 | Back as **`j.gawaseb@deeds.gov.na`**, Erf 2417, **Extracts**: **Revoke** on the extract; reason "The owner reported it lost"; **Revoke extract** | "Extract EX-NA-2026-000001 revoked. The check page now says the registry withdrew it." The register: **Withdrawn**, by whom, when and why |
+| 6.13 | In the private window, check the same code again | **This extract was withdrawn**: "The registry withdrew this extract on …. Don't rely on it. The owner can ask the registry for a new one." The reason is not shown |
+
+*Say:* "The paper can't change, but the check page always tells the truth now: current, replaced by a newer version
+of the record, or withdrawn. That is why the extract says: always scan the QR code."
+
 ## Closing (2 min)
 
 *Say:* "Ten scanned deeds became two land records: read by the AI, checked and corrected by a person, sealed in the
 document store, built into records whose checks confirm the chain of title, approved by a second person, written to
 a public blockchain, and signed off by the auditor, with every step in an unbroken trail. Each person saw only what
-their role allows."
+their role allows. And the owner's extract can be checked by anyone, in seconds, without trusting the registry's
+systems."
 
 Questions often asked, and where to show the answer:
 
@@ -320,6 +372,8 @@ Questions often asked, and where to show the answer:
 | "Can someone change a filed deed?" | As the reviewer: Documents (EDRMS) → a document → **Request correction**: a new version, approved by a second reviewer; v1.0 is kept |
 | "Can a record be changed after approval?" | As the records officer: Land record → **Change record**: a new draft version, reviewed again; History keeps every version |
 | "Who can see what?" | Sign in as different users: the menu differs per role |
+| "What if the record changes after the extract was issued?" | The check page then says **Matches the registry's record, but it was replaced**, with the date and the new version: ask the registry for a new extract (shown in the automated tests, not live: it needs a second approved version) |
+| "Can someone forge an extract?" | Act 6, 6.9: a different file doesn't match; a made-up code finds no extract; the offline checker accepts only the registry's own seal |
 
 ## If something goes wrong
 
@@ -334,3 +388,6 @@ Questions often asked, and where to show the answer:
 | No task in the registrar's bell | The record was not submitted yet (Act 3, 3.9), or the bell needs a click to refresh |
 | v1 still "Waiting for next batch" 10 minutes after the approval | Anchorings → **In progress** shows the batch on its way and its confirmations. If nothing is in progress, the audit service cannot sign: the readiness check says why (OpenBao sealed, funds, the node) |
 | **Changes match: mark checked** is not there | The version is not on the blockchain yet: come back to it after 5.19 to 5.21 |
+| **Issue extract** is disabled, "Waiting for next batch" | The version is not on the blockchain yet: come back after 5.15 |
+| "The registry's electronic seal is not set up" | The seal is not configured on this install: [README.md](README.md), "Ownership extracts for the demo". Show the check page with the automated tests' screenshots instead |
+| The check page says "Too many checks from this connection" | The public check allows about 10 requests a minute per connection (each opening of the page makes two): wait a minute |
