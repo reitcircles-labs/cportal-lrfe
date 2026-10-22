@@ -25,7 +25,9 @@ const AUDITOR = userByRole('aud');
 const BAO = `http://127.0.0.1:${PORTS.bao}`;
 
 /** AppRole login to the throwaway OpenBao, as the given service. */
-async function loginAs(service: 'edrms' | 'intake'): Promise<string> {
+async function loginAs(
+  service: 'edrms' | 'intake' | 'extracts',
+): Promise<string> {
   const read = (f: string) =>
     readFileSync(join(BAO_DIR, 'approle', f), 'utf8').trim();
   const res = await fetch(`${BAO}/v1/auth/approle/login`, {
@@ -53,6 +55,11 @@ test('each service may use only its own key in the vault', tag, async () => {
   expect(await dataKey(intake, 'intake-files')).toBe(200);
   expect(await dataKey(intake, 'edrms-files')).toBe(403);
   expect(await dataKey(edrms, 'intake-files')).toBe(403);
+  // the extracts service: its stored PDFs' key only (API-780)
+  const extracts = await loginAs('extracts');
+  expect(await dataKey(extracts, 'extracts-files')).toBe(200);
+  expect(await dataKey(extracts, 'edrms-files')).toBe(403);
+  expect(await dataKey(edrms, 'extracts-files')).toBe(403);
 });
 
 test(

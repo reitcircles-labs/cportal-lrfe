@@ -78,6 +78,9 @@ const anchoring = createAnchoringClient({
 const settings = extractSettingsFromEnv();
 // the organisation seal: its key in OpenBao (EXTRACTS_SEAL=bao), a test seal outside production
 const sealer = await sealerFromEnv({name: settings.org.name});
+// the sealed PDFs; with EXTRACTS_ENCRYPTION=bao, start only once the vault answers (as edrms)
+const files = createPdfStoreFromEnv();
+if (files.keyring?.check) checks.push(() => files.keyring.check());
 const service = new ExtractsService({
   repo,
   events,
@@ -91,7 +94,7 @@ const service = new ExtractsService({
       service: 'extracts',
     }),
   }),
-  files: createPdfStoreFromEnv(),
+  files,
   sealer,
   settings,
 });

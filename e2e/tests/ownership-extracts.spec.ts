@@ -9,7 +9,11 @@
  * owners are Petrus and Maria Nghishidi, half each. The test blockchain has no anchoring job: the
  * test makes the confirmed batch (POST /api/audit/test/anchorings, as land-record.spec.ts does).
  */
+import {createHash} from 'node:crypto';
+import {existsSync, readdirSync, readFileSync, statSync} from 'node:fs';
+import {join} from 'node:path';
 import {expect, test, type Page} from '@playwright/test';
+import {STACK_DIR} from '../stack/config.mjs';
 import {userByRole} from '../support/catalogue';
 import {signInAs} from '../support/auth';
 import {adminApi} from '../support/admin';
@@ -215,6 +219,66 @@ test.describe.serial('Ownership extracts at the counter (API-692)', () => {
         'API-692',
         'The register: the extract withdrawn, with who, when and why',
       );
+    },
+  );
+
+  test(
+    'with the stored files encrypted (E2E_BAO), the extract PDF is stored as ciphertext and given back as issued',
+    {tag: ['@API-780']},
+    async ({playwright, baseURL}) => {
+      const mode = process.env.E2E_BAO;
+      test.skip(!mode || mode === 'off', 'only with E2E_BAO=fake or real');
+      // given back as issued: a PDF whose SHA-256 is the register's
+      const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
+      const h = {headers: rec.headers};
+      const now = await (
+        await rec.api.get(`/api/records/${recordId}`, h)
+      ).json();
+      const ownerIndex = now.current.data.owners.findIndex(
+        (o: {idNo?: string}) =>
+          (o.idNo ?? '').replace(/\s/g, '') === '72110800345',
+      );
+      expect(
+        ownerIndex,
+        'Petrus Nghishidi on the record',
+      ).toBeGreaterThanOrEqual(0);
+      const issued = await rec.api.post('/api/extracts', {
+        ...h,
+        data: {
+          recordId,
+          versionNumber: 1,
+          ownerIndex,
+          idNo: '72110800345',
+          documentSeen: true,
+        },
+      });
+      expect(issued.status(), await issued.text()).toBe(201);
+      const extract = await issued.json();
+      expect(JSON.stringify(extract)).not.toMatch(
+        /pdfEncryption|wrappedKey|vault:v1:|fake:v1:/,
+      );
+      const pdf = await (
+        await rec.api.get(`/api/extracts/${extract.id}/pdf`, h)
+      ).body();
+      await rec.dispose();
+      expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+      expect(createHash('sha256').update(pdf).digest('hex')).toBe(
+        extract.pdfSha256,
+      );
+      // in folders (E2E_DB=postgres): every stored extract file is ciphertext
+      const root = join(STACK_DIR, 'files', 'extracts');
+      if (!existsSync(root)) return;
+      const walk = (d: string): string[] =>
+        readdirSync(d).flatMap(n =>
+          statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)],
+        );
+      const files = walk(root);
+      expect(files.length).toBeGreaterThan(0);
+      for (const f of files) {
+        const bytes = readFileSync(f);
+        expect(bytes.subarray(0, 4).toString(), f).toBe('LRFE');
+        expect(bytes.includes(Buffer.from('%PDF')), f).toBe(false);
+      }
     },
   );
 

@@ -138,6 +138,7 @@ export class ExtractsService {
       revokeReason: null,
       pdfSha256: null, // once the sealed PDF is stored
       pdfKey: pdfKeyOf(id),
+      pdfEncryption: null,
     };
     const year = Number(
       new Intl.DateTimeFormat('en-GB', {
@@ -151,13 +152,14 @@ export class ExtractsService {
         extractNo: formatExtractNo(this.settings?.country ?? 'NA', year, seq),
       };
       const pdf = await this.sealedPdf(extract, record, proof, explorerUrl);
-      extract.pdfSha256 = (
-        await this.files.put({
-          key: extract.pdfKey,
-          body: pdf,
-          contentType: 'application/pdf',
-        })
-      ).sha256;
+      // the SHA-256 of the plain PDF; its wrapped key, when encrypted, kept with the row (API-780)
+      const stored = await this.files
+        .put({key: extract.pdfKey, body: pdf, contentType: 'application/pdf'})
+        .catch(err => {
+          throw storeError(err);
+        });
+      extract.pdfSha256 = stored.sha256;
+      extract.pdfEncryption = stored.encryption ?? null;
       return extract;
     };
     // the number, the register row and its event are committed together (API-613)
@@ -243,8 +245,15 @@ export class ExtractsService {
       );
     }
     const chunks = [];
-    for await (const chunk of await this.files.getStream(extract.pdfKey)) {
-      chunks.push(chunk);
+    try {
+      const stream = await this.files.getStream(extract.pdfKey, {
+        encryption: extract.pdfEncryption ?? undefined,
+      });
+      for await (const chunk of stream) chunks.push(chunk);
+    } catch (err) {
+      // a stored file that fails authentication was changed: as a hash that differs, below
+      if (err?.code !== 'EDECRYPT') throw storeError(err);
+      chunks.length = 0;
     }
     const pdf = Buffer.concat(chunks);
     if (createHash('sha256').update(pdf).digest('hex') !== extract.pdfSha256) {
@@ -331,8 +340,23 @@ function withCurrent(extract, record) {
   };
 }
 
-/** The register row without the PDF's storage key. */
+/** The register row without where and how its PDF is stored. */
 function shown(extract) {
-  const {pdfKey: _pdfKey, ...rest} = extract;
+  const {pdfKey: _pdfKey, pdfEncryption: _pdfEncryption, ...rest} = extract;
   return rest;
+}
+
+/**
+ * The vault holding the PDFs' keys failed: sealed, unreachable, or this service's login or key
+ * refused. Staff get a neutral message (no tool names); the cause stays on the error for the logs.
+ */
+function storeError(err) {
+  if (err?.name !== 'KeyringError') return err;
+  return Object.assign(
+    new AppError(
+      503,
+      'The extract store is temporarily unavailable. Try again shortly.',
+    ),
+    {cause: err},
+  );
 }

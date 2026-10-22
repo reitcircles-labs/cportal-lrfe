@@ -84,13 +84,17 @@ if (process.env.E2E_JEV === 'fake') {
 }
 // E2E_BAO=fake: stored files encrypted, with in-memory keys instead of OpenBao (nothing sent).
 // E2E_BAO=real: a throwaway OpenBao for this run (scripts/bao.js --dev on its own port and folder);
-// edrms and intake encrypt with it, each logged in with its own AppRole (SERVICE_ENV, set once it is up).
+// edrms, intake and extracts encrypt with it, each logged in with its own AppRole (SERVICE_ENV, set once it is up).
 const E2E_BAO = process.env.E2E_BAO || 'off';
 if (!['off', 'fake', 'real'].includes(E2E_BAO)) {
   throw new Error(`E2E_BAO must be fake or real, got "${E2E_BAO}"`);
 }
 if (E2E_BAO === 'fake') {
-  Object.assign(COMMON, {EDRMS_ENCRYPTION: 'fake', INTAKE_ENCRYPTION: 'fake'});
+  Object.assign(COMMON, {
+    EDRMS_ENCRYPTION: 'fake',
+    INTAKE_ENCRYPTION: 'fake',
+    EXTRACTS_ENCRYPTION: 'fake',
+  });
 }
 const SERVICE_ENV = {};
 const SERVICES = [
@@ -396,6 +400,7 @@ function startBao(timeoutMs = 180_000) {
           });
           SERVICE_ENV.edrms = login('edrms', 'edrms-files');
           SERVICE_ENV.intake = login('intake', 'intake-files');
+          SERVICE_ENV.extracts = login('extracts', 'extracts-files');
           resolve();
         }
       }

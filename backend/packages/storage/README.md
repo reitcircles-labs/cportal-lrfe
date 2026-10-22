@@ -6,7 +6,8 @@ OpenBao** (epic API-633): the options investigated, the questions asked and the 
 
 *Design written 4 October 2026 (API-634). Implemented in API-635 to API-641 as described here, and
 checked end to end against a real OpenBao (API-640: the e2e suite with `E2E_BAO=real`, in memory
-and on PostgreSQL). Off by default: `EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION=bao` turns it on.*
+and on PostgreSQL). Off by default: `EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION` /
+`EXTRACTS_ENCRYPTION=bao` turns it on.*
 
 ## 1. The storage interface today
 
@@ -58,7 +59,7 @@ C only as an extra if Ceph is chosen. A is only for small values, never files.
 
 | Term | What it is | How many | Where it lives |
 |---|---|---|---|
-| **KEK** (key-encryption key) | An OpenBao transit key, e.g. `edrms-files` | **One per service** (`edrms-files`, `intake-files`), with versions as it is rotated | **Inside OpenBao only**; it never leaves |
+| **KEK** (key-encryption key) | An OpenBao transit key, e.g. `edrms-files` | **One per service** (`edrms-files`, `intake-files`, `extracts-files`), with versions as it is rotated | **Inside OpenBao only**; it never leaves |
 | **DEK** (data-encryption key) | A random 256-bit key that encrypts **one file** | **One per stored file** (every version, every scan) | Plain only in the service's memory, for one request; never on disk, in logs or the database |
 | **Wrapped key** (wrapped DEK) | **The same DEK, encrypted with the KEK.** Not a third kind of key | One per DEK, so **one per file** | In the database, on the file's row |
 
@@ -129,6 +130,7 @@ one-time wrapped token) and rotated, tokens valid for about an hour.
 service ──1:1──► AppRole ──► policy ──► KEK(s) it may use, and for what
 edrms             edrms       edrms-files   edrms-files: datakey, decrypt
 intake            intake      intake-files  intake-files: datakey, decrypt
+extracts          extracts    extracts-seal extracts-files: datakey, decrypt (and its seal key)
 ```
 
 | Case | AppRoles | KEKs |

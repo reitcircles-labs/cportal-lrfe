@@ -1,9 +1,8 @@
 # extracts service
 
-*Ownership extracts (epic API-689). The register and its staff endpoints are built in API-692, the
-public check's endpoint in API-693, the extract's sealed PDF in API-691; the screens (Issue extract
-on the land record page, the register list with "Download again", the public check page) wait for
-the design, API-690.*
+*Ownership extracts (epic API-689, designed in API-690): the register, its staff endpoints and the
+Extracts tab on the land record page (API-692), the sealed PDF (API-691), the public check and its
+page (API-693), the offline check (API-694), the stored PDFs encrypted (API-780).*
 
 An ownership extract states who owns a parcel, as the land record's **current committed version**
 says. It is issued at the counter for one of the owners, once their identity document has been seen,
@@ -118,6 +117,15 @@ volume), `memory` or `s3`, under `extracts/<id>/v1/extract.pdf`. `GET /extracts/
 (`extract.issue`) gives back exactly those bytes, after checking them against `pdfSha256`; never
 re-rendered or re-sealed. A revoked extract is not given out again (409).
 
+With `EXTRACTS_ENCRYPTION=bao` (or `fake` in tests and the e2e stack) each PDF is stored encrypted
+as edrms and intake files are (`@lrfe/storage`, README section 6), under the vault key
+`extracts-files` (`BAO_KEY_NAME`); the extracts service's AppRole may make data keys and unwrap
+them on that key, besides its seal key. The wrapped key is kept on the register row
+(`pdfEncryption`, never answered); `pdfSha256` stays the hash of the plain PDF. A PDF stored before
+encryption was switched on stays readable as it is. When the vault cannot give the key, the
+download is refused with a neutral 503 ("The extract store is temporarily unavailable"); a stored
+file that fails authentication is never given out (as one whose hash differs).
+
 ## Settings
 
 | Setting | |
@@ -130,6 +138,7 @@ re-rendered or re-sealed. A revoked extract is not given out again (409).
 | `EXTRACTS_COUNTRY_CODE` | The country in the extract number, e.g. `NA` (the default); the bundle sets it from `LRFE_COUNTRY_CODE` |
 | `EXTRACTS_SEAL`, `EXTRACTS_SEAL_KEY`, `EXTRACTS_SEAL_CERT`, `EXTRACTS_SEAL_CERT_FILE`, `BAO_*` | The seal, above |
 | `EXTRACTS_STORAGE`, `EXTRACTS_LOCAL_DIR` | Where the PDFs are kept, above |
+| `EXTRACTS_ENCRYPTION` | `off` (default), `bao` or `fake`: the stored PDFs encrypted, above (`BAO_KEY_NAME`, default `extracts-files`) |
 
 ## The public check
 

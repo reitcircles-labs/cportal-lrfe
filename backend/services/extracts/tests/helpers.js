@@ -179,9 +179,9 @@ export function fakeProofs(records) {
  * its guard on the extracts service token) over app.inject, and the audit service's anchoring
  * status from fakeAnchoring; the public check (`check`) reads the audit service's version check from
  * fakeVersionCheck (`versions`). `records` is that land-records context: `service`, `repo`, `clock`,
- * for making records and committing versions.
+ * for making records and committing versions. `files` replaces the plain in-memory PDF store.
  */
-export async function makeExtracts() {
+export async function makeExtracts({files = createMemoryStore()} = {}) {
   const records = await makeRecords();
   const fetchImpl = async (url, {method, headers}) => {
     const u = new URL(url);
@@ -199,7 +199,6 @@ export async function makeExtracts() {
   const clock = makeClock();
   const anchoring = fakeAnchoring();
   const proofs = fakeProofs(records);
-  const files = createMemoryStore();
   const service = new ExtractsService({
     repo,
     events,

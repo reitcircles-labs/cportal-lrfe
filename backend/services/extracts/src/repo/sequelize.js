@@ -26,6 +26,10 @@ export function createSequelizeRepo(sequelize) {
           `CREATE UNIQUE INDEX IF NOT EXISTS "extract_${column}_unique" ON "${SCHEMA}"."extract" ("${column}")`,
         );
       }
+      // the stored PDF's encryption (API-780): null for PDFs stored plain
+      await sequelize.query(
+        `ALTER TABLE "${SCHEMA}"."extract" ADD COLUMN IF NOT EXISTS "pdfEncryption" JSONB`,
+      );
     },
     /**
      * Save a new extract: `build(seq)` makes it with the year's next number, while the counter row

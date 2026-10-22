@@ -42,6 +42,8 @@ export function defineModels(sequelize) {
       // the sealed PDF as issued: its SHA-256 (also in the issued event) and where it is stored
       pdfSha256: {type: DataTypes.STRING(64), allowNull: false},
       pdfKey: {type: DataTypes.STRING, allowNull: false},
+      // how the stored PDF is encrypted, with its wrapped key; null when stored plain (API-780)
+      pdfEncryption: {type: DataTypes.JSONB, allowNull: true},
     },
     {
       schema: SCHEMA,
