@@ -26,6 +26,9 @@ needs it. Creating and transitioning return the whole issue: don't echo it back 
 
 ## Screenshots in a comment
 
+In the **main conversation**, not in an agent: auto mode blocks a subagent from running the upload
+command, because it carries a token. The jira-reporter agent then posts the comments, given the ids.
+
 1. `executeWrite` with name `uploadAttachmentToJiraIssue`, inputs `{issueIdOrKey, filePath}` → an
    upload command with a short-lived token (about 20 min).
 2. The token covers the whole media collection: one token can upload every file of a run, each with

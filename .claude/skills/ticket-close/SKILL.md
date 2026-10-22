@@ -20,8 +20,10 @@ The rules are in `CLAUDE.md`; this is the order, with the agents that keep the m
    for decisions that are theirs.
 5. **Commit:** `git add <explicit paths>`; message `<KEY> <what it does>`, a few bullets, and
    `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never push.
-6. **Jira:** the `jira-reporter` agent with the key, the facts (changes, test numbers, commit, branch),
-   the evidence folder and "close" (or why it stays open).
+6. **Jira:** for UI work, upload the screenshots here in the main conversation
+   (`docs/ai-workflow/jira.md`; agents can't), then the `jira-reporter` agent with the key, the facts
+   (changes, test numbers, commit, branch), the uploaded ids with their captions, and "close" (or why
+   it stays open).
 7. **Memory:** update the open-threads note when something is now waiting on the user. If this was
    the epic's last ticket: stop, list the branch and its commits, and ask the user to push and merge.
 
