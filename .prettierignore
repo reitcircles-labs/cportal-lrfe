@@ -22,3 +22,5 @@ angular-app/public/
 # is off): whitespace in a template can change what is shown, and Prettier's output for them is not
 # stable from one run to the next.
 **/*.component.html
+# scratch output of local runs (git-ignored)
+**/tmp/
