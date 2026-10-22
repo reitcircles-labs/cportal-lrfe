@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
  * npm run evidence -- API-606 [API-609 …]
+ * npm run evidence -- API-606 --spec tests/check-extract.spec.ts
  *
  * Runs the tests tagged with those tickets (test(..., { tag: '@API-606' })) with screenshots on,
  * and lists what was taken. The files are in evidence/<ticket>/, ready to attach to the ticket.
+ * With --spec, only that spec runs, with the sign-in setup and without the projects it depends on
+ * (one worker, so the setup runs first): quicker for a spec that runs after the main suite.
  */
 import {spawnSync} from 'node:child_process';
 import {
@@ -17,9 +20,19 @@ import {
 import {join} from 'node:path';
 import {E2E_DIR} from './config.mjs';
 
-const tickets = process.argv.slice(2);
-if (!tickets.length || tickets.some(t => !/^[A-Z][A-Z0-9]+-\d+$/.test(t))) {
-  console.error('Usage: npm run evidence -- API-606 [API-609 …]');
+const args = process.argv.slice(2);
+const specAt = args.indexOf('--spec');
+const spec = specAt < 0 ? null : args[specAt + 1];
+const tickets =
+  specAt < 0 ? args : args.filter((_, i) => i !== specAt && i !== specAt + 1);
+if (
+  !tickets.length ||
+  tickets.some(t => !/^[A-Z][A-Z0-9]+-\d+$/.test(t)) ||
+  (specAt >= 0 && !spec)
+) {
+  console.error(
+    'Usage: npm run evidence -- API-606 [API-609 …] [--spec tests/<file>.spec.ts]',
+  );
   process.exit(2);
 }
 for (const t of tickets) {
@@ -28,7 +41,16 @@ for (const t of tickets) {
 
 const run = spawnSync(
   'npx',
-  ['playwright', 'test', '--grep', tickets.map(t => `@${t}`).join('|')],
+  [
+    'playwright',
+    'test',
+    ...(spec ? ['tests/auth.setup.ts', spec, '--no-deps', '--workers=1'] : []),
+    '--grep',
+    // with --spec, also the sign-in setup: its title starts "enrol the demo users"
+    spec
+      ? `${tickets.map(t => `@${t}`).join('|')}|enrol`
+      : tickets.map(t => `@${t}`).join('|'),
+  ],
   {
     cwd: E2E_DIR,
     stdio: 'inherit',
