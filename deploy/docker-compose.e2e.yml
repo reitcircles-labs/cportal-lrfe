@@ -39,3 +39,6 @@ services:
   gateway:
     ports:
       - "127.0.0.1:${E2E_API_PORT:-3600}:3500"
+    environment:
+      # the tests share one client address: the public check's limit high (its own unit tests)
+      PUBLIC_RATE_LIMIT_MAX: "1000"
