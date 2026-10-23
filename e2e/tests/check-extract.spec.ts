@@ -29,6 +29,7 @@ interface Issued {
   id: string;
   extractNo: string;
   checkCode: string;
+  issuedAt: string;
 }
 
 let recordId = '';
@@ -310,6 +311,51 @@ test.describe
       );
       await expect(page.getByText('Check the PDF file too')).toHaveCount(0);
       await evidence(page, 'API-693', 'A check code that matches no extract');
+    },
+  );
+
+  test(
+    "a viewer in another time zone sees the issue time printed on the extract, in the registry's time zone",
+    {tag: ['@API-786']},
+    async ({browser, baseURL}) => {
+      // a context of its own: its own time zone, and the config's address
+      const context = await browser.newContext({
+        baseURL,
+        timezoneId: 'America/New_York',
+        storageState: {cookies: [], origins: []},
+      });
+      const page = await context.newPage();
+      const answer = await page.request.get(
+        `/api/public/extracts/${current.checkCode}`,
+      );
+      const {timeZone} = await answer.json();
+      expect(timeZone).toBe('Africa/Windhoek');
+      // the issue time as the PDF prints it (dateTimeText in the extracts service), short month
+      const at = new Date(current.issuedAt);
+      const date = at.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone,
+      });
+      const time = at.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+        timeZone,
+      });
+      const issued = `${date}, ${time} (Windhoek time)`;
+      await openCheck(page, current.checkCode);
+      await expect(page.locator('.sub')).toContainText(`issued ${issued}`);
+      await expect(
+        page.locator('dt', {hasText: 'Issued'}).locator('+ dd'),
+      ).toHaveText(issued);
+      await evidence(
+        page,
+        'API-786',
+        'The check page for a viewer in New York: the issue time as on the extract, in Windhoek time',
+      );
+      await context.close();
     },
   );
 

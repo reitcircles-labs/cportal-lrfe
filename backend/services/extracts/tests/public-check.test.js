@@ -2,6 +2,8 @@ import {X509Certificate, createHash} from 'node:crypto';
 import {expect} from 'chai';
 import {AppError} from '@lrfe/common';
 import {newToken} from '../src/extracts.service.js';
+import {ExtractCheck} from '../src/public-check.js';
+import {extractSettingsFromEnv} from '../src/settings.js';
 import {createVersionCheckClient} from '../src/version-check-client.js';
 import {commitVersion, erf1873Data} from '../../land-records/tests/helpers.js';
 import {TX, actor, committedErf1873, makeExtracts, users} from './helpers.js';
@@ -22,6 +24,7 @@ const FIELDS = [
   'replacedAt',
   'revokedAt',
   'state',
+  'timeZone',
   'transactionId',
   'versionNumber',
 ];
@@ -101,6 +104,24 @@ describe('the public check of an extract (API-693)', () => {
       .to.equal(extract.pdfSha256)
       .and.match(/^[0-9a-f]{64}$/);
     expectNoPersonalData(raw);
+  });
+
+  it("gives the time zone the extract prints its dates in, the server's when none is set (API-786)", async () => {
+    const ctx = await makeExtracts({
+      settings: extractSettingsFromEnv({
+        LRFE_ORG_NAME: 'Land Titles Office',
+        EXTRACTS_TIME_ZONE: 'Africa/Windhoek',
+      }),
+    });
+    const {extract} = await issued(ctx);
+    for (const token of [extract.token, newToken()]) {
+      const {body} = await checkOver(ctx.app, token);
+      expect(body.timeZone, body.state).to.equal('Africa/Windhoek');
+    }
+    const unset = new ExtractCheck({repo: ctx.repo});
+    expect(unset.answer('unknown').timeZone).to.equal(
+      new Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
   });
 
   it('replaced: matches, but the record has a newer version since it was committed', async () => {
@@ -193,8 +214,9 @@ describe('the public check of an extract (API-693)', () => {
       const {status, body} = await checkOver(ctx.app, token);
       expect(status, token).to.equal(200);
       expect(Object.keys(body).sort()).to.deep.equal(FIELDS);
-      const {state, checkedAt, ...rest} = body;
+      const {state, checkedAt, timeZone, ...rest} = body;
       expect(state).to.equal('unknown');
+      expect(timeZone).to.equal('UTC');
       expect(checkedAt).to.be.a('string');
       expect(Object.values(rest).every(v => v === null)).to.equal(true);
     }

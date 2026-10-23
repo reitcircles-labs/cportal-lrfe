@@ -23,21 +23,44 @@ export function typedCode(typed: string): string | null {
 export const printedCode = (code: string): string =>
   (code.match(/.{1,4}/g) ?? []).join(' ');
 
-/** "21 Oct 2026, 10:41", in the reader's time zone. */
-export function dateTime(iso: string | null): string {
+/** The viewer's own time zone, as the browser reports it. */
+const viewerTimeZone = (): string =>
+  new Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** "Windhoek time" for Africa/Windhoek, "Buenos Aires time" for America/Argentina/Buenos_Aires, "UTC". */
+export function timeZoneName(timeZone: string): string {
+  if (timeZone === 'UTC' || timeZone === 'Etc/UTC') return 'UTC';
+  const city = timeZone.split('/').pop()!.replace(/_/g, ' ');
+  return `${city} time`;
+}
+
+/**
+ * "21 Oct 2026, 10:41", in `timeZone`, the one the extract prints its dates in (API-786), so the
+ * page shows the times on the extract; named when it is not the viewer's, "21 Oct 2026, 10:41
+ * (Windhoek time)". Without a time zone, in the viewer's.
+ */
+export function dateTime(
+  iso: string | null,
+  timeZone?: string | null,
+  viewer: string = viewerTimeZone(),
+): string {
   if (!iso) return '';
   const at = new Date(iso);
+  const zone = timeZone ?? undefined;
   const date = at.toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
+    timeZone: zone,
   });
   const time = at.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
+    timeZone: zone,
   });
-  return `${date}, ${time}`;
+  const named = zone && zone !== viewer ? ` (${timeZoneName(zone)})` : '';
+  return `${date}, ${time}${named}`;
 }
 
 /** What a file compared with the extract as issued is. */

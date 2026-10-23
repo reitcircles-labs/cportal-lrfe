@@ -181,7 +181,10 @@ export function fakeProofs(records) {
  * fakeVersionCheck (`versions`). `records` is that land-records context: `service`, `repo`, `clock`,
  * for making records and committing versions. `files` replaces the plain in-memory PDF store.
  */
-export async function makeExtracts({files = createMemoryStore()} = {}) {
+export async function makeExtracts({
+  files = createMemoryStore(),
+  settings = testSettings(),
+} = {}) {
   const records = await makeRecords();
   const fetchImpl = async (url, {method, headers}) => {
     const u = new URL(url);
@@ -207,7 +210,7 @@ export async function makeExtracts({files = createMemoryStore()} = {}) {
     proofs,
     files,
     sealer: await sharedTestSealer(),
-    settings: testSettings(),
+    settings,
     records: createRecordsClient({
       baseUrl: 'http://records',
       serviceToken: createServiceTokenSigner({
@@ -222,6 +225,7 @@ export async function makeExtracts({files = createMemoryStore()} = {}) {
     repo,
     records: service.records,
     versions,
+    timeZone: settings.timeZone,
     clock,
   });
   const app = await buildApp({service, check, jwtSecret: SECRET});

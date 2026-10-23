@@ -163,7 +163,9 @@ Every state but `unknown` also gives `extractId`, `extractNo`, `recordNo`, `vers
 `issuedAt` and `pdfSha256` (the SHA-256 of the PDF as issued) from the register; never the owner's
 name, ID number or share, or the parcel. `fingerprintEnd` is the last 8 characters of the
 version's seal. The check page compares a PDF file with `pdfSha256` in the browser: the file is
-never uploaded.
+never uploaded. Every answer also gives `timeZone`, the IANA time zone the extract prints its dates
+in (`EXTRACTS_TIME_ZONE`, the server's when unset): the check page shows its dates in it, so they
+read as on the extract whatever the viewer's time zone (API-786).
 
 For a valid extract the service reads the record from land-records (`GET /records/:id`) and asks
 the audit service to check the version now (`POST /audit/anchoring/check`, with its service

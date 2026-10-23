@@ -71,6 +71,8 @@ const COMMON = {
   IDENTITY_INVITE_URL_BASE: `${WEB_URL}/#/invite`,
   // the extract's QR code and printed address open the test web app's check page (API-693)
   EXTRACTS_CHECK_URL_BASE: `${WEB_URL}/#/check`,
+  // the time zone of the dates on the extract, which the check page shows too (API-786)
+  EXTRACTS_TIME_ZONE: 'Africa/Windhoek',
   // the public check's rate limit, high: the tests share one client address. The limit itself is
   // tested in the gateway's unit tests, the check page's message for it with a made-up answer
   PUBLIC_RATE_LIMIT_MAX: '1000',

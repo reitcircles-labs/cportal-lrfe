@@ -19,12 +19,17 @@ const FINGERPRINT_SHOWN = 8;
  * Current and replaced are answered only when the version has just been checked: its seal held by
  * land-records, in the audit tree, and in a confirmed batch on the blockchain. Every answer has the
  * same fields, null where they do not apply, and never anything about the owners or the parcel.
+ * Every answer also gives `timeZone`: the IANA time zone the extract prints its dates in
+ * (EXTRACTS_TIME_ZONE, the server's when unset), so the check page shows the same times (API-786).
  */
 export class ExtractCheck {
-  constructor({repo, records, versions, clock = () => new Date()}) {
+  constructor({repo, records, versions, timeZone, clock = () => new Date()}) {
     this.repo = repo;
     this.records = records; // land-records: the record's current version
     this.versions = versions; // the audit service: the version checked now
+    // as the PDF resolves it: unset, the server's own time zone
+    this.timeZone =
+      timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
     this.clock = clock;
   }
 
@@ -148,6 +153,7 @@ export class ExtractCheck {
       revokedAt: null,
       ...facts,
       checkedAt: this.clock(),
+      timeZone: this.timeZone,
     };
   }
 }
