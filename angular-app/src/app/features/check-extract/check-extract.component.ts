@@ -299,7 +299,6 @@ export class CheckExtractComponent {
 
   protected readonly tips = TIPS;
   protected readonly verifierUrl = VERIFIER_URL;
-  protected readonly date = dateTime;
 
   /** The token or check code from the address; empty on the page for typing one in. */
   protected readonly code = toSignal(
@@ -324,6 +323,10 @@ export class CheckExtractComponent {
     const r = this.result();
     return r.kind === 'answer' ? r.answer : null;
   });
+  /** A date of the answer, in the time zone the extract prints its dates in (API-786). */
+  protected date(iso: string | null): string {
+    return dateTime(iso, this.answer()?.timeZone);
+  }
   /** The typed check code, as printed; a QR code's token is not shown. */
   protected readonly shownCode = computed(() => {
     const code = typedCode(this.code());

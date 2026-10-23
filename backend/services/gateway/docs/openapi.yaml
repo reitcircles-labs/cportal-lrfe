@@ -4572,13 +4572,15 @@ paths:
         - extracts · Public check
       summary: Check an extract by its token, from its QR code
       description: >-
-        One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, recordNo, versionNumber,
-        issuedAt, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt }`. `state`: `current` (the version's
-        seal, held by land-records, is in a confirmed batch on the blockchain and the version is the record's current one), `replaced` (the
-        same, but the record has a newer version: `replacedAt` is when the version after the extract's was committed), `revoked` (withdrawn
-        on `revokedAt`; the reason is not given), `mismatch` (a check failed), `unknown` (no such extract; every other field null) or
-        `unavailable` (it cannot be checked right now). `fingerprintEnd` is the last 8 characters of the version's seal. Never the owners,
-        their ID numbers or shares, or the parcel.
+        One state, always 200 and always the same fields (null where they do not apply): `{ state, extractId, extractNo, recordNo,
+        versionNumber, issuedAt, pdfSha256, fingerprintEnd, batch, transactionId, explorerUrl, replacedAt, revokedAt, checkedAt, timeZone
+        }`. `state`: `current` (the version's seal, held by land-records, is in a confirmed batch on the blockchain and the version is the
+        record's current one), `replaced` (the same, but the record has a newer version: `replacedAt` is when the version after the
+        extract's was committed), `revoked` (withdrawn on `revokedAt`; the reason is not given), `mismatch` (a check failed), `unknown` (no
+        such extract; every other field null) or `unavailable` (it cannot be checked right now). `fingerprintEnd` is the last 8 characters
+        of the version's seal; `pdfSha256` the SHA-256 of the PDF as issued, to compare a file with. `timeZone` (every state) is the IANA
+        time zone the extract prints its dates in, e.g. `Africa/Windhoek`, so the check page shows the same times. Never the owners, their
+        ID numbers or shares, or the parcel.
 
 
         **Access:** Public: no token needed.

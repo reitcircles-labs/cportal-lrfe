@@ -389,5 +389,5 @@ Questions often asked, and where to show the answer:
 | **Changes match: mark checked** is not there | The version is not on the blockchain yet: come back to it after 5.19 to 5.21 |
 | **Issue extract** is disabled, "Waiting for next batch" | The version is not on the blockchain yet: come back after 5.15 |
 | "The registry's electronic seal is not set up" | The seal is not configured on this install: [README.md](README.md), "Ownership extracts for the demo". Show the check page with the automated tests' screenshots instead |
-| The extract's issue time differs from the check page's by an hour or more | The browser shows the check page in its own time zone, the extract in the registry's (`LRFE_TIME_ZONE`): present from a computer set to the registry's time zone |
+| The extract's issue time differs from the check page's by an hour or more | The demo install is older than API-786, whose check page shows the registry's time (`LRFE_TIME_ZONE`), as the extract does, named when it isn't the viewer's ("(Windhoek time)"): install a new version, or present from a computer set to the registry's time zone |
 | The check page says "Too many checks from this connection" | The public check allows about 10 requests a minute per connection (each opening of the page makes two): wait a minute |

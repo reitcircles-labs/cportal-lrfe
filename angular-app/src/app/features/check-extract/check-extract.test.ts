@@ -3,7 +3,13 @@ import {strict as assert} from 'node:assert';
 import {createHash} from 'node:crypto';
 import {describe, it} from 'node:test';
 
-import {fileVerdict, printedCode, typedCode} from './check-extract.ts';
+import {
+  dateTime,
+  fileVerdict,
+  printedCode,
+  timeZoneName,
+  typedCode,
+} from './check-extract.ts';
 
 const bytesOf = (text: string) => new TextEncoder().encode(text).buffer;
 const sha256 = (text: string) =>
@@ -17,6 +23,30 @@ describe('the extract check page', () => {
     assert.equal(typedCode('K7QF 2M9D XH4U'), null);
     assert.equal(typedCode('K7QF 2M9D'), null);
     assert.equal(printedCode('K7QF2M9DXH4T'), 'K7QF 2M9D XH4T');
+  });
+
+  it("shows dates in the extract's time zone, named when not the viewer's (API-786)", () => {
+    const issued = '2026-10-22T02:42:00.000Z';
+    // the extract's time, whatever the viewer's time zone
+    for (const viewer of ['Europe/Amsterdam', 'America/New_York', 'UTC']) {
+      assert.equal(
+        dateTime(issued, 'Africa/Windhoek', viewer),
+        '22 Oct 2026, 04:42 (Windhoek time)',
+      );
+    }
+    assert.equal(
+      dateTime(issued, 'Africa/Windhoek', 'Africa/Windhoek'),
+      '22 Oct 2026, 04:42',
+    );
+    assert.equal(
+      dateTime(issued, 'UTC', 'Africa/Windhoek'),
+      '22 Oct 2026, 02:42 (UTC)',
+    );
+    assert.equal(dateTime(null, 'Africa/Windhoek'), '');
+    assert.equal(
+      timeZoneName('America/Argentina/Buenos_Aires'),
+      'Buenos Aires time',
+    );
   });
 
   it('compares a file with the PDF as issued: only that very file matches', async () => {

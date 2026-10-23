@@ -25,6 +25,8 @@ export interface CheckAnswer {
   replacedAt: string | null;
   revokedAt: string | null;
   checkedAt: string;
+  /** The IANA time zone the extract prints its dates in, e.g. Africa/Windhoek (API-786). */
+  timeZone: string;
 }
 
 /** The registry's seal certificate, published for the offline check (API-694). */

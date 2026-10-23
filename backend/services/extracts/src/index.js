@@ -109,6 +109,7 @@ const check = new ExtractCheck({
       service: 'extracts',
     }),
   }),
+  timeZone: settings.timeZone,
 });
 
 const app = await buildApp({

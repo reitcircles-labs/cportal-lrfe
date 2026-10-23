@@ -58,6 +58,8 @@ const env = {
   LRFE_ORG_PARENT: E2E_ORG.parent,
   LRFE_ORG_PLACE: E2E_ORG.place,
   LRFE_OFFICES: 'WDH=Deeds Registry · Windhoek;REH=Deeds Registry · Rehoboth',
+  // the time zone of the dates on the extract and its check page (API-786)
+  LRFE_TIME_ZONE: 'Africa/Windhoek',
   SEED_DEMO_PASSWORD: DEMO_PASSWORD,
   E2E_UID: String(mailUser.uid),
   E2E_GID: String(mailUser.gid),
