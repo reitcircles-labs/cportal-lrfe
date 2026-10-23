@@ -49,8 +49,9 @@ const env = {
   COOKIE_SECURE: 'false',
   JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
   POSTGRES_PASSWORD: 'e2e-only-postgres-password',
-  // the bundled database, and the API docs (API-714)
-  COMPOSE_PROFILES: 'postgres,docs',
+  // the bundled database, OpenBao for the stored files (API-795) and the API docs (API-714)
+  COMPOSE_PROFILES: 'postgres,bao,docs',
+  E2E_BAO_TOKEN: 'e2e-only-openbao-root-token',
   LRFE_DOCS_PORT: String(PORTS.docs),
   // the organisation (API-712): test texts; Namibia's two offices, which the tests use
   LRFE_ORG_NAME: E2E_ORG.name,
@@ -130,6 +131,36 @@ if (!process.env.E2E_DOCKER_VERSION) {
     console.error('could not build the images');
     process.exit(1);
   }
+}
+
+// OpenBao first, prepared with its keys and the services' logins before they start; the setup is
+// tried until the node has elected itself leader, a few seconds after it starts
+if (docker(compose('up', '--detach', 'openbao')).status !== 0) {
+  console.error('the test OpenBao did not start');
+  stop(1);
+}
+let prepared = false;
+for (let i = 0; i < 20 && !prepared; i++) {
+  prepared =
+    docker(
+      compose(
+        '--profile',
+        'bao-setup',
+        'run',
+        '--rm',
+        '-T',
+        '-e',
+        `BAO_TOKEN=${env.E2E_BAO_TOKEN}`,
+        'openbao-setup',
+      ),
+      // the last try shows why it failed
+      i === 19 ? 'inherit' : 'ignore',
+    ).status === 0;
+  if (!prepared) spawnSync('sleep', ['1']);
+}
+if (!prepared) {
+  console.error('the test OpenBao could not be prepared (openbao-setup)');
+  stop(1);
 }
 
 // --wait: returns once every container is healthy (the web app last, after the gateway)
