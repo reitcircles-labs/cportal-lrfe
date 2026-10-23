@@ -3,12 +3,15 @@
 #
 #   docker compose up -d                     start (or upgrade to the LRFE_VERSION in .env)
 #   docker compose ps                        every container and its health
-#   COMPOSE_PROFILES=postgres                (in .env, the default) the bundled PostgreSQL; without
-#                                            it, an existing server (POSTGRES_HOST, README.md)
-#   COMPOSE_PROFILES=postgres,bao            (in .env) also OpenBao: stored files encrypted, the audit wallet key,
-#                                            the organisation seal on extracts
+#   COMPOSE_PROFILES=postgres,bao            (in .env, the default) the bundled PostgreSQL, and OpenBao:
+#                                            stored files encrypted at rest, the audit wallet key, the
+#                                            organisation seal on extracts. Without postgres, an
+#                                            existing server (POSTGRES_HOST, README.md)
 #   COMPOSE_PROFILES=postgres,bao,blockchain (in .env) also a blockchain node for anchoring
-#   COMPOSE_PROFILES=postgres,docs           (in .env) also the API docs (Swagger UI) on LRFE_DOCS_PORT
+#   COMPOSE_PROFILES=postgres,bao,docs       (in .env) also the API docs (Swagger UI) on LRFE_DOCS_PORT
+#
+# Stored files (edrms, intake, extracts) are encrypted with keys from OpenBao by default
+# (*_ENCRYPTION=bao): initialise, unseal and prepare OpenBao right after the first start (README.md, part D).
 #
 # On every start the one-shot db-setup creates or completes every service's schema and tables
 # first; the services start only once it has finished.
@@ -170,7 +173,7 @@ services:
       AUDIT_URL: http://audit:3506
       EDRMS_CONTENT_URL_BASE: /api/document-content
       # bao = stored files encrypted with keys from OpenBao (profile bao, README.md)
-      EDRMS_ENCRYPTION: ${EDRMS_ENCRYPTION:-off}
+      EDRMS_ENCRYPTION: ${EDRMS_ENCRYPTION:-bao}
       BAO_ADDR: http://openbao:8200
       BAO_KEY_NAME: edrms-files
       BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
@@ -224,7 +227,7 @@ services:
       JEV_MODEL: ${JEV_MODEL:-}
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
       INTAKE_RUN_WORKER: "true"
-      INTAKE_ENCRYPTION: ${INTAKE_ENCRYPTION:-off}
+      INTAKE_ENCRYPTION: ${INTAKE_ENCRYPTION:-bao}
       BAO_ADDR: http://openbao:8200
       BAO_KEY_NAME: intake-files
       BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
@@ -319,7 +322,7 @@ services:
       EXTRACTS_SEAL_KEY: extracts-seal
       EXTRACTS_SEAL_CERT: ${LRFE_SEAL_CERT:-}
       # bao = the stored PDFs encrypted with keys from OpenBao (profile bao, README.md), as edrms
-      EXTRACTS_ENCRYPTION: ${EXTRACTS_ENCRYPTION:-off}
+      EXTRACTS_ENCRYPTION: ${EXTRACTS_ENCRYPTION:-bao}
       BAO_KEY_NAME: extracts-files
       BAO_ADDR: http://openbao:8200
       BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
@@ -399,9 +402,9 @@ services:
     depends_on:
       gateway: { condition: service_healthy }
 
-  # ---- optional: OpenBao (profile bao) ----
-  # Keys for stored files (edrms, intake), the audit service's blockchain wallet key and the
-  # organisation seal on ownership extracts (extracts). Started
+  # ---- OpenBao (profile bao, on by default) ----
+  # Keys for stored files (edrms, intake, extracts), the audit service's blockchain wallet key and
+  # the organisation seal on ownership extracts (extracts). Started
   # sealed: an administrator initialises it once and unseals it after every start (README.md).
   openbao:
     profiles: ["bao"]

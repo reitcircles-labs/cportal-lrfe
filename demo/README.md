@@ -85,6 +85,15 @@ node demo/check-readiness.mjs
 **READY**, still 0 data, and the users you will show marked "authenticator set up". Under Anchoring: the wallet
 readable, the blockchain node synced, enough funds. The remaining "!" lines are expected: users you will not show.
 
+## Encryption at rest
+
+The demo always stores its files encrypted (API-795): the scans in intake, the filed documents in edrms and the
+extract PDFs, each with a data key wrapped by its own key in OpenBao. `deploy/.env` has `EDRMS_ENCRYPTION=bao`,
+`INTAKE_ENCRYPTION=bao` and `EXTRACTS_ENCRYPTION=bao` (also the defaults when unset), and the readiness check fails
+("Encryption at rest") when a service has it off or a stored file is not encrypted, for example one stored before
+encryption was switched on: a fresh install (`node demo/release.mjs`, mode fresh) starts again with encrypted files only.
+While OpenBao is sealed (below), the three services wait for it and restart until it is unsealed.
+
 ## Anchoring for the demo
 
 The auditor signs off only what is on the blockchain, so the demo install anchors (API-723). It runs the bundled
@@ -224,7 +233,7 @@ issuing an extract is refused. The seal's key lives in OpenBao, like the wallet 
 
    The certificate is accepted only for that key: the service checks it before it signs anything.
 3. **The settings** in `deploy/.env`: `LRFE_SEAL=bao`, `LRFE_SEAL_CERT=` the line printed above,
-   `EXTRACTS_ENCRYPTION=bao` (the extract PDFs encrypted like the documents), optionally `LRFE_COAT_OF_ARMS` (a PNG or
+   `EXTRACTS_ENCRYPTION=bao` (the default: the extract PDFs encrypted like the documents), optionally `LRFE_COAT_OF_ARMS` (a PNG or
    JPEG; its path starts with `./` or `/`), and `LRFE_TIME_ZONE=Africa/Windhoek`: the time printed on the extract
    (unset, it is UTC and differs from the screens). `LRFE_PUBLIC_URL` is the address printed on the extract and held
    by its QR code: for the demo through the SSH tunnel, `http://localhost:8088`. Then `docker compose up -d --wait`.

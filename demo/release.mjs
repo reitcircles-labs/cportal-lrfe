@@ -545,7 +545,6 @@ function rehearse(version, keep) {
     teardown();
   }
   mkdirSync(REHEARSAL_DIR, {recursive: true, mode: 0o700});
-  const demo = readEnv(join(DEPLOY, '.env'));
   // the demo's settings, on the rehearsal's own port and profiles, without anchoring or its seal
   const base = withSettings(readFileSync(join(DEPLOY, '.env'), 'utf8'), {
     LRFE_VERSION: version,
@@ -568,15 +567,15 @@ function rehearse(version, keep) {
     upAndWait(install);
     const token = prepareOpenBao(install);
     const cert = demoSealCertificate(install, token);
-    // the seal and the encryption as the demo install has them
+    // the seal as the demo install has it; every stored file encrypted at rest (API-795)
     writePrivate(
       rehearsalEnvFile(),
       withSettings(base, {
         LRFE_SEAL: 'bao',
         LRFE_SEAL_CERT: cert,
         EXTRACTS_ENCRYPTION: 'bao',
-        EDRMS_ENCRYPTION: demo.EDRMS_ENCRYPTION || 'off',
-        INTAKE_ENCRYPTION: demo.INTAKE_ENCRYPTION || 'off',
+        EDRMS_ENCRYPTION: 'bao',
+        INTAKE_ENCRYPTION: 'bao',
       }),
     );
     install = rehearsalInstall();

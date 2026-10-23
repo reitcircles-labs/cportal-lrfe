@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Exports one version as a bundle that installs at a site without internet access:
 #
-#   deploy/scripts/export.sh <version> [--bao] [--blockchain]
+#   deploy/scripts/export.sh <version> [--blockchain]
 #
 # Writes deploy/dist/lrfe-<version>.tar, holding:
 #   images.tar.gz       every image the site runs (docker save): lrfe-backend, lrfe-web, PostgreSQL,
-#                       NATS; with --bao also OpenBao; with --blockchain also the blockchain node
+#                       NATS, OpenBao (stored files are encrypted by default); with --blockchain also
+#                       the blockchain node
 #   docker-compose.yml  .env.example  openbao/  README.md (the install guide)
 #   docs/inviting-users-and-assigning-roles.md (for the first administrator)
 #   VERSION  SHA256SUMS
@@ -17,7 +18,7 @@ set -euo pipefail
 DEPLOY=$(cd "$(dirname "$0")/.." && pwd)
 version=${1:-}
 if [ -z "$version" ] || [[ $version == -* ]]; then
-    echo "Usage: $0 <version> [--bao] [--blockchain]" >&2
+    echo "Usage: $0 <version> [--blockchain]" >&2
     exit 2
 fi
 shift
@@ -25,11 +26,11 @@ if [[ $version == *-dirty ]]; then
     echo "Not exported: $version was built from uncommitted changes. Commit, then build a release: deploy/scripts/build.sh" >&2
     exit 2
 fi
-# the bundled PostgreSQL always goes along: a site may use it even if it starts with its own server
-profiles=(--profile postgres)
+# the bundled PostgreSQL always goes along: a site may use it even if it starts with its own server;
+# OpenBao too: stored files are encrypted with its keys by default
+profiles=(--profile postgres --profile bao)
 for arg in "$@"; do
     case $arg in
-        --bao) profiles+=(--profile bao) ;;
         --blockchain) profiles+=(--profile blockchain) ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac

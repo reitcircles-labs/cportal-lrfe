@@ -1,25 +1,28 @@
 /**
- * Stored files are encrypted (API-640). Runs only with E2E_BAO=fake or E2E_BAO=real; the other specs
+ * Stored files are encrypted (API-640), in every run unless E2E_BAO=off (API-795); the other specs
  * run unchanged on top of it (the deed workflow: capture, review, file, view, integrity, correction).
  *
- *   E2E_BAO=real   a throwaway OpenBao (stack/start-backend.mjs): each service's AppRole may use only
- *                  its own key, checked against the real vault
+ *   E2E_BAO=real     a throwaway OpenBao (stack/start-backend.mjs): each service's AppRole may use only
+ *                    its own key, checked against the real vault
  *   E2E_DB=postgres  files are stored in folders under .stack/files: every stored file is ciphertext
+ *   E2E_BAO=docker   the containers' OpenBao (npm run test:docker): every file in the services'
+ *                    volumes is ciphertext
  */
+import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync, statSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {expect, test} from '@playwright/test';
-import {BAO_DIR, PORTS, STACK_DIR} from '../stack/config.mjs';
+import {BAO_DIR, E2E_BAO, PORTS, STACK_DIR} from '../stack/config.mjs';
 import {signedInPage} from '../support/auth';
 import {userByRole} from '../support/catalogue';
 import {apiAs, filedDocument} from '../support/intake';
 import {trackApi} from '../support/api-idle';
 import {evidence} from '../support/evidence';
 
-const MODE = process.env.E2E_BAO;
+const MODE = E2E_BAO;
 const tag = {tag: '@API-640'};
-test.skip(!MODE || MODE === 'off', 'only with E2E_BAO=fake or E2E_BAO=real');
+test.skip(MODE === 'off', 'files are stored plain with E2E_BAO=off');
 
 const AUDITOR = userByRole('aud');
 const BAO = `http://127.0.0.1:${PORTS.bao}`;
@@ -106,7 +109,7 @@ test(
     await evidence(
       page,
       'API-640',
-      `Auditor: a record stored encrypted (${MODE === 'real' ? 'keys from OpenBao' : 'test keys'}) opens and its integrity is verified`,
+      `Auditor: a record stored encrypted (${MODE === 'fake' ? 'test keys' : 'keys from OpenBao'}) opens and its integrity is verified`,
     );
     await page.context().close();
   },
@@ -118,22 +121,54 @@ test(
   async ({browser, playwright, baseURL}) => {
     const root = join(STACK_DIR, 'files');
     test.skip(
-      !existsSync(root),
+      MODE !== 'docker' && !existsSync(root),
       'files are kept in memory; run with E2E_DB=postgres to store them in folders',
     );
     await filedDocument(playwright, baseURL!, browser); // at least one scan and one record
-    const walk = (d: string): string[] =>
-      readdirSync(d).flatMap(n =>
-        statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)],
-      );
     for (const service of ['intake', 'edrms']) {
-      const files = walk(join(root, service));
+      const files =
+        MODE === 'docker'
+          ? volumeFiles(service)
+          : folderFiles(join(root, service));
       expect(files.length, service).toBeGreaterThan(0);
-      for (const f of files) {
-        const bytes = readFileSync(f);
-        expect(bytes.subarray(0, 4).toString(), f).toBe('LRFE');
-        expect(bytes.includes(Buffer.from('%PDF')), f).toBe(false);
+      for (const {name, bytes} of files) {
+        expect(bytes.subarray(0, 4).toString(), name).toBe('LRFE');
+        expect(bytes.includes(Buffer.from('%PDF')), name).toBe(false);
       }
     }
   },
 );
+
+/** A stored file: its path and contents. */
+interface StoredFile {
+  name: string;
+  bytes: Buffer;
+}
+
+/** Every file in a folder of the tests' own stack, recursively. */
+function folderFiles(dir: string): StoredFile[] {
+  return readdirSync(dir).flatMap(n => {
+    const path = join(dir, n);
+    return statSync(path).isDirectory()
+      ? folderFiles(path)
+      : [{name: path, bytes: readFileSync(path)}];
+  });
+}
+
+/** Every file in a service's volume in the test containers (compose project lrfe-e2e). */
+function volumeFiles(service: string): StoredFile[] {
+  const container = `lrfe-e2e-${service}-1`;
+  const names = execFileSync(
+    'docker',
+    ['exec', container, 'find', `/data/${service}`, '-type', 'f'],
+    {encoding: 'utf8'},
+  )
+    .split('\n')
+    .filter(Boolean);
+  return names.map(name => ({
+    name: `${container}:${name}`,
+    bytes: execFileSync('docker', ['exec', container, 'cat', name], {
+      maxBuffer: 64 * 1024 * 1024,
+    }),
+  }));
+}

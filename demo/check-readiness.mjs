@@ -547,6 +547,81 @@ function checkDocuments() {
   );
 }
 
+/** The services that store files, and the setting that encrypts them at rest (API-795). */
+const STORING_SERVICES = ['edrms', 'intake', 'extracts'];
+
+/**
+ * Inside a service: its encryption setting, and how many of its stored files are not encrypted
+ * (an encrypted file starts with "LRFE", packages/storage/README.md). No folder: files in S3.
+ */
+const storedFilesProgram = service => {
+  const prefix = service.toUpperCase();
+  return `
+const {readdirSync, openSync, readSync, closeSync} = await import('node:fs');
+const {join} = await import('node:path');
+const dir = process.env.${prefix}_STORAGE === 'local' ? process.env.${prefix}_LOCAL_DIR : null;
+const walk = d => readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]);
+let files = null;
+let plain = 0;
+if (dir) {
+    files = walk(dir);
+    for (const f of files) {
+        const head = Buffer.alloc(4);
+        const fd = openSync(f, 'r');
+        readSync(fd, head, 0, 4, 0);
+        closeSync(fd);
+        if (head.toString() !== 'LRFE') plain++;
+    }
+}
+console.log(JSON.stringify({ encryption: process.env.${prefix}_ENCRYPTION, files: files && files.length, plain }));
+`;
+};
+
+/** Encryption at rest: every service that stores files encrypts them with keys from OpenBao. */
+function checkEncryption(env) {
+  for (const service of STORING_SERVICES) {
+    const setting = `${service.toUpperCase()}_ENCRYPTION`;
+    const answer = inContainer(service, storedFilesProgram(service));
+    if (answer.error) {
+      report('Encryption at rest', FAIL, service, answer.error);
+    } else if (answer.encryption !== 'bao') {
+      report(
+        'Encryption at rest',
+        FAIL,
+        service,
+        `stored files are not encrypted (${setting}=${answer.encryption || 'off'})`,
+        `${setting}=bao in .env (OpenBao prepared: deploy/README.md, part D), then ${composeCmd} up -d`,
+      );
+    } else if (answer.plain) {
+      report(
+        'Encryption at rest',
+        FAIL,
+        service,
+        `${answer.plain} of ${answer.files} stored files are not encrypted (stored before encryption was on)`,
+        'A fresh demo install: node demo/release.mjs, mode fresh',
+      );
+    } else {
+      const count =
+        answer.files === null ? 'files in S3' : `${answer.files} stored files`;
+      report(
+        'Encryption at rest',
+        OK,
+        service,
+        `encrypted with keys from OpenBao (${count})`,
+      );
+    }
+    if ((env[setting] || 'bao') !== answer.encryption && !answer.error) {
+      report(
+        'Encryption at rest',
+        WARN,
+        service,
+        `the running ${service} has other settings than .env`,
+        `${composeCmd} up -d (recreates it with the settings)`,
+      );
+    }
+  }
+}
+
 /** The registry's seal on ownership extracts (Act 6): without it, no extract can be issued. */
 async function checkExtracts(env) {
   const res = await get(
@@ -574,14 +649,6 @@ async function checkExtracts(env) {
     OK,
     'seal',
     `set up: ${seal.subject}, valid until ${until}, fingerprint ${seal.sha256.slice(0, 16)}…`,
-  );
-  report(
-    'Ownership extracts',
-    env.EXTRACTS_ENCRYPTION === 'bao' ? OK : WARN,
-    'stored PDFs',
-    env.EXTRACTS_ENCRYPTION === 'bao'
-      ? 'encrypted with keys from OpenBao'
-      : 'not encrypted (EXTRACTS_ENCRYPTION is not bao)',
   );
 }
 
@@ -717,6 +784,7 @@ if (!existsSync(envFile)) {
   if (identityUp) checkUsersAndData(env);
   checkAi(env);
   checkDocuments();
+  checkEncryption(env);
   await checkExtracts(env);
   await checkAnchoring(env);
 }

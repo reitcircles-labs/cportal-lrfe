@@ -99,19 +99,25 @@ read.
 
 ## With stored files encrypted
 
-`E2E_BAO=fake` (with any Playwright command, also with `E2E_DB=postgres`) encrypts the files the
-services store, with in-memory keys instead of OpenBao (nothing sent anywhere): the edrms records
-and intake's scans (`EDRMS_ENCRYPTION=fake`, `INTAKE_ENCRYPTION=fake`). The same tests must pass. Without it, files are stored as before.
+Every run stores its files encrypted (API-795), as a site does by default:
 
-`E2E_BAO=real` starts a throwaway OpenBao for the run (the backend's `scripts/bao.js --dev` on port
-3607, data in `.stack/bao`, stopped and removed with the stack): it creates the keys, policies and
-AppRoles, and edrms and intake encrypt with it, each logged in with its own AppRole. The first run
-downloads OpenBao into `backend/.tools/`.
+- **In memory** (`npm test`): `E2E_BAO=fake`, in-memory keys instead of OpenBao (nothing sent anywhere),
+  for the edrms records, intake's scans and the extract PDFs (`*_ENCRYPTION=fake`).
+- **On PostgreSQL** (`npm run test:postgres`): `E2E_BAO=real`, a throwaway OpenBao for the run (the
+  backend's `scripts/bao.js --dev` on port 3607, data in `.stack/bao`, stopped and removed with the stack):
+  it creates the keys, policies and AppRoles, and edrms, intake and extracts encrypt with it, each logged in
+  with its own AppRole. The first run downloads OpenBao into `backend/.tools/`.
+- **In containers** (`npm run test:docker`): `E2E_BAO=docker`, the compose file's OpenBao in development
+  mode (in memory, unsealed, a test root token; `deploy/docker-compose.e2e.yml`), prepared by
+  `openbao-setup` before the services start.
 
-`tests/encryption.spec.ts` (@API-640) runs only with `E2E_BAO`: a filed record opens as the
-original (its SHA-256 matches the sealed version) and passes **Check integrity**; with `real`, each
-service's AppRole may use only its own key; with `E2E_DB=postgres` (files in folders), every stored
-file is ciphertext.
+`E2E_BAO` set by hand overrides the default (`fake`, `real` or `off`; `off` stores plain files, only on
+purpose).
+
+`tests/encryption.spec.ts` (@API-640) checks it: a filed record opens as the original (its SHA-256
+matches the sealed version) and passes **Check integrity**; with `real`, each service's AppRole may use
+only its own key; on PostgreSQL (files in folders) and in containers (files in the services' volumes),
+every stored file is ciphertext.
 
 ## With the automatic cross-check on
 
@@ -151,7 +157,7 @@ section 10), after every test that expects nothing on the blockchain yet.
 | `tests/administration.spec.ts` | As the system administrator: add, edit, suspend and reactivate an office; invite a user who activates the account from the email (read from `.stack/mail/`) and signs in for the first time; role changes decide what the user can open; a duty conflict is flagged before and after saving; a suspended user is signed out and refused until reactivated; policies and the permission matrix are saved, take effect and are put back. Each checked in the access log. |
 | `tests/edge-cases.spec.ts` | The less travelled paths: a reviewer rejects a document (the scan operator sees why); two reviewers on one document (the second can look, not change, until the first leaves); a correction rejected by the approver (reason required, record unchanged) or withdrawn by the requester; a TIFF refused at capture; the same scan captured twice; a deed already in the EDRMS flagged and refused; the service refusing to file an unreviewed document |
 | `tests/land-record.spec.ts` | The land-record flow, in order on one record: the sample documents in `angular-app/docs/samples/` are filed (the reviewer types in T 4521/2019's values, as the canned AI reads every deed as T 2210/2008); the records officer creates Erf 1873 from T 2210/2008, adds the matching documents, takes the suggested owners and extent, sees the chain of title and 5/5 checks and submits it; the registrar returns it from the task inbox with a comment; the officer fixes and resubmits; the registrar approves it (version 1); the officer changes it, the registrar sees the difference and approves version 2; the history shows both versions with verified seals; a correction to T 4521/2019 (requested and approved by two reviewers) flags the record. Also: the registrar can read and comment but not edit. Then the Anchorings screens (API-698): the side menu link for a records officer, a made-up failed batch and its confirmed replacement, "Is it on the blockchain?" for Erf 1873 and its deed, one batch with Open audit for the auditor and the registrar but not the records officer, and the failed batch. Then the whole audit flow (API-615): a new registrar approves version 3, and once moved to auditing is refused its sign-off (sod2); the auditor finds Erf 1873 in the Audit list, sees the trail's chain intact from capture to commit, verifies an entry, checks each version and signs off v1–v3; after the next test batch the exported evidence pack passes the offline verifier |
-| `tests/encryption.spec.ts` | Only with `E2E_BAO`: see "With stored files encrypted" |
+| `tests/encryption.spec.ts` | Stored files encrypted: see "With stored files encrypted" |
 
 **Sample scan.** `support/deed.ts` draws a fictitious deed of transfer as a one-page PDF in the
 browser, so no binary file is kept in the repository. Its wording matches the intake service's canned

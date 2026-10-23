@@ -34,6 +34,21 @@ export const PORTS = {
 export const WEB_URL = `http://localhost:${PORTS.web}`;
 export const GATEWAY_URL = `http://localhost:${PORTS.gateway}`;
 
+/**
+ * How stored files are encrypted in this run (API-795: always, unless E2E_BAO=off on purpose):
+ * fake (in memory, the default), real (a throwaway OpenBao, the default with E2E_DB=postgres) or
+ * docker (the containers' own OpenBao, npm run test:docker). Set in the environment, so the stack
+ * and the test workers agree.
+ */
+export const E2E_BAO =
+  process.env.E2E_BAO ||
+  (process.env.E2E_DOCKER
+    ? 'docker'
+    : process.env.E2E_DB === 'postgres'
+      ? 'real'
+      : 'fake');
+process.env.E2E_BAO = E2E_BAO;
+
 /** The secret the stack's services sign and check tokens with (JWT_SECRET); the load tests sign their own. */
 export const JWT_SECRET = 'e2e-only-jwt-secret-not-used-anywhere-else';
 

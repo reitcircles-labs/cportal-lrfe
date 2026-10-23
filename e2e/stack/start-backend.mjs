@@ -31,6 +31,7 @@ import {
   BACKEND_DIR,
   BAO_DIR,
   DEMO_PASSWORD,
+  E2E_BAO,
   JWT_SECRET,
   MAIL_DIR,
   PORTS,
@@ -87,12 +88,12 @@ const COMMON = {
 if (process.env.E2E_JEV === 'fake') {
   Object.assign(COMMON, {JEV_ENABLED: 'true', JEV_PROVIDER: 'fake'});
 }
-// E2E_BAO=fake: stored files encrypted, with in-memory keys instead of OpenBao (nothing sent).
-// E2E_BAO=real: a throwaway OpenBao for this run (scripts/bao.js --dev on its own port and folder);
-// edrms, intake and extracts encrypt with it, each logged in with its own AppRole (SERVICE_ENV, set once it is up).
-const E2E_BAO = process.env.E2E_BAO || 'off';
+// E2E_BAO=fake (the default): stored files encrypted, with in-memory keys instead of OpenBao (nothing sent).
+// E2E_BAO=real (the default with E2E_DB=postgres): a throwaway OpenBao for this run (scripts/bao.js
+// --dev on its own port and folder); edrms, intake and extracts encrypt with it, each logged in with
+// its own AppRole (SERVICE_ENV, set once it is up). E2E_BAO=off: files stored plain, only on purpose.
 if (!['off', 'fake', 'real'].includes(E2E_BAO)) {
-  throw new Error(`E2E_BAO must be fake or real, got "${E2E_BAO}"`);
+  throw new Error(`E2E_BAO must be fake, real or off, got "${E2E_BAO}"`);
 }
 if (E2E_BAO === 'fake') {
   Object.assign(COMMON, {

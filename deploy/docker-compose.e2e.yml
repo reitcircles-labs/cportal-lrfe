@@ -33,8 +33,20 @@ services:
 
   extracts:
     environment:
-      # no OpenBao in the e2e stack: extracts are sealed with the test seal (never with production)
+      # extracts are sealed with the test seal (never with production); their PDFs are encrypted
+      # with the test OpenBao like every stored file
       NODE_ENV: test
+
+  openbao:
+    # stored files are encrypted as at a site (API-795), with a throwaway OpenBao: development
+    # mode, in memory, unsealed, with a fixed test root token (e2e/stack/start-docker.mjs runs
+    # openbao-setup with it before the services start)
+    command:
+      - bao
+      - server
+      - -dev
+      - -dev-root-token-id=${E2E_BAO_TOKEN:?}
+      - -dev-listen-address=0.0.0.0:8200
 
   gateway:
     ports:

@@ -10,7 +10,7 @@ standard ones:
 | db-setup | `lrfe-backend:<version>` | Runs on every start before the services: sets up the database's schemas and tables, then exits |
 | postgres (the default) | `postgres:16.15` | The database. Or an existing PostgreSQL server instead: part B, "An existing PostgreSQL server" |
 | nats | `nats:2.15.1-alpine` | The event bus between the services |
-| openbao (optional) | `openbao/openbao:2.7.1` | Keys for encrypted files and the audit wallet |
+| openbao (the default) | `openbao/openbao:2.7.1` | Keys for the stored files, encrypted at rest, and the audit wallet |
 | cardano (optional) | `cardanosolutions/cardano-node-ogmios:v7.0.0_11.0.1-<network>` | Blockchain node for anchoring |
 
 The settings of a site and every secret are in one file, `.env`; no secret is in an image, so the
@@ -34,8 +34,9 @@ A release is built from the last commit only (`git archive`), so nothing uncommi
 the release machine gets into an image. The version defaults to the backend's package version and
 the commit; `build.sh 1.2.0` sets one. (`build.sh --worktree` builds the checkout with its
 uncommitted changes, for testing; `export.sh` refuses such images.)
-`export.sh` adds OpenBao with `--bao` and the blockchain node with `--blockchain` (about 1 GB more;
-`CARDANO_NETWORK=preprod` for that network).
+The bundle always holds OpenBao (stored files are encrypted with its keys by default); `export.sh`
+adds the blockchain node with `--blockchain` (about 1 GB more; `CARDANO_NETWORK=preprod` for that
+network).
 
 The bundle holds `images.tar.gz` (every image, from `docker save`), `docker-compose.yml`,
 `.env.example`, `openbao/`, this guide, `docs/` (the guide for the first administrator), `VERSION`
@@ -103,6 +104,10 @@ Docker, in the folder the bundle is unpacked in.
    docker compose up -d
    docker compose ps          # every container "healthy" after about a minute
    ```
+
+   Stored files are encrypted at rest with keys from OpenBao by default: on a new install, edrms,
+   intake and extracts become healthy only once OpenBao is initialised, unsealed and prepared
+   (part D, steps 2 to 4, right after this first start).
 
    First `db-setup` sets up the database and exits (`docker compose ps -a`: "Exited (0)"); the
    services start only after it. If it fails, nothing else starts and `docker compose logs db-setup`
@@ -173,14 +178,17 @@ server {
 With HTTPS, keep `COOKIE_SECURE=true`. Only a test install opened over plain `http://` needs
 `COOKIE_SECURE=false` (and `LRFE_BIND=0.0.0.0` to be reached from other machines).
 
-## D. Optional: encrypted files with OpenBao
+## D. Encryption at rest with OpenBao (on by default)
 
-edrms and intake can encrypt the files they store with keys held by OpenBao; the audit service keeps
-its blockchain wallet key there. OpenBao starts **sealed**: it cannot be used until enough key
-holders have unsealed it, after every restart of its container.
+edrms, intake and extracts encrypt every file they store (the scans, the filed documents, the
+extract PDFs) with keys held by OpenBao; the audit service keeps its blockchain wallet key there.
+This is the default: `COMPOSE_PROFILES=postgres,bao` and `EDRMS_ENCRYPTION`, `INTAKE_ENCRYPTION`
+and `EXTRACTS_ENCRYPTION` set to `bao` in `.env.example` (and `bao` when unset). OpenBao starts
+**sealed**: it cannot be used until enough key holders have unsealed it, after every restart of
+its container.
 
-1. In `.env`: `COMPOSE_PROFILES=postgres,bao` (without `postgres` with an existing database
-   server). Then `docker compose up -d`.
+1. In `.env`: `COMPOSE_PROFILES=postgres,bao` (the default; without `postgres` with an existing
+   database server). Then `docker compose up -d`.
 2. **Initialise it once**, with the key holders present:
 
    ```bash
@@ -201,10 +209,10 @@ holders have unsealed it, after every restart of its container.
    ```
 
    Create a new one only when needed, with the key holders (`bao operator generate-root`).
-5. In `.env`: `EDRMS_ENCRYPTION=bao`, `INTAKE_ENCRYPTION=bao` and `EXTRACTS_ENCRYPTION=bao`. Then
-   `docker compose up -d`. An install whose OpenBao was prepared before the extract PDFs were
-   encrypted has no key `extracts-files` yet: run `docker compose run --rm openbao-setup` again
-   first (it keeps what works).
+5. In `.env`: `EDRMS_ENCRYPTION=bao`, `INTAKE_ENCRYPTION=bao` and `EXTRACTS_ENCRYPTION=bao` (the
+   defaults). Then `docker compose up -d`. An install whose OpenBao was prepared before the extract
+   PDFs were encrypted has no key `extracts-files` yet: run `docker compose run --rm openbao-setup`
+   again first (it keeps what works).
 6. **The organisation seal on ownership extracts.** The setup also creates the key `extracts-seal`
    (ECDSA P-256, never exportable) and the extracts service's login: every extract's PDF is sealed
    with it, inside OpenBao. An install whose OpenBao was prepared before this version has neither:
@@ -228,7 +236,12 @@ destroys one.
 
 Files stored before encryption was switched on stay readable as they are; new files are encrypted.
 That includes the sealed extract PDFs in the `extracts-files` volume (key `extracts-files`), which
-hold the owners' names and shares.
+hold the owners' names and shares. Only a fresh install has encrypted files only.
+
+**Switching it off** is possible, on purpose only: `EDRMS_ENCRYPTION=off` (likewise `INTAKE_` and
+`EXTRACTS_`) stores that service's new files as plain files in its volume, readable by anyone who
+can read the volume or its backups. Files already encrypted cannot be opened while it is off:
+switch it back to `bao` to read them.
 While OpenBao is sealed, edrms, intake and extracts wait for it and then restart until it is
 unsealed. Back up the `bao-data` volume with the rest (part F): without it encrypted files cannot
 be read.
