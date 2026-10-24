@@ -9,7 +9,8 @@
  * Checks the containers, the web app and the API through it, the API docs (profile docs), the demo
  * users (without signing anyone in: their accounts and the demo password are checked inside the
  * identity container), the AI for reading scans (without spending), the demo document set, the
- * data already there, the search engine's encrypted directory (when set up), and anchoring.
+ * data already there, the search engine's encrypted directory (when set up) and the search engine
+ * (profile search), and anchoring.
  * Prints ✓ ready, ! worth a look, ✗ not ready, each with what to do. Exits 0 when nothing is ✗,
  * else 1. Never prints a secret: the values of the secret settings (passwords, secrets, keys,
  * tokens) are masked in everything it prints.
@@ -185,6 +186,17 @@ const profilesOf = env =>
 
 // ------------------------------------------------------------------------------------------ checks
 
+/** The services that run once on every start and exit, with what they have done. */
+const ONE_SHOTS = new Map([
+  ['db-setup', 'database set up'],
+  [
+    'search-dir-check',
+    "the search engine's directory is encrypted and unlocked",
+  ],
+  ['search-prepare', 'search engine prepared'],
+  ['search-users', "search engine's users applied"],
+]);
+
 /** @return {boolean} whether identity is up, so its accounts can be read */
 function checkContainers(env) {
   const profiles = profilesOf(env);
@@ -205,6 +217,14 @@ function checkContainers(env) {
   if (profiles.includes('bao')) expected.push('openbao');
   if (profiles.includes('blockchain')) expected.push('cardano');
   if (profiles.includes('docs')) expected.push('docs');
+  if (profiles.includes('search')) {
+    expected.push(
+      'search-dir-check',
+      'search-prepare',
+      'opensearch',
+      'search-users',
+    );
+  }
 
   const res = compose(['ps', '--all', '--format', 'json']);
   if (!res.ok) {
@@ -232,14 +252,22 @@ function checkContainers(env) {
     const row = byService.get(service);
     if (!row) {
       report('Containers', FAIL, service, 'not created', `${composeCmd} up -d`);
-    } else if (service === 'db-setup') {
+    } else if (ONE_SHOTS.has(service) && row.State === 'running') {
+      report(
+        'Containers',
+        WARN,
+        service,
+        'still running',
+        'Wait a minute and run the check again',
+      );
+    } else if (ONE_SHOTS.has(service)) {
       const done = row.State === 'exited' && row.ExitCode === 0;
       report(
         'Containers',
         done ? OK : FAIL,
         service,
-        done ? 'database set up' : `${row.State}, exit ${row.ExitCode}`,
-        done ? '' : `${composeCmd} logs db-setup`,
+        done ? ONE_SHOTS.get(service) : `${row.State}, exit ${row.ExitCode}`,
+        done ? '' : `${composeCmd} logs ${service}`,
       );
     } else if (row.State === 'running' && row.Health === 'starting') {
       report(
@@ -710,6 +738,78 @@ function checkSearchDir(env) {
   );
 }
 
+/**
+ * Calls the search engine from edrms with edrms's own login, over TLS: proves that it is reachable
+ * from there, that its certificate is the install's and that the login works.
+ */
+const SEARCH_PROGRAM = `
+const {readFileSync} = await import('node:fs');
+const https = await import('node:https');
+const read = name => readFileSync(process.env.OPENSEARCH_LOGIN_DIR + '/' + name, 'utf8');
+const url = new URL('/lrfe-documents*/_search?size=0', process.env.OPENSEARCH_URL);
+const status = await new Promise((resolve, reject) => {
+  const options = {ca: read('ca.pem'), auth: read('user') + ':' + read('password'), timeout: 8000};
+  const req = https.request(url, options, res => {
+    res.resume();
+    resolve(res.statusCode);
+  });
+  req.on('timeout', () => req.destroy(Object.assign(new Error('timeout'), {code: 'ETIMEDOUT'})));
+  req.on('error', reject);
+  req.end();
+});
+console.log(JSON.stringify({status}));
+`;
+
+/** The search engine (profile search, API-800, deploy/README.md part I): healthy, and reachable from edrms. */
+function checkSearchEngine(env) {
+  if (!profilesOf(env).includes('search')) return;
+  const group = 'Search engine';
+  // its log is in the encrypted directory, not in Docker's
+  const log = `tail -n 50 ${env.OPENSEARCH_DATA_DIR || '<OPENSEARCH_DATA_DIR>'}/logs/lrfe-search.log`;
+  const health = compose([
+    'exec',
+    '-T',
+    'opensearch',
+    'bash',
+    '-c',
+    'cd config/certs && curl -s --cacert ca.pem --cert-type P12 --cert "admin.p12:$(cat password)" ' +
+      "'https://localhost:9200/_cluster/health?timeout=5s'",
+  ]);
+  let cluster = null;
+  try {
+    cluster = JSON.parse(health.out);
+  } catch {
+    // reported below
+  }
+  if (!cluster?.status) {
+    report(group, FAIL, 'health', 'the search engine does not answer', log);
+  } else {
+    report(
+      group,
+      {green: OK, yellow: WARN}[cluster.status] ?? FAIL,
+      'health',
+      `${cluster.status}, ${cluster.active_shards} shards in use, ${cluster.unassigned_shards} not placed`,
+      cluster.status === 'green'
+        ? ''
+        : `${log} (a full disk: deploy/README.md, part I)`,
+    );
+  }
+  const answer = inContainer('edrms', SEARCH_PROGRAM);
+  if (answer.error || answer.status !== 200) {
+    report(
+      group,
+      FAIL,
+      'edrms',
+      answer.error
+        ? `cannot reach it: ${answer.error}`
+        : `its login is refused (${answer.status})`,
+      `${composeCmd} up -d (search-prepare makes the logins; deploy/README.md, part I)`,
+    );
+  } else {
+    report(group, OK, 'edrms', 'reaches it over TLS with its own login');
+  }
+}
+
 /** Bytes as GB with one decimal. */
 function gb(bytes) {
   return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -879,6 +979,7 @@ if (!existsSync(envFile)) {
   checkDocuments();
   checkEncryption(env);
   checkSearchDir(env);
+  checkSearchEngine(env);
   await checkExtracts(env);
   await checkAnchoring(env);
 }

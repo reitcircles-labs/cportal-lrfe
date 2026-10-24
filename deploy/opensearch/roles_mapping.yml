@@ -1,0 +1,8 @@
+# Which user has which role (copied by deploy/opensearch/prepare.sh); no user has any other
+_meta:
+  type: "rolesmapping"
+  config_version: 2
+lrfe_search_writer:
+  users: [lrfe-search]
+lrfe_edrms_reader:
+  users: [lrfe-edrms]

@@ -12,13 +12,15 @@ standard ones:
 | nats | `nats:2.15.1-alpine` | The event bus between the services |
 | openbao (the default) | `openbao/openbao:2.7.1` | Keys for the stored files, encrypted at rest, and the audit wallet |
 | cardano (optional) | `cardanosolutions/cardano-node-ogmios:v7.0.0_11.0.1-<network>` | Blockchain node for anchoring |
+| opensearch (optional) | `opensearchproject/opensearch:3.9.0` | The search engine for the documents' text (part I) |
 
 The settings of a site and every secret are in one file, `.env`; no secret is in an image, so the
 same images install at every site, also the organisation's name and its offices (`LRFE_ORG_*`,
 `LRFE_OFFICES`, below). Data lives in named volumes, so containers can be replaced (for an
 upgrade) without losing it.
 
-Part A is done once per version by whoever releases it; parts B to G at each site.
+Part A is done once per version by whoever releases it; parts B to G at each site, H and I when
+the site uses the search engine.
 
 ## A. Build and export a version (release machine)
 
@@ -354,7 +356,7 @@ PASSWORD '…';`. On an existing server, its administrator changes it.
 
 ## H. Optional: the search engine's encrypted directory
 
-The search engine (coming with API-800) keeps its index of the documents' text in a directory on
+The search engine (part I) keeps its index of the documents' text in a directory on
 this server, never in a Docker volume: an **encrypted directory**, encrypted by the ext4 file system
 itself (file names and contents; sizes, counts and dates stay visible). It needs no space reserved
 in advance: it grows with the index and shares its disk's free space. Its key is made by OpenBao
@@ -409,3 +411,52 @@ compose file. **Backup:** keep a copy of `<directory>.wrapped-key` with the othe
 without it the directory cannot be opened; the index itself can be rebuilt from the documents or
 restored from its own backup (API-806). To move the index to another method later (an encrypted
 disk, a container file), change `OPENSEARCH_DATA_DIR` and restore or rebuild it there.
+
+## I. Optional: the search engine
+
+The search engine (OpenSearch, one node) holds the index of the documents' text, in the encrypted
+directory of part H. It has no port on the host: it is reachable only on its own internal network,
+by edrms (which reads) and the search service (which writes), over TLS, each service with its own
+user that may only do its part, and only on the documents' indexes (`lrfe-documents*`). There is no
+administrator password: users and roles are applied with a certificate kept inside the engine's
+configuration.
+
+1. Part H done: the directory created and unlocked.
+2. In `.env`: add `search` to `COMPOSE_PROFILES` (e.g. `COMPOSE_PROFILES=postgres,bao,search`), and
+   if needed the memory settings:
+   - `OPENSEARCH_HEAP` (default `1g`): the engine's own memory; about half of `OPENSEARCH_MEMORY`,
+     never above `31g`. A small office: the defaults. A national register: e.g. `16g` and `32g`.
+   - `OPENSEARCH_MEMORY` (default `2g`): the most the container may use, the rest of it for the
+     operating system's cache of the index. Docker applies it only where it can limit memory
+     (not under rootless Docker without cgroup v2: there only the heap limits it).
+3. `docker compose up -d`. On every start, in this order:
+   - `search-dir-check` (part H) lets it go on only on the encrypted, unlocked directory;
+   - `search-prepare` makes the engine's subfolders there (`data`, `logs`, `dumps`: its index,
+     its logs and heap dumps, never in the container), its configuration (volume `search-config`),
+     once its certificates (an authority of this install only) and once each service's login (user,
+     password and the authority's certificate, in the volumes `search-login-edrms` and
+     `search-login-search`, readable only by that service);
+   - `opensearch` starts, healthy once it answers. Its log is in the directory too
+     (`<directory>/logs/lrfe-search.log`, readable by the install user while it is unlocked);
+     Docker's log (`docker compose logs opensearch`) has only its start and stop, since an error can
+     quote a document's text;
+   - `search-users` applies the users and roles (about a minute), then exits.
+4. Check: the readiness check (`demo/check-readiness.mjs` in the source repository) shows the
+   engine's health and whether edrms reaches it with its login.
+
+**Disk space.** From `OPENSEARCH_MIN_FREE_GB` (part H): below that much free space on its disk the
+engine places no new index parts, below half of it it warns in its log, and below a quarter it takes
+no more writes until there is space again (searching goes on). The readiness check warns from the
+first.
+
+**For a national register**, the server's administrator should raise the number of memory areas a
+process may map (once, with root): `sudo sysctl -w vm.max_map_count=262144`, and the same in
+`/etc/sysctl.d/` to keep it after a reboot. A small install works without it.
+
+**After a reboot:** unlock the directory (part H, step 5), then `docker compose up -d`. Until
+then the engine cannot start (it restarts and fails until the directory is unlocked).
+
+**To renew the certificates** (they last 10 years) or a login: remove the `search-config` volume (or
+a `search-login-…` volume) after `docker compose stop opensearch edrms`, then `docker compose up -d`:
+they are made again and applied. For the same reason these volumes need no backup; the index
+itself has its own backup (API-806).

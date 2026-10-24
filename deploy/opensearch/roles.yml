@@ -1,0 +1,22 @@
+# What each service may do in the search engine (copied by deploy/opensearch/prepare.sh): only on
+# the documents' indexes (lrfe-documents*), nothing else.
+_meta:
+  type: "roles"
+  config_version: 2
+# The search service: creates and fills the indexes, their templates and their alias
+lrfe_search_writer:
+  cluster_permissions:
+    - cluster_monitor
+    - "indices:admin/index_template/*"
+    - "indices:admin/template/*"
+    - "indices:data/write/bulk"
+  index_permissions:
+    - index_patterns: ["lrfe-documents*"]
+      allowed_actions: [indices_all]
+# edrms: searches them, never changes them
+lrfe_edrms_reader:
+  cluster_permissions:
+    - cluster_composite_ops_ro
+  index_permissions:
+    - index_patterns: ["lrfe-documents*"]
+      allowed_actions: [read]
