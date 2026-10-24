@@ -4,3 +4,4 @@ dist/
 out-tsc/
 *.log
 .DS_Store
+__pycache__/

@@ -436,7 +436,48 @@ services:
       - bao-intake:/approle/intake
       - bao-audit:/approle/audit
       - bao-extracts:/approle/extracts
+      - bao-search-dir:/approle/search-dir
     networks: [bao]
+
+  # ---- the search engine's encrypted directory (API-799, README.md part H) ----
+  # scripts/search_dir.py runs this to get the directory's key from OpenBao (create, unlock);
+  # it prints the key to the script's pipe and writes nothing. Never run by hand.
+  search-dir-key:
+    profiles: ["search-dir"]
+    image: openbao/openbao:2.7.1
+    user: "1000"
+    # what it prints is the key: never into a log file on the disk
+    logging:
+      driver: none
+    entrypoint: ["sh", "/setup/search-dir-key.sh"]
+    environment:
+      BAO_ADDR: http://openbao:8200
+    volumes:
+      - ./openbao/search-dir-key.sh:/setup/search-dir-key.sh:ro
+      - bao-search-dir:/approle/search-dir:ro
+    networks: [bao]
+
+  # The start guard: succeeds only when OPENSEARCH_DATA_DIR is the encrypted directory and it is
+  # unlocked (its marker file can be read only then). The search engine starts after it, so it never
+  # writes an index into a plain or a locked directory. Never creates the directory.
+  search-dir-check:
+    profiles: ["search"]
+    image: openbao/openbao:2.7.1
+    user: "0"
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        test -f /data/.lrfe-encrypted || { echo "the search engine's directory (OPENSEARCH_DATA_DIR)
+        is not unlocked or not encrypted: python3 scripts/search_dir.py status" >&2; exit 1; }
+    network_mode: none
+    volumes:
+      - type: bind
+        source: ${OPENSEARCH_DATA_DIR:-./opensearch-data-not-set}
+        target: /data
+        read_only: true
+        bind:
+          create_host_path: false
 
   # ---- optional: blockchain node with Ogmios (profile blockchain) ----
   # The audit service anchors through it (CARDANO_PROVIDER=ogmios). The first sync of the preview
@@ -452,7 +493,7 @@ services:
 networks:
   default:
   # OpenBao's network: only OpenBao, its setup and the services that use it (edrms, intake, audit,
-  # extracts)
+  # extracts, and search-dir-key for the search engine's directory)
   # reach it; no way out of the machine (internal)
   bao:
     internal: true
@@ -468,4 +509,5 @@ volumes:
   bao-intake:
   bao-audit:
   bao-extracts:
+  bao-search-dir:
   cardano-db:
