@@ -9,6 +9,8 @@
 #                                            existing server (POSTGRES_HOST, README.md)
 #   COMPOSE_PROFILES=postgres,bao,blockchain (in .env) also a blockchain node for anchoring
 #   COMPOSE_PROFILES=postgres,bao,docs       (in .env) also the API docs (Swagger UI) on LRFE_DOCS_PORT
+#   COMPOSE_PROFILES=postgres,bao,search     (in .env) also the search engine, on its encrypted
+#                                            directory (README.md, parts H and I)
 #
 # Stored files (edrms, intake, extracts) are encrypted with keys from OpenBao by default
 # (*_ENCRYPTION=bao): initialise, unseal and prepare OpenBao right after the first start (README.md, part D).
@@ -177,10 +179,15 @@ services:
       BAO_ADDR: http://openbao:8200
       BAO_KEY_NAME: edrms-files
       BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
+      # the search engine (profile search): its address, and the login made by search-prepare
+      # (user, password, ca.pem); not there without the profile
+      OPENSEARCH_URL: https://opensearch:9200
+      OPENSEARCH_LOGIN_DIR: /run/lrfe/search
     volumes:
       - edrms-files:/data/edrms
       - bao-edrms:/run/lrfe/bao:ro
-    networks: [default, bao]
+      - search-login-edrms:/run/lrfe/search:ro
+    networks: [default, bao, search]
     healthcheck: *healthcheck
     depends_on:
       db-setup: { condition: service_completed_successfully }
@@ -479,6 +486,85 @@ services:
         bind:
           create_host_path: false
 
+  # ---- optional: the search engine (profile search, API-800, README.md part I) ----
+  # Before every start, after the guard: the directory's subfolders, the configuration, the
+  # certificates and the services' logins (opensearch/prepare.sh). Changes nothing that works.
+  search-prepare:
+    profiles: ["search"]
+    image: &opensearch-image opensearchproject/opensearch:3.9.0
+    user: "0"
+    entrypoint: ["bash", "/lrfe/prepare.sh"]
+    environment:
+      OPENSEARCH_MIN_FREE_GB: ${OPENSEARCH_MIN_FREE_GB:-100}
+    network_mode: none
+    volumes:
+      - &search-dir
+        type: bind
+        source: ${OPENSEARCH_DATA_DIR:-./opensearch-data-not-set}
+        target: /lrfe-search
+        bind:
+          create_host_path: false
+      - ./opensearch:/lrfe:ro
+      - search-config:/config
+      - search-login-search:/login/search
+      - search-login-edrms:/login/edrms
+    depends_on:
+      search-dir-check: { condition: service_completed_successfully }
+
+  # The search engine: one node, its index in the encrypted directory, reachable only on the
+  # network search (edrms and the search service), over TLS, each service with its own user.
+  opensearch:
+    profiles: ["search"]
+    image: *opensearch-image
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      # its own configuration (search-prepare), never the demo one
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms${OPENSEARCH_HEAP:-1g} -Xmx${OPENSEARCH_HEAP:-1g}
+    mem_limit: ${OPENSEARCH_MEMORY:-2g}
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - *search-dir
+      - search-config:/usr/share/opensearch/config
+    networks: [search]
+    healthcheck:
+      # as the administrator (its certificate): the cluster answers and its indexes are usable
+      test:
+        - CMD-SHELL
+        - >-
+          cd /usr/share/opensearch/config/certs && curl -sf --cacert ca.pem --cert-type P12
+          --cert "admin.p12:$$(cat password)" 'https://localhost:9200/_cluster/health?timeout=5s'
+          | grep -Eq '"status":"(green|yellow)"'
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    depends_on:
+      search-prepare: { condition: service_completed_successfully }
+
+  # After every start of the search engine: applies the users and roles of the configuration (a
+  # newer version's roles, a login made again), with the administrator's certificate.
+  search-users:
+    profiles: ["search"]
+    image: *opensearch-image
+    entrypoint:
+      - bash
+      - -c
+      - >-
+        set -o pipefail && cd /usr/share/opensearch/config/certs && pass=$$(cat password) &&
+        /usr/share/opensearch/plugins/opensearch-security/tools/securityadmin.sh -h opensearch
+        -cd ../opensearch-security -icl -nhnv -cacert ca.pem
+        -ks admin.p12 -kst PKCS12 -kspass "$$pass" -ksalias admin
+        -ts truststore.p12 -tst PKCS12 -tspass "$$pass" | tail -n 3
+    volumes:
+      - search-config:/usr/share/opensearch/config:ro
+    networks: [search]
+    depends_on:
+      opensearch: { condition: service_healthy }
+
   # ---- optional: blockchain node with Ogmios (profile blockchain) ----
   # The audit service anchors through it (CARDANO_PROVIDER=ogmios). The first sync of the preview
   # network takes about 11 hours and 16 GB.
@@ -497,6 +583,10 @@ networks:
   # reach it; no way out of the machine (internal)
   bao:
     internal: true
+  # The search engine's network: only the search engine, its user setup and the services that use
+  # it (edrms reads; the search service, API-802, writes); no port on the host, no way out (internal)
+  search:
+    internal: true
 
 volumes:
   pgdata:
@@ -510,4 +600,8 @@ volumes:
   bao-audit:
   bao-extracts:
   bao-search-dir:
+  # the search engine's configuration and certificates, and each service's login to it
+  search-config:
+  search-login-search:
+  search-login-edrms:
   cardano-db:

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Exports one version as a bundle that installs at a site without internet access:
 #
-#   deploy/scripts/export.sh <version> [--blockchain]
+#   deploy/scripts/export.sh <version> [--blockchain] [--search]
 #
 # Writes deploy/dist/lrfe-<version>.tar, holding:
 #   images.tar.gz       every image the site runs (docker save): lrfe-backend, lrfe-web, PostgreSQL,
 #                       NATS, OpenBao (stored files are encrypted by default); with --blockchain also
-#                       the blockchain node
-#   docker-compose.yml  .env.example  openbao/  scripts/search_dir.py  README.md (the install guide)
+#                       the blockchain node, with --search also the search engine
+#   docker-compose.yml  .env.example  openbao/  opensearch/  scripts/search_dir.py  README.md (the
+#                       install guide)
 #   docs/inviting-users-and-assigning-roles.md (for the first administrator)
 #   VERSION  SHA256SUMS
 # The application's images must be built first, as a release (deploy/scripts/build.sh, never
@@ -18,7 +19,7 @@ set -euo pipefail
 DEPLOY=$(cd "$(dirname "$0")/.." && pwd)
 version=${1:-}
 if [ -z "$version" ] || [[ $version == -* ]]; then
-    echo "Usage: $0 <version> [--blockchain]" >&2
+    echo "Usage: $0 <version> [--blockchain] [--search]" >&2
     exit 2
 fi
 shift
@@ -32,6 +33,7 @@ profiles=(--profile postgres --profile bao)
 for arg in "$@"; do
     case $arg in
         --blockchain) profiles+=(--profile blockchain) ;;
+        --search) profiles+=(--profile search) ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -67,6 +69,9 @@ cp "$DEPLOY/openbao/openbao.hcl" "$DEPLOY/openbao/setup.sh" "$DEPLOY/openbao/sea
 # the search engine's encrypted directory (README.md, part H)
 mkdir -p "$out/scripts"
 cp "$DEPLOY/scripts/search_dir.py" "$out/scripts/"
+# the search engine's configuration (README.md, part I)
+mkdir -p "$out/opensearch"
+cp "$DEPLOY"/opensearch/{prepare.sh,config.yml,roles.yml,roles_mapping.yml,log4j2.properties} "$out/opensearch/"
 echo "$version" > "$out/VERSION"
 (cd "$out" && find . -type f ! -name SHA256SUMS | sort | xargs sha256sum > SHA256SUMS)
 tar -C "$DEPLOY/dist" -cf "$DEPLOY/dist/lrfe-$version.tar" "lrfe-$version"
