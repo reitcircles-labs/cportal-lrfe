@@ -8,7 +8,8 @@
 #   - the transit engine and AppRole logins;
 #   - one key per service, never exportable: edrms-files and intake-files (stored files),
 #     audit-anchor (ed25519, the audit service's blockchain wallet key), extracts-seal (ecdsa-p256,
-#     the organisation seal on ownership extracts) and extracts-files (its stored PDFs);
+#     the organisation seal on ownership extracts), extracts-files (its stored PDFs) and search-dir
+#     (the search engine's encrypted directory);
 #   - a policy per service that allows only what it needs on its own keys;
 #   - an AppRole per service (1 h tokens), whose role ID and secret ID go into that service's
 #     own volume, readable only by the service (the node user, uid 1000).
@@ -75,5 +76,9 @@ prepare extracts extracts-seal ecdsa-p256 'path "transit/sign/extracts-seal" { c
 path "transit/keys/extracts-seal" { capabilities = ["read"] }
 path "transit/datakey/plaintext/extracts-files" { capabilities = ["update"] }
 path "transit/decrypt/extracts-files" { capabilities = ["update"] }'
+# the search engine's encrypted directory (API-799): scripts/search_dir.py, through the
+# one-shot service search-dir-key
+prepare search-dir search-dir aes256-gcm96 'path "transit/datakey/plaintext/search-dir" { capabilities = ["update"] }
+path "transit/decrypt/search-dir" { capabilities = ["update"] }'
 
 echo "OpenBao is ready for the portal. Set EDRMS_ENCRYPTION=bao, INTAKE_ENCRYPTION=bao and EXTRACTS_ENCRYPTION=bao in .env (and, once the seal certificate is in LRFE_SEAL_CERT, LRFE_SEAL=bao), then: docker compose up -d"

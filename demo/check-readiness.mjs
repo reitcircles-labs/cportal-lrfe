@@ -9,9 +9,10 @@
  * Checks the containers, the web app and the API through it, the API docs (profile docs), the demo
  * users (without signing anyone in: their accounts and the demo password are checked inside the
  * identity container), the AI for reading scans (without spending), the demo document set, the
- * data already there, and anchoring. Prints ✓ ready, ! worth a look, ✗ not ready, each with what to
- * do. Exits 0 when nothing is ✗, else 1. Never prints a secret: the values of the secret settings
- * (passwords, secrets, keys, tokens) are masked in everything it prints.
+ * data already there, the search engine's encrypted directory (when set up), and anchoring.
+ * Prints ✓ ready, ! worth a look, ✗ not ready, each with what to do. Exits 0 when nothing is ✗,
+ * else 1. Never prints a secret: the values of the secret settings (passwords, secrets, keys,
+ * tokens) are masked in everything it prints.
  */
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -622,6 +623,98 @@ function checkEncryption(env) {
   }
 }
 
+/** The search engine's encrypted directory (API-799, deploy/README.md part H), when the install has one. */
+function checkSearchDir(env) {
+  const profiles = (env.COMPOSE_PROFILES || '').split(',').map(p => p.trim());
+  if (!env.OPENSEARCH_DATA_DIR && !profiles.includes('search')) return;
+  const group = 'Search engine data';
+  const script = `python3 deploy/scripts/search_dir.py${
+    envFile === join(DEPLOY, '.env')
+      ? ''
+      : ` --env ${envFile} --project ${project}`
+  }`;
+  const res = spawnSync(
+    'python3',
+    [
+      join(DEPLOY, 'scripts', 'search_dir.py'),
+      '--env',
+      envFile,
+      'status',
+      '--json',
+    ],
+    {encoding: 'utf8'},
+  );
+  let answer;
+  try {
+    answer = JSON.parse((res.stdout ?? '').trim().split('\n').pop());
+  } catch {
+    report(
+      group,
+      FAIL,
+      'directory',
+      'its state could not be read',
+      'Python 3.8 or later on the server (python3), then this check again',
+    );
+    return;
+  }
+  if (!answer.exists || answer.problem) {
+    const missing = !answer.problem || answer.problem === 'does not exist';
+    report(
+      group,
+      FAIL,
+      answer.dir ?? 'OPENSEARCH_DATA_DIR',
+      answer.problem ?? 'does not exist',
+      missing ? `${script} create` : 'deploy/README.md, part H',
+    );
+    return;
+  }
+  if (!answer.encrypted) {
+    report(
+      group,
+      FAIL,
+      answer.dir,
+      'not encrypted: the search engine must not use it',
+      `an empty directory, then ${script} create (deploy/README.md, part H)`,
+    );
+  } else if (!answer.unlocked) {
+    report(
+      group,
+      FAIL,
+      answer.dir,
+      'encrypted but locked: the search engine cannot start',
+      `${script} unlock (OpenBao unsealed first)`,
+    );
+  } else if (!answer.marker) {
+    report(
+      group,
+      FAIL,
+      answer.dir,
+      'unlocked, but its marker file is missing: the search engine will not start',
+      'deploy/README.md, part H',
+    );
+  } else {
+    report(
+      group,
+      OK,
+      answer.dir,
+      `encrypted and unlocked, ${gb(answer.sizeBytes)} in use`,
+    );
+  }
+  const low = answer.freeBytes < answer.minFreeBytes;
+  report(
+    group,
+    low ? WARN : OK,
+    'free space',
+    `${gb(answer.freeBytes)} free on its disk${low ? `, below OPENSEARCH_MIN_FREE_GB (${gb(answer.minFreeBytes)})` : ''}`,
+    'free space on that disk, or move the directory to a larger one (deploy/README.md, part H)',
+  );
+}
+
+/** Bytes as GB with one decimal. */
+function gb(bytes) {
+  return `${(bytes / 1e9).toFixed(1)} GB`;
+}
+
 /** The registry's seal on ownership extracts (Act 6): without it, no extract can be issued. */
 async function checkExtracts(env) {
   const res = await get(
@@ -785,6 +878,7 @@ if (!existsSync(envFile)) {
   checkAi(env);
   checkDocuments();
   checkEncryption(env);
+  checkSearchDir(env);
   await checkExtracts(env);
   await checkAnchoring(env);
 }

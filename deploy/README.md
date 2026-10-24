@@ -351,3 +351,61 @@ PASSWORD '…';`. On an existing server, its administrator changes it.
 
 **Volumes** are named after the compose project, `lrfe`: `lrfe_pgdata`, `lrfe_edrms-files`, … .
 `docker compose down` keeps them; **`docker compose down -v` deletes every record and document**.
+
+## H. Optional: the search engine's encrypted directory
+
+The search engine (coming with API-800) keeps its index of the documents' text in a directory on
+this server, never in a Docker volume: an **encrypted directory**, encrypted by the ext4 file system
+itself (file names and contents; sizes, counts and dates stay visible). It needs no space reserved
+in advance: it grows with the index and shares its disk's free space. Its key is made by OpenBao
+(key `search-dir`); only the key in wrapped form is kept, in `<directory>.wrapped-key` beside it,
+useless without OpenBao. The script `scripts/search_dir.py` (Python 3.8 or later, on the
+server; no root) does all of it; the one-shot service `search-dir-key` asks OpenBao for the key, and
+the guard `search-dir-check` lets the search engine start only on the encrypted, unlocked directory.
+
+**What it protects against:** a stolen or discarded disk, copies of the server's image and cloud
+snapshots, while the key is not added. Not against someone with root on the running server.
+
+1. **Once per server, with root** (the server's administrator): switch on encryption for the file
+   system that will hold the directory. Find its device with `df <a folder there>` (e.g. `/dev/md4`
+   for `/home`), then:
+
+   ```bash
+   sudo tune2fs -O encrypt /dev/md4
+   ```
+
+   It works while the file system is mounted and in use and changes no data. It cannot easily be
+   switched off again, and kernels older than 4.1 (2015) could no longer mount that file system.
+   Needs Linux 5.4 or later, and an ext4 block size equal to the memory page size (4096 on usual
+   servers: `stat -f -c %S <folder>`).
+2. **OpenBao ready** (part D) and prepared by `docker compose run --rm openbao-setup` from this
+   version on (it adds the key `search-dir` and its login; it keeps what works).
+3. In `.env`: `OPENSEARCH_DATA_DIR`, a path that does not exist yet or an empty directory, outside
+   the bundle's folder (e.g. `/home/lrfe/lrfe-data/opensearch`), and `OPENSEARCH_MIN_FREE_GB`
+   (default 100).
+4. As the user who runs Docker, in the bundle's folder (`deploy/` on a development server):
+
+   ```bash
+   python3 scripts/search_dir.py create
+   ```
+
+   It makes the directory, encrypts it with a new key and leaves it unlocked.
+5. **After every reboot**, once OpenBao is unsealed and before the search engine starts:
+
+   ```bash
+   python3 scripts/search_dir.py unlock
+   ```
+
+   Until then the guard keeps the search engine stopped: it never writes an index into a locked or
+   plain directory.
+6. **Lock it** (e.g. before taking the server's disk away): stop the search engine, then
+   `python3 scripts/search_dir.py lock`.
+7. **Where it stands:** `python3 scripts/search_dir.py status` (encrypted, unlocked, space in
+   use, free space; exit 0 only when the search engine may start); the readiness check reports the
+   same and warns below `OPENSEARCH_MIN_FREE_GB`.
+
+The options `--env <file> --project <name>` (before the command) work on another install of the same
+compose file. **Backup:** keep a copy of `<directory>.wrapped-key` with the other backups (part F):
+without it the directory cannot be opened; the index itself can be rebuilt from the documents or
+restored from its own backup (API-806). To move the index to another method later (an encrypted
+disk, a container file), change `OPENSEARCH_DATA_DIR` and restore or rebuild it there.

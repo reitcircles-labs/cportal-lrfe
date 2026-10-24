@@ -275,6 +275,7 @@ It reads `deploy/.env` (never printing a secret) and checks:
 | Reading scans | the AI is set up and accepts its key (checked from the intake container, without spending); the cross-check on or off |
 | Demo documents | the set is complete and unchanged (`documents/SHA256SUMS`) |
 | Data | what is already in the install (batches, scanned and filed documents, land records), with the fresh-start commands when there is any |
+| Search engine data | only when `OPENSEARCH_DATA_DIR` is set or the profile `search` is on: the directory is encrypted and unlocked (with its size), and the free space on its disk against `OPENSEARCH_MIN_FREE_GB` (`deploy/README.md`, part H) |
 | Anchoring | on or off; when on: the wallet can be read (its address), the blockchain node is synced, the wallet has at least `ANCHOR_MIN_BALANCE_ADA` |
 
 Each item is ✓ (ready), ! (worth a look) or ✗ (not ready), with what to do. It exits 0 when nothing is ✗, else 1.

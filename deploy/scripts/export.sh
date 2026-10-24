@@ -7,7 +7,7 @@
 #   images.tar.gz       every image the site runs (docker save): lrfe-backend, lrfe-web, PostgreSQL,
 #                       NATS, OpenBao (stored files are encrypted by default); with --blockchain also
 #                       the blockchain node
-#   docker-compose.yml  .env.example  openbao/  README.md (the install guide)
+#   docker-compose.yml  .env.example  openbao/  scripts/search_dir.py  README.md (the install guide)
 #   docs/inviting-users-and-assigning-roles.md (for the first administrator)
 #   VERSION  SHA256SUMS
 # The application's images must be built first, as a release (deploy/scripts/build.sh, never
@@ -63,7 +63,10 @@ docker save $images | gzip -6 > "$out/images.tar.gz"
 cp "$DEPLOY/docker-compose.yml" "$DEPLOY/.env.example" "$DEPLOY/README.md" "$out/"
 mkdir -p "$out/docs"
 cp "$DEPLOY/../angular-app/docs/user-guide/inviting-users-and-assigning-roles.md" "$out/docs/"
-cp "$DEPLOY/openbao/openbao.hcl" "$DEPLOY/openbao/setup.sh" "$out/openbao/"
+cp "$DEPLOY/openbao/openbao.hcl" "$DEPLOY/openbao/setup.sh" "$DEPLOY/openbao/search-dir-key.sh" "$out/openbao/"
+# the search engine's encrypted directory (README.md, part H)
+mkdir -p "$out/scripts"
+cp "$DEPLOY/scripts/search_dir.py" "$out/scripts/"
 echo "$version" > "$out/VERSION"
 (cd "$out" && find . -type f ! -name SHA256SUMS | sort | xargs sha256sum > SHA256SUMS)
 tar -C "$DEPLOY/dist" -cf "$DEPLOY/dist/lrfe-$version.tar" "lrfe-$version"
