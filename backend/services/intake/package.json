@@ -17,6 +17,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "worker": "node src/worker-main.js",
+    "backfill-text": "node scripts/backfill-text.js",
     "test": "mocha 'tests/**/*.test.js' --timeout 20000"
   },
   "devDependencies": {

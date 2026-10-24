@@ -349,6 +349,61 @@ paths:
           - capture.view
           - verify.view
       x-gateway-path: /api/intake/documents/{id}
+  /documents/{id}/reading:
+    get:
+      tags:
+        - Documents
+      summary: The AI's reading of a document (search service only)
+      description: >-
+        `{ documentId, status, docType, languages, fields: [{ k, label, v, edited? }], pages: [{ page, text }] }`: the fields as they stand
+        and the page text, decrypted. For indexing; never served to a browser.
+
+
+        **Access:** Service token only, from: `search`. Browsers cannot call this.
+      operationId: getDocumentsIdReading
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - search
+      x-gateway-path: /api/intake/documents/{id}/reading
   /documents/{id}/events:
     get:
       tags:

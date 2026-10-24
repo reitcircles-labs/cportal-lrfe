@@ -83,10 +83,20 @@ export const ENDPOINTS = {
       summary: 'File a document (intake only)',
       upload: {
         meta: 'JSON: document type, fields, provenance… (must come before the file)',
+        transcription:
+          "optional JSON: the AI's page text `[{ page, text }]`, stored encrypted beside the file (before the file)",
         file: 'the scanned file',
       },
       description:
         'multipart/form-data with a `meta` JSON field FIRST, then `file`. 201 `{ document, created: true }`, or 200 `{ document, created: false }` when the same source was already filed.',
+    },
+    'PUT /documents/{id}/transcription': {
+      tag: 'Filing',
+      summary: 'Add the page text of a document filed without it (intake only)',
+      description:
+        "`{ pages: [{ page, text }] }`: the AI's page text, stored encrypted beside the filed scan. " +
+        "Intake's back-fill for documents filed before the text came with the filing. " +
+        '201 `{ created: true }`, or 200 `{ created: false }` when the document has its text already.',
     },
     'POST /documents/{id}/amendments': {
       tag: 'Filing',

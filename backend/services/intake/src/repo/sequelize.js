@@ -38,6 +38,9 @@ export function createSequelizeRepo(sequelize) {
       if (!columns.encryption) {
         await q.addColumn(document, 'encryption', {type: DataTypes.JSONB});
       } // API-639
+      if (!columns.transcription) {
+        await q.addColumn(document, 'transcription', {type: DataTypes.JSONB});
+      } // API-798
     },
 
     async nextBatchNumber(registry) {
@@ -121,7 +124,11 @@ export function createSequelizeRepo(sequelize) {
       }
       const {rows, count} = await m.Document.findAndCountAll({
         where,
-        order: [['capturedAt', 'ASC']],
+        // id breaks ties, so that pages of the list never skip or repeat a document
+        order: [
+          ['capturedAt', 'ASC'],
+          ['id', 'ASC'],
+        ],
         limit,
         offset,
       });
@@ -141,6 +148,23 @@ export function createSequelizeRepo(sequelize) {
     },
     async getExtraction(id) {
       return extraction(await m.Extraction.findByPk(id));
+    },
+    /** Documents whose stored model answers still hold page text (written before API-798). */
+    async listDocumentIdsWithPageText(limit = 100) {
+      const [rows] = await sequelize.query(
+        `SELECT DISTINCT "documentId" FROM "${SCHEMA}"."extraction"
+                 WHERE jsonb_exists("answer", 'pages') LIMIT :limit`,
+        {replacements: {limit}},
+      );
+      return rows.map(r => r.documentId);
+    },
+    /** Remove the page text from a document's stored model answers (it now lives in a file). */
+    async removePageText(documentId) {
+      await sequelize.query(
+        `UPDATE "${SCHEMA}"."extraction" SET "answer" = "answer" - 'pages'
+                 WHERE "documentId" = :documentId AND jsonb_exists("answer", 'pages')`,
+        {replacements: {documentId}},
+      );
     },
     async usageSince(since) {
       return (

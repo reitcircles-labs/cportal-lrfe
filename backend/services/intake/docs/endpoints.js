@@ -65,6 +65,13 @@ export const ENDPOINTS = {
       description:
         'Summary plus `fields` (value, evidence quote and page, checks, flag ok/check/conflict/missing, status pending/accepted/edited, second-model reading `alt`), `notes`, `transcription` and the model calls.',
     },
+    'GET /documents/{id}/reading': {
+      tag: 'Documents',
+      summary: "The AI's reading of a document (search service only)",
+      description:
+        '`{ documentId, status, docType, languages, fields: [{ k, label, v, edited? }], pages: [{ page, text }] }`: ' +
+        'the fields as they stand and the page text, decrypted. For indexing; never served to a browser.',
+    },
     'GET /documents/{id}/events': {
       tag: 'Documents',
       summary: 'History of a document',

@@ -27,6 +27,9 @@ const idParams = (extra = {}) => ({
 });
 const versionParam = {n: {type: 'integer', minimum: 1}};
 
+/** Largest page text accepted from intake (API-798): at filing, and alone for the back-fill. */
+export const MAX_TRANSCRIPTION_BYTES = 16 * 1024 * 1024;
+
 function parseMeta(raw) {
   if (raw === undefined) {
     throw new BadRequestError('Send a "meta" JSON field before the file');
@@ -38,18 +41,30 @@ function parseMeta(raw) {
   }
 }
 
+function parseTranscription(raw) {
+  if (raw === undefined) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new BadRequestError('"transcription" must be valid JSON');
+  }
+}
+
 /**
  * multipart/form-data: a `meta` field (JSON) FIRST, then a `file` field. Parts are read in order
- * and the file is handed to `handle(meta, file)` while it is still streaming — it goes straight
- * to storage and is never buffered — so `meta` has to arrive before it.
+ * and the file is handed to `handle(meta, file, extra)` while it is still streaming — it goes
+ * straight to storage and is never buffered — so `meta` has to arrive before it. An optional
+ * `transcription` field (JSON, the AI's page text) also comes before the file, in `extra`.
  */
 async function withUpload(req, handle) {
   let meta;
+  let transcription;
   let result;
   let handled = false;
   for await (const part of req.parts()) {
     if (part.type === 'field') {
       if (part.fieldname === 'meta') meta = part.value;
+      if (part.fieldname === 'transcription') transcription = part.value;
       continue;
     }
     if (part.fieldname !== 'file' || handled) {
@@ -58,11 +73,15 @@ async function withUpload(req, handle) {
       );
     }
     const parsed = parseMeta(meta);
-    result = await handle(parsed, {
-      stream: part.file,
-      fileName: part.filename,
-      mimeType: part.mimetype,
-    });
+    result = await handle(
+      parsed,
+      {
+        stream: part.file,
+        fileName: part.filename,
+        mimeType: part.mimetype,
+      },
+      {transcription: parseTranscription(transcription)},
+    );
     handled = true;
   }
   if (!handled) throw new BadRequestError('A file is required');
@@ -109,10 +128,37 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
     '/documents',
     {onRequest: app.requireService(...FILING_SERVICES)},
     async (req, reply) => {
-      const {document, created} = await withUpload(req, (meta, file) =>
-        service.fileDocument({meta, file}),
+      const {document, created} = await withUpload(
+        req,
+        (meta, file, {transcription}) =>
+          service.fileDocument({meta, file, transcription}),
       );
       return reply.status(created ? 201 : 200).send({document, created});
+    },
+  );
+
+  /** The page text of a document filed before it came with the filing (intake's back-fill, API-798). */
+  app.put(
+    '/documents/:id/transcription',
+    {
+      onRequest: app.requireService(...FILING_SERVICES),
+      bodyLimit: MAX_TRANSCRIPTION_BYTES,
+      schema: {
+        ...idParams(),
+        body: {
+          type: 'object',
+          required: ['pages'],
+          additionalProperties: false,
+          properties: {pages: {type: 'array', minItems: 1}},
+        },
+      },
+    },
+    async (req, reply) => {
+      const result = await service.addTranscription(
+        req.params.id,
+        req.body.pages,
+      );
+      return reply.status(result.created ? 201 : 200).send(result);
     },
   );
 

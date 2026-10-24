@@ -13,6 +13,7 @@ export function createMemoryRepo() {
   const docs = new Map();
   const versions = [];
   const counters = new Map();
+  const texts = new Map();
 
   function assertUnique(doc) {
     for (const field of UNIQUE) {
@@ -141,6 +142,17 @@ export function createMemoryRepo() {
       docs.set(documentId, next);
       versions.push(clone(version));
       return clone(next);
+    },
+
+    // page text records (API-798), one per document
+    async getText(documentId) {
+      return clone(texts.get(documentId)) ?? null;
+    },
+    /** Add the record unless the document has one already; true when added. */
+    async addText(record) {
+      if (texts.has(record.documentId)) return false;
+      texts.set(record.documentId, clone(record));
+      return true;
     },
   };
 }

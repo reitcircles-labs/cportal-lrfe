@@ -1,6 +1,6 @@
 import multipart from '@fastify/multipart';
 import {createBaseApp, authPlugin} from '@lrfe/common';
-import {edrmsRoutes} from './routes.js';
+import {MAX_TRANSCRIPTION_BYTES, edrmsRoutes} from './routes.js';
 
 /**
  *   contentUrl: { base, secret }  signed /content links for stores without presigned URLs;
@@ -25,7 +25,8 @@ export async function buildApp({
       fileSize: maxFileBytes,
       files: 1,
       fields: 5,
-      fieldSize: 1024 * 1024,
+      // `meta` is small; the `transcription` field holds the AI's page text (API-798)
+      fieldSize: MAX_TRANSCRIPTION_BYTES,
     },
   });
   await app.register(edrmsRoutes, {service, contentUrl});

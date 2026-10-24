@@ -145,9 +145,9 @@ extracts          extracts    extracts-seal extracts-files: datakey, decrypt (an
 | # | Step | Service(s) | File | KEK |
 |---|---|---|---|---|
 | 1 | Upload (Capture) | intake | intake's store | `intake-files` |
-| 2 | AI reading | intake (reader); asks edrms about references | intake's store, read | `intake-files` |
+| 2 | AI reading | intake (reader); asks edrms about references | intake's store, read; the AI's page text written as a file beside the scan (not in the database) | `intake-files` |
 | 3 | Review (Verify) | intake; asks edrms for duplicate and prior-title checks | intake's store, read | `intake-files` |
-| 4 | **Filing** | **intake → edrms** (service token) | edrms's store (intake keeps its staged copy today) | intake decrypts with `intake-files`, sends the plain file over TLS; edrms encrypts with a new DEK under `edrms-files` |
+| 4 | **Filing** | **intake → edrms** (service token) | edrms's store: the scan and the AI's page text beside it (intake keeps its staged copies today) | intake decrypts with `intake-files`, sends the plain file and text over TLS; edrms encrypts each with a new DEK under `edrms-files` |
 | 5 | Viewing, search (Documents) | edrms | edrms's store, read | `edrms-files` |
 | 6 | Integrity check | edrms | edrms's store, read | `edrms-files` |
 | 7 | Correction | bpm (four-eyes process) → edrms | edrms's store; a file only for a replacement scan | `edrms-files` |

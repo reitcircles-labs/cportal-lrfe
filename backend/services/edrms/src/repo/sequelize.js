@@ -233,5 +233,19 @@ export function createSequelizeRepo(sequelize) {
         }),
       );
     },
+
+    // page text records (API-798), one per document
+    async getText(documentId) {
+      const row = plain(await m.Text.findByPk(documentId));
+      return row && {...row, size: Number(row.size)};
+    },
+    /** Add the record unless the document has one already; true when added. */
+    async addText(record) {
+      const [, created] = await m.Text.findOrCreate({
+        where: {documentId: record.documentId},
+        defaults: record,
+      });
+      return created;
+    },
   };
 }

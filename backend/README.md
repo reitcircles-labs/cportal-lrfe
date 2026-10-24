@@ -358,6 +358,11 @@ upload ─▶ intake (staging store, job queue) ─▶ extraction worker ─▶ 
   an unrecognised type, or a doubt from `JEV_ESCALATE_AT`, instead of the 30% rule); where the two
   readings disagree, picks the value the text states. Every call is stored as a `crosscheck`
   extraction. Messages on screen never name Jev or a model.
+- **Page text** (API-798): the AI's transcription is kept as a file beside the scan, encrypted like
+  it (`INTAKE_ENCRYPTION`), never in the database; filing sends it to edrms, which stores it
+  beside the PDF under `edrms-files`. Page text read by an older version is moved into files when
+  the service starts; documents filed before get it in edrms with `npm run intake:backfill-text`
+  (once; it adds only what is missing).
 - **Worker** runs inside the service for local work, or alone (`npm run worker -w @lrfe/intake`,
   several in parallel — Postgres `SKIP LOCKED`). Retries with backoff; non-retryable errors fail at once.
 
@@ -366,6 +371,7 @@ upload ─▶ intake (staging store, job queue) ─▶ extraction worker ─▶ 
 | `GET /api/intake/batches` · `POST /api/intake/batches {source}` | read / `capture.scan` | batches with status counts · open a batch (`WDH-B001`…) |
 | `POST /api/intake/batches/:id/documents` (multipart `file`: PDF/PNG/JPEG ≤ 50 MB) | `capture.scan` | capture; the same file twice → 409 with the existing id |
 | `GET /api/intake/documents?batchId=&status=&q=` · `GET /api/intake/documents/:id` | read | queue · document with fields, checks, transcription, model calls |
+| `GET /api/intake/documents/:id/reading` | the search service | the AI's reading for indexing: fields and page text (decrypted) |
 | `GET /api/intake/documents/:id/file-link` · `GET /api/intake/files/:id?exp&sig` | read / signed | the staged file for the viewer |
 | `POST .../claim` · `.../release` | `verify.edit` | review lock (30 min) |
 | `PUT /api/intake/documents/:id/fields/:k {value}` or `{status: accepted\|pending}` | `verify.edit` | correct (normalised and re-checked) or accept a field |

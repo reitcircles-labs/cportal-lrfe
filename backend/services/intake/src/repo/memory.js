@@ -114,6 +114,17 @@ export function createMemoryRepo() {
     async getExtraction(id) {
       return clone(extractions.find(e => e.id === id)) ?? null;
     },
+    async listDocumentIdsWithPageText(limit = 100) {
+      const ids = extractions
+        .filter(e => e.answer && 'pages' in e.answer)
+        .map(e => e.documentId);
+      return [...new Set(ids)].slice(0, limit);
+    },
+    async removePageText(documentId) {
+      for (const e of extractions) {
+        if (e.documentId === documentId && e.answer) delete e.answer.pages;
+      }
+    },
     async usageSince(since) {
       return extractions
         .filter(e => e.createdAt >= since)

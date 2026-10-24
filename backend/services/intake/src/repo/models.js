@@ -70,6 +70,9 @@ export function defineModels(sequelize) {
       crosscheck: j(),
       // encrypted scan (INTAKE_ENCRYPTION): algorithm, KEK name, wrapped data key, chunk size, ciphertext SHA-256 and size; never sent to clients
       encryption: j(),
+      // the AI's page text (API-798): a file beside the scan, encrypted like it; here only its
+      // storage key, hashes, page count and encryption record; never sent to clients
+      transcription: j(),
       escalated: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
