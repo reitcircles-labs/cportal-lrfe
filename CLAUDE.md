@@ -67,7 +67,7 @@ demo 8088 · rehearsal 8716. Set `E2E_API_PORT`/`E2E_WEB_PORT` for anything outs
 
 - **Never open screenshots in the main conversation** unless the user asks to see one: a subagent checks
   them against the design or storyline and answers in text.
-- Slim tool output: Jira calls with `responseFields`; tests with `--reporter=line`, then grep the totals
+- Slim tool output: Jira calls with `responseFields`; tests write `e2e/.progress/progress.log` (API-813): read its totals
   and failures; read logs with `tail`/`grep`, never whole.
 - Delegate broad searches, reviews, log triage and long background runs to agents (lower effort for
   mechanical briefs). Send independent calls in parallel; turn multi-step shell work into one script.

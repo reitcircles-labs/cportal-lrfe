@@ -24,6 +24,14 @@ npx playwright test tests/sign-in.spec.ts       # one file
 npx playwright test -g "rev \(a.mwandingi\)"    # tests whose title matches
 ```
 
+**Following a run** (API-813): every run writes `e2e/.progress/progress.log` as it goes: when the
+stack is up, one line per finished test (`ok`, `FAILED` with the first line of its error, `skip`),
+errors outside the tests (a stack that does not start) and the totals at the end. Watch it from
+another terminal with `tail -f e2e/.progress/progress.log`. Each run starts it afresh;
+`E2E_PROGRESS_FILE` writes it elsewhere. A run's whole output can go next to it:
+`npm test > .progress/full.log 2>&1`. A `--reporter` option replaces the progress file, so leave it
+out.
+
 A failing test keeps a screenshot, a video and a **trace** under `test-results/`. The trace is a
 step-by-step recording of the page, the network and the console:
 `npx playwright show-trace test-results/<test>/trace.zip` (or open it from the report).

@@ -60,7 +60,12 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.E2E_WORKERS ? Number(process.env.E2E_WORKERS) : 4,
-  reporter: [['list'], ['html', {open: 'never'}]],
+  // the live progress file (API-813): tail -f e2e/.progress/progress.log
+  reporter: [
+    ['list'],
+    ['./support/progress-reporter.ts'],
+    ['html', {open: 'never'}],
+  ],
   use: {
     baseURL: WEB_URL,
     trace: 'retain-on-failure',
