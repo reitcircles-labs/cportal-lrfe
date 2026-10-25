@@ -56,3 +56,6 @@ Mined from the session transcripts (API-789, 476 user messages and every tool er
 - **A component class named like a global one** (`.bar`) hid a header that the assertions didn't
   cover → check the screenshots (by agent) before trusting a passing run on layout.
 - **Navigating to the URL already shown** does nothing in a hash-routed app → `about:blank` first.
+- **A script that imports the services' code loads `backend/.env`** (`@lrfe/common` runs dotenv),
+  so `DB_CONNECTION_STRING` there names the developer's own database → the scale scripts take only
+  `SCALE_DATABASE_URL`, never `DB_CONNECTION_STRING`.

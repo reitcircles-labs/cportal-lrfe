@@ -463,7 +463,7 @@ export class RegisterBuilder {
       filedByName: reviewedBy.name,
       updatedAt: filedAt,
     };
-    return {document, versions: [version]};
+    return {document, versions: [version], capturedBy, reviewedBy};
   }
 
   /**

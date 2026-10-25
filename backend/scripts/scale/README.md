@@ -47,7 +47,8 @@ E2E_API_PORT=3800 npm run scale:load -- --out ~/scale-report.md
 ```
 
 `E2E_API_PORT` must be the same in both terminals: the scripts find the database and the gateway
-from it, as the stack does (`DB_CONNECTION_STRING` overrides the database).
+from it, as the stack does (`SCALE_DATABASE_URL` overrides the database; `DB_CONNECTION_STRING` is
+ignored on purpose: the services' code loads `backend/.env`, which names the developer's own database).
 
 ### generate.js
 
@@ -59,7 +60,9 @@ from it, as the stack does (`DB_CONNECTION_STRING` overrides the database).
 | `--seed` | 769 | The same seed and options give the same register, to the byte |
 | `--as-of` | 2026-10-01 | The register as it is on that day |
 | `--scan-years`, `--record-years` | 2, 1 | Documents are filed over the years before `--as-of`, records created over the last year |
-| `--replace` | | Empties the documents and records first; without it a database holding any is refused |
+| `--replace` | | Empties the documents, records and intake's documents first (and, with `E2E_STORE_DIR`, their files); without it a database holding any is refused |
+| `--files` | | Also the documents' files, with their text, stored encrypted (below, API-810); needs the stack started with `E2E_STORE_DIR` |
+| `--resume` | | Carries on a run that stopped, with the same options: the batches already written are skipped |
 
 What it makes:
 
@@ -84,9 +87,57 @@ documents take about 5 minutes and 3 GB.
 Everything is built with the services' own code (catalogue, search text, record metadata, parcel
 reading, suggestions, checks and seals), so the rows are what the services would have written.
 People, companies, banks, townships and farms are made up from syllables: no real person's data.
-Not generated, as the load tests do not use them: the scanned files themselves (each version has a
-stand-in hash, so opening a generated document's file fails), the intake work queue, anchorings,
-and the review tasks in bpm (a generated change in review cannot be approved or withdrawn).
+Not generated, as the load tests do not use them: the intake work queue, anchorings, and the
+review tasks in bpm (a generated change in review cannot be approved or withdrawn). Without
+`--files`, the scanned files either: each version has a stand-in hash, so opening a generated
+document's file fails.
+
+### The documents' files (--files, API-810)
+
+For measuring the search index, documents need their text. With `--files` every document also
+gets the PDF a scan of it would be and is stored as the services store it:
+
+- **The PDF** (`documents.js`): A4, a first page stating the document's own fields in a deed's
+  words (its number, parties and their ID numbers, property, extent, dates, prior title), then 0
+  to 7 pages, by type, of conditions and clauses in a deed's usual wording, and the signatures with
+  the parties again. On average 4.5 pages, 11 KB, 13 KB of text. Built on worker threads
+  (`pdf-worker.js`).
+- **Intake**: the scan and the AI's page text (a JSON file), the document filed, its review rows
+  built by intake's own code from a reading of it (each value with its line as evidence; in 3% of
+  documents one value misread and corrected by the officer, as edrms then records it), the
+  reading and its history (captured, read, filed), in scanning batches of 50 parcels.
+- **Edrms**: the same scan as version 1.0's file (its real hash and size, the seal made again, the
+  reading as provenance), the page text beside it (`document_text`); a later version keeps version
+  1.0's file, as a correction of values does.
+- **Encrypted twice**, as on an install: each file with a data key of its own from the stack's
+  OpenBao, wrapped with intake's or edrms' key (logged in with that service's AppRole); and the
+  folder they are in is the stack's encrypted directory (`E2E_STORE_DIR/files`, fscrypt).
+
+The same seed gives the same documents and the same PDFs; only the encrypted bytes differ (new
+keys). Start the stack with the store kept, then generate and check:
+
+```bash
+# terminal 1 (from e2e/)
+E2E_DB=postgres E2E_PG_DIR=~/lrfe-data/scale-810/pg E2E_STORE_DIR=~/lrfe-data/scale-810 node stack/start-backend.mjs
+
+# terminal 2 (from backend/)
+E2E_STORE_DIR=~/lrfe-data/scale-810 npm run scale:generate -- --documents 500000 --files --replace
+E2E_STORE_DIR=~/lrfe-data/scale-810 node scripts/scale/check-files.js --sample 500
+```
+
+**Measured (API-810, 25 October 2026, `--documents 200000 --files`):** 199,470 documents (39,216
+parcels), 797,880 encrypted files: 14 GB on the disk for the files and 3.6 GB for the database.
+About 50 minutes on the shared 8-core server with spinning disks, 60 to 110 documents a second
+depending on the other load on it; a 500-document sample passed every check below. A run stopped
+part-way (OpenBao too slow under load once) is carried on with `--resume`; data-key requests that
+time out are asked again.
+
+`check-files.js` takes a random sample: each file must be ciphertext on the disk, decrypt, open as
+a PDF with the document's page count, hold every field's value as filed, and equal the page text
+kept in edrms and in intake; intake's scan must be the same file; then edrms' integrity check
+(file hash and seal, every version) and intake's reading for the search service must answer
+for it, and the land records that pin it must hold edrms' seal. It exits 1 on any problem. After
+`--resume`, the report's file counts are those of the resumed part; `onDisk` is the whole folder.
 
 ### load-test.js
 

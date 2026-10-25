@@ -15,6 +15,10 @@
  * /usr/lib/postgresql/<version>/bin), on its own port, TCP only, and removed with the stack.
  * With E2E_PG_DIR as well, the database lives in that folder instead and is kept: created on the
  * first run, reused after, never removed (the load tests' test register, backend/scripts/scale).
+ * With E2E_STORE_DIR (and E2E_BAO=real), the stored files and the OpenBao that encrypts them are
+ * kept there too, the files in an encrypted directory (`files/`, fscrypt, its key from that
+ * OpenBao: backend/scripts/scale/files_dir.py), created on the first run and unlocked after: the
+ * test register with its files (API-810).
  * The gateway starts last, once the others answer /health, so "gateway up" means "stack ready".
  */
 import {execFileSync, spawn} from 'node:child_process';
@@ -32,10 +36,12 @@ import {
   BAO_DIR,
   DEMO_PASSWORD,
   E2E_BAO,
+  FILES_DIR,
   JWT_SECRET,
   MAIL_DIR,
   PORTS,
   STACK_DIR,
+  STORE_DIR,
   WEB_URL,
 } from './config.mjs';
 
@@ -102,6 +108,9 @@ if (E2E_BAO === 'fake') {
     EXTRACTS_ENCRYPTION: 'fake',
   });
 }
+if (STORE_DIR && (process.env.E2E_DB !== 'postgres' || E2E_BAO !== 'real')) {
+  throw new Error('E2E_STORE_DIR needs E2E_DB=postgres and E2E_BAO=real');
+}
 const SERVICE_ENV = {};
 const SERVICES = [
   'identity',
@@ -130,11 +139,11 @@ if (POSTGRES) {
     DB_CONNECTION_STRING: `postgres://lrfe@127.0.0.1:${PORTS.postgres}/e2e`,
     DB_SYNC: 'true',
     EDRMS_STORAGE: 'local',
-    EDRMS_LOCAL_DIR: join(STACK_DIR, 'files', 'edrms'),
+    EDRMS_LOCAL_DIR: join(FILES_DIR, 'edrms'),
     INTAKE_STORAGE: 'local',
-    INTAKE_LOCAL_DIR: join(STACK_DIR, 'files', 'intake'),
+    INTAKE_LOCAL_DIR: join(FILES_DIR, 'intake'),
     EXTRACTS_STORAGE: 'local',
-    EXTRACTS_LOCAL_DIR: join(STACK_DIR, 'files', 'extracts'),
+    EXTRACTS_LOCAL_DIR: join(FILES_DIR, 'extracts'),
   });
 }
 
@@ -430,6 +439,18 @@ function startBao(timeoutMs = 180_000) {
   });
 }
 
+/** E2E_STORE_DIR: the kept files' encrypted directory, created on the first run, else unlocked. */
+function openFilesDir() {
+  const command = existsSync(`${FILES_DIR}.wrapped-key`) ? 'unlock' : 'create';
+  const script = join(BACKEND_DIR, 'scripts', 'scale', 'files_dir.py');
+  const out = execFileSync(
+    'python3',
+    [script, '--store', STORE_DIR, '--bao', url('bao'), command],
+    {encoding: 'utf8'},
+  );
+  process.stdout.write(`[files] ${out.trim().split('\n')[0]}\n`);
+}
+
 async function waitPort(port, timeoutMs = 120_000) {
   const until = Date.now() + timeoutMs;
   while (Date.now() < until) {
@@ -460,6 +481,7 @@ try {
 startNats();
 try {
   if (E2E_BAO === 'real') await startBao(); // the first run downloads OpenBao
+  if (STORE_DIR) openFilesDir();
   await waitPort(PORTS.nats); // the first run downloads nats-server, hence the long wait
   for (const name of SERVICES) start(name);
   await Promise.all(SERVICES.map(n => waitHealthy(n)));
