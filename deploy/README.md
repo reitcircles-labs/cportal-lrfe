@@ -278,6 +278,14 @@ From a version without the `LRFE_ORG_*` settings: the portal shows the first sit
 until they are set; copy them and `LRFE_OFFICES` from the new `.env.example` into `.env` to change
 them (existing offices are not changed).
 
+From a version that kept the AI's page text in the database (before API-798): intake moves it
+into encrypted files beside the scans by itself when it starts (while OpenBao is sealed it tries
+again every minute; its log says "page text moved into encrypted files"). Documents filed before
+then have no page text in the EDRMS yet; once intake has moved it, copy it there once with
+`docker compose exec intake node services/intake/scripts/backfill-text.js`. It prints how many
+documents got their text and which ones failed, and can be run again: it adds only what is
+missing. Going back to an older version afterwards shows no AI transcription in Verify.
+
 From a version without `db-setup` (0.1.0-260dab4 and earlier): the bundled database is now the
 profile `postgres`. Add it to `COMPOSE_PROFILES` in the copied `.env` (e.g.
 `COMPOSE_PROFILES=postgres` or `postgres,bao`) before `docker compose up -d`; otherwise `db-setup`

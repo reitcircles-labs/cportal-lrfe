@@ -1,4 +1,5 @@
 import {createHash, randomUUID} from 'node:crypto';
+import {Readable} from 'node:stream';
 import {
   AppError,
   BadRequestError,
@@ -52,6 +53,31 @@ function cleanProvenance(p) {
     throw new BadRequestError('meta.provenance is too large (max 20 kB)');
   }
   return p;
+}
+
+/** Most pages one transcription may hold (API-798). */
+const MAX_TEXT_PAGES = 5000;
+
+/** The AI's page text from intake: [{page, text}], nothing else kept. */
+function cleanPages(pages) {
+  if (pages === undefined || pages === null) return [];
+  if (!Array.isArray(pages) || pages.length > MAX_TEXT_PAGES) {
+    throw new BadRequestError(
+      `The page text must be a list of at most ${MAX_TEXT_PAGES} pages`,
+    );
+  }
+  return pages.map(p => {
+    if (
+      !Number.isInteger(p?.page) ||
+      p.page < 1 ||
+      typeof p.text !== 'string'
+    ) {
+      throw new BadRequestError(
+        'Each page of the text needs a page number and a text',
+      );
+    }
+    return {page: p.page, text: p.text};
+  });
 }
 
 /** Drain an unused upload stream so the request can complete. */
@@ -136,10 +162,12 @@ export class EdrmsService {
    *   meta: { sourceId, batchId?, registry?, docType, title, pages, fields: [{k, label, v, c?, edited?}],
    *           recordMetadata?, capturedBy?: {id, name}, reviewedBy: {id, name} }
    *   file: { stream, fileName, mimeType }
+   *   transcription: the AI's page text [{page, text}], optional; stored encrypted beside the file
    * Idempotent on `sourceId` (the intake document id): filing it again returns the existing record.
    */
-  async fileDocument({meta, file}) {
+  async fileDocument({meta, file, transcription}) {
     let uploadedKey = null;
+    let text = null;
     try {
       if (!meta || typeof meta !== 'object') {
         throw new BadRequestError('meta is required');
@@ -193,6 +221,7 @@ export class EdrmsService {
       }
       const recordMetadata = this.buildRecordMetadata(meta);
       const provenance = cleanProvenance(meta.provenance);
+      const pages = cleanPages(transcription);
 
       const id = randomUUID();
       const now = this.clock();
@@ -204,6 +233,7 @@ export class EdrmsService {
         });
       uploadedKey = key;
       assertComplete(file, size);
+      text = await this.writeText(id, 1, pages);
 
       const reviewer = meta.reviewedBy;
       // the record and its event are committed together (API-613)
@@ -269,6 +299,7 @@ export class EdrmsService {
           },
         });
         const v1 = await this.repo.getVersion(id, 1);
+        if (text) await this.repo.addText(text);
         await this.events.publish(
           'edrms.document.filed',
           {
@@ -287,13 +318,82 @@ export class EdrmsService {
         return created;
       });
       uploadedKey = null;
+      text = null;
       return {document, created: true};
     } catch (err) {
       await discard(file?.stream).catch(() => {});
-      // Content written but the record never committed: remove the orphan (best effort).
+      // Content written but the record never committed: remove the orphans (best effort).
       if (uploadedKey) await this.store.delete(uploadedKey).catch(() => {});
+      if (text) await this.store.delete(text.storageKey).catch(() => {});
       throw err;
     }
+  }
+
+  // ---------------------------------------------------------------- page text (API-798)
+
+  /**
+   * Store the AI's page text as a file beside the version's file, encrypted like it
+   * (EDRMS_ENCRYPTION, key edrms-files). Returns the record to keep, or null when there is no text.
+   */
+  async writeText(id, versionNumber, pages) {
+    if (!pages.length) return null;
+    // a new name each time: stores never overwrite, and a failed attempt may have left a file
+    const key = storageKey(
+      id,
+      versionNumber,
+      `transcription-${randomUUID()}.json`,
+    );
+    const {sha256, size, encryption} = await this.store
+      .put({
+        key,
+        body: Readable.from([Buffer.from(JSON.stringify(pages))]),
+        contentType: 'application/json',
+      })
+      .catch(err => {
+        throw storeError(err);
+      });
+    return {
+      documentId: id,
+      versionNumber,
+      storageKey: key,
+      pages: pages.length,
+      size,
+      sha256,
+      ...(encryption ? {encryption} : {}),
+      createdAt: this.clock(),
+    };
+  }
+
+  /**
+   * Add the page text of a document filed before it was carried at filing (intake's back-fill).
+   * The text belongs to the filed scan (version 1). A document that has its text keeps it.
+   */
+  async addTranscription(id, transcription) {
+    await this.requireDocument(id);
+    const pages = cleanPages(transcription);
+    if (!pages.length) throw new BadRequestError('The page text is empty');
+    if (await this.repo.getText(id)) return {created: false};
+    const text = await this.writeText(id, 1, pages);
+    const created = await this.repo.addText(text).catch(async err => {
+      await this.store.delete(text.storageKey).catch(() => {});
+      throw err;
+    });
+    if (!created) await this.store.delete(text.storageKey).catch(() => {});
+    return {created};
+  }
+
+  /** A document's page text, [{page, text}], decrypted; [] when it has none. */
+  async readText(id) {
+    const text = await this.repo.getText(id);
+    if (!text) return [];
+    const stream = await this.store
+      .getStream(text.storageKey, {encryption: text.encryption})
+      .catch(err => {
+        throw storeError(err);
+      });
+    const chunks = [];
+    for await (const c of stream) chunks.push(c);
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   }
 
   buildRecordMetadata(meta) {

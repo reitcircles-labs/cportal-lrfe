@@ -126,6 +126,12 @@ export async function intakeRoutes(
   app.get('/documents/:id', {...readGuard, schema: idParams()}, async req =>
     service.getDocument(req.params.id),
   );
+  /** The AI's reading (fields and page text) for the search service (API-798); no browser access. */
+  app.get(
+    '/documents/:id/reading',
+    {onRequest: app.requireService('search'), schema: idParams()},
+    async req => service.getReading(req.params.id),
+  );
   app.get(
     '/documents/:id/events',
     {...readGuard, schema: idParams()},

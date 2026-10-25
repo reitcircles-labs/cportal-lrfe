@@ -81,11 +81,15 @@ paths:
               type: object
               required:
                 - meta
+                - transcription
                 - file
               properties:
                 meta:
                   type: string
                   description: "JSON: document type, fields, provenance… (must come before the file)"
+                transcription:
+                  type: string
+                  description: "optional JSON: the AI's page text `[{ page, text }]`, stored encrypted beside the file (before the file)"
                 file:
                   type: string
                   format: binary
@@ -212,6 +216,74 @@ paths:
           - search
           - bpm
       x-gateway-path: /api/documents
+  /documents/{id}/transcription:
+    put:
+      tags:
+        - Filing
+      summary: Add the page text of a document filed without it (intake only)
+      description: >-
+        `{ pages: [{ page, text }] }`: the AI's page text, stored encrypted beside the filed scan. Intake's back-fill for documents filed
+        before the text came with the filing. 201 `{ created: true }`, or 200 `{ created: false }` when the document has its text already.
+
+
+        **Access:** Service token only, from: `intake`. Browsers cannot call this.
+      operationId: putDocumentsIdTranscription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - pages
+              additionalProperties: false
+              properties:
+                pages:
+                  type: array
+                  minItems: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - intake
+      x-gateway-path: /api/documents/{id}/transcription
   /documents/lookup:
     get:
       tags:

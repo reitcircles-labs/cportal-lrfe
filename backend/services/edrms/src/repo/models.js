@@ -93,5 +93,22 @@ export function defineModels(sequelize) {
     opts({timestamps: false}),
   );
 
-  return {Document, Version, Counter};
+  // The AI's page text of a filed document (API-798): a file beside the PDF, encrypted with the
+  // records' key; here only where it is, its size, hashes and encryption record (never sent to clients).
+  const Text = sequelize.define(
+    'document_text',
+    {
+      documentId: {type: DataTypes.UUID, primaryKey: true},
+      versionNumber: {type: DataTypes.INTEGER, allowNull: false},
+      storageKey: {type: DataTypes.STRING, allowNull: false},
+      pages: {type: DataTypes.INTEGER, allowNull: false},
+      size: {type: DataTypes.BIGINT, allowNull: false},
+      sha256: {type: DataTypes.STRING, allowNull: false},
+      encryption: {type: DataTypes.JSONB},
+      createdAt: {type: DataTypes.DATE, allowNull: false},
+    },
+    opts({timestamps: false}),
+  );
+
+  return {Document, Version, Counter, Text};
 }

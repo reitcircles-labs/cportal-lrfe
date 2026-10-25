@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {Readable} from 'node:stream';
 import {
   AppError,
   BadRequestError,
@@ -20,6 +21,13 @@ async function toBuffer(stream) {
   const chunks = [];
   for await (const c of stream) chunks.push(c);
   return Buffer.concat(chunks);
+}
+
+/** A model answer without its page text: the text is kept in a file, not the database (API-798). */
+function withoutPages(answer) {
+  if (!answer) return null;
+  const {pages: _pages, ...rest} = answer;
+  return rest;
 }
 
 /**
@@ -323,6 +331,39 @@ export class IntakeService {
   /** Store a finished extraction (all model calls, the review rows) and put the document in review. */
   async applyExtraction(id, {attempts, answer, rows, notes, escalated}) {
     const d = await this.requireDocument(id);
+    // the kept page text goes to an encrypted file before anything is recorded (API-798)
+    const transcription = await this.writeTranscription(
+      id,
+      answer.pages,
+      randomUUID(),
+    );
+    try {
+      const updated = await this.recordExtraction(d, transcription, {
+        attempts,
+        answer,
+        rows,
+        notes,
+        escalated,
+      });
+      if (d.transcription) {
+        await this.store.delete(d.transcription.key).catch(() => {});
+      }
+      return updated;
+    } catch (err) {
+      if (transcription) {
+        await this.store.delete(transcription.key).catch(() => {});
+      }
+      throw err;
+    }
+  }
+
+  /** The model calls and the reading itself, with the page text's file record (applyExtraction). */
+  async recordExtraction(
+    d,
+    transcription,
+    {attempts, answer, rows, notes, escalated},
+  ) {
+    const id = d.id;
     let cost = d.extractionCostUsd || 0;
     let latest = null;
     const checks = attempts.filter(a => a.role === 'crosscheck' && a.ok);
@@ -346,7 +387,7 @@ export class IntakeService {
         provider: a.provider,
         model: a.model,
         promptVersion: a.promptVersion,
-        answer: a.answer ?? null,
+        answer: withoutPages(a.answer),
         usage: a.usage,
         costUsd: a.costUsd,
         durationMs: a.durationMs,
@@ -370,6 +411,7 @@ export class IntakeService {
         fields: rows,
         notes,
         latestExtractionId: latest,
+        transcription,
         crosscheck,
         escalated: !!escalated,
         extractionCostUsd: Math.round(cost * 1e6) / 1e6,
@@ -438,7 +480,6 @@ export class IntakeService {
   async getDocument(id) {
     const d = await this.requireDocument(id);
     const extractions = await this.repo.listExtractions(id);
-    const latest = extractions.find(e => e.id === d.latestExtractionId);
     return {
       ...this.summary(d),
       docTypeReason: d.docTypeReason,
@@ -447,8 +488,35 @@ export class IntakeService {
       fields: d.fields,
       notes: d.notes,
       version: d.version,
-      transcription: latest?.answer?.pages ?? [],
+      // while the key service is down the fields stay reviewable, without the page text
+      transcription: await this.readTranscription(d).catch(err => {
+        if (err.statusCode === 503) return [];
+        throw err;
+      }),
       extractions: extractions.map(({answer, ...e}) => e),
+    };
+  }
+
+  /**
+   * The AI's reading of a document for the search service (API-798): the fields as they stand and
+   * the page text. The route takes the search service's token only, never a browser's.
+   */
+  async getReading(id) {
+    const d = await this.requireDocument(id);
+    return {
+      documentId: d.id,
+      status: d.status,
+      docType: d.docType ?? null,
+      languages: d.languages || [],
+      fields: (d.fields || [])
+        .filter(f => f.value)
+        .map(f => ({
+          k: f.k,
+          label: f.label,
+          v: f.value,
+          ...(f.status === 'edited' ? {edited: true} : {}),
+        })),
+      pages: await this.readTranscription(d),
     };
   }
 
@@ -462,6 +530,131 @@ export class IntakeService {
     return this.store.getStream(key, {encryption}).catch(err => {
       throw storeError(err);
     });
+  }
+
+  // ---------------------------------------------------------------- page text (API-798)
+
+  /**
+   * Store the AI's page text, [{page, text}], as a file beside the scan, encrypted like the scan
+   * (INTAKE_ENCRYPTION). Returns the record the document keeps, or null when there is no text.
+   * Each reading writes a new file (`run` in its name): stores never overwrite.
+   */
+  async writeTranscription(id, pages, run) {
+    if (!pages?.length) return null;
+    const key = storageKey('intake', id, 1, `transcription-${run}.json`);
+    const {sha256, size, encryption} = await this.store
+      .put({
+        key,
+        body: Readable.from([Buffer.from(JSON.stringify(pages))]),
+        contentType: 'application/json',
+      })
+      .catch(err => {
+        throw storeError(err);
+      });
+    return {
+      key,
+      sha256,
+      size,
+      pages: pages.length,
+      ...(encryption ? {encryption} : {}),
+    };
+  }
+
+  /** A document's page text, [{page, text}], decrypted; [] when it has none. */
+  async readTranscription(d) {
+    if (!d.transcription) return [];
+    const stream = await this.readFile(
+      d.transcription.key,
+      d.transcription.encryption,
+    );
+    return JSON.parse((await toBuffer(stream)).toString('utf8'));
+  }
+
+  /**
+   * Move the page text read before API-798 out of the stored model answers into each document's
+   * encrypted file. Idempotent; the service runs it at start. Returns the number of documents.
+   */
+  async migrateTranscriptions({batch = 100} = {}) {
+    let moved = 0;
+    for (;;) {
+      const ids = await this.repo.listDocumentIdsWithPageText(batch);
+      if (!ids.length) return moved;
+      for (const id of ids) {
+        await this.migrateTranscription(id);
+        moved++;
+      }
+    }
+  }
+
+  /** One document of migrateTranscriptions: the text that was shown (the latest reading's) is kept. */
+  async migrateTranscription(id) {
+    const d = await this.repo.getDocument(id);
+    if (d && !d.transcription) {
+      const read = (await this.repo.listExtractions(id)).filter(
+        e => e.answer?.pages?.length,
+      );
+      // the latest reading, or the transcription it kept (an escalation reads no pages)
+      const kept = read.find(e => e.id === d.latestExtractionId) ?? read.at(-1);
+      if (kept) {
+        const transcription = await this.writeTranscription(
+          id,
+          kept.answer.pages,
+          randomUUID(),
+        );
+        try {
+          // not this.save(): moving the text is no change to the document (updatedAt stays)
+          const saved = await this.repo.updateDocument(
+            id,
+            {transcription},
+            d.version,
+          );
+          if (!saved) {
+            throw new ConflictError(
+              'The document changed while moving its text',
+            );
+          }
+        } catch (err) {
+          await this.store.delete(transcription.key).catch(() => {});
+          throw err;
+        }
+      }
+    }
+    await this.repo.removePageText(id);
+  }
+
+  /**
+   * The back-fill (API-798): documents filed before their page text came with the filing get it in
+   * the EDRMS. Safe to run again: the EDRMS keeps the text it has. Returns the counts, and the
+   * documents that failed with their error (the others go on).
+   */
+  async backfillFiledTranscriptions({batch = 200} = {}) {
+    const result = {added: 0, present: 0, withoutText: 0, failed: []};
+    for (let offset = 0; ; offset += batch) {
+      const {items} = await this.repo.listDocuments({
+        status: ['filed'],
+        limit: batch,
+        offset,
+      });
+      for (const d of items) {
+        try {
+          const pages = d.filedDocumentId
+            ? await this.readTranscription(d)
+            : [];
+          if (!pages.length) {
+            result.withoutText++;
+            continue;
+          }
+          const {created} = await this.edrms.addTranscription(
+            d.filedDocumentId,
+            pages,
+          );
+          result[created ? 'added' : 'present']++;
+        } catch (err) {
+          result.failed.push({documentId: d.id, error: err.message});
+        }
+      }
+      if (items.length < batch) return result;
+    }
   }
 
   async openFile(id) {
@@ -675,10 +868,12 @@ export class IntakeService {
     const extraction = d.latestExtractionId
       ? await this.repo.getExtraction(d.latestExtractionId)
       : null;
-    // the plain scan goes to edrms over TLS; edrms encrypts it under its own key
+    // the plain scan and page text go to edrms over TLS; edrms encrypts them under its own key
     const buffer = await toBuffer(await this.readFile(d.fileKey, d.encryption));
+    const transcription = await this.readTranscription(d);
     const result = await this.edrms.fileDocument({
       buffer,
+      transcription,
       fileName: d.fileName,
       mimeType: d.mimeType,
       meta: {
