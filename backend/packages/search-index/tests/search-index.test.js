@@ -1,6 +1,4 @@
 import {expect} from 'chai';
-import {spawnSync} from 'node:child_process';
-import {createServer} from 'node:net';
 import {
   INDEX_ALIAS,
   analysis,
@@ -10,6 +8,7 @@ import {
   loadCountryPack,
   queryParts,
 } from '../src/index.js';
+import {engineAvailable, startTestEngine} from '../src/testing.js';
 
 const NA = loadCountryPack('NA');
 
@@ -94,7 +93,7 @@ describe('search index: creating it', () => {
     const kept = await ensureIndex(
       async () => ({
         status: 200,
-        body: {'lrfe-documents-v2': {aliases: {}}},
+        body: {'lrfe-documents-v2': {aliases: {'lrfe-documents': {}}}},
       }),
       NA,
     );
@@ -104,7 +103,10 @@ describe('search index: creating it', () => {
     const raced = [
       {status: 404},
       {status: 400, body: {error: {type: 'resource_already_exists_exception'}}},
-      {status: 200, body: {'lrfe-documents-v1': {aliases: {}}}},
+      {
+        status: 200,
+        body: {'lrfe-documents-v1': {aliases: {'lrfe-documents': {}}}},
+      },
     ];
     expect(await ensureIndex(async () => raced.shift(), NA)).to.equal(
       'lrfe-documents-v1',
@@ -113,24 +115,6 @@ describe('search index: creating it', () => {
 });
 
 // ---- the test set, against a real search engine -------------------------------------------------
-
-/** The image the install runs (deploy/docker-compose.yml). */
-const IMAGE = 'opensearchproject/opensearch:3.9.0';
-const docker = (...args) => spawnSync('docker', args, {encoding: 'utf8'});
-/**
- * A running engine given by SEARCH_TEST_OPENSEARCH_URL (no login), or a throwaway container of the
- * install's image when it is on this machine (it is never pulled); otherwise the test set is skipped.
- */
-const givenUrl = process.env.SEARCH_TEST_OPENSEARCH_URL;
-const canRun = !!givenUrl || docker('image', 'inspect', IMAGE).status === 0;
-
-const freePort = () =>
-  new Promise(resolve => {
-    const srv = createServer().listen(0, '127.0.0.1', () => {
-      const {port} = srv.address();
-      srv.close(() => resolve(port));
-    });
-  });
 
 /** The testers' sample documents for Erf 1873 (as edrms' search tests), plus Olympia and a bond. */
 const DOCS = {
@@ -220,22 +204,12 @@ const DOCS = {
   },
 };
 
-(canRun ? describe : describe.skip)(
+(engineAvailable ? describe : describe.skip)(
   'search index: the test set on a real search engine (API-801)',
   function () {
     this.timeout(180_000);
-    let base;
-    let container;
-
-    const request = async (method, path, body) => {
-      const res = await fetch(`${base}${path}`, {
-        method,
-        headers: {'content-type': 'application/json'},
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-      const text = await res.text();
-      return {status: res.status, body: text ? JSON.parse(text) : null};
-    };
+    let engine;
+    let request;
     /** The ids found for what was typed, best first, with the names of the clauses that matched. */
     const search = async q => {
       const res = await request(
@@ -253,63 +227,28 @@ const DOCS = {
     const ids = async q => (await search(q)).map(h => h.id);
 
     before(async () => {
-      if (givenUrl) {
-        base = givenUrl.replace(/\/$/, '');
-      } else {
-        const port = await freePort();
-        container = `lrfe-test-opensearch-${process.pid}`;
-        const run = docker(
-          'run',
-          '-d',
-          '--rm',
-          '--name',
-          container,
-          '-p',
-          `127.0.0.1:${port}:9200`,
-          '-e',
-          'discovery.type=single-node',
-          '-e',
-          'DISABLE_SECURITY_PLUGIN=true',
-          '-e',
-          'DISABLE_INSTALL_DEMO_CONFIG=true',
-          '-e',
-          'OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m',
-          IMAGE,
-        );
-        expect(run.status, run.stderr).to.equal(0);
-        base = `http://127.0.0.1:${port}`;
-      }
-      for (let i = 0; i < 150; i++) {
-        const up = await fetch(`${base}/_cluster/health`).catch(() => null);
-        if (up?.ok) break;
-        await new Promise(r => setTimeout(r, 1000));
-      }
-      // an engine given by URL must not hold a real index: it would be erased
-      if (givenUrl) {
-        const there = await request('GET', `/_alias/${INDEX_ALIAS}`);
-        expect(there.status, `${givenUrl} already has ${INDEX_ALIAS}`).to.equal(
-          404,
-        );
-      }
+      engine = await startTestEngine();
+      request = engine.request;
       expect(await ensureIndex(request, NA)).to.equal('lrfe-documents-v1');
       const lines = Object.entries(DOCS).flatMap(([id, doc]) => [
         JSON.stringify({index: {_id: id}}),
         JSON.stringify({documentId: id, ...doc}),
       ]);
-      const res = await fetch(`${base}/${INDEX_ALIAS}/_bulk?refresh=true`, {
-        method: 'POST',
-        headers: {'content-type': 'application/x-ndjson'},
-        body: `${lines.join('\n')}\n`,
-      });
-      const bulk = await res.json();
+      const {body: bulk} = await request(
+        'POST',
+        `/${INDEX_ALIAS}/_bulk?refresh=true`,
+        `${lines.join('\n')}\n`,
+      );
       expect(
         bulk.errors,
         JSON.stringify(bulk.items?.find(i => i.index.error)),
       ).to.equal(false);
     });
 
-    after(() => {
-      if (container) docker('rm', '-f', container);
+    after(async () => {
+      if (!engine) return;
+      await engine.empty();
+      engine.stop();
     });
 
     it('the index is created from the pack once: a second start keeps it', async () => {

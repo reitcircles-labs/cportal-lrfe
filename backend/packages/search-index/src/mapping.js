@@ -8,6 +8,26 @@ export const INDEX_ALIAS = 'lrfe-documents';
 /** The index behind the alias, by version: `lrfe-documents-v1` (inside the roles' `lrfe-documents*`). */
 export const indexName = version => `${INDEX_ALIAS}-v${version}`;
 
+/**
+ * The documents that keep failing to be indexed (API-808), one entry per document: no content,
+ * only what failed and when; shown by the readiness check, cleared when the document is indexed.
+ */
+export const DEAD_LETTER_INDEX = `${INDEX_ALIAS}-failed`;
+
+const DEAD_LETTER_BODY = {
+  settings: {number_of_shards: 1, number_of_replicas: 0},
+  mappings: {
+    dynamic: 'strict',
+    properties: {
+      documentId: {type: 'keyword'},
+      event: {type: 'keyword'},
+      attempts: {type: 'integer'},
+      error: {type: 'keyword', index: false},
+      at: {type: 'date'},
+    },
+  },
+};
+
 /** A field matched whole, punctuation and case ignored: "T 2210/2008" = "t2210 / 2008" = "T2210/2008". */
 const EXACT = {type: 'keyword', normalizer: 'lrfe_reference'};
 const KEYWORD = {type: 'keyword'};
@@ -143,17 +163,44 @@ export function indexBody(pack, {shards = 1, replicas = 0, alias = true} = {}) {
   };
 }
 
+/** Creates the dead-letter index unless it exists (another service creating it at once is fine). */
+export async function ensureDeadLetterIndex(request, {replicas = 0} = {}) {
+  const there = await request('HEAD', `/${DEAD_LETTER_INDEX}`);
+  if (there.status === 200) return;
+  const body = {
+    ...DEAD_LETTER_BODY,
+    settings: {...DEAD_LETTER_BODY.settings, number_of_replicas: replicas},
+  };
+  const created = await request('PUT', `/${DEAD_LETTER_INDEX}`, body);
+  if (
+    created.status >= 300 &&
+    created.body?.error?.type !== 'resource_already_exists_exception'
+  ) {
+    throw new Error(
+      `The dead-letter index cannot be created: ${created.status}`,
+    );
+  }
+}
+
 /**
  * The index the alias points to, null when there is no alias. During a switch (API-804) it can
  * point to two: the one written to, else the newest.
  */
 async function aliasIndex(request) {
-  const res = await request('GET', `/_alias/${INDEX_ALIAS}`);
+  // asked among the indexes the service's role covers (lrfe-documents*): a bare /_alias/… is
+  // a question about every index, which the role does not allow
+  const res = await request(
+    'GET',
+    `/${INDEX_ALIAS}-*/_alias/${INDEX_ALIAS}?allow_no_indices=true&ignore_unavailable=true`,
+  );
   if (res.status === 404) return null;
   if (res.status !== 200) {
     throw new Error(`The search index cannot be read: ${res.status}`);
   }
-  const names = Object.keys(res.body).sort();
+  const names = Object.keys(res.body ?? {})
+    .filter(n => res.body[n].aliases?.[INDEX_ALIAS])
+    .sort();
+  if (names.length === 0) return null;
   const writing = names.find(
     n => res.body[n].aliases?.[INDEX_ALIAS]?.is_write_index,
   );

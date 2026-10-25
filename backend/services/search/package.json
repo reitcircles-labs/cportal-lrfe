@@ -8,10 +8,12 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "reindex": "node src/reindex.js",
     "test": "mocha 'tests/**/*.test.js' --timeout 20000"
   },
   "dependencies": {
-    "@lrfe/common": "0.1.0"
+    "@lrfe/common": "0.1.0",
+    "@lrfe/search-index": "0.1.0"
   },
   "devDependencies": {
     "chai": "^5.1.1",

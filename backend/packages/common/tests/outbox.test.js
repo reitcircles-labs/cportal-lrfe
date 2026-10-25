@@ -266,6 +266,74 @@ async function until(check, ms = 8000) {
       expect(await edrms.consumerLag('no-such-consumer')).to.equal(null);
     });
 
+    it('a failed event is delivered again after its delay, and given up after maxAttempts (API-808)', async () => {
+      const edrms = bus({source: 'edrms', outbox: createMemoryOutbox()});
+      const search = bus({source: 'search'});
+      const attempts = [];
+      const givenUp = [];
+      search.consume(
+        'edrms.document.filed',
+        e => {
+          attempts.push(e.attempt);
+          throw new Error('engine down');
+        },
+        {
+          durable: 'test-give-up',
+          retryDelayMs: n => n * 100,
+          maxAttempts: 3,
+          onGiveUp: (e, err) =>
+            givenUp.push({n: e.data.n, attempt: e.attempt, err: err.message}),
+        },
+      );
+      await Promise.all([edrms.ready(), search.ready()]);
+      await sleep(300);
+      await edrms.publish('edrms.document.filed', {n: 1});
+      expect(await until(() => givenUp.length === 1, 10_000)).to.equal(true);
+      expect(attempts).to.deep.equal([1, 2, 3]);
+      expect(givenUp).to.deep.equal([{n: 1, attempt: 3, err: 'engine down'}]);
+      // acknowledged: not delivered again
+      await sleep(800);
+      expect(attempts).to.have.length(3);
+      expect(
+        await until(async () => {
+          const lag = await edrms.consumerLag('test-give-up');
+          return lag?.pending === 0 && lag?.unacked === 0;
+        }),
+      ).to.equal(true);
+    });
+
+    it('an event whose dead-letter record fails is delivered again, never lost (API-808)', async () => {
+      const edrms = bus({source: 'edrms', outbox: createMemoryOutbox()});
+      const search = bus({source: 'search'});
+      const attempts = [];
+      let recordWorks = false;
+      const recorded = [];
+      search.consume(
+        'edrms.document.filed',
+        e => {
+          attempts.push(e.attempt);
+          throw new Error('engine down');
+        },
+        {
+          durable: 'test-give-up-kept',
+          retryDelayMs: () => 100,
+          maxAttempts: 2,
+          onGiveUp: e => {
+            if (!recordWorks) throw new Error('the list is on the engine too');
+            recorded.push(e.attempt);
+          },
+        },
+      );
+      await Promise.all([edrms.ready(), search.ready()]);
+      await sleep(300);
+      await edrms.publish('edrms.document.filed', {n: 1});
+      expect(await until(() => attempts.length >= 4, 10_000)).to.equal(true);
+      expect(recorded).to.deep.equal([]);
+      recordWorks = true;
+      expect(await until(() => recorded.length === 1, 10_000)).to.equal(true);
+      expect(recorded[0]).to.be.at.least(4);
+    });
+
     it('consume(">") gets every durable event of every service, also those published while it was down (API-654)', async () => {
       const got = [];
       const audit = bus({source: 'audit'});

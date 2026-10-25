@@ -8,7 +8,7 @@ import {
   NotFoundError,
 } from '@lrfe/common';
 import {storageKey} from '@lrfe/storage';
-import {docType} from './doc-types.js';
+import {docType, searchRole} from './doc-types.js';
 import {normalize} from './extraction/normalize.js';
 import {countPages} from './pages.js';
 import {flagOf} from './extraction/pipeline.js';
@@ -503,11 +503,18 @@ export class IntakeService {
    */
   async getReading(id) {
     const d = await this.requireDocument(id);
+    const roles = new Map(
+      (docType(d.docType)?.fields ?? []).map(f => [f.k, searchRole(f)]),
+    );
     return {
       documentId: d.id,
       status: d.status,
       docType: d.docType ?? null,
+      reference: this.summary(d).ref,
       languages: d.languages || [],
+      capturedAt: d.capturedAt,
+      updatedAt: d.updatedAt,
+      filedDocumentId: d.filedDocumentId ?? null,
       fields: (d.fields || [])
         .filter(f => f.value)
         .map(f => ({
@@ -515,8 +522,27 @@ export class IntakeService {
           label: f.label,
           v: f.value,
           ...(f.status === 'edited' ? {edited: true} : {}),
+          // the AI's own value, when the officer changed it: searchable too
+          ...(f.extracted && f.extracted !== f.value ? {ai: f.extracted} : {}),
+          ...(roles.get(f.k) ? {search: roles.get(f.k)} : {}),
         })),
       pages: await this.readTranscription(d),
+    };
+  }
+
+  /**
+   * The documents changed since a moment, oldest change first, for the search service's
+   * re-index (API-808): `{ items: [{ documentId, status, updatedAt }], total }`.
+   */
+  async listChanged({since = null, limit = 200, offset = 0} = {}) {
+    const res = await this.repo.listChanged({since, limit, offset});
+    return {
+      items: res.items.map(d => ({
+        documentId: d.id,
+        status: d.status,
+        updatedAt: d.updatedAt,
+      })),
+      total: res.total,
     };
   }
 

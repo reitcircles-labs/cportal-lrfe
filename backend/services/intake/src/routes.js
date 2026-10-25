@@ -126,6 +126,25 @@ export async function intakeRoutes(
   app.get('/documents/:id', {...readGuard, schema: idParams()}, async req =>
     service.getDocument(req.params.id),
   );
+  /** The documents changed since a moment, for the search service's re-index (API-808). */
+  app.get(
+    '/documents/changed',
+    {
+      onRequest: app.requireService('search'),
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            since: {type: 'string', format: 'date-time'},
+            limit: {type: 'integer', minimum: 1, maximum: 500, default: 200},
+            offset: {type: 'integer', minimum: 0, default: 0},
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async req => service.listChanged(req.query),
+  );
   /** The AI's reading (fields and page text) for the search service (API-798); no browser access. */
   app.get(
     '/documents/:id/reading',

@@ -135,6 +135,21 @@ export function createSequelizeRepo(sequelize) {
       return {items: rows.map(doc), total: count};
     },
 
+    /** Documents changed at or after `since` (all when null), oldest change first. */
+    async listChanged({since = null, limit = 200, offset = 0} = {}) {
+      const {rows, count} = await m.Document.findAndCountAll({
+        where: since ? {updatedAt: {[Op.gte]: new Date(since)}} : {},
+        // id breaks ties, so that pages of the list never skip or repeat a document
+        order: [
+          ['updatedAt', 'ASC'],
+          ['id', 'ASC'],
+        ],
+        limit,
+        offset,
+      });
+      return {items: rows.map(doc), total: count};
+    },
+
     async addExtraction(e) {
       await m.Extraction.create(e);
     },

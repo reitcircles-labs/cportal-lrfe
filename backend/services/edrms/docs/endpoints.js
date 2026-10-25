@@ -41,6 +41,12 @@ export const ENDPOINTS = {
       description:
         "`{ items: [{ documentId, version, seal, at }], next }`: pass `next` as `after` for the next page; null at the end. For the audit service's one-time backfill of its tree (API-669).",
     },
+    'GET /documents/changed': {
+      tag: 'Documents',
+      summary: 'Documents changed since a moment (search service only)',
+      description:
+        '`{ items: [{ id, sourceId, updatedAt }], total }`, filed or corrected at or after `since` (date-time, all when left out), oldest change first; `limit` (≤ 500), `offset`. For the search re-index (API-808).',
+    },
     'GET /documents/{id}': {
       tag: 'Documents',
       summary:

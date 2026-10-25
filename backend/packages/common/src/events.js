@@ -124,9 +124,17 @@ export function createEventBus({
     /**
      * Handle every `type` event, also those published while this service was down (with 'nats',
      * through the durable consumer `durable`; other drivers: like subscribe). The handler must be
-     * idempotent: an event whose handling fails is delivered again.
+     * idempotent: an event whose handling fails is delivered again, after `retryDelayMs(attempt)`
+     * (5 seconds unless given). With `maxAttempts`, an event that failed that many times is given
+     * to `onGiveUp(event, err)` and acknowledged (a dead-letter list, API-808); when `onGiveUp`
+     * fails too, the event is delivered again rather than lost. With 'nats' the
+     * handler's event carries `attempt`, 1 on the first delivery.
      */
-    consume(type, handler, {durable: name} = {}) {
+    consume(
+      type,
+      handler,
+      {durable: name, retryDelayMs, maxAttempts, onGiveUp} = {},
+    ) {
       if (driver !== 'nats') {
         // '>' is every durable event (the stream's lrfe.>): here every event but broadcast-only ones
         if (type === '>') {
@@ -139,7 +147,14 @@ export function createEventBus({
       if (!name) {
         throw new Error('consume: a durable consumer name is required');
       }
-      const consumer = {type, handler, name};
+      const consumer = {
+        type,
+        handler,
+        name,
+        retryDelayMs: retryDelayMs ?? (() => 5000),
+        maxAttempts: maxAttempts ?? Infinity,
+        onGiveUp,
+      };
       consumers.push(consumer);
       nats.startConsumer(consumer);
       return () => {
@@ -300,6 +315,20 @@ function connectNats({url, source, logger, deliver, stream}) {
     }
   }
 
+  /** Hands a failed event to the consumer's dead-letter list; false when it could not be recorded. */
+  async function giveUp(consumer, event, err) {
+    try {
+      await consumer.onGiveUp(event, err);
+      return true;
+    } catch (e) {
+      logger.error(
+        {err: e, type: event.type, consumer: consumer.name},
+        'event consumer: the given-up event could not be recorded; it is delivered again',
+      );
+      return false;
+    }
+  }
+
   async function runConsumer(consumer) {
     const {AckPolicy, DeliverPolicy} = await import('@nats-io/jetstream');
     await ready;
@@ -330,15 +359,29 @@ function connectNats({url, source, logger, deliver, stream}) {
             m.term();
             continue;
           }
+          const attempt = m.info?.deliveryCount ?? 1;
           try {
-            await consumer.handler(event);
+            await consumer.handler({...event, attempt});
             m.ack();
           } catch (err) {
-            logger.error(
-              {err, type: event.type, consumer: consumer.name},
-              'event consumer failed; the event is delivered again',
-            );
-            m.nak(5000);
+            if (attempt >= consumer.maxAttempts && consumer.onGiveUp) {
+              logger.error(
+                {err, type: event.type, consumer: consumer.name, attempt},
+                'event consumer failed for the last time; the event is given up',
+              );
+              if (await giveUp(consumer, {...event, attempt}, err)) {
+                m.ack();
+              } else {
+                // not recorded: kept, so it is not lost without a trace
+                m.nak(consumer.retryDelayMs(attempt));
+              }
+            } else {
+              logger.error(
+                {err, type: event.type, consumer: consumer.name, attempt},
+                'event consumer failed; the event is delivered again',
+              );
+              m.nak(consumer.retryDelayMs(attempt));
+            }
           }
           if (consumer.stopped) break;
         }

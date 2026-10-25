@@ -43,6 +43,21 @@ export function createMemoryRepo() {
     async getDocument(id) {
       return clone(docs.get(id)) ?? null;
     },
+    /** Documents changed at or after `since` (all when null), oldest change first. */
+    async listChanged({since = null, limit = 200, offset = 0} = {}) {
+      const from = since ? new Date(since).getTime() : -Infinity;
+      const all = [...docs.values()]
+        .filter(d => new Date(d.updatedAt).getTime() >= from)
+        .sort(
+          (a, b) =>
+            new Date(a.updatedAt) - new Date(b.updatedAt) ||
+            a.id.localeCompare(b.id),
+        );
+      return {
+        items: all.slice(offset, offset + limit).map(clone),
+        total: all.length,
+      };
+    },
     async findDocument(where) {
       const [k, v] = Object.entries(where)[0];
       return clone([...docs.values()].find(d => d[k] === v)) ?? null;

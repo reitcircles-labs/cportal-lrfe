@@ -69,8 +69,14 @@ export const ENDPOINTS = {
       tag: 'Documents',
       summary: "The AI's reading of a document (search service only)",
       description:
-        '`{ documentId, status, docType, languages, fields: [{ k, label, v, edited? }], pages: [{ page, text }] }`: ' +
-        'the fields as they stand and the page text, decrypted. For indexing; never served to a browser.',
+        '`{ documentId, status, docType, reference, languages, capturedAt, updatedAt, filedDocumentId, fields: [{ k, label, v, edited?, ai?, search? }], pages: [{ page, text }] }`: ' +
+        "the fields as they stand (`ai`: the AI's value when the officer changed it; `search`: reference, number, name or place) and the page text, decrypted. For indexing; never served to a browser.",
+    },
+    'GET /documents/changed': {
+      tag: 'Documents',
+      summary: 'Documents changed since a moment (search service only)',
+      description:
+        '`{ items: [{ documentId, status, updatedAt }], total }`, oldest change first; `since` (date-time, all when left out), `limit` (≤ 500), `offset`. For the search re-index (API-808).',
     },
     'GET /documents/{id}/events': {
       tag: 'Documents',

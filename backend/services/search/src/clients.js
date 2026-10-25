@@ -37,9 +37,19 @@ async function getJson({
   return json;
 }
 
+/** The query of a changed-since list: `since` (left out: all), `limit`, `offset`. */
+function changedQuery({since, limit, offset}) {
+  return new URLSearchParams({
+    ...(since ? {since: new Date(since).toISOString()} : {}),
+    limit: String(limit),
+    offset: String(offset),
+  }).toString();
+}
+
 /**
  * The search service's calls to intake, with its own service token:
- *   getReading(id) → { documentId, status, docType, languages, fields, pages } | null
+ *   getReading(id) → { documentId, status, docType, reference, fields, pages, … } | null
+ *   listChanged({ since, limit, offset }) → { items: [{ documentId, updatedAt }], total }
  * (intake GET /documents/:id/reading, which takes the search service's token only, API-798).
  * `fetchImpl` lets tests route calls into an in-process intake app.
  */
@@ -59,12 +69,22 @@ export function createIntakeClient({
         path: `/documents/${encodeURIComponent(id)}/reading`,
         what: 'Intake',
       }),
+    listChanged: query =>
+      getJson({
+        baseUrl,
+        serviceToken,
+        fetchImpl,
+        timeoutMs,
+        path: `/documents/changed?${changedQuery(query)}`,
+        what: 'Intake',
+      }),
   };
 }
 
 /**
  * The search service's calls to edrms, with its own service token (read only):
  *   getDocument(id) → the filed document: edrmsNo, corrected fields, recordMetadata, … | null
+ *   listChanged({ since, limit, offset }) → { items: [{ id, sourceId, updatedAt }], total }
  * `fetchImpl` lets tests route calls into an in-process edrms app.
  */
 export function createEdrmsClient({
@@ -81,6 +101,15 @@ export function createEdrmsClient({
         fetchImpl,
         timeoutMs,
         path: `/documents/${encodeURIComponent(id)}`,
+        what: 'The document store',
+      }),
+    listChanged: query =>
+      getJson({
+        baseUrl,
+        serviceToken,
+        fetchImpl,
+        timeoutMs,
+        path: `/documents/changed?${changedQuery(query)}`,
         what: 'The document store',
       }),
   };

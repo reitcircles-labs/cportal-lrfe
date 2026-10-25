@@ -649,6 +649,22 @@ export class EdrmsService {
     return {items: items.map(({searchText: _s, ...d}) => d), total};
   }
 
+  /**
+   * The documents changed (filed or corrected) since a moment, oldest change first, for the search
+   * service's re-index (API-808): `{ items: [{ id, sourceId, updatedAt }], total }`.
+   */
+  async listChanged({since = null, limit = 200, offset = 0} = {}) {
+    const res = await this.repo.listChanged({since, limit, offset});
+    return {
+      items: res.items.map(d => ({
+        id: d.id,
+        sourceId: d.sourceId,
+        updatedAt: d.updatedAt,
+      })),
+      total: res.total,
+    };
+  }
+
   async findByReference({edrmsNo, instrumentRef, sourceId}) {
     const where = edrmsNo
       ? {edrmsNo}

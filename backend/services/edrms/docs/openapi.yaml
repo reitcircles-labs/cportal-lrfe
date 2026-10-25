@@ -284,6 +284,70 @@ paths:
         services:
           - intake
       x-gateway-path: /api/documents/{id}/transcription
+  /documents/changed:
+    get:
+      tags:
+        - Documents
+      summary: Documents changed since a moment (search service only)
+      description: >-
+        `{ items: [{ id, sourceId, updatedAt }], total }`, filed or corrected at or after `since` (date-time, all when left out), oldest
+        change first; `limit` (≤ 500), `offset`. For the search re-index (API-808).
+
+
+        **Access:** Service token only, from: `search`. Browsers cannot call this.
+      operationId: getDocumentsChanged
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - search
+      x-gateway-path: /api/documents/changed
   /documents/lookup:
     get:
       tags:
