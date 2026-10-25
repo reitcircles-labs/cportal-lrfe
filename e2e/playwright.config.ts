@@ -43,7 +43,10 @@ const ownStack: PlaywrightTestConfig['webServer'] = [
 const containers: PlaywrightTestConfig['webServer'] = {
   command: 'node stack/start-docker.mjs',
   cwd: E2E_DIR,
-  url: WEB_URL,
+  // started once every container is healthy (its "ready" line), not once the web app answers:
+  // the search service creates the index after the others start, and with EDRMS_SEARCH=opensearch
+  // a search before that fails (API-803)
+  wait: {stdout: /e2e containers ready/},
   reuseExistingServer: false,
   timeout: 900_000,
   // let it remove the containers and their volumes
@@ -53,6 +56,8 @@ const containers: PlaywrightTestConfig['webServer'] = {
 
 /** Specs that make their own confirmed batches (POST /api/audit/test/anchorings) besides land-record.spec.ts. */
 const BATCHES_OF_THEIR_OWN = /(ownership-extracts|check-extract)\.spec\.ts/;
+/** The spec that stops the search service (API-802): other specs wait for its indexing. */
+const STOPS_SEARCH = /search-connection\.spec\.ts/;
 
 export default defineConfig({
   testDir: './tests',
@@ -60,7 +65,12 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.E2E_WORKERS ? Number(process.env.E2E_WORKERS) : 4,
-  reporter: [['list'], ['html', {open: 'never'}]],
+  // the live progress file (API-813): tail -f e2e/.progress/progress.log
+  reporter: [
+    ['list'],
+    ['./support/progress-reporter.ts'],
+    ['html', {open: 'never'}],
+  ],
   use: {
     baseURL: WEB_URL,
     trace: 'retain-on-failure',
@@ -75,7 +85,7 @@ export default defineConfig({
       name: 'chromium',
       use: {...devices['Desktop Chrome'], channel: 'chromium'},
       dependencies: ['setup'],
-      testIgnore: BATCHES_OF_THEIR_OWN,
+      testIgnore: [BATCHES_OF_THEIR_OWN, STOPS_SEARCH],
     },
     // tests that put their own batch on the test blockchain run after all the others: a batch takes
     // every version waiting, so made in parallel it would take the batch another test expects (API-692)
@@ -92,6 +102,14 @@ export default defineConfig({
       testMatch: /check-extract\.spec\.ts/,
       use: {...devices['Desktop Chrome'], channel: 'chromium'},
       dependencies: ['own batches'],
+    },
+    // the search connection stops the search service while documents are filed: last, alone, so
+    // no other spec waits in vain for a document to reach the search index (API-803)
+    {
+      name: 'search connection',
+      testMatch: STOPS_SEARCH,
+      use: {...devices['Desktop Chrome'], channel: 'chromium'},
+      dependencies: ['extract check'],
     },
   ],
   webServer: process.env.E2E_DOCKER ? containers : ownStack,

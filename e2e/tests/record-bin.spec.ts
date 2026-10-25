@@ -10,7 +10,7 @@ import {signInAs} from '../support/auth';
 import {apiAs} from '../support/intake';
 import {evidence} from '../support/evidence';
 import {fileNumbered} from '../support/samples';
-import {toast} from '../support/documents';
+import {foundInSearch, toast} from '../support/documents';
 import {committedRecord} from '../support/records';
 
 const rnd = (from: number, span: number) =>
@@ -38,15 +38,15 @@ async function createRecord(
   const h = {headers: rec.headers};
   let edrmsDocumentId: string | undefined;
   if (ref) {
-    const found = await (
-      await rec.api.get(
+    edrmsDocumentId = (
+      await foundInSearch(
+        rec,
         `/api/records/document-search?q=${encodeURIComponent(ref)}`,
-        h,
+        // filed: an entry still in intake has no EDRMS id yet (API-803)
+        (d: {ref: string; edrmsDocumentId: string | null}) =>
+          d.ref === ref && !!d.edrmsDocumentId,
       )
-    ).json();
-    edrmsDocumentId = found.items.find(
-      (d: {ref: string}) => d.ref === ref,
-    ).edrmsDocumentId;
+    ).edrmsDocumentId!;
   }
   const res = await rec.api.post('/api/records', {
     ...h,

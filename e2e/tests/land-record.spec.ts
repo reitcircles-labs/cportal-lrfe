@@ -15,6 +15,7 @@ import {expect, test, type Locator, type Page} from '@playwright/test';
 import {ENROLLED_USERS, userByRole} from '../support/catalogue';
 import {apiSignIn, signInAs, signedInPage} from '../support/auth';
 import {apiAs} from '../support/intake';
+import {foundInSearch} from '../support/documents';
 import {adminApi, createUser, NEW_USER_PASSWORD} from '../support/admin';
 import {evidence} from '../support/evidence';
 import {fileSample} from '../support/samples';
@@ -2005,13 +2006,11 @@ test.describe
 
       // the records officer adds it to Erf 1873's next version and submits it
       const rec = await apiAs(playwright, baseURL!, userByRole('rec').email);
-      const docs = await (
-        await rec.api.get(`/api/documents?q=${encodeURIComponent(edrmsNo)}`, {
-          headers: rec.headers,
-        })
-      ).json();
-      const doc = docs.items.find(
-        (d: {edrmsNo: string}) => d.edrmsNo === edrmsNo,
+      const doc = await foundInSearch(
+        rec,
+        `/api/documents?q=${encodeURIComponent(edrmsNo)}`,
+        (d: {id: string; edrmsNo: string; filedById: string}) =>
+          d.edrmsNo === edrmsNo,
       );
       expect(doc?.filedById, 'filed by the new reviewer').toBe(filer.id);
       const opened = await rec.api.post(`/api/records/${erf.id}/draft`, {
@@ -2513,16 +2512,12 @@ test(
     });
     expect(created.status(), await created.text()).toBe(201);
     let record = await created.json();
-    const found = await (
-      await rec.api.get(
-        `/api/records/document-search?q=${encodeURIComponent('B 77/2019')}&recordId=${record.id}`,
-        h,
-      )
-    ).json();
-    const bond = found.items.find(
-      (d: {edrmsNo: string}) => d.edrmsNo === bondNo,
+    // the filed bond in the document search
+    const bond = await foundInSearch(
+      rec,
+      `/api/records/document-search?q=${encodeURIComponent('B 77/2019')}&recordId=${record.id}`,
+      (d: {edrmsNo: string; edrmsDocumentId: string}) => d.edrmsNo === bondNo,
     );
-    expect(bond, 'the filed bond in the document search').toBeTruthy();
     const linked = await rec.api.post(
       `/api/records/${record.id}/draft/documents`,
       {

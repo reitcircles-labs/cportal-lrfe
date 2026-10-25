@@ -22,6 +22,12 @@ export const READ_PERMS = [
   'audit.view',
 ];
 
+/**
+ * Intake's read permissions: a document still in intake is found only by users with one of them,
+ * as on intake's own screens (API-803).
+ */
+export const INTAKE_READ_PERMS = ['capture.view', 'verify.view'];
+
 /** Services allowed to file new documents. */
 export const FILING_SERVICES = ['intake'];
 

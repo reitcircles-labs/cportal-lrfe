@@ -2,7 +2,8 @@ import {AppError} from '@lrfe/common';
 
 /**
  * land-records' calls to the edrms service, with a land-records service token (read only):
- *   searchDocuments({ q, docType, fields, limit }) → { items, total }   (edrms searchDocuments)
+ *   searchDocuments({ q, docType, fields, limit, intake }) → { items, total }   (edrms searchDocuments;
+ *     `intake`: also documents still in intake, for a user who may read them, API-803)
  *   getDocument(id)                                → document with fields, current version, versions | null
  * `fetchImpl` lets tests route calls into an in-process edrms app.
  */
@@ -31,10 +32,17 @@ export function createEdrmsClient({
   }
 
   return {
-    async searchDocuments({q, docType, fields = {}, limit = 50} = {}) {
+    async searchDocuments({
+      q,
+      docType,
+      fields = {},
+      limit = 50,
+      intake = false,
+    } = {}) {
       const qs = new URLSearchParams();
       if (q) qs.set('q', q);
       if (docType) qs.set('docType', docType);
+      if (intake) qs.set('intake', 'true');
       for (const [k, v] of Object.entries(fields)) {
         if (v) qs.set(`field.${k}`, v);
       }

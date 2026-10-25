@@ -4,7 +4,8 @@ import {
   computed,
   inject,
 } from '@angular/core';
-import {Mismatch} from '../../api/records.api';
+import {Router} from '@angular/router';
+import {FoundDocument, Mismatch} from '../../api/records.api';
 import {IconComponent} from '../../shared/icon.component';
 import {CanDirective} from '../../shared/can.directive';
 import {LINK_SHARED_STYLES} from './link-shared.styles';
@@ -68,7 +69,20 @@ import {linkedText} from './link-format';
               }
             </div>
             <div class="results">
-              @for (p of store.found(); track p.edrmsDocumentId) {
+              @for (p of store.found(); track p.edrmsDocumentId ?? p.intakeId) {
+                @if (p.status === 'intake') {
+                  <!-- a scan still in intake (API-803): not filed yet, so it cannot be added; the row opens its review -->
+                  <div class="res pending" role="link" tabindex="0" (click)="review(p.intakeId!)" (keydown.enter)="review(p.intakeId!)">
+                    <div class="stack" style="gap:2px;min-width:0">
+                      <span class="row" style="gap:8px"><b class="num">{{ p.ref || 'No reference read' }}</b><span class="small muted">{{ store.typeLabel(p.docType) }} · not filed yet</span><span class="tag tag-outline">In intake</span></span>
+                      <span style="font-size:13px" class="ell">{{ intakeLine(p) }}</span>
+                      <span class="small muted">Reference read automatically from the scan; can be added once filed</span>
+                    </div>
+                    <div class="row" style="gap:6px;flex-wrap:nowrap">
+                      <button class="btn btn-secondary" (click)="$event.stopPropagation(); review(p.intakeId!)">Review →</button>
+                    </div>
+                  </div>
+                } @else {
                 <div class="res" [class.match]="!!p.reasons?.length && !p.inThisRecord">
                   <div class="stack" style="gap:2px;min-width:0">
                     <span class="row" style="gap:8px"><b class="num">{{ p.ref || p.edrmsNo }}</b><span class="small muted">{{ store.typeLabel(p.docType) }} · {{ p.edrmsNo }}</span></span>
@@ -83,6 +97,7 @@ import {linkedText} from './link-format';
                     @else { <button class="btn btn-secondary" appCan="record.link" [disabled]="store.busy()" (click)="documents.add(p)">+ Add</button> }
                   </div>
                 </div>
+                }
               } @empty {
                 <div class="small muted" style="padding:18px;text-align:center">{{ store.finding() ? 'Searching…' : store.mode() === 'match' ? 'No filed documents match this parcel yet. Try Search.' : store.dq().trim() ? 'No documents match your search.' : 'Type to search the EDRMS.' }}</div>
               }
@@ -103,6 +118,8 @@ import {linkedText} from './link-format';
     .add-head { width: 100%; border: 0; background: transparent; cursor: pointer; border-bottom: 1px solid var(--color-divider); }
     .chev { font-size: 16px; color: var(--color-neutral-600); transition: transform .15s; transform: rotate(-90deg); }
     .chev.open { transform: none; }
+    .res.pending { cursor: pointer; }
+    .res.pending:hover { border-color: var(--warn-bd); }
   `,
   ],
 })
@@ -110,6 +127,7 @@ export class LinkDocumentsTabComponent {
   protected readonly store = inject(LinkStore);
   protected readonly documents = inject(LinkDocumentsSearch);
   protected readonly linkedText = linkedText;
+  private readonly router = inject(Router);
   /** Why each linked document does not describe the parcel (the check "documents describe this parcel"). */
   private readonly mismatches = computed(
     () =>
@@ -123,5 +141,15 @@ export class LinkDocumentsTabComponent {
 
   protected mismatchOf(edrmsDocumentId: string): Mismatch | null {
     return this.mismatches().get(edrmsDocumentId) ?? null;
+  }
+
+  /** A document in intake: its property and first party, as the AI read them. */
+  protected intakeLine(p: FoundDocument): string {
+    return [p.property, p.party].filter(Boolean).join(' · ');
+  }
+
+  /** A document still in intake opens in intake's review screen. */
+  protected review(intakeId: string): void {
+    this.router.navigate(['/verify'], {queryParams: {doc: intakeId}});
   }
 }

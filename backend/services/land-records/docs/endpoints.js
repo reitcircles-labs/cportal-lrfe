@@ -28,13 +28,13 @@ export const ENDPOINTS = {
       tag: 'Documents',
       summary: 'Search filed documents to add to a land record',
       description:
-        '`{ items, total }`. The edrms search (words, word starts, spelling variants of names, `docType`, `field.<key>=<value>` filters), each document with `linkedTo` (other records that hold it) and, with `recordId`, `inThisRecord`.',
+        "`{ items, total, totalCapped? }`. The edrms search (words, word starts, spelling variants of names, `docType`, `field.<key>=<value>` filters), each document with `status` (`filed`), `linkedTo` (other records that hold it) and, with `recordId`, `inThisRecord`. With edrms searching the index, a user with intake's read permission also gets documents still in intake: `status: intake`, `intakeId`, `ref`, `party`, `property`, `fields` (they can be added once filed).",
     },
     'GET /records/{id}/suggestions': {
       tag: 'Documents',
       summary: 'Documents that match this parcel, with the reasons',
       description:
-        '`{ parcel, items }`. Each item: the document, `reasons` (property is this parcel; SG diagram cited by, prior title of, or citing a document already in the record), `inThisRecord`, `linkedTo`.',
+        '`{ parcel, items }`. Each item: the document, `reasons` (property is this parcel; SG diagram cited by, prior title of, or citing a document already in the record), `inThisRecord`, `linkedTo`. Documents still in intake that describe this parcel (as in the document search) come without reasons.',
     },
     'GET /records/document-details/{edrmsDocumentId}': {
       tag: 'Documents',

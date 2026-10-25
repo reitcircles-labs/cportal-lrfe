@@ -117,6 +117,11 @@ export function createSequelizeRepo(sequelize) {
     async getDocument(id) {
       return plain(await m.Document.findByPk(id));
     },
+    /** The documents with these ids that exist, in no particular order. */
+    async getDocuments(ids) {
+      if (ids.length === 0) return [];
+      return (await m.Document.findAll({where: {id: ids}})).map(plain);
+    },
     /**
      * Documents changed at or after `since` (all when null), oldest change first, after the
      * position `after` ({ at, id }): an index range scan however deep. `total` on the first page.

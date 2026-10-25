@@ -17,7 +17,7 @@ import {BAO_DIR, E2E_BAO, PORTS, STACK_DIR} from '../stack/config.mjs';
 import {signedInPage} from '../support/auth';
 import {userByRole} from '../support/catalogue';
 import {apiAs, filedDocument} from '../support/intake';
-import {trackApi} from '../support/api-idle';
+import {openInDocuments} from '../support/documents';
 import {evidence} from '../support/evidence';
 
 const MODE = E2E_BAO;
@@ -96,10 +96,7 @@ test(
 
     // the auditor checks it in the browser
     const page = await signedInPage(browser, AUDITOR.email, '/documents');
-    const apiIdle = trackApi(page);
-    await page.getByLabel('Search documents').fill(doc.edrmsNo);
-    await page.locator('button.drow', {hasText: doc.edrmsNo}).click();
-    await apiIdle();
+    await openInDocuments(page, doc.edrmsNo);
     await page
       .getByRole('button', {name: 'Check integrity', exact: true})
       .click();

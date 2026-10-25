@@ -5,6 +5,7 @@ import {
   signal,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import {DecimalPipe} from '@angular/common';
 import {ActivatedRoute, Router} from '@angular/router';
 import {ApiError, ApiService} from '../../api/api.service';
 import {AuthService} from '../../state/auth.service';
@@ -46,6 +47,7 @@ interface IntegrityCheck {
 @Component({
   selector: 'app-documents',
   imports: [
+    DecimalPipe,
     IconComponent,
     CanDirective,
     InfoTipComponent,
@@ -65,16 +67,28 @@ interface IntegrityCheck {
         </div>
         <div class="rail-list">
           @for (d of rows(); track d.id) {
-            <button class="drow" [class.on]="d.id === sel()?.id" (click)="select(d.id)">
-              <span class="stack" style="gap:1px;min-width:0">
-                <span class="h-cond num" style="font-size:15px">{{ d.instrumentRef || d.edrmsNo }}</span>
-                <span class="small muted ellipsis">{{ d.edrmsNo }} · {{ d.props['property'] || d.title }}</span>
-              </span>
-              <span class="small muted num">v{{ d.currentVersion }}.0</span>
-            </button>
+            @if (d.status === 'intake') {
+              <!-- a scan still in intake (API-803): the reference read from it, its party and property; opens its review -->
+              <button class="drow" (click)="review(d.id)">
+                <span class="stack" style="gap:1px;min-width:0">
+                  <span class="h-cond num" style="font-size:15px">{{ d.instrumentRef || 'No reference read' }}</span>
+                  <span class="small muted ellipsis">{{ intakeLine(d) }}</span>
+                  <span class="small" style="color:var(--color-accent-700)">Opens in Verify metadata →</span>
+                </span>
+                <span class="tag tag-outline">In intake</span>
+              </button>
+            } @else {
+              <button class="drow" [class.on]="d.id === sel()?.id" (click)="select(d.id)">
+                <span class="stack" style="gap:1px;min-width:0">
+                  <span class="h-cond num" style="font-size:15px">{{ d.instrumentRef || d.edrmsNo }}</span>
+                  <span class="small muted ellipsis">{{ d.edrmsNo }} · {{ d.props['property'] || d.title }}</span>
+                </span>
+                <span class="small muted num">v{{ d.currentVersion }}.0</span>
+              </button>
+            }
           } @empty { <div class="small muted" style="padding:28px 16px;text-align:center">{{ loading() ? 'Loading…' : 'No documents found.' }}</div> }
         </div>
-        <div class="rail-foot small muted">{{ rows().length }} of {{ total() }} documents</div>
+        <div class="rail-foot small muted">{{ rows().length }} of {{ totalCapped() ? 'more than ' : '' }}{{ total() | number }} documents</div>
       </aside>
 
       <section class="main">
@@ -187,6 +201,8 @@ export class DocumentsComponent {
   type = signal('');
   rows = signal<DocRow[]>([]);
   total = signal(0);
+  /** More documents match than `total` (the search index stops counting there). */
+  totalCapped = signal(false);
   loading = signal(false);
   docTypes = signal<Array<{id: string; label: string}>>([]);
   sel = signal<DocDetail | null>(null);
@@ -216,6 +232,19 @@ export class DocumentsComponent {
     this.load(id);
   }
 
+  /** A document in intake: its first party and property, as the AI read them. */
+  intakeLine(d: DocRow) {
+    return (
+      [d.party, d.props['property']].filter(Boolean).join(' · ') ||
+      this.typeLabel(d.docType)
+    );
+  }
+
+  /** A document still in intake opens in intake's review screen. */
+  review(id: string) {
+    this.router.navigate(['/verify'], {queryParams: {doc: id}});
+  }
+
   typeLabel(id: string) {
     return this.docTypes().find(t => t.id === id)?.label || id;
   }
@@ -229,13 +258,19 @@ export class DocumentsComponent {
   async load(selectId?: string | null) {
     this.loading.set(true);
     try {
-      const res = await this.api.get<{items: DocRow[]; total: number}>(
-        '/documents',
-        {q: this.q().trim(), docType: this.type(), limit: 100},
-      );
+      const res = await this.api.get<{
+        items: DocRow[];
+        total: number;
+        totalCapped?: boolean;
+      }>('/documents', {q: this.q().trim(), docType: this.type(), limit: 100});
       this.rows.set(res.items);
       this.total.set(res.total);
-      const target = selectId || this.sel()?.id || res.items[0]?.id;
+      this.totalCapped.set(!!res.totalCapped);
+      // a document still in intake opens in intake's review, not here
+      const target =
+        selectId ||
+        this.sel()?.id ||
+        res.items.find(d => d.status !== 'intake')?.id;
       if (target) await this.select(target);
       else this.sel.set(null);
     } catch (e) {

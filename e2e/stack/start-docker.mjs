@@ -69,6 +69,8 @@ const env = {
   E2E_GID: String(mailUser.gid),
   E2E_MAIL_DIR: MAIL_DIR,
   E2E_API_PORT: String(PORTS.gateway),
+  // edrms' document search: the database (default) or the search index (API-803)
+  EDRMS_SEARCH: process.env.EDRMS_SEARCH || 'postgres',
 };
 const compose = (...args) => [
   'compose',

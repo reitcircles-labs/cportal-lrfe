@@ -1999,10 +1999,14 @@ paths:
     get:
       tags:
         - edrms · Documents
-      summary: Search filed documents
+      summary: Search documents
       description: >-
-        `{ items, total }`. `q` searches numbers, references and field values. Filter on any extracted field with `field.<key>=<value>`,
-        e.g. `field.property=Erf 1873, Klein Windhoek`.
+        `{ items, total, totalCapped? }`. `q` searches numbers, references and field values. Filter on any extracted field with
+        `field.<key>=<value>`, e.g. `field.property=Erf 1873, Klein Windhoek`. Each item has `status`: `filed`, or `intake` for a document
+        still in intake (only with `EDRMS_SEARCH=opensearch`, and only for a user with intake's read permission, or for land-records with
+        `intake=true` on such a user's behalf): `{ id (intake's), status, intakeStatus, docType, instrumentRef, party, props.property,
+        fields }`. Through the index a total above 1,000 is given as 1000 with `totalCapped: true` (more than that); when the index cannot
+        answer, 503.
 
 
         **Access:** Signed-in user with any of `capture.view`, `verify.view`, `record.view`, `audit.view`, or a service token from `intake`,
@@ -2048,6 +2052,11 @@ paths:
             type: integer
             minimum: 0
             default: 0
+        - name: intake
+          in: query
+          required: false
+          schema:
+            type: boolean
       responses:
         "200":
           description: OK
@@ -6043,7 +6052,8 @@ paths:
       summary: Documents that match this parcel, with the reasons
       description: >-
         `{ parcel, items }`. Each item: the document, `reasons` (property is this parcel; SG diagram cited by, prior title of, or citing a
-        document already in the record), `inThisRecord`, `linkedTo`.
+        document already in the record), `inThisRecord`, `linkedTo`. Documents still in intake that describe this parcel (as in the document
+        search) come without reasons.
 
 
         **Access:** Signed-in user with permission `record.view`.
@@ -6506,8 +6516,10 @@ paths:
         - land-records · Documents
       summary: Search filed documents to add to a land record
       description: >-
-        `{ items, total }`. The edrms search (words, word starts, spelling variants of names, `docType`, `field.<key>=<value>` filters),
-        each document with `linkedTo` (other records that hold it) and, with `recordId`, `inThisRecord`.
+        `{ items, total, totalCapped? }`. The edrms search (words, word starts, spelling variants of names, `docType`, `field.<key>=<value>`
+        filters), each document with `status` (`filed`), `linkedTo` (other records that hold it) and, with `recordId`, `inThisRecord`. With
+        edrms searching the index, a user with intake's read permission also gets documents still in intake: `status: intake`, `intakeId`,
+        `ref`, `party`, `property`, `fields` (they can be added once filed).
 
 
         **Access:** Signed-in user with permission `record.view`.

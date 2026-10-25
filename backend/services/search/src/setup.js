@@ -1,7 +1,6 @@
 import {createServiceTokenSigner, env} from '@lrfe/common';
-import {loadCountryPack} from '@lrfe/search-index';
+import {createEngine, loadCountryPack} from '@lrfe/search-index';
 import {createEdrmsClient, createIntakeClient} from './clients.js';
-import {createEngine} from './engine.js';
 import {SearchService} from './search.service.js';
 
 /**

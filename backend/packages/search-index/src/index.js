@@ -1,4 +1,5 @@
 export {checkCountryPack, loadCountryPack} from './country-pack.js';
+export {createEngine} from './engine.js';
 export {
   DEAD_LETTER_INDEX,
   INDEX_ALIAS,

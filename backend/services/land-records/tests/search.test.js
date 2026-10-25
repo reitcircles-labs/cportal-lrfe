@@ -193,4 +193,91 @@ describe('finding documents for a land record', () => {
       ).to.equal(400);
     });
   });
+
+  describe('with edrms searching the index: documents still in intake (API-803)', () => {
+    const INTAKE_ID = '0b9a1c52-6d0e-4f1a-9a57-3f4f4d1e2a10';
+    let ctx;
+    let record;
+    let app;
+    const as = perms => ({
+      authorization: `Bearer ${app.jwt.sign({typ: 'access', sub: 'u9', name: 'Tester', perms})}`,
+    });
+    before(async () => {
+      ctx = await makeWithEdrms();
+      record = await ctx.service.createRecord(
+        {parcel: erf1873()},
+        actor(users.rec),
+      );
+      // the index finds a filed grant and a transfer of the same erf still in intake
+      const filed = ctx.docs.grant;
+      ctx.edrmsService.indexSearch = {
+        search: async () => ({
+          hits: [
+            {documentId: 's', status: 'filed', edrmsId: filed.id},
+            {
+              documentId: INTAKE_ID,
+              status: 'intake',
+              intakeStatus: 'ready',
+              docType: 'deed_of_transfer',
+              shown: {
+                reference: 'T 9999/2026',
+                party: 'Ndapewa Nghishidi',
+                property: 'Erf 1873, Klein Windhoek',
+                fields: [],
+              },
+            },
+          ],
+          total: 2,
+          totalCapped: false,
+        }),
+      };
+      app = await buildApp({service: ctx.service, jwtSecret: SECRET});
+      await app.ready();
+    });
+
+    it('a user who may read intake finds them, marked, without a way to add them', async () => {
+      const res = await app.inject({
+        url: `/records/document-search?q=Nghishidi&recordId=${record.id}`,
+        headers: as(['record.view', 'verify.view']),
+      });
+      expect(res.statusCode, res.body).to.equal(200);
+      const row = res.json().items.find(d => d.status === 'intake');
+      expect(row).to.deep.include({
+        intakeId: INTAKE_ID,
+        edrmsDocumentId: null,
+        ref: 'T 9999/2026',
+        party: 'Ndapewa Nghishidi',
+        inThisRecord: false,
+        linkedTo: [],
+      });
+      expect(res.json().items.filter(d => d.status === 'filed')).to.have.length(
+        1,
+      );
+
+      // matching this parcel: listed too, without reasons (no highlight)
+      const suggested = (
+        await app.inject({
+          url: `/records/${record.id}/suggestions`,
+          headers: as(['record.view', 'verify.view']),
+        })
+      ).json().items;
+      const inIntake = suggested.find(d => d.status === 'intake');
+      expect(inIntake).to.deep.include({intakeId: INTAKE_ID, reasons: []});
+    });
+
+    it('a user who may not read intake does not', async () => {
+      const res = await app.inject({
+        url: `/records/document-search?q=Nghishidi&recordId=${record.id}`,
+        headers: as(['record.view']),
+      });
+      expect(res.json().items.map(d => d.status)).to.deep.equal(['filed']);
+      const suggested = (
+        await app.inject({
+          url: `/records/${record.id}/suggestions`,
+          headers: as(['record.view']),
+        })
+      ).json().items;
+      expect(suggested.some(d => d.status === 'intake')).to.equal(false);
+    });
+  });
 });

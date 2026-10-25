@@ -248,6 +248,8 @@ const NA = loadCountryPack('NA');
         access: {audience: 'intake'},
       });
       expect(got._source.text).to.contain('a secret owner name');
+      // what a row in intake shows (API-803): its reference, party and property
+      expect(got._source.shown.party).to.contain('Nghishidi');
       expect(await found('Nghishidi')).to.deep.equal([doc.id]);
       expect(await found('T 2210/2008')).to.deep.equal([doc.id]);
       // the erf number from the property's description

@@ -7,8 +7,9 @@
  * it, marked as in intake; filing adds the corrected values to the same entry; a rejected upload
  * disappears; "re-index since" fills a gap; a rebuild (API-804) switches the search over to a new
  * index with every document in it. The engine has no port on the host: the tests ask it
- * from inside the search service's container, with its login. One file, run in order: a test
- * stops the container.
+ * from inside the search service's container, with its login. One file, run in order and in its
+ * own project after all the others (playwright.config.ts): a test stops the container, which
+ * would hold up the indexing that other specs wait for.
  */
 import {spawnSync} from 'node:child_process';
 import {expect, test} from '@playwright/test';
@@ -166,6 +167,7 @@ async function correct(
 
 // the search service starts after the search engine: it answers before the first test
 test.beforeAll(async () => {
+  test.setTimeout(150_000);
   await expect.poll(() => health(), {timeout: 120_000}).not.toBeNull();
 });
 
@@ -229,8 +231,7 @@ test(
 /** A script run in the search service's folder, with `engine` (its login) and `INDEX_ALIAS`. */
 function inSearch(body: string): unknown {
   const script = `
-    import {createEngine} from './src/engine.js';
-    import {INDEX_ALIAS, buildSearchQuery, loadCountryPack} from '@lrfe/search-index';
+    import {INDEX_ALIAS, buildSearchQuery, createEngine, loadCountryPack} from '@lrfe/search-index';
     const engine = createEngine({url: process.env.OPENSEARCH_URL, loginDir: process.env.OPENSEARCH_LOGIN_DIR});
     const out = await (async () => { ${body} })();
     console.log(JSON.stringify(out));

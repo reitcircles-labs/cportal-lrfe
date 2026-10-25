@@ -183,6 +183,9 @@ services:
       # (user, password, ca.pem); not there without the profile
       OPENSEARCH_URL: https://opensearch:9200
       OPENSEARCH_LOGIN_DIR: /run/lrfe/search
+      # document search: postgres (the database, the default) or opensearch (the search index,
+      # which also finds documents still in intake; needs the profile search, README.md part I)
+      EDRMS_SEARCH: ${EDRMS_SEARCH:-postgres}
     volumes:
       - edrms-files:/data/edrms
       - bao-edrms:/run/lrfe/bao:ro

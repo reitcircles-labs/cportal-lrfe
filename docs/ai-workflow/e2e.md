@@ -7,12 +7,18 @@ The full guide is `e2e/README.md`; this page is what a ticket needs, in the orde
 From `e2e/`, with the checkout's ports (`CLAUDE.md`, "Ports per checkout"):
 
 ```bash
-npx playwright test --reporter=line 2>&1 | tail -n 5               # in memory
-npm run -s test:postgres -- --reporter=line 2>&1 | tail -n 5       # on PostgreSQL
+npx playwright test > .progress/full.log 2>&1                      # in memory
+npm run -s test:postgres > .progress/full.log 2>&1                 # on PostgreSQL
+npm run -s test:docker > .progress/full.log 2>&1                   # the containers
 ```
 
-- Run them in the background and wait for the notification; read only the totals and the failures
-  (`grep -nE "^\s+[0-9]+\) \[" -A16 <log>`), never the whole log.
+- **Follow a run (API-813):** `tail -f e2e/.progress/progress.log`: the stack, one line per finished
+  test (`ok`, `FAILED` with the error's first line, `skip`), errors outside tests (the stack not
+  starting) and the totals; `e2e/.progress/full.log` has everything. Each run starts both afresh,
+  so one run at a time per checkout. Don't pass `--reporter`: it replaces the progress reporter.
+- Run them in the background and wait for the notification; read only the totals (the last line of
+  `progress.log`) and the failures (`grep -nE "^\s+[0-9]+\) \[" -A16 .progress/full.log`), never
+  the whole log.
 - Before a run after a merge or branch switch: `npm ci` where a lock file changed. A missing package
   shows up as `ERR_MODULE_NOT_FOUND` in a host-side spec (the API docs check), not as a product failure.
 - Release images: `node demo/release.mjs test --version <v>` (the docker e2e, its log written as it runs).
@@ -21,14 +27,18 @@ npm run -s test:postgres -- --reporter=line 2>&1 | tail -n 5       # on PostgreS
 
 `playwright.config.ts` runs `setup` (enrols the demo users), then `chromium` (the main suite in
 parallel), then `own batches` (`ownership-extracts.spec.ts`), then `extract check`
-(`check-extract.spec.ts`). Specs that make their own blockchain batches
-(`POST /api/audit/test/anchorings`) must not run beside `land-record.spec.ts`: a batch takes every
-waiting version. A new spec that makes batches gets its own project after the others.
+(`check-extract.spec.ts`), then `search connection` (`search-connection.spec.ts`, docker only).
+Specs that make their own blockchain batches (`POST /api/audit/test/anchorings`) must not run
+beside `land-record.spec.ts`: a batch takes every waiting version. A new spec that makes batches
+gets its own project after the others. The search connection stops the search service, so it runs
+last and alone; with `EDRMS_SEARCH=opensearch` a document just filed is found within seconds, so a
+spec searches for it with `foundInSearch` or `openInDocuments` (`support/documents.ts`), which ask
+again until it is there.
 
 To run one spec alone: list its setup too and drop the dependencies, one worker:
 
 ```bash
-npx playwright test tests/auth.setup.ts tests/<spec> --project=setup --project='<project>' --no-deps --workers=1 --reporter=line
+npx playwright test tests/auth.setup.ts tests/<spec> --project=setup --project='<project>' --no-deps --workers=1
 ```
 
 ## Screenshots for Jira

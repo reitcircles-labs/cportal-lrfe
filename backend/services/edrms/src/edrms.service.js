@@ -114,6 +114,9 @@ function cleanFields(fields) {
   });
 }
 
+/** How deep a search through the index may page (the engine's result window). */
+const INDEX_WINDOW = 10000;
+
 const propsOf = fields => Object.fromEntries(fields.map(f => [f.k, f.v]));
 
 /**
@@ -127,6 +130,7 @@ export class EdrmsService {
     store,
     events,
     anchoring = null,
+    indexSearch = null,
     clock = () => new Date(),
     config = {},
   }) {
@@ -134,6 +138,7 @@ export class EdrmsService {
     this.store = store;
     this.events = events;
     this.anchoring = anchoring; // the audit service: is a version anchored on chain yet (API-658)
+    this.indexSearch = indexSearch; // the search index, with EDRMS_SEARCH=opensearch (API-803)
     this.clock = clock;
     this.config = {
       country: 'NA',
@@ -641,14 +646,66 @@ export class EdrmsService {
   /**
    * The one search function (API-645): words and word starts over title, references, EDRMS number
    * and every verified field value, spelling variants of names, field filters; best matches first.
-   * A dedicated search engine could replace the repo query behind it without changing callers.
+   * Each item has `status`: `filed`, or `intake` for a document still in intake (API-803).
+   *
+   * With the search index (`indexSearch`, EDRMS_SEARCH=opensearch) a search for words asks the
+   * index for the matches and their order; filed documents are then loaded from the database,
+   * and documents in intake (only with `intake`: the user may read intake's documents) are shown
+   * as the index has them. A list without words, or with a batch or field filter, stays the
+   * database's.
+   * @param {object} query
+   * @param {{intake?: boolean}} [options]
    */
-  async searchDocuments(query) {
+  async searchDocuments(query, {intake = false} = {}) {
     if (query.docType && !DOC_TYPE_IDS.includes(query.docType)) {
       throw new BadRequestError(`Unknown docType "${query.docType}"`);
     }
+    const filtered = query.batchId || Object.keys(query.props ?? {}).length > 0;
+    if (this.indexSearch && query.q?.trim() && !filtered) {
+      return this.searchIndex(query, intake);
+    }
     const {items, total} = await this.repo.listDocuments(query);
-    return {items: items.map(({searchText: _s, ...d}) => d), total};
+    return {
+      items: items.map(({searchText: _s, ...d}) => ({...d, status: 'filed'})),
+      total,
+    };
+  }
+
+  /** A search for words through the index: `{ items, total, totalCapped? }`. */
+  async searchIndex({q, docType, limit = 50, offset = 0}, intake) {
+    if (offset + limit > INDEX_WINDOW) {
+      throw new BadRequestError(
+        `A search through the index reaches its first ${INDEX_WINDOW} matches only`,
+      );
+    }
+    const {hits, total, totalCapped} = await this.indexSearch.search({
+      q,
+      docType,
+      intake,
+      limit,
+      offset,
+    });
+    const filed = new Map(
+      (
+        await this.repo.getDocuments(
+          hits.filter(h => h.edrmsId).map(h => h.edrmsId),
+        )
+      ).map(d => [d.id, d]),
+    );
+    const items = [];
+    for (const hit of hits) {
+      if (hit.edrmsId) {
+        // a document removed since it was indexed is left out
+        const doc = filed.get(hit.edrmsId);
+        if (doc) {
+          const {searchText: _s, ...d} = doc;
+          items.push({...d, status: 'filed'});
+        }
+      } else if (intake) {
+        items.push(inIntake(hit));
+      }
+    }
+    return {items, total, ...(totalCapped ? {totalCapped: true} : {})};
   }
 
   /**
@@ -765,4 +822,21 @@ export class EdrmsService {
       checkedAt: this.clock(),
     };
   }
+}
+
+/**
+ * A document still in intake as a search result: its id is intake's; what it shows is what the AI
+ * read (its reference, first party and property), as the index has it.
+ */
+function inIntake(hit) {
+  return {
+    id: hit.documentId,
+    status: 'intake',
+    intakeStatus: hit.intakeStatus ?? null,
+    docType: hit.docType,
+    instrumentRef: hit.shown?.reference ?? null,
+    party: hit.shown?.party ?? null,
+    props: {property: hit.shown?.property ?? null},
+    fields: hit.shown?.fields ?? [],
+  };
 }

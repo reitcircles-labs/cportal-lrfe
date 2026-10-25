@@ -10,6 +10,7 @@ import {
   DOC_TYPES,
   DOC_TYPE_IDS,
   FILING_SERVICES,
+  INTAKE_READ_PERMS,
   READ_PERMS,
 } from './catalogue.js';
 import {describeRecordMetadataFields} from './record-metadata.js';
@@ -86,6 +87,17 @@ async function withUpload(req, handle) {
   }
   if (!handled) throw new BadRequestError('A file is required');
   return result;
+}
+
+/**
+ * Whether a search may include documents still in intake (API-803): a user with intake's read
+ * permission; land-records when it searches for such a user (it says so with `intake`).
+ */
+function mayReadIntake(user, asked) {
+  if (user.typ === 'service') {
+    return user.sub === 'land-records' && asked === true;
+  }
+  return INTAKE_READ_PERMS.some(p => (user.perms ?? []).includes(p));
 }
 
 /** The edrms HTTP routes. */
@@ -177,6 +189,8 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
             batchId: {type: 'string', maxLength: 50},
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
             offset: {type: 'integer', minimum: 0, default: 0},
+            // land-records, for a user who may read intake's documents (API-803)
+            intake: {type: 'boolean'},
           },
           // field.<key>=<value> filters on extracted fields, e.g. field.property=Erf 1873, Klein Windhoek
           patternProperties: {
@@ -187,18 +201,14 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
       },
     },
     async req => {
-      const {q, docType, batchId, limit, offset, ...rest} = req.query;
+      const {q, docType, batchId, limit, offset, intake, ...rest} = req.query;
       const props = Object.fromEntries(
         Object.entries(rest).map(([k, v]) => [k.slice('field.'.length), v]),
       );
-      return service.searchDocuments({
-        q,
-        docType,
-        batchId,
-        props,
-        limit,
-        offset,
-      });
+      return service.searchDocuments(
+        {q, docType, batchId, props, limit, offset},
+        {intake: mayReadIntake(req.user, intake)},
+      );
     },
   );
 
