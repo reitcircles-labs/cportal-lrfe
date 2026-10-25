@@ -1,0 +1,27 @@
+{
+  "country": "NA",
+  "name": "Namibia",
+  "search": {
+    "references": [
+      {
+        "name": "registry reference: office letters, number, year",
+        "pattern": "\\b[A-Za-z]{1,3}\\s*\\d+\\s*/\\s*\\d{4}\\b",
+        "examples": ["T 2210/2008", "G 88/1978", "A 412/2007", "t2210 / 2008"]
+      }
+    ],
+    "wordStartMin": 3,
+    "variantMinLength": 4,
+    "nameVariants": [
+      {
+        "pattern": "(\\p{L})\\1+",
+        "replacement": "$1",
+        "example": "doubled letters: Shikongo, Shikkongo"
+      },
+      {
+        "pattern": "gh",
+        "replacement": "g",
+        "example": "Oshiwambo gh: Nghishidi, Ngishidi"
+      }
+    ]
+  }
+}
