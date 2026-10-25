@@ -59,6 +59,10 @@ field's role (reference, number, name, place) comes from intake's catalogue (`se
   from both sources while search uses the old one, catches up on what changed meanwhile, moves
   the alias in one step and removes the old index (`src/rebuild.js`). Its progress is kept in
   `lrfe-documents-rebuild` after each page: stopped (Ctrl-C) or failed, it resumes when run again.
+  Measured (API-804) on the test register of API-810, 199,470 documents with their text (398,940
+  entries: intake's and edrms'): 86 minutes, 77 entries a second, on a shared server with spinning
+  disks; 3 GB of index. A search every 2 s answered throughout (also at the switch), except one
+  that took over 10 s while the disks were busy filling.
 - **Without a search engine** (`OPENSEARCH_URL` not set: development, an install without the
   profile) documents are only fetched and logged, as before API-808.
 
