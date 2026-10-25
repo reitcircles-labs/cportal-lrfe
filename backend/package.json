@@ -22,6 +22,7 @@
     "dev:land-records": "npm run dev -w @lrfe/land-records",
     "dev:audit": "npm run dev -w @lrfe/audit",
     "dev:extracts": "npm run dev -w @lrfe/extracts",
+    "dev:search": "npm run dev -w @lrfe/search",
     "audit:backfill": "npm run backfill -w @lrfe/audit",
     "intake:backfill-text": "npm run backfill-text -w @lrfe/intake",
     "db:setup": "node scripts/db-setup.js",

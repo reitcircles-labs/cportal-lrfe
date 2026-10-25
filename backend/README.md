@@ -21,7 +21,8 @@ backend/
     ├── intake/             :3504  capture, AI extraction (Gemini), field review, filing into edrms
     ├── land-records/       :3505  land records: filed documents per parcel, reviewed versions, seals
     ├── audit/              :3506  tamper-evident trail of every domain event, Merkle tree anchored on Cardano
-    └── extracts/           :3507  ownership extracts: the register of extracts issued for a record's owners
+    ├── extracts/           :3507  ownership extracts: the register of extracts issued for a record's owners
+    └── search/             :3508  document search: follows intake's and edrms' document events (API-797)
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 ```
 
@@ -78,6 +79,7 @@ INTAKE_STORE=memory npm run dev:intake     # extraction uses the mock model unle
 RECORDS_STORE=memory npm run dev:land-records
 AUDIT_STORE=memory npm run dev:audit       # sees other services' events only with EVENT_BUS_DRIVER=nats
 EXTRACTS_STORE=memory npm run dev:extracts
+EVENT_BUS_DRIVER=nats npm run dev:search   # receives intake's and edrms' document events over NATS only
 npm run dev:gateway
 
 # With Postgres from docker compose (published on localhost:5433;

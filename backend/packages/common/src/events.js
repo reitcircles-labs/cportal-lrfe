@@ -155,6 +155,13 @@ export function createEventBus({
      */
     consumerGap: name =>
       nats ? nats.consumerGap(name) : Promise.resolve(null),
+    /**
+     * How far the durable consumer `name` is behind (API-802): `pending`, events in the stream it
+     * has not been given yet, and `unacked`, those given but not handled yet. Null when not
+     * knowable (other drivers, not connected, consumer not created yet).
+     */
+    consumerLag: name =>
+      nats ? nats.consumerLag(name) : Promise.resolve(null),
     /** Run `fn` so its database changes and the events it publishes are committed together. */
     atomic: fn => (outbox ? outbox.atomic(fn) : fn()),
     /** Publish what is waiting in the outbox now (tests; the relay also runs on its own). */
@@ -456,6 +463,19 @@ function connectNats({url, source, logger, deliver, stream}) {
         const acked = consumer.ack_floor.stream_seq;
         const first = stream.state.first_seq;
         return first > acked + 1 ? {from: acked + 1, to: first - 1} : null;
+      } catch {
+        return null;
+      }
+    },
+    async consumerLag(name) {
+      if (!connected()) return null;
+      try {
+        if (!jsm) await ensureStream();
+        const consumer = await jsm.consumers.info(EVENT_STREAM, name);
+        return {
+          pending: consumer.num_pending,
+          unacked: consumer.num_ack_pending,
+        };
       } catch {
         return null;
       }

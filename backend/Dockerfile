@@ -18,6 +18,7 @@ COPY services/intake/package.json services/intake/
 COPY services/land-records/package.json services/land-records/
 COPY services/audit/package.json services/audit/
 COPY services/extracts/package.json services/extracts/
+COPY services/search/package.json services/search/
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY packages ./packages

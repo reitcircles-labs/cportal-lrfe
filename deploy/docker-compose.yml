@@ -344,6 +344,24 @@ services:
       db-setup: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
 
+  # The search service (profile search, API-802): follows intake's and edrms' document events with
+  # durable consumers, so it catches up after a stop, and fetches each document with its own
+  # service token. Reached on the internal networks only; its lag is at /health/events.
+  search:
+    <<: *backend
+    profiles: ["search"]
+    working_dir: /app/services/search
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3508"
+      INTAKE_URL: http://intake:3504
+      EDRMS_URL: http://edrms:3502
+    networks: [default, search]
+    healthcheck: *healthcheck
+    depends_on:
+      nats: { condition: service_healthy }
+
   gateway:
     <<: *backend
     working_dir: /app/services/gateway

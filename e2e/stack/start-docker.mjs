@@ -49,8 +49,9 @@ const env = {
   COOKIE_SECURE: 'false',
   JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
   POSTGRES_PASSWORD: 'e2e-only-postgres-password',
-  // the bundled database, OpenBao for the stored files (API-795) and the API docs (API-714)
-  COMPOSE_PROFILES: 'postgres,bao,docs',
+  // the bundled database, OpenBao for the stored files (API-795), the API docs (API-714) and the
+  // search service without the search engine (API-802, docker-compose.e2e.yml)
+  COMPOSE_PROFILES: 'postgres,bao,docs,e2e-search',
   E2E_BAO_TOKEN: 'e2e-only-openbao-root-token',
   LRFE_DOCS_PORT: String(PORTS.docs),
   // the organisation (API-712): test texts; Namibia's two offices, which the tests use
@@ -79,21 +80,25 @@ const compose = (...args) => [
   join(DEPLOY_DIR, 'docker-compose.e2e.yml'),
   ...args,
 ];
-const docker = (args, stdio = 'inherit') =>
+const docker = (args, stdio = 'inherit', extraEnv = {}) =>
   spawnSync('docker', args, {
-    env,
+    env: {...env, ...extraEnv},
     stdio,
     cwd: DEPLOY_DIR,
     maxBuffer: 256 * 1024 * 1024,
   });
 
-/** Containers and volumes of the test install: removed before and after each run. */
+/**
+ * Containers and volumes of the test install: removed before and after each run. With the profile
+ * bao-setup too: a `down` sees only the volumes of the profiles it is given, and openbao-setup's
+ * run makes one no other service uses (bao-search-dir).
+ */
 function down() {
-  docker(compose('down', '--volumes', '--remove-orphans', '--timeout', '10'), [
-    'ignore',
-    'ignore',
-    'inherit',
-  ]);
+  docker(
+    compose('down', '--volumes', '--remove-orphans', '--timeout', '10'),
+    ['ignore', 'ignore', 'inherit'],
+    {COMPOSE_PROFILES: `${env.COMPOSE_PROFILES},bao-setup`},
+  );
 }
 
 let stopping = false;

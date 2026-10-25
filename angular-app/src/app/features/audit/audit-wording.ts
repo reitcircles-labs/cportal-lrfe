@@ -293,6 +293,7 @@ const ACTIONS: Record<string, string> = {
   'intake.document.captured': 'Captured a scan',
   'intake.document.extracted': 'Read the scan’s details',
   'intake.document.filed': 'Sent the scan for filing',
+  'intake.document.rejected': 'Rejected the scan',
   'edrms.document.filed': 'Filed document',
   'edrms.document.amended': 'Corrected document',
   'records.record.created': 'Created land record',
