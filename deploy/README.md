@@ -468,6 +468,11 @@ the error) and is not tried again by itself. Once the cause is fixed, index the 
 with `docker compose exec search node src/reindex.js --since <the date of the earliest failure>`;
 a document indexed again leaves the list.
 
+**Rebuild the index** (after a change of the index's design or the country's analysers, in a new
+version): `docker compose exec search node src/reindex.js --rebuild`. It fills a new index while
+search goes on with the old one, catches up, then switches over in one step; stopped or failed, it
+resumes when run again. About 1½ hours for 200,000 documents on spinning disks (measured, API-804).
+
 **Re-index since a date.** `docker compose exec search node src/reindex.js --since 2026-10-01T00:00:00Z`
 indexes again every document uploaded, read, filed or corrected since then (after restoring an
 older backup of the index, API-806). It can be run again safely; without `--since` it indexes all.
