@@ -13,6 +13,7 @@
   "dependencies": {
     "@fastify/multipart": "^10.1.2",
     "@lrfe/common": "0.1.0",
+    "@lrfe/search-index": "0.1.0",
     "@lrfe/storage": "0.1.0",
     "sequelize": "^6.37.3"
   },

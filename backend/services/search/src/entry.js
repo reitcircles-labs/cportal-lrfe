@@ -14,6 +14,21 @@ const unique = values => [
 ];
 
 /**
+ * The fields that name whom a document is for, first found first: the (first) transferee of a
+ * deed, the owner who grants a bond. Otherwise the first name the document has.
+ */
+const PARTY_FIELDS = ['tee1', 'mortgagor'];
+
+function partyOf(fields, roles) {
+  const named = fields.filter(f => roles.get(f.k) === 'name' && f.v);
+  for (const k of PARTY_FIELDS) {
+    const field = named.find(f => f.k === k);
+    if (field) return field.v;
+  }
+  return named[0]?.v ?? null;
+}
+
+/**
  * The entry `{ id, version, body }`, or null when there is nothing to index. `version` is the
  * last change on either side (ms): the index keeps an entry only if it is not older than the one
  * it has, so a slow handler never brings back an older state.
@@ -78,6 +93,8 @@ export function buildEntry({reading = null, filed = null}) {
       shown: {
         reference: reference[0] ?? null,
         property: shownFields.find(f => roles.get(f.k) === 'place')?.v ?? null,
+        // the party the document is for, for a row in intake (API-803)
+        party: partyOf(shownFields, roles),
         fields: shownFields,
       },
     },

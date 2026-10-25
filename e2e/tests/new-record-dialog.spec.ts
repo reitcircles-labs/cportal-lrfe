@@ -15,7 +15,7 @@ import {signInAs} from '../support/auth';
 import {apiAs} from '../support/intake';
 import {evidence} from '../support/evidence';
 import {fileNumbered} from '../support/samples';
-import {toast} from '../support/documents';
+import {foundInSearch, toast} from '../support/documents';
 import {committedRecord} from '../support/records';
 
 const rnd = (from: number, span: number) =>
@@ -228,13 +228,13 @@ test.describe.serial('New record dialog (API-765)', () => {
         (r: {label: string}) => r.label === `Erf ${ERF}, Olympia`,
       ).id;
       const record = await (await rec.api.get(`/api/records/${id}`, h)).json();
-      const found = await (
-        await rec.api.get(
-          `/api/records/document-search?q=${encodeURIComponent(OLD_BOND)}`,
-          h,
-        )
-      ).json();
-      const bond = found.items.find((d: {ref: string}) => d.ref === OLD_BOND);
+      const bond = await foundInSearch(
+        rec,
+        `/api/records/document-search?q=${encodeURIComponent(OLD_BOND)}`,
+        // filed: an entry still in intake has no EDRMS id yet (API-803)
+        (d: {ref: string; edrmsDocumentId: string | null}) =>
+          d.ref === OLD_BOND && !!d.edrmsDocumentId,
+      );
       const added = await rec.api.post(`/api/records/${id}/draft/documents`, {
         ...h,
         data: {

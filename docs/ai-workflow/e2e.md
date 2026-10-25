@@ -27,9 +27,13 @@ npm run -s test:docker > .progress/full.log 2>&1                   # the contain
 
 `playwright.config.ts` runs `setup` (enrols the demo users), then `chromium` (the main suite in
 parallel), then `own batches` (`ownership-extracts.spec.ts`), then `extract check`
-(`check-extract.spec.ts`). Specs that make their own blockchain batches
-(`POST /api/audit/test/anchorings`) must not run beside `land-record.spec.ts`: a batch takes every
-waiting version. A new spec that makes batches gets its own project after the others.
+(`check-extract.spec.ts`), then `search connection` (`search-connection.spec.ts`, docker only).
+Specs that make their own blockchain batches (`POST /api/audit/test/anchorings`) must not run
+beside `land-record.spec.ts`: a batch takes every waiting version. A new spec that makes batches
+gets its own project after the others. The search connection stops the search service, so it runs
+last and alone; with `EDRMS_SEARCH=opensearch` a document just filed is found within seconds, so a
+spec searches for it with `foundInSearch` or `openInDocuments` (`support/documents.ts`), which ask
+again until it is there.
 
 To run one spec alone: list its setup too and drop the dependencies, one worker:
 

@@ -254,8 +254,15 @@ export interface LandRecord extends RecordSummary {
   draft: Version | null;
   draftDiff: Diff | null;
 }
+/**
+ * A document found for a land record. `status`: `filed`, or `intake` for a scan still in intake
+ * (API-803): it has `intakeId` and `party`, no EDRMS id, number or version, and cannot be added.
+ */
 export interface FoundDocument {
-  edrmsDocumentId: string;
+  status?: 'filed' | 'intake';
+  intakeId?: string;
+  party?: string | null;
+  edrmsDocumentId: string | null;
   edrmsNo: string;
   docType: string;
   title: string;

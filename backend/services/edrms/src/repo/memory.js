@@ -43,6 +43,10 @@ export function createMemoryRepo() {
     async getDocument(id) {
       return clone(docs.get(id)) ?? null;
     },
+    /** The documents with these ids that exist, in no particular order. */
+    async getDocuments(ids) {
+      return ids.filter(id => docs.has(id)).map(id => clone(docs.get(id)));
+    },
     /** Documents changed at or after `since` (all when null), oldest change first, after `after`. */
     async listChanged({since = null, after = null, limit = 200} = {}) {
       const from = since ? new Date(since).getTime() : -Infinity;

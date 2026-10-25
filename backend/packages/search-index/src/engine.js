@@ -4,20 +4,37 @@ import https from 'node:https';
 import {join} from 'node:path';
 
 /**
- * The search service's connection to the search engine: `request(method, path, body)` →
- * `{ status, body }`, the form @lrfe/search-index takes. Over https the engine's certificate is
- * checked against the install's own authority and the service logs in with its own user, both
- * from the login directory search-prepare made (`user`, `password`, `ca.pem`,
- * deploy/opensearch/prepare.sh). Over http (tests, development) without a login.
+ * A service's connection to the search engine (the search service, which writes, and edrms, which
+ * searches, API-803): `request(method, path, body)` → `{ status, body }`, the form the rest of
+ * this package takes. Over https the engine's certificate is checked against the install's own
+ * authority and the service logs in with its own user, both from the login directory
+ * search-prepare made for it (`user`, `password`, `ca.pem`, deploy/opensearch/prepare.sh). Over
+ * http (tests, development) without a login.
+ *
+ * The login is read when first needed, not when the service starts: search-prepare may not have
+ * written it yet. Until it is there, each request fails (edrms answers 503 "not available") and
+ * the next one reads it again; an answer 401 reads it again too (a login made anew).
  */
 export function createEngine({url, loginDir, timeoutMs = 15_000}) {
   const base = new URL(url);
   const secure = base.protocol === 'https:';
-  const login = secure ? readLogin(loginDir) : null;
-  const agent = secure
-    ? new https.Agent({ca: login.ca, keepAlive: true})
-    : new http.Agent({keepAlive: true});
   const transport = secure ? https : http;
+  /** Over https: the login and the agent that checks the engine's certificate, once read. */
+  let connection = secure
+    ? null
+    : {login: null, agent: new http.Agent({keepAlive: true})};
+
+  /** The connection, reading the login if it is not read yet; throws while it is missing. */
+  function connect() {
+    if (!connection) {
+      const login = readLogin(loginDir);
+      connection = {
+        login,
+        agent: new https.Agent({ca: login.ca, keepAlive: true}),
+      };
+    }
+    return connection;
+  }
 
   return function request(method, path, body) {
     const payload =
@@ -27,6 +44,14 @@ export function createEngine({url, loginDir, timeoutMs = 15_000}) {
           ? body
           : JSON.stringify(body);
     return new Promise((resolve, reject) => {
+      let login;
+      let agent;
+      try {
+        ({login, agent} = connect());
+      } catch (err) {
+        reject(err);
+        return;
+      }
       const req = transport.request(
         new URL(path, base),
         {
@@ -52,6 +77,9 @@ export function createEngine({url, loginDir, timeoutMs = 15_000}) {
           const chunks = [];
           res.on('data', c => chunks.push(c));
           res.on('end', () => {
+            if (secure && res.statusCode === 401) {
+              connection = null;
+            }
             const text = Buffer.concat(chunks).toString('utf8');
             resolve({status: res.statusCode, body: parseBody(text)});
           });

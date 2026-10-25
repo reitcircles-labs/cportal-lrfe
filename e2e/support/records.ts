@@ -4,6 +4,7 @@
  */
 import {expect, type PlaywrightWorkerArgs} from '@playwright/test';
 import {userByRole} from './catalogue';
+import {foundInSearch} from './documents';
 import {apiAs} from './intake';
 
 /** A land record as the land-records service returns it (the fields the tests read). */
@@ -41,14 +42,13 @@ export async function committedRecord(
 ): Promise<RecordNow> {
   const rec = await apiAs(playwright, baseURL, userByRole('rec').email);
   const h = {headers: rec.headers};
-  const found = await (
-    await rec.api.get(
-      `/api/records/document-search?q=${encodeURIComponent(ref)}`,
-      h,
-    )
-  ).json();
-  const deed = found.items.find((d: {ref: string}) => d.ref === ref);
-  expect(deed, `${ref} in the document search`).toBeTruthy();
+  const deed = await foundInSearch(
+    rec,
+    `/api/records/document-search?q=${encodeURIComponent(ref)}`,
+    // filed: an entry still in intake has no EDRMS id yet (API-803)
+    (d: {ref: string; edrmsDocumentId: string | null}) =>
+      d.ref === ref && !!d.edrmsDocumentId,
+  );
   const created = await rec.api.post('/api/records', {
     ...h,
     data: {parcel, edrmsDocumentId: deed.edrmsDocumentId},

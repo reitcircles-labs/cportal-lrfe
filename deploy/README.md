@@ -460,6 +460,12 @@ configuration.
    service has not handled yet (its lag), and the documents that kept failing to be indexed.
 5. **Documents from before the search engine** (an install that ran without it): index them once
    with `docker compose exec search node src/reindex.js` (every document; it prints the counts).
+6. **Search through the index** (optional, once step 5 is done): in `.env`, `EDRMS_SEARCH=opensearch`,
+   then `docker compose up -d edrms`. The documents screen and a record's documents tab then search
+   the documents' text as well, and list the documents still in intake (marked "In intake") to the
+   users who may read intake. A search with more than 1,000 matches shows "more than 1,000". When the
+   engine cannot answer, the search says so (it does not fall back to the database). Back to the
+   database: `EDRMS_SEARCH=postgres` (the default), then `docker compose up -d edrms`.
 
 **Documents that keep failing.** When intake, edrms or the engine cannot answer, the search service
 tries again after 5 s, 10 s, 20 s, … (at most 5 minutes apart). After 8 failures the document is put

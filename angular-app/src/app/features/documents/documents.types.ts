@@ -1,8 +1,13 @@
 import {Anchoring} from '../../shared/anchoring';
 
-/** Documents screen: a filed document as the edrms service lists it. */
+/**
+ * Documents screen: a document as the edrms service lists it. `status`: `filed`, or `intake` for a
+ * scan still in intake (API-803), which has its intake id, `party` and no EDRMS number or version.
+ */
 export interface DocRow {
   id: string;
+  status?: 'filed' | 'intake';
+  party?: string | null;
   edrmsNo: string;
   docType: string;
   title: string;

@@ -24,9 +24,9 @@ export const ENDPOINTS = {
 
     'GET /documents': {
       tag: 'Documents',
-      summary: 'Search filed documents',
+      summary: 'Search documents',
       description:
-        '`{ items, total }`. `q` searches numbers, references and field values. Filter on any extracted field with `field.<key>=<value>`, e.g. `field.property=Erf 1873, Klein Windhoek`.',
+        "`{ items, total, totalCapped? }`. `q` searches numbers, references and field values. Filter on any extracted field with `field.<key>=<value>`, e.g. `field.property=Erf 1873, Klein Windhoek`. Each item has `status`: `filed`, or `intake` for a document still in intake (only with `EDRMS_SEARCH=opensearch`, and only for a user with intake's read permission, or for land-records with `intake=true` on such a user's behalf): `{ id (intake's), status, intakeStatus, docType, instrumentRef, party, props.property, fields }`. Through the index a total above 1,000 is given as 1000 with `totalCapped: true` (more than that); when the index cannot answer, 503.",
     },
     'GET /documents/lookup': {
       tag: 'Documents',

@@ -94,8 +94,25 @@ export const readingMethods = {
 
   // ---------------------------------------------------------------- finding documents (API-645)
 
-  /** A filed document as land records show it, with the records that already hold it. */
+  /**
+   * A document as land records show it: a filed one with the records that already hold it; one
+   * still in intake (API-803) with what the AI read, to be reviewed before it can be added.
+   */
   documentSummary(d, pinnedBy, recordId) {
+    if (d.status === 'intake') {
+      return {
+        status: 'intake',
+        intakeId: d.id,
+        edrmsDocumentId: null,
+        docType: d.docType,
+        ref: d.instrumentRef ?? null,
+        party: d.party ?? null,
+        property: d.props?.property ?? null,
+        inThisRecord: false,
+        linkedTo: [],
+        fields: d.fields ?? [],
+      };
+    }
     const linked = (pinnedBy.get(d.id) || []).filter(
       x => x.recordId !== recordId,
     );
@@ -108,6 +125,7 @@ export const readingMethods = {
       ).values(),
     ];
     return {
+      status: 'filed',
       edrmsDocumentId: d.id,
       edrmsNo: d.edrmsNo,
       docType: d.docType,
@@ -213,28 +231,43 @@ export const readingMethods = {
   /**
    * Search filed documents by their verified metadata (edrms searchDocuments: words, word starts,
    * spelling variants of names, document type, field filters), marking those already in a record.
+   * `intake`: the user may read intake's documents, so those still in intake are found too.
    */
-  async searchDocuments({q, docType, fields = {}, recordId, limit = 50} = {}) {
+  async searchDocuments({
+    q,
+    docType,
+    fields = {},
+    recordId,
+    limit = 50,
+    intake = false,
+  } = {}) {
     if (recordId) await this.requireRecord(recordId);
-    const {items, total} = await this.requireEdrms().searchDocuments({
-      q,
-      docType,
-      fields,
-      limit,
-    });
-    const pinnedBy = await this.repo.findRecordsPinning(items.map(d => d.id));
+    const {items, total, totalCapped} =
+      await this.requireEdrms().searchDocuments({
+        q,
+        docType,
+        fields,
+        limit,
+        intake,
+      });
+    const pinnedBy = await this.repo.findRecordsPinning(
+      items.filter(d => d.status !== 'intake').map(d => d.id),
+    );
     return {
       items: items.map(d => this.documentSummary(d, pinnedBy, recordId)),
       total,
+      ...(totalCapped ? {totalCapped: true} : {}),
     };
   },
 
   /**
    * Documents that match this parcel, with the reasons: the property described is this parcel;
    * or the chain of the documents already in the record (their SG diagram, their prior title,
-   * deeds and bonds that cite them as prior title).
+   * deeds and bonds that cite them as prior title). `intake`: the user may read intake's
+   * documents, so those still in intake that describe this parcel are listed too, without
+   * reasons: they can only be added once filed (API-803).
    */
-  async suggestions(recordId) {
+  async suggestions(recordId, {intake = false} = {}) {
     const record = await this.requireRecord(recordId);
     const version = await this.repo.getVersion(
       recordId,
@@ -243,6 +276,7 @@ export const readingMethods = {
     const parcel = version.data.parcel;
     const edrms = this.requireEdrms();
     const found = new Map(); // edrms id → { doc, reasons }
+    const inIntake = [];
     const add = (doc, reason) => {
       const entry = found.get(doc.id) || {doc, reasons: []};
       if (!entry.reasons.includes(reason)) entry.reasons.push(reason);
@@ -253,9 +287,13 @@ export const readingMethods = {
     const {items} = await edrms.searchDocuments({
       q: parcelWords(parcel),
       limit: 200,
+      intake,
     });
     for (const d of items) {
-      if (propertyMatches(parcel, d.props?.property)) {
+      if (!propertyMatches(parcel, d.props?.property)) continue;
+      if (d.status === 'intake') {
+        inIntake.push(d);
+      } else {
         add(d, `Property: ${d.props.property}`);
       }
     }
@@ -287,10 +325,16 @@ export const readingMethods = {
     }
 
     const pinnedBy = await this.repo.findRecordsPinning([...found.keys()]);
-    const items2 = [...found.values()].map(({doc, reasons}) => ({
-      ...this.documentSummary(doc, pinnedBy, recordId),
-      reasons,
-    }));
+    const items2 = [
+      ...[...found.values()].map(({doc, reasons}) => ({
+        ...this.documentSummary(doc, pinnedBy, recordId),
+        reasons,
+      })),
+      ...inIntake.map(d => ({
+        ...this.documentSummary(d, pinnedBy, recordId),
+        reasons: [],
+      })),
+    ];
     // not yet in this record first, then by registration reference
     items2.sort(
       (a, b) =>

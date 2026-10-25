@@ -13,8 +13,10 @@ import {
   healthCheck,
   startService,
 } from '@lrfe/common';
+import {createEngine, loadCountryPack} from '@lrfe/search-index';
 import {buildApp} from './app.js';
 import {EdrmsService} from './edrms.service.js';
+import {createIndexSearch} from './index-search.js';
 import {createMemoryRepo} from './repo/memory.js';
 import {createSequelizeRepo} from './repo/sequelize.js';
 import {SCHEMA} from './repo/models.js';
@@ -54,8 +56,24 @@ const events = createEventBus({
   source: 'edrms',
   outbox,
 });
+// document search: the database (the default), or the search index (API-803)
+let indexSearch = null;
+if (
+  envOneOf('EDRMS_SEARCH', ['postgres', 'opensearch'], 'postgres') ===
+  'opensearch'
+) {
+  const url = env('OPENSEARCH_URL', '');
+  if (!url) throw new Error('EDRMS_SEARCH=opensearch needs OPENSEARCH_URL');
+  indexSearch = createIndexSearch({
+    request: createEngine({url, loginDir: env('OPENSEARCH_LOGIN_DIR', '')}),
+    // the same pack the search service builds the index with
+    pack: loadCountryPack(env('EDRMS_COUNTRY_CODE', 'NA')),
+  });
+}
+
 const service = new EdrmsService({
   repo,
+  indexSearch,
   store,
   events,
   // each version's anchoring status, from the audit service (API-658; best effort)
