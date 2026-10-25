@@ -8,9 +8,11 @@ import {
   SearchService,
   retryDelayMs,
 } from '../src/search.service.js';
+import {readState, rebuildIndex} from '../src/rebuild.js';
 import {
   DEAD_LETTER_INDEX,
   INDEX_ALIAS,
+  aliasIndex,
   buildSearchQuery,
   loadCountryPack,
 } from '@lrfe/search-index';
@@ -377,6 +379,85 @@ const NA = loadCountryPack('NA');
       // without a date: everything
       await search.reindex();
       expect((await entry(before.id)).found).to.equal(true);
+    });
+
+    /** The ids in an index, whatever the alias says. */
+    const idsIn = async index => {
+      await engine.request('POST', `/${index}/_refresh`);
+      const res = await engine.request('POST', `/${index}/_search`, {
+        size: 100,
+      });
+      return res.body.hits.hits.map(h => h._id).sort();
+    };
+
+    it('a rebuild fills a new index while search uses the old one, then switches over (API-804)', async () => {
+      const {captureAndExtract, service, search, clock} = await indexed();
+      const filed = await captureAndExtract(pdf('filed before'));
+      await reviewAndFile(service, filed.id);
+      const waiting = await captureAndExtract(pdf('waiting before'));
+      let during = null;
+      const steps = [];
+      const result = await rebuildIndex(search, {
+        clock,
+        progress: async state => {
+          steps.push(state.step);
+          if (state.step !== 'fill' || during) return;
+          // during the fill search still answers, from the old index
+          expect(await aliasIndex(engine.request)).to.equal(
+            `${INDEX_ALIAS}-v1`,
+          );
+          expect((await found('Nghishidi')).sort()).to.deep.equal(
+            [filed.id, waiting.id].sort(),
+          );
+          // an upload read meanwhile goes to the old index, and is caught up in the new one
+          during = await captureAndExtract(pdf('read during the rebuild'));
+        },
+      });
+      expect(result).to.include({
+        index: `${INDEX_ALIAS}-v2`,
+        previous: `${INDEX_ALIAS}-v1`,
+        stopped: false,
+      });
+      expect(steps).to.include.members(['catch-up', 'switch', 'after', 'done']);
+      expect(await aliasIndex(engine.request)).to.equal(`${INDEX_ALIAS}-v2`);
+      expect(await idsIn(`${INDEX_ALIAS}-v2`)).to.deep.equal(
+        [filed.id, waiting.id, during.id].sort(),
+      );
+      expect((await entry(filed.id))._source.status).to.equal('filed');
+      // the old index and the progress are gone
+      const old = await engine.request('HEAD', `/${INDEX_ALIAS}-v1`);
+      expect(old.status).to.equal(404);
+      expect(await readState(engine.request)).to.equal(null);
+    });
+
+    it('a stopped rebuild resumes where it was; search keeps the old index meanwhile', async () => {
+      const {captureAndExtract, search, clock} = await indexed();
+      const docs = [];
+      for (const name of ['one', 'two', 'three']) {
+        docs.push(await captureAndExtract(pdf(name)));
+      }
+      let pages = 0;
+      const stopped = await rebuildIndex(search, {
+        clock,
+        pageSize: 1,
+        stop: () => pages >= 1,
+        progress: () => {
+          pages += 1;
+        },
+      });
+      expect(stopped.stopped).to.equal(true);
+      const state = await readState(engine.request);
+      expect(state).to.include({step: 'fill', done: 1, total: 3});
+      expect(await aliasIndex(engine.request)).to.equal(`${INDEX_ALIAS}-v1`);
+      expect(await found('Nghishidi')).to.have.length(3);
+
+      const resumed = await rebuildIndex(search, {clock, pageSize: 1});
+      expect(resumed).to.include({index: `${INDEX_ALIAS}-v2`, stopped: false});
+      // the first page was not filled again
+      expect(resumed).to.include({done: 3, total: 3});
+      expect(await idsIn(INDEX_ALIAS)).to.deep.equal(
+        docs.map(d => d.id).sort(),
+      );
     });
   },
 );

@@ -76,7 +76,7 @@ export const ENDPOINTS = {
       tag: 'Documents',
       summary: 'Documents changed since a moment (search service only)',
       description:
-        '`{ items: [{ documentId, status, updatedAt }], total }`, oldest change first; `since` (date-time, all when left out), `limit` (≤ 500), `offset`. For the search re-index (API-808).',
+        '`{ items: [{ documentId, status, updatedAt }], next, total }`, oldest change first; `since` (date-time, all when left out), `limit` (≤ 500). Pass `next` as `after` for the next page; null at the end. `total` on the first page only. For the search re-index and rebuild (API-808, API-804).',
     },
     'GET /documents/{id}/events': {
       tag: 'Documents',

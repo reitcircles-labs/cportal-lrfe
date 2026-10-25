@@ -5,7 +5,8 @@
  * token; stopped while documents are uploaded and filed, it catches up once started again; its
  * lag is in its health. It writes each document into the index: searchable once the AI has read
  * it, marked as in intake; filing adds the corrected values to the same entry; a rejected upload
- * disappears; "re-index since" fills a gap. The engine has no port on the host: the tests ask it
+ * disappears; "re-index since" fills a gap; a rebuild (API-804) switches the search over to a new
+ * index with every document in it. The engine has no port on the host: the tests ask it
  * from inside the search service's container, with its login. One file, run in order: a test
  * stops the container.
  */
@@ -23,6 +24,7 @@ test.describe.configure({mode: 'serial'});
 
 const tag = {tag: '@API-802'};
 const indexing = {tag: '@API-808'};
+const rebuilding = {tag: '@API-804'};
 /** A reviewer other than the one who requests a correction: the approver. */
 const SECOND = ENROLLED_USERS.find(
   u =>
@@ -347,5 +349,37 @@ test(
     const results = JSON.parse(out.trim().split('\n').at(-1)!);
     expect(results.indexed).toBeGreaterThan(0);
     expect(entry(filed.id).source?.status).toBe('filed');
+  },
+);
+
+test(
+  'a rebuild switches the search over to a new index, every document still found; the old index is removed',
+  rebuilding,
+  async ({browser, playwright, baseURL}) => {
+    await expect.poll(() => health(), {timeout: 60_000}).not.toBeNull();
+    const filed = await filedDocument(playwright, baseURL!, browser);
+    await expect
+      .poll(() => entry(filed.id).source?.status, {timeout: 15_000})
+      .toBe('filed');
+
+    const out = docker(
+      'exec',
+      container(),
+      'node',
+      'src/reindex.js',
+      '--rebuild',
+    );
+    const result = JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(result.stopped).toBe(false);
+    expect(result.index).not.toBe(result.previous);
+    expect(result.done).toBe(result.total);
+    const now = inSearch(`
+      const {aliasIndex} = await import('@lrfe/search-index');
+      const old = await engine('HEAD', '/' + ${JSON.stringify(result.previous)});
+      return {alias: await aliasIndex(engine), old: old.status};
+    `) as {alias: string; old: number};
+    expect(now).toEqual({alias: result.index, old: 404});
+    expect(entry(filed.id).source?.status).toBe('filed');
+    expect(found(filed.edrmsNo)).toEqual([filed.id]);
   },
 );

@@ -54,7 +54,11 @@ field's role (reference, number, name, place) comes from intake's catalogue (`se
   it once indexed again.
 - **Re-index since a date:** `node src/reindex.js --since <date>` (all without it) fetches every
   document intake or edrms changed since then (their `GET /documents/changed`, search service
-  only) and writes its entry as an event would.
+  only, a page at a time after a cursor) and writes its entries in bulk.
+- **Rebuild (API-804):** `node src/reindex.js --rebuild` fills a new index (`lrfe-documents-v<n+1>`)
+  from both sources while search uses the old one, catches up on what changed meanwhile, moves
+  the alias in one step and removes the old index (`src/rebuild.js`). Its progress is kept in
+  `lrfe-documents-rebuild` after each page: stopped (Ctrl-C) or failed, it resumes when run again.
 - **Without a search engine** (`OPENSEARCH_URL` not set: development, an install without the
   profile) documents are only fetched and logged, as before API-808.
 

@@ -46,8 +46,21 @@ export const retryDelayMs = (attempt, baseMs = 5000) =>
 /** After this many failures a document goes to the dead-letter list. */
 export const MAX_ATTEMPTS = 8;
 
-/** A page of a changed-since list in the re-index. */
+/** A page of a changed-since list in the re-index, written in one bulk request. */
 const PAGE = 200;
+
+/** Documents of a page fetched from intake and edrms at once. */
+const FETCHES = 16;
+
+/**
+ * Where the re-index reads documents: intake first (documents not filed yet, and filed ones with
+ * their EDRMS side), then edrms (filed documents, also those intake no longer has, and
+ * corrections, which change only edrms' document).
+ */
+const SOURCES = [
+  {from: 'intake', id: d => d.documentId},
+  {from: 'edrms', id: d => d.id},
+];
 
 /** Intake's statuses of a document the AI has read (and of a rejected one, which is removed). */
 const READ = new Set(['ready', 'filed', 'rejected']);
@@ -168,41 +181,147 @@ export class SearchService {
   }
 
   /**
-   * Fetches a document from `from` (and its other side) and writes, replaces or removes its
-   * entry: `{ result: indexed | removed | stale | logged | missing, summary }`.
+   * Fetches a document from `from` (and its other side) and says what its entry should be:
+   * `{ action: write | remove | skip | missing, entry, summary }`. `gone`: intake no longer has
+   * the document, so its entry (if any) is removed.
    */
-  async indexDocument(from, documentId) {
+  async prepare(from, documentId) {
     let reading;
     let filed;
     if (from === 'intake') {
       reading = await this.intake.getReading(documentId);
-      if (!reading) {
-        await this.remove(documentId, null);
-        return {result: 'missing'};
-      }
+      if (!reading) return {action: 'missing', gone: documentId};
       filed = reading.filedDocumentId
         ? await this.edrms.getDocument(reading.filedDocumentId)
         : null;
     } else {
       filed = await this.edrms.getDocument(documentId);
-      if (!filed) return {result: 'missing'};
+      if (!filed) return {action: 'missing'};
       reading = filed.sourceId
         ? await this.intake.getReading(filed.sourceId)
         : null;
     }
     const summary = summarise(reading, filed);
     const entry = buildEntry({reading, filed});
-    const done = result => ({result, summary, entryId: entry.id});
     // an upload the AI has not read (yet, or it failed): nothing to search; its reading's event
     // indexes it (the re-index meets these)
-    if (!filed && !READ.has(reading.status)) return done('skipped');
-    if (!this.engine) return done('logged');
+    if (!filed && !READ.has(reading.status)) {
+      return {action: 'skip', entry, summary};
+    }
     // a rejected upload leaves the results. The removal's mark lasts only a minute in the
     // index, but a later event fetches the rejection again and removes it again
-    if (reading.status === 'rejected' && !filed) {
+    if (reading?.status === 'rejected' && !filed) {
+      return {action: 'remove', entry, summary};
+    }
+    return {action: 'write', entry, summary};
+  }
+
+  /**
+   * Fetches a document from `from` (and its other side) and writes, replaces or removes its
+   * entry: `{ result: indexed | removed | stale | skipped | logged | missing, summary }`.
+   */
+  async indexDocument(from, documentId) {
+    const prepared = await this.prepare(from, documentId);
+    if (prepared.action === 'missing') {
+      if (prepared.gone) await this.remove(prepared.gone, null);
+      return {result: 'missing'};
+    }
+    const {entry, summary} = prepared;
+    const done = result => ({result, summary, entryId: entry.id});
+    if (prepared.action === 'skip') return done('skipped');
+    if (!this.engine) return done('logged');
+    if (prepared.action === 'remove') {
       return done(await this.remove(entry.id, entry.version));
     }
     return done(await this.write(entry));
+  }
+
+  /**
+   * Indexes a page of documents from `from` into `index` (the alias, or a rebuild's new index):
+   * fetched a few at a time, written in one bulk request. Returns the count per result and the
+   * ids (listed, and of the entry) of the documents found, for the dead-letter list.
+   */
+  async indexPage(from, ids, {index = INDEX_ALIAS} = {}) {
+    const results = emptyResults();
+    const prepared = await mapLimit(ids, FETCHES, id => this.prepare(from, id));
+    const found = prepared.flatMap((p, n) =>
+      p.action === 'missing' ? [] : [ids[n], p.entry.id],
+    );
+    // the bulk request's lines, and per line the result it counts for
+    const lines = [];
+    const counted = [];
+    for (const p of prepared) {
+      if (p.action === 'missing') {
+        results.missing += 1;
+        if (p.gone && this.engine) {
+          lines.push({delete: {_index: index, _id: p.gone}});
+          counted.push(null);
+        }
+      } else if (p.action === 'skip') {
+        results.skipped += 1;
+      } else if (!this.engine) {
+        results.logged += 1;
+      } else {
+        const meta = {
+          _index: index,
+          _id: p.entry.id,
+          version: p.entry.version,
+          version_type: 'external_gte',
+        };
+        if (p.action === 'remove') {
+          lines.push({delete: meta});
+          counted.push('removed');
+        } else {
+          lines.push({index: meta}, p.entry.body);
+          counted.push('indexed');
+        }
+      }
+    }
+    if (lines.length === 0) return {results, found};
+    const body = lines.map(l => JSON.stringify(l)).join('\n') + '\n';
+    const res = await this.bulk(body);
+    res.body.items.forEach((item, n) => {
+      const {status, error} = item.index ?? item.delete;
+      const result = counted[n];
+      if (status === 409) {
+        if (result) results.stale += 1;
+      } else if (status >= 300 && status !== 404) {
+        throw new AppError(
+          status === 503 ? 503 : 502,
+          `The search engine could not write the entry: ${status} ${error?.type ?? ''}`.trim(),
+        );
+      } else if (result) {
+        results[result] += 1;
+      }
+    });
+    return {results, found};
+  }
+
+  /**
+   * One bulk request; when the engine is too busy (429, for the request or any of its lines) or
+   * does not answer in time, it is sent again after 2 s, 4 s, … up to 5 times. Sending it again is
+   * safe: each line carries its version.
+   */
+  async bulk(body) {
+    for (let attempt = 1; ; attempt++) {
+      let res;
+      try {
+        res = await this.engine('POST', '/_bulk', body);
+      } catch (err) {
+        if (attempt > 5) throw err;
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+        continue;
+      }
+      const busy =
+        res.status === 429 ||
+        (res.status < 300 &&
+          res.body.items.some(i => (i.index ?? i.delete).status === 429));
+      if (!busy || attempt > 5) {
+        if (res.status >= 300) throw engineError('write', res);
+        return res;
+      }
+      await new Promise(r => setTimeout(r, 2000 * attempt));
+    }
   }
 
   /** Writes the entry unless the index has a newer one: indexed, or stale. */
@@ -275,45 +394,75 @@ export class SearchService {
    * "Re-index since": every document intake or edrms changed at or after `since` (all when null),
    * indexed again as an event would (used after a restore, API-806, and for documents from before
    * the search service). Returns the counts per result.
+   *
+   * For a rebuild (API-804): `index` is the new index; `start` the position to resume from
+   * (`{ source, after }`, as given to `onPage`); `onPage({ position, done, results })` is called
+   * after each page with the position to resume from (null at the end); when `stop()` says so it
+   * returns before the next page, with `stopped: true`.
    */
-  async reindex({since = null} = {}) {
-    const results = {
-      indexed: 0,
-      removed: 0,
-      stale: 0,
-      skipped: 0,
-      logged: 0,
-      missing: 0,
-    };
-    const sources = [
-      {from: 'intake', list: this.intake, id: d => d.documentId},
-      // corrections change only edrms' document
-      {from: 'edrms', list: this.edrms, id: d => d.id},
-    ];
-    for (const source of sources) {
-      // pages by position: a document changed during the run can move past a page boundary, but
-      // that change is an event, which indexes it anyway
-      for (let offset = 0; ; offset += PAGE) {
-        const page = await source.list.listChanged({
+  async reindex({
+    since = null,
+    index = INDEX_ALIAS,
+    start = null,
+    onPage = null,
+    stop = () => false,
+    pageSize = PAGE,
+  } = {}) {
+    const results = emptyResults();
+    // the documents in the dead-letter list leave it when they are indexed
+    const deadLettered = new Set(
+      ((await this.deadLetters({size: 10_000}))?.items ?? []).map(
+        d => d.documentId,
+      ),
+    );
+    const first = start ? SOURCES.findIndex(x => x.from === start.source) : 0;
+    for (let n = first; n < SOURCES.length; n++) {
+      const source = SOURCES[n];
+      const list = source.from === 'intake' ? this.intake : this.edrms;
+      let after = n === first ? (start?.after ?? null) : null;
+      do {
+        if (stop()) return {...results, stopped: true};
+        const page = await list.listChanged({
           since,
-          limit: PAGE,
-          offset,
+          after,
+          limit: pageSize,
         });
-        for (const d of page.items) {
-          const {result, entryId} = await this.indexDocument(
-            source.from,
-            source.id(d),
-          );
-          results[result] += 1;
-          if (result !== 'missing') {
-            await this.clearDeadLetter(source.id(d));
-            if (entryId) await this.clearDeadLetter(entryId);
-          }
+        const ids = page.items.map(source.id);
+        const {results: counts, found} = await this.indexPage(
+          source.from,
+          ids,
+          {index},
+        );
+        for (const [k, v] of Object.entries(counts)) results[k] += v;
+        for (const id of found) {
+          if (deadLettered.delete(id)) await this.clearDeadLetter(id);
         }
-        if (page.items.length < PAGE) break;
-      }
+        after = page.next;
+        if (onPage) {
+          const next = SOURCES[n + 1];
+          await onPage({
+            position: after
+              ? {source: source.from, after}
+              : next
+                ? {source: next.from, after: null}
+                : null,
+            done: ids.length,
+            results: counts,
+          });
+        }
+      } while (after);
     }
     return results;
+  }
+
+  /** How many documents intake and edrms have changed since `since` (all when null). */
+  async countChanged({since = null} = {}) {
+    let total = 0;
+    for (const source of SOURCES) {
+      const list = source.from === 'intake' ? this.intake : this.edrms;
+      total += (await list.listChanged({since, limit: 1})).total;
+    }
+    return total;
   }
 
   /**
@@ -346,11 +495,11 @@ export class SearchService {
   }
 
   /** The dead-letter list, newest first: `{ total, items }`; null without an engine or when it cannot say. */
-  async deadLetters() {
+  async deadLetters({size = 20} = {}) {
     if (!this.engine) return null;
     try {
       const res = await this.engine('POST', `/${DEAD_LETTER_INDEX}/_search`, {
-        size: 20,
+        size,
         sort: [{at: 'desc'}],
         track_total_hits: true,
       });
@@ -363,6 +512,34 @@ export class SearchService {
       return null;
     }
   }
+}
+
+/** A count per result of the re-index. */
+function emptyResults() {
+  return {
+    indexed: 0,
+    removed: 0,
+    stale: 0,
+    skipped: 0,
+    logged: 0,
+    missing: 0,
+  };
+}
+
+/** `fn` over `items`, at most `limit` at once, the results in order. */
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const n = next++;
+      out[n] = await fn(items[n]);
+    }
+  };
+  await Promise.all(
+    Array.from({length: Math.min(limit, items.length)}, worker),
+  );
+  return out;
 }
 
 function engineError(what, res) {

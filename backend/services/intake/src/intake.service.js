@@ -6,6 +6,8 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  changedCursor,
+  readChangedCursor,
 } from '@lrfe/common';
 import {storageKey} from '@lrfe/storage';
 import {docType, searchRole} from './doc-types.js';
@@ -531,18 +533,25 @@ export class IntakeService {
   }
 
   /**
-   * The documents changed since a moment, oldest change first, for the search service's
-   * re-index (API-808): `{ items: [{ documentId, status, updatedAt }], total }`.
+   * The documents changed since a moment, oldest change first, for the search service's re-index
+   * (API-808, API-804): `{ items: [{ documentId, status, updatedAt }], next, total }`. `next` is
+   * the cursor to pass as `after` for the next page (null at the end); `total` is given on the
+   * first page only.
    */
-  async listChanged({since = null, limit = 200, offset = 0} = {}) {
-    const res = await this.repo.listChanged({since, limit, offset});
+  async listChanged({since = null, after = null, limit = 200} = {}) {
+    const res = await this.repo.listChanged({
+      since,
+      after: readChangedCursor(after),
+      limit,
+    });
     return {
       items: res.items.map(d => ({
         documentId: d.id,
         status: d.status,
         updatedAt: d.updatedAt,
       })),
-      total: res.total,
+      next: res.items.length === limit ? changedCursor(res.items.at(-1)) : null,
+      ...(res.total === null ? {} : {total: res.total}),
     };
   }
 

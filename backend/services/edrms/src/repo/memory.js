@@ -1,4 +1,4 @@
-import {ConflictError} from '@lrfe/common';
+import {ConflictError, isAfterCursor} from '@lrfe/common';
 import {matchScore, normalizeSearch, searchTextOf} from '../search.js';
 import {normalizeRef} from '../catalogue.js';
 
@@ -43,19 +43,22 @@ export function createMemoryRepo() {
     async getDocument(id) {
       return clone(docs.get(id)) ?? null;
     },
-    /** Documents changed at or after `since` (all when null), oldest change first. */
-    async listChanged({since = null, limit = 200, offset = 0} = {}) {
+    /** Documents changed at or after `since` (all when null), oldest change first, after `after`. */
+    async listChanged({since = null, after = null, limit = 200} = {}) {
       const from = since ? new Date(since).getTime() : -Infinity;
       const all = [...docs.values()]
         .filter(d => new Date(d.updatedAt).getTime() >= from)
         .sort(
           (a, b) =>
             new Date(a.updatedAt) - new Date(b.updatedAt) ||
-            a.id.localeCompare(b.id),
+            (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
         );
       return {
-        items: all.slice(offset, offset + limit).map(clone),
-        total: all.length,
+        items: all
+          .filter(d => !after || isAfterCursor(d, after))
+          .slice(0, limit)
+          .map(clone),
+        total: after ? null : all.length,
       };
     },
     async findDocument(where) {

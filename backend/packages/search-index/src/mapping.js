@@ -14,6 +14,9 @@ export const indexName = version => `${INDEX_ALIAS}-v${version}`;
  */
 export const DEAD_LETTER_INDEX = `${INDEX_ALIAS}-failed`;
 
+/** A rebuild's progress (API-804): one entry while a rebuild is under way, never searched. */
+export const REBUILD_INDEX = `${INDEX_ALIAS}-rebuild`;
+
 const DEAD_LETTER_BODY = {
   settings: {number_of_shards: 1, number_of_replicas: 0},
   mappings: {
@@ -186,7 +189,7 @@ export async function ensureDeadLetterIndex(request, {replicas = 0} = {}) {
  * The index the alias points to, null when there is no alias. During a switch (API-804) it can
  * point to two: the one written to, else the newest.
  */
-async function aliasIndex(request) {
+export async function aliasIndex(request) {
   // asked among the indexes the service's role covers (lrfe-documents*): a bare /_alias/… is
   // a question about every index, which the role does not allow
   const res = await request(
@@ -205,6 +208,23 @@ async function aliasIndex(request) {
     n => res.body[n].aliases?.[INDEX_ALIAS]?.is_write_index,
   );
   return writing ?? names.at(-1);
+}
+
+/** The versions of the indexes there are (`lrfe-documents-v1` → 1), lowest first. */
+export async function indexVersions(request) {
+  const res = await request(
+    'GET',
+    `/${INDEX_ALIAS}-v*/_alias?allow_no_indices=true&ignore_unavailable=true`,
+  );
+  if (res.status === 404) return [];
+  if (res.status !== 200) {
+    throw new Error(`The search indexes cannot be listed: ${res.status}`);
+  }
+  return Object.keys(res.body ?? {})
+    .map(n => n.match(new RegExp(`^${INDEX_ALIAS}-v(\\d+)$`))?.[1])
+    .filter(Boolean)
+    .map(Number)
+    .sort((a, b) => a - b);
 }
 
 /**

@@ -6,7 +6,7 @@
  */
 import {spawnSync} from 'node:child_process';
 import {createServer} from 'node:net';
-import {DEAD_LETTER_INDEX, INDEX_ALIAS} from './mapping.js';
+import {DEAD_LETTER_INDEX, INDEX_ALIAS, REBUILD_INDEX} from './mapping.js';
 
 /** The image the install runs (deploy/docker-compose.yml). */
 const IMAGE = 'opensearchproject/opensearch:3.9.0';
@@ -102,6 +102,7 @@ export async function startTestEngine() {
   const empty = async () => {
     await request('DELETE', `/${INDEX_ALIAS}-v*`);
     await request('DELETE', `/${DEAD_LETTER_INDEX}`);
+    await request('DELETE', `/${REBUILD_INDEX}`);
   };
   return {url, request, empty, stop};
 }

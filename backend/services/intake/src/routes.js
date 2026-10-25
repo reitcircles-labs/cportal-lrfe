@@ -110,8 +110,9 @@ export async function intakeRoutes(
               pattern:
                 '^(queued|extracting|ready|failed|filed|rejected)(,(queued|extracting|ready|failed|filed|rejected))*$',
             },
+            // the `next` of the page before
+            after: {type: 'string', maxLength: 300},
             limit: {type: 'integer', minimum: 1, maximum: 500, default: 200},
-            offset: {type: 'integer', minimum: 0, default: 0},
           },
         },
       },
@@ -126,7 +127,7 @@ export async function intakeRoutes(
   app.get('/documents/:id', {...readGuard, schema: idParams()}, async req =>
     service.getDocument(req.params.id),
   );
-  /** The documents changed since a moment, for the search service's re-index (API-808). */
+  /** The documents changed since a moment, for the search service's re-index (API-808, API-804). */
   app.get(
     '/documents/changed',
     {
@@ -136,8 +137,9 @@ export async function intakeRoutes(
           type: 'object',
           properties: {
             since: {type: 'string', format: 'date-time'},
+            // the `next` of the page before
+            after: {type: 'string', maxLength: 300},
             limit: {type: 'integer', minimum: 1, maximum: 500, default: 200},
-            offset: {type: 'integer', minimum: 0, default: 0},
           },
           additionalProperties: false,
         },

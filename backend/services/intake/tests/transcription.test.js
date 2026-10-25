@@ -197,6 +197,13 @@ describe('page text (API-798)', () => {
       second.id,
     ]);
     expect(all.total).to.equal(2);
+    expect(all.next).to.equal(null);
+    // a page at a time, after the cursor of the one before (API-804)
+    const page1 = (await list('limit=1')).json();
+    expect(page1.items.map(d => d.documentId)).to.deep.equal([first.id]);
+    const page2 = (await list(`limit=1&after=${page1.next}`)).json();
+    expect(page2.items.map(d => d.documentId)).to.deep.equal([second.id]);
+    expect(page2).to.not.have.property('total');
     const denied = await app.inject({
       url: '/documents/changed',
       headers: as(users.aud),

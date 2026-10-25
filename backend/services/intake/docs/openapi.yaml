@@ -247,6 +247,12 @@ paths:
           schema:
             type: string
             pattern: ^(queued|extracting|ready|failed|filed|rejected)(,(queued|extracting|ready|failed|filed|rejected))*$
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
         - name: limit
           in: query
           required: false
@@ -255,13 +261,6 @@ paths:
             minimum: 1
             maximum: 500
             default: 200
-        - name: offset
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
       responses:
         "200":
           description: OK
@@ -355,8 +354,9 @@ paths:
         - Documents
       summary: Documents changed since a moment (search service only)
       description: >-
-        `{ items: [{ documentId, status, updatedAt }], total }`, oldest change first; `since` (date-time, all when left out), `limit` (≤
-        500), `offset`. For the search re-index (API-808).
+        `{ items: [{ documentId, status, updatedAt }], next, total }`, oldest change first; `since` (date-time, all when left out), `limit`
+        (≤ 500). Pass `next` as `after` for the next page; null at the end. `total` on the first page only. For the search re-index and
+        rebuild (API-808, API-804).
 
 
         **Access:** Service token only, from: `search`. Browsers cannot call this.
@@ -368,6 +368,12 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
         - name: limit
           in: query
           required: false
@@ -376,13 +382,6 @@ paths:
             minimum: 1
             maximum: 500
             default: 200
-        - name: offset
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
       responses:
         "200":
           description: OK

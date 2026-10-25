@@ -37,6 +37,7 @@ export {
   SERVICE_TOKEN_TYPE,
 } from './auth.js';
 export {createEventBus} from './events.js';
+export {changedCursor, readChangedCursor, isAfterCursor} from './changed.js';
 export {createRevocationList, SESSION_REVOKED} from './revocations.js';
 export {createBaseApp, startService} from './app.js';
 export {canonicalJson, sha256Hex, normalizeSearch} from './canonical.js';

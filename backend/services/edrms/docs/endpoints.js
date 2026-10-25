@@ -45,7 +45,7 @@ export const ENDPOINTS = {
       tag: 'Documents',
       summary: 'Documents changed since a moment (search service only)',
       description:
-        '`{ items: [{ id, sourceId, updatedAt }], total }`, filed or corrected at or after `since` (date-time, all when left out), oldest change first; `limit` (≤ 500), `offset`. For the search re-index (API-808).',
+        '`{ items: [{ id, sourceId, updatedAt }], next, total }`, filed or corrected at or after `since` (date-time, all when left out), oldest change first; `limit` (≤ 500). Pass `next` as `after` for the next page; null at the end. `total` on the first page only. For the search re-index and rebuild (API-808, API-804).',
     },
     'GET /documents/{id}': {
       tag: 'Documents',

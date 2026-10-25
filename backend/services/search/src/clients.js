@@ -37,19 +37,19 @@ async function getJson({
   return json;
 }
 
-/** The query of a changed-since list: `since` (left out: all), `limit`, `offset`. */
-function changedQuery({since, limit, offset}) {
+/** The query of a changed-since list: `since` (left out: all), `after` (the last page's `next`), `limit`. */
+function changedQuery({since, after, limit}) {
   return new URLSearchParams({
     ...(since ? {since: new Date(since).toISOString()} : {}),
+    ...(after ? {after} : {}),
     limit: String(limit),
-    offset: String(offset),
   }).toString();
 }
 
 /**
  * The search service's calls to intake, with its own service token:
  *   getReading(id) → { documentId, status, docType, reference, fields, pages, … } | null
- *   listChanged({ since, limit, offset }) → { items: [{ documentId, updatedAt }], total }
+ *   listChanged({ since, after, limit }) → { items: [{ documentId, status, updatedAt }], next, total }
  * (intake GET /documents/:id/reading, which takes the search service's token only, API-798).
  * `fetchImpl` lets tests route calls into an in-process intake app.
  */
@@ -84,7 +84,7 @@ export function createIntakeClient({
 /**
  * The search service's calls to edrms, with its own service token (read only):
  *   getDocument(id) → the filed document: edrmsNo, corrected fields, recordMetadata, … | null
- *   listChanged({ since, limit, offset }) → { items: [{ id, sourceId, updatedAt }], total }
+ *   listChanged({ since, after, limit }) → { items: [{ id, sourceId, updatedAt }], next, total }
  * `fetchImpl` lets tests route calls into an in-process edrms app.
  */
 export function createEdrmsClient({
