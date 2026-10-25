@@ -448,9 +448,14 @@ configuration.
      (`<directory>/logs/lrfe-search.log`, readable by the install user while it is unlocked);
      Docker's log (`docker compose logs opensearch`) has only its start and stop, since an error can
      quote a document's text;
-   - `search-users` applies the users and roles (about a minute), then exits.
+   - `search-users` applies the users and roles (about a minute), then exits;
+   - the search service (`search`) follows intake's and edrms' document events: each document read
+     by the AI, rejected, filed or corrected. It catches up by itself after it was stopped (the
+     event stream keeps events `EVENT_STREAM_MAX_AGE_DAYS`, 30 by default). Until the index is
+     written (API-808) it only fetches the documents and logs their sizes, never their text.
 4. Check: the readiness check (`demo/check-readiness.mjs` in the source repository) shows the
-   engine's health and whether edrms reaches it with its login.
+   engine's health, whether edrms reaches it with its login, and how many document events the search
+   service has not handled yet (its lag).
 
 **Disk space.** From `OPENSEARCH_MIN_FREE_GB` (part H): below that much free space on its disk the
 engine places no new index parts, below half of it it warns in its log, and below a quarter it takes

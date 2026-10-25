@@ -246,8 +246,8 @@ describe('intake: capture → extract → review → file', () => {
     );
   });
 
-  it('rejecting keeps the document; a filed one cannot be rejected', async () => {
-    const {captureAndExtract, service} = await makeIntake();
+  it('rejecting keeps the document and publishes intake.document.rejected; a filed one cannot be rejected', async () => {
+    const {captureAndExtract, service, published} = await makeIntake();
     const doc = await captureAndExtract();
     await rejects(service.rejectDocument(doc.id, '', actor(users.rev)), 400);
     const r = await service.rejectDocument(
@@ -259,6 +259,10 @@ describe('intake: capture → extract → review → file', () => {
       status: 'rejected',
       rejectedReason: 'Duplicate scan of page 2',
     });
+    // the search service takes it out of the results (API-802); the reason stays in intake
+    const event = published.find(e => e.type === 'intake.document.rejected');
+    expect(event.data).to.deep.equal({documentId: doc.id});
+    expect(event.actor.name).to.equal(actor(users.rev).name);
   });
 });
 

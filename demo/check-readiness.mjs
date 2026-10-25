@@ -223,6 +223,7 @@ function checkContainers(env) {
       'search-prepare',
       'opensearch',
       'search-users',
+      'search',
     );
   }
 
@@ -760,7 +761,17 @@ const status = await new Promise((resolve, reject) => {
 console.log(JSON.stringify({status}));
 `;
 
-/** The search engine (profile search, API-800, deploy/README.md part I): healthy, and reachable from edrms. */
+/** The search service's event consumers (API-802): the events intake and edrms published that it has not handled yet. */
+const SEARCH_LAG_PROGRAM = `
+const res = await fetch('http://localhost:' + process.env.PORT + '/health/events', {signal: AbortSignal.timeout(8000)});
+const {lag} = await res.json();
+console.log(JSON.stringify({lag}));
+`;
+
+/**
+ * The search engine (profile search, API-800, deploy/README.md part I): healthy, reachable from
+ * edrms, and the search service's lag (API-802).
+ */
 function checkSearchEngine(env) {
   if (!profilesOf(env).includes('search')) return;
   const group = 'Search engine';
@@ -807,6 +818,34 @@ function checkSearchEngine(env) {
     );
   } else {
     report(group, OK, 'edrms', 'reaches it over TLS with its own login');
+  }
+  const consumers = inContainer('search', SEARCH_LAG_PROGRAM);
+  if (consumers.error) {
+    report(
+      group,
+      FAIL,
+      'search service',
+      `does not answer: ${consumers.error}`,
+      `${composeCmd} logs --tail 40 search`,
+    );
+  } else if (typeof consumers.lag !== 'number') {
+    report(
+      group,
+      WARN,
+      'search service',
+      'cannot say how many events wait: not connected to the event bus yet',
+      `${composeCmd} logs --tail 40 search`,
+    );
+  } else {
+    report(
+      group,
+      consumers.lag === 0 ? OK : WARN,
+      'search service',
+      consumers.lag === 0
+        ? 'every document event handled'
+        : `${consumers.lag} document events not handled yet (it catches up on its own)`,
+      consumers.lag === 0 ? '' : `${composeCmd} logs --tail 40 search`,
+    );
   }
 }
 

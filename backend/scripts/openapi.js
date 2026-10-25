@@ -29,6 +29,7 @@ const SERVICES = [
   'land-records',
   'audit',
   'extracts',
+  'search',
 ];
 const CHECK = process.argv.includes('--check');
 const STUB_SECRET = 'openapi-generator-secret-not-used-for-anything';

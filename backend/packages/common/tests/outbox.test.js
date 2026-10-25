@@ -230,6 +230,12 @@ async function until(check, ms = 8000) {
       await edrms.publish('edrms.document.amended', {n: 2});
       await edrms.publish('edrms.document.amended', {n: 3});
       await edrms.flush();
+      // the two it missed show as its lag (API-802)
+      expect(
+        await until(
+          async () => (await edrms.consumerLag('test-catchup'))?.pending === 2,
+        ),
+      ).to.equal(true);
 
       let fail = true;
       const again = bus({source: 'land-records'}); // back up, same durable consumer
@@ -250,6 +256,14 @@ async function until(check, ms = 8000) {
         'missed events delivered, the failed one again',
       ).to.equal(true);
       expect(got.filter(n => n === 1)).to.have.length(1);
+      expect(
+        await until(async () => {
+          const lag = await edrms.consumerLag('test-catchup');
+          return lag?.pending === 0 && lag?.unacked === 0;
+        }),
+        'no lag once caught up',
+      ).to.equal(true);
+      expect(await edrms.consumerLag('no-such-consumer')).to.equal(null);
     });
 
     it('consume(">") gets every durable event of every service, also those published while it was down (API-654)', async () => {

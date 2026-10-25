@@ -70,6 +70,10 @@ const PROCESSES = {
     cwd: join(ROOT, 'services', 'extracts'),
     args: ['--watch', 'src/index.js'],
   },
+  search: {
+    cwd: join(ROOT, 'services', 'search'),
+    args: ['--watch', 'src/index.js'],
+  },
   gateway: {
     cwd: join(ROOT, 'services', 'gateway'),
     args: ['--watch', 'src/index.js'],
@@ -78,7 +82,7 @@ const PROCESSES = {
   docs: {cwd: ROOT, args: ['scripts/docs-server.js'], optional: true},
 };
 const SERVICES = Object.keys(PROCESSES);
-const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 34, 95, 96, 90];
+const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 34, 95, 96, 91, 90];
 
 const wanted = process.argv.slice(2);
 const unknown = wanted.filter(s => !SERVICES.includes(s));

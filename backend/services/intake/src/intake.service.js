@@ -965,14 +965,24 @@ export class IntakeService {
     if (this.claimActive(d) && d.claimedById !== actor.id) {
       throw new ForbiddenError(`${d.claimedByName} is reviewing this document`);
     }
-    const updated = await this.save(d, {
-      status: 'rejected',
-      rejectedReason: String(reason).trim(),
-      claimedById: null,
-      claimedByName: null,
-      claimedAt: null,
+    // the rejected state, its history entry and its event are committed together (the search
+    // service takes the document out of the results, API-802)
+    const updated = await this.events.atomic(async () => {
+      const saved = await this.save(d, {
+        status: 'rejected',
+        rejectedReason: String(reason).trim(),
+        claimedById: null,
+        claimedByName: null,
+        claimedAt: null,
+      });
+      await this.event(id, 'rejected', actor, {detail: saved.rejectedReason});
+      await this.events.publish(
+        'intake.document.rejected',
+        {documentId: id},
+        {actor},
+      );
+      return saved;
     });
-    await this.event(id, 'rejected', actor, {detail: updated.rejectedReason});
     return this.summary(updated);
   }
 

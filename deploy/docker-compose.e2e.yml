@@ -48,6 +48,12 @@ services:
       - -dev-root-token-id=${E2E_BAO_TOKEN:?}
       - -dev-listen-address=0.0.0.0:8200
 
+  search:
+    # the search service in the tests, without the search engine (whose directory must be
+    # encrypted on the host, README.md part H): its own profile, which e2e/stack/start-docker.mjs
+    # turns on, so it starts, and is removed, with the others
+    profiles: ["e2e-search"]
+
   gateway:
     ports:
       - "127.0.0.1:${E2E_API_PORT:-3600}:3500"
