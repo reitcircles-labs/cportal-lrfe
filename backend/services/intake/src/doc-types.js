@@ -390,6 +390,36 @@ export const DOC_TYPE_IDS = DOC_TYPES.map(t => t.id);
 /** The document type with this id, or null. */
 export const docType = id => DOC_TYPES.find(t => t.id === id) || null;
 
+/** The parties' names: the transferors, transferees, sellers, buyers and the people acting. */
+const NAME_FIELDS = new Set([
+  'transferor',
+  'conveyancer',
+  'executor',
+  'sellerRep',
+  'buyerRep',
+  'agent',
+  'grantor',
+  'surveyor',
+  'mortgagor',
+  'mortgagee',
+]);
+
+/**
+ * What the search index does with a field (API-808): a `reference` or `number` matches whole, a
+ * `name` or `place` by its words; null for a field that is not searched (dates, amounts, …).
+ */
+export function searchRole(field) {
+  if (['deed_ref', 'sg_ref'].includes(field.type) || field.k === 'reference') {
+    return 'reference';
+  }
+  if (field.type === 'id_number') return 'number';
+  if (field.k === 'property') return 'place';
+  if (NAME_FIELDS.has(field.k) || /^(tee|seller|buyer)\d$/.test(field.k)) {
+    return 'name';
+  }
+  return null;
+}
+
 /** Every field key across all types (the JSON schema's enum). */
 export const ALL_FIELD_KEYS = [
   ...new Set(DOC_TYPES.flatMap(t => t.fields.map(x => x.k))),

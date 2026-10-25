@@ -24,6 +24,7 @@ backend/
     ├── extracts/           :3507  ownership extracts: the register of extracts issued for a record's owners
     └── search/             :3508  document search: follows intake's and edrms' document events (API-797)
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
+packages/search-index/             @lrfe/search-index — the search index: fields, analysers from the country pack, alias, queries
 ```
 
 Stored files are to be encrypted with keys protected by OpenBao. Settings per service

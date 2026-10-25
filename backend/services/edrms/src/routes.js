@@ -202,6 +202,27 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
     },
   );
 
+  /** The documents changed since a moment, for the search service's re-index (API-808, API-804). */
+  app.get(
+    '/documents/changed',
+    {
+      onRequest: app.requireService('search'),
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            since: {type: 'string', format: 'date-time'},
+            // the `next` of the page before
+            after: {type: 'string', maxLength: 300},
+            limit: {type: 'integer', minimum: 1, maximum: 500, default: 200},
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async req => service.listChanged(req.query),
+  );
+
   app.get(
     '/documents/lookup',
     {

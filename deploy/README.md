@@ -451,11 +451,26 @@ configuration.
    - `search-users` applies the users and roles (about a minute), then exits;
    - the search service (`search`) follows intake's and edrms' document events: each document read
      by the AI, rejected, filed or corrected. It catches up by itself after it was stopped (the
-     event stream keeps events `EVENT_STREAM_MAX_AGE_DAYS`, 30 by default). Until the index is
-     written (API-808) it only fetches the documents and logs their sizes, never their text.
+     event stream keeps events `EVENT_STREAM_MAX_AGE_DAYS`, 30 by default) and writes each document
+     into the index (`lrfe-documents`): searchable within seconds of the AI's reading, with the
+     corrected values once filed, gone when rejected. It logs only document numbers and sizes,
+     never their text. The index's analysers follow the country's pack (`LRFE_COUNTRY_CODE`).
 4. Check: the readiness check (`demo/check-readiness.mjs` in the source repository) shows the
-   engine's health, whether edrms reaches it with its login, and how many document events the search
-   service has not handled yet (its lag).
+   engine's health, whether edrms reaches it with its login, how many document events the search
+   service has not handled yet (its lag), and the documents that kept failing to be indexed.
+5. **Documents from before the search engine** (an install that ran without it): index them once
+   with `docker compose exec search node src/reindex.js` (every document; it prints the counts).
+
+**Documents that keep failing.** When intake, edrms or the engine cannot answer, the search service
+tries again after 5 s, 10 s, 20 s, … (at most 5 minutes apart). After 8 failures the document is put
+on a list (the readiness check shows the list: "documents not indexed", with each document's id and
+the error) and is not tried again by itself. Once the cause is fixed, index the documents again
+with `docker compose exec search node src/reindex.js --since <the date of the earliest failure>`;
+a document indexed again leaves the list.
+
+**Re-index since a date.** `docker compose exec search node src/reindex.js --since 2026-10-01T00:00:00Z`
+indexes again every document uploaded, read, filed or corrected since then (after restoring an
+older backup of the index, API-806). It can be run again safely; without `--since` it indexes all.
 
 **Disk space.** From `OPENSEARCH_MIN_FREE_GB` (part H): below that much free space on its disk the
 engine places no new index parts, below half of it it warns in its log, and below a quarter it takes

@@ -10,6 +10,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/common/package.json packages/common/
 COPY packages/storage/package.json packages/storage/
+COPY packages/search-index/package.json packages/search-index/
 COPY services/gateway/package.json services/gateway/
 COPY services/identity/package.json services/identity/
 COPY services/edrms/package.json services/edrms/

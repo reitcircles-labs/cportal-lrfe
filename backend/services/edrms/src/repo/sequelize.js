@@ -54,6 +54,10 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.query(
         `ALTER TABLE "${SCHEMA}"."document_version" ADD COLUMN IF NOT EXISTS "encryption" JSONB`,
       ); // API-638
+      // the search service's re-index reads documents in this order (API-804)
+      await sequelize.query(
+        `CREATE INDEX IF NOT EXISTS "document_changed_order" ON "${SCHEMA}"."document" ("updatedAt", "id")`,
+      );
       // the audit service's backfill reads seals in this order (API-669)
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "document_version_seal_order" ON "${SCHEMA}"."document_version" ("createdAt", "documentId", "versionNumber")`,
@@ -112,6 +116,40 @@ export function createSequelizeRepo(sequelize) {
     },
     async getDocument(id) {
       return plain(await m.Document.findByPk(id));
+    },
+    /**
+     * Documents changed at or after `since` (all when null), oldest change first, after the
+     * position `after` ({ at, id }): an index range scan however deep. `total` on the first page.
+     */
+    async listChanged({since = null, after = null, limit = 200} = {}) {
+      const where = {
+        [Op.and]: [
+          ...(since ? [{updatedAt: {[Op.gte]: new Date(since)}}] : []),
+          ...(after
+            ? [
+                sequelize.literal(
+                  `("updatedAt", "id") > (${sequelize.escape(new Date(after.at))}, ${sequelize.escape(after.id)}::uuid)`,
+                ),
+              ]
+            : []),
+        ],
+      };
+      const rows = await m.Document.findAll({
+        where,
+        attributes: ['id', 'sourceId', 'updatedAt'],
+        // id breaks ties, so that the list never skips or repeats a document
+        order: [
+          ['updatedAt', 'ASC'],
+          ['id', 'ASC'],
+        ],
+        limit,
+      });
+      const total = after
+        ? null
+        : await m.Document.count({
+            where: since ? {updatedAt: {[Op.gte]: new Date(since)}} : {},
+          });
+      return {items: rows.map(plain), total};
     },
     async findDocument(where) {
       return plain(await m.Document.findOne({where}));

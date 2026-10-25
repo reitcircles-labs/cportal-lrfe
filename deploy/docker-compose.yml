@@ -344,9 +344,10 @@ services:
       db-setup: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
 
-  # The search service (profile search, API-802): follows intake's and edrms' document events with
-  # durable consumers, so it catches up after a stop, and fetches each document with its own
-  # service token. Reached on the internal networks only; its lag is at /health/events.
+  # The search service (profile search, API-802, API-808): follows intake's and edrms' document
+  # events with durable consumers, so it catches up after a stop, fetches each document with its
+  # own service token and writes it into the search index. Reached on the internal networks only;
+  # its lag and dead-letter list are at /health/events.
   search:
     <<: *backend
     profiles: ["search"]
@@ -357,10 +358,19 @@ services:
       PORT: "3508"
       INTAKE_URL: http://intake:3504
       EDRMS_URL: http://edrms:3502
+      # the search engine: its address, and the login made by search-prepare (user, password,
+      # ca.pem); the index's analysers from the country's pack (API-801)
+      OPENSEARCH_URL: https://opensearch:9200
+      OPENSEARCH_LOGIN_DIR: /run/lrfe/search
+      SEARCH_COUNTRY_CODE: ${LRFE_COUNTRY_CODE:-NA}
+    volumes:
+      - search-login-search:/run/lrfe/search:ro
     networks: [default, search]
     healthcheck: *healthcheck
     depends_on:
       nats: { condition: service_healthy }
+      # the engine is up and its users and roles are applied
+      search-users: { condition: service_completed_successfully }
 
   gateway:
     <<: *backend

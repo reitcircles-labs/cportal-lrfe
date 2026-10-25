@@ -764,13 +764,13 @@ console.log(JSON.stringify({status}));
 /** The search service's event consumers (API-802): the events intake and edrms published that it has not handled yet. */
 const SEARCH_LAG_PROGRAM = `
 const res = await fetch('http://localhost:' + process.env.PORT + '/health/events', {signal: AbortSignal.timeout(8000)});
-const {lag} = await res.json();
-console.log(JSON.stringify({lag}));
+const {lag, deadLetters} = await res.json();
+console.log(JSON.stringify({lag, deadLetters}));
 `;
 
 /**
  * The search engine (profile search, API-800, deploy/README.md part I): healthy, reachable from
- * edrms, and the search service's lag (API-802).
+ * edrms, the search service's lag (API-802) and its dead-letter list (API-808).
  */
 function checkSearchEngine(env) {
   if (!profilesOf(env).includes('search')) return;
@@ -845,6 +845,24 @@ function checkSearchEngine(env) {
         ? 'every document event handled'
         : `${consumers.lag} document events not handled yet (it catches up on its own)`,
       consumers.lag === 0 ? '' : `${composeCmd} logs --tail 40 search`,
+    );
+  }
+  // documents that kept failing to be indexed: not searchable until indexed again
+  const dead = consumers.deadLetters;
+  if (!consumers.error && dead) {
+    report(
+      group,
+      dead.total === 0 ? OK : WARN,
+      'documents not indexed',
+      dead.total === 0
+        ? 'none'
+        : `${dead.total} kept failing: ${dead.items
+            .slice(0, 5)
+            .map(d => `${d.documentId} (${d.error})`)
+            .join('; ')}`,
+      dead.total === 0
+        ? ''
+        : `${composeCmd} exec search node src/reindex.js --since <the earliest failure> (deploy/README.md, part I)`,
     );
   }
 }

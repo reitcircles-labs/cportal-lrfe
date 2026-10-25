@@ -5,6 +5,8 @@ import {
   BadRequestError,
   ConflictError,
   NotFoundError,
+  changedCursor,
+  readChangedCursor,
 } from '@lrfe/common';
 import {
   DOC_TYPE_IDS,
@@ -647,6 +649,29 @@ export class EdrmsService {
     }
     const {items, total} = await this.repo.listDocuments(query);
     return {items: items.map(({searchText: _s, ...d}) => d), total};
+  }
+
+  /**
+   * The documents changed (filed or corrected) since a moment, oldest change first, for the search
+   * service's re-index (API-808, API-804): `{ items: [{ id, sourceId, updatedAt }], next, total }`.
+   * `next` is the cursor to pass as `after` for the next page (null at the end); `total` is given
+   * on the first page only.
+   */
+  async listChanged({since = null, after = null, limit = 200} = {}) {
+    const res = await this.repo.listChanged({
+      since,
+      after: readChangedCursor(after),
+      limit,
+    });
+    return {
+      items: res.items.map(d => ({
+        id: d.id,
+        sourceId: d.sourceId,
+        updatedAt: d.updatedAt,
+      })),
+      next: res.items.length === limit ? changedCursor(res.items.at(-1)) : null,
+      ...(res.total === null ? {} : {total: res.total}),
+    };
   }
 
   async findByReference({edrmsNo, instrumentRef, sourceId}) {

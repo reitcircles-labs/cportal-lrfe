@@ -41,6 +41,10 @@ export function createSequelizeRepo(sequelize) {
       if (!columns.transcription) {
         await q.addColumn(document, 'transcription', {type: DataTypes.JSONB});
       } // API-798
+      // the search service's re-index reads documents in this order (API-804)
+      await sequelize.query(
+        `CREATE INDEX IF NOT EXISTS "document_changed_order" ON "${SCHEMA}"."document" ("updatedAt", "id")`,
+      );
     },
 
     async nextBatchNumber(registry) {
@@ -133,6 +137,41 @@ export function createSequelizeRepo(sequelize) {
         offset,
       });
       return {items: rows.map(doc), total: count};
+    },
+
+    /**
+     * Documents changed at or after `since` (all when null), oldest change first, after the
+     * position `after` ({ at, id }): an index range scan however deep. `total` on the first page.
+     */
+    async listChanged({since = null, after = null, limit = 200} = {}) {
+      const where = {
+        [Op.and]: [
+          ...(since ? [{updatedAt: {[Op.gte]: new Date(since)}}] : []),
+          ...(after
+            ? [
+                sequelize.literal(
+                  `("updatedAt", "id") > (${sequelize.escape(new Date(after.at))}, ${sequelize.escape(after.id)}::uuid)`,
+                ),
+              ]
+            : []),
+        ],
+      };
+      const rows = await m.Document.findAll({
+        where,
+        attributes: ['id', 'status', 'updatedAt'],
+        // id breaks ties, so that the list never skips or repeats a document
+        order: [
+          ['updatedAt', 'ASC'],
+          ['id', 'ASC'],
+        ],
+        limit,
+      });
+      const total = after
+        ? null
+        : await m.Document.count({
+            where: since ? {updatedAt: {[Op.gte]: new Date(since)}} : {},
+          });
+      return {items: rows.map(plain), total};
     },
 
     async addExtraction(e) {

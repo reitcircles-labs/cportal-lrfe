@@ -50,8 +50,10 @@ const env = {
   JWT_SECRET: 'e2e-only-jwt-secret-not-used-anywhere-else',
   POSTGRES_PASSWORD: 'e2e-only-postgres-password',
   // the bundled database, OpenBao for the stored files (API-795), the API docs (API-714) and the
-  // search service without the search engine (API-802, docker-compose.e2e.yml)
+  // search service with a throwaway search engine (API-808, docker-compose.e2e.yml)
   COMPOSE_PROFILES: 'postgres,bao,docs,e2e-search',
+  OPENSEARCH_HEAP: '512m',
+  OPENSEARCH_MEMORY: '1g',
   E2E_BAO_TOKEN: 'e2e-only-openbao-root-token',
   LRFE_DOCS_PORT: String(PORTS.docs),
   // the organisation (API-712): test texts; Namibia's two offices, which the tests use

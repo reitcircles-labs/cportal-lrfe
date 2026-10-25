@@ -1,9 +1,14 @@
 /**
- * The search service's connection (API-802): only with E2E_DOCKER=1 (npm run test:docker), where
- * it runs as its container. It receives intake's and edrms' four document events (read by the AI,
- * rejected, filed, corrected) and fetches each document with its own token; stopped while
- * documents are uploaded and filed, it catches up once started again; its lag is in its health.
- * What it fetched is only logged until the index is written (API-808): the tests read its log.
+ * The search service (API-802, API-808): only with E2E_DOCKER=1 (npm run test:docker), where it
+ * and a throwaway search engine run as containers. It receives intake's and edrms' four document
+ * events (read by the AI, rejected, filed, corrected) and fetches each document with its own
+ * token; stopped while documents are uploaded and filed, it catches up once started again; its
+ * lag is in its health. It writes each document into the index: searchable once the AI has read
+ * it, marked as in intake; filing adds the corrected values to the same entry; a rejected upload
+ * disappears; "re-index since" fills a gap; a rebuild (API-804) switches the search over to a new
+ * index with every document in it. The engine has no port on the host: the tests ask it
+ * from inside the search service's container, with its login. One file, run in order: a test
+ * stops the container.
  */
 import {spawnSync} from 'node:child_process';
 import {expect, test} from '@playwright/test';
@@ -14,10 +19,12 @@ test.skip(
   !process.env.E2E_DOCKER,
   'only against the containers (npm run test:docker)',
 );
-// the second test stops the search service: not while the first one waits for it
+// a test stops the search service: not while another one uses it
 test.describe.configure({mode: 'serial'});
 
 const tag = {tag: '@API-802'};
+const indexing = {tag: '@API-808'};
+const rebuilding = {tag: '@API-804'};
 /** A reviewer other than the one who requests a correction: the approver. */
 const SECOND = ENROLLED_USERS.find(
   u =>
@@ -157,6 +164,11 @@ async function correct(
   await approver.dispose();
 }
 
+// the search service starts after the search engine: it answers before the first test
+test.beforeAll(async () => {
+  await expect.poll(() => health(), {timeout: 120_000}).not.toBeNull();
+});
+
 test(
   'the search service receives the four events and fetches each document from intake or the EDRMS',
   tag,
@@ -211,5 +223,163 @@ test(
       // the other tests find it running, whatever happened here
       docker('start', container());
     }
+  },
+);
+
+/** A script run in the search service's folder, with `engine` (its login) and `INDEX_ALIAS`. */
+function inSearch(body: string): unknown {
+  const script = `
+    import {createEngine} from './src/engine.js';
+    import {INDEX_ALIAS, buildSearchQuery, loadCountryPack} from '@lrfe/search-index';
+    const engine = createEngine({url: process.env.OPENSEARCH_URL, loginDir: process.env.OPENSEARCH_LOGIN_DIR});
+    const out = await (async () => { ${body} })();
+    console.log(JSON.stringify(out));
+    process.exit(0);
+  `;
+  const out = docker(
+    'exec',
+    container(),
+    'node',
+    '--input-type=module',
+    '-e',
+    script,
+  );
+  return JSON.parse(out.trim().split('\n').at(-1)!);
+}
+
+interface Entry {
+  found: boolean;
+  version?: number;
+  source?: {
+    status: string;
+    reference: string[];
+    edrmsNo?: string;
+    access: {audience: string};
+    shown: {fields: Array<{k: string; v: string}>};
+  };
+}
+
+/** The document's entry in the index, as it is now. */
+function entry(id: string): Entry {
+  return inSearch(`
+    const res = await engine('GET', '/' + INDEX_ALIAS + '/_doc/' + ${JSON.stringify(id)});
+    return {found: !!res.body?.found, version: res.body?._version, source: res.body?._source};
+  `) as Entry;
+}
+
+/** The ids the index finds for what was typed. */
+function found(q: string): string[] {
+  return inSearch(`
+    await engine('POST', '/' + INDEX_ALIAS + '/_refresh');
+    const query = buildSearchQuery(${JSON.stringify(q)}, loadCountryPack('NA'), {size: 200});
+    const res = await engine('POST', '/' + INDEX_ALIAS + '/_search', query);
+    return res.body.hits.hits.map(h => h._id);
+  `) as string[];
+}
+
+test(
+  'an upload is searchable within seconds of the AI reading, marked as in intake; filing adds the corrected values to the same entry',
+  indexing,
+  async ({browser, playwright, baseURL}) => {
+    await expect.poll(() => health(), {timeout: 60_000}).not.toBeNull();
+    const doc = await readyDocument(playwright, baseURL!, browser);
+    await expect.poll(() => entry(doc.id).found, {timeout: 15_000}).toBe(true);
+    const inIntake = entry(doc.id).source!;
+    expect(inIntake.status).toBe('intake');
+    expect(inIntake.access.audience).toBe('intake');
+    const reference = inIntake.reference[0];
+    expect(found(reference)).toContain(doc.id);
+
+    const filed = await filedDocument(playwright, baseURL!, browser);
+    await expect
+      .poll(() => entry(filed.id).source?.status, {timeout: 15_000})
+      .toBe('filed');
+    const entryFiled = entry(filed.id).source!;
+    expect(entryFiled.edrmsNo).toBe(filed.edrmsNo);
+    expect(entryFiled.access.audience).toBe('edrms');
+    // one entry, keyed by the upload, found by its EDRMS number
+    expect(found(filed.edrmsNo)).toEqual([filed.id]);
+  },
+);
+
+test(
+  'a rejected upload disappears from the index',
+  indexing,
+  async ({browser, playwright, baseURL}) => {
+    await expect.poll(() => health(), {timeout: 60_000}).not.toBeNull();
+    const doc = await readyDocument(playwright, baseURL!, browser);
+    await expect.poll(() => entry(doc.id).found, {timeout: 15_000}).toBe(true);
+    const rev = await apiAs(playwright, baseURL!, userByRole('rev').email);
+    const res = await rev.api.post(`/api/intake/documents/${doc.id}/reject`, {
+      headers: rev.headers,
+      data: {reason: 'e2e: not a deed'},
+    });
+    expect(res.status(), await res.text()).toBe(200);
+    await rev.dispose();
+    await expect.poll(() => entry(doc.id).found, {timeout: 15_000}).toBe(false);
+  },
+);
+
+test(
+  '"re-index since" fills a gap: an entry lost from the index is written again',
+  indexing,
+  async ({browser, playwright, baseURL}) => {
+    await expect.poll(() => health(), {timeout: 60_000}).not.toBeNull();
+    const since = new Date().toISOString();
+    const filed = await filedDocument(playwright, baseURL!, browser);
+    await expect
+      .poll(() => entry(filed.id).source?.status, {timeout: 15_000})
+      .toBe('filed');
+    // the entry is lost (as after a restore of an older backup)
+    const {version} = entry(filed.id);
+    inSearch(`
+      return (await engine('DELETE', '/' + INDEX_ALIAS + '/_doc/' + ${JSON.stringify(filed.id)} +
+        '?version=' + ${version} + '&version_type=external_gte')).status;
+    `);
+    expect(entry(filed.id).found).toBe(false);
+
+    const out = docker(
+      'exec',
+      container(),
+      'node',
+      'src/reindex.js',
+      '--since',
+      since,
+    );
+    const results = JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(results.indexed).toBeGreaterThan(0);
+    expect(entry(filed.id).source?.status).toBe('filed');
+  },
+);
+
+test(
+  'a rebuild switches the search over to a new index, every document still found; the old index is removed',
+  rebuilding,
+  async ({browser, playwright, baseURL}) => {
+    await expect.poll(() => health(), {timeout: 60_000}).not.toBeNull();
+    const filed = await filedDocument(playwright, baseURL!, browser);
+    await expect
+      .poll(() => entry(filed.id).source?.status, {timeout: 15_000})
+      .toBe('filed');
+
+    const out = docker(
+      'exec',
+      container(),
+      'node',
+      'src/reindex.js',
+      '--rebuild',
+    );
+    const result = JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(result.stopped).toBe(false);
+    expect(result.index).not.toBe(result.previous);
+    expect(result.done).toBe(result.total);
+    const now = inSearch(`
+      const {aliasIndex} = await import('@lrfe/search-index');
+      const old = await engine('HEAD', '/' + ${JSON.stringify(result.previous)});
+      return {alias: await aliasIndex(engine), old: old.status};
+    `) as {alias: string; old: number};
+    expect(now).toEqual({alias: result.index, old: 404});
+    expect(entry(filed.id).source?.status).toBe('filed');
+    expect(found(filed.edrmsNo)).toEqual([filed.id]);
   },
 );

@@ -119,7 +119,23 @@ describe('page text (API-798)', () => {
     expect(reading.pages).to.deep.equal(PAGES);
     expect(reading.fields.find(f => f.k === 'deedNo')).to.include({
       v: 'T 2210/2008',
+      search: 'reference',
     });
+    // what the index needs (API-808): each field's role, the document's own reference
+    expect(reading).to.include({
+      reference: 'T 2210/2008',
+      filedDocumentId: null,
+    });
+    expect(reading.fields.find(f => f.k === 'tee1').search).to.equal('name');
+    expect(reading.fields.find(f => f.k === 'tee1Id').search).to.equal(
+      'number',
+    );
+    expect(reading.fields.find(f => f.k === 'property').search).to.equal(
+      'place',
+    );
+    expect(reading.fields.find(f => f.k === 'regDate')).not.to.have.property(
+      'search',
+    );
     expect(JSON.stringify(reading)).not.to.match(/wrappedKey|encryption/);
 
     // a browser's token is no service token (401); another service is not permitted (403)
@@ -138,6 +154,61 @@ describe('page text (API-798)', () => {
       headers: serviceAuth('search'),
     });
     expect(unknown.statusCode).to.equal(404);
+  });
+
+  it("the reading keeps the AI's value of a field the officer changed", async () => {
+    const {service, captureAndExtract} = await makeIntake({respond: withPages});
+    const doc = await captureAndExtract(pdf('edited'));
+    await service.updateField(
+      doc.id,
+      'tee1Id',
+      {value: '72110800999', status: 'edited'},
+      actor(users.rev),
+    );
+    const field = (await service.getReading(doc.id)).fields.find(
+      f => f.k === 'tee1Id',
+    );
+    expect(field).to.include({
+      v: '72110800999',
+      ai: '72110800345',
+      edited: true,
+    });
+  });
+
+  it('the search service lists the documents changed since a moment (re-index, API-808)', async () => {
+    const {app, as, clock, captureAndExtract} = await makeHttp({
+      respond: withPages,
+    });
+    const first = await captureAndExtract(pdf('first'));
+    clock.advance(60_000);
+    const since = clock().toISOString();
+    const second = await captureAndExtract(pdf('second'));
+    const list = async query =>
+      app.inject({
+        url: `/documents/changed?${query}`,
+        headers: serviceAuth('search'),
+      });
+    const res = await list(`since=${since}`);
+    expect(res.statusCode, res.body).to.equal(200);
+    expect(res.json().items.map(d => d.documentId)).to.deep.equal([second.id]);
+    const all = (await list('limit=10')).json();
+    expect(all.items.map(d => d.documentId)).to.deep.equal([
+      first.id,
+      second.id,
+    ]);
+    expect(all.total).to.equal(2);
+    expect(all.next).to.equal(null);
+    // a page at a time, after the cursor of the one before (API-804)
+    const page1 = (await list('limit=1')).json();
+    expect(page1.items.map(d => d.documentId)).to.deep.equal([first.id]);
+    const page2 = (await list(`limit=1&after=${page1.next}`)).json();
+    expect(page2.items.map(d => d.documentId)).to.deep.equal([second.id]);
+    expect(page2).to.not.have.property('total');
+    const denied = await app.inject({
+      url: '/documents/changed',
+      headers: as(users.aud),
+    });
+    expect(denied.statusCode).to.equal(401);
   });
 
   it('filing carries the page text into the EDRMS, encrypted under its own key', async () => {

@@ -48,10 +48,29 @@ services:
       - -dev-root-token-id=${E2E_BAO_TOKEN:?}
       - -dev-listen-address=0.0.0.0:8200
 
+  # The search service and the search engine in the tests (API-808), in their own profile, which
+  # e2e/stack/start-docker.mjs turns on, so they start, and are removed, with the others. The
+  # engine's index is in a throwaway volume instead of the encrypted host directory (README.md
+  # part H): test data only. Its configuration, certificates, users and roles are made as at a site.
   search:
-    # the search service in the tests, without the search engine (whose directory must be
-    # encrypted on the host, README.md part H): its own profile, which e2e/stack/start-docker.mjs
-    # turns on, so it starts, and is removed, with the others
+    profiles: ["e2e-search"]
+  search-dir-check:
+    profiles: ["e2e-search"]
+    # the guard marks the throwaway volume, so the site's preparation runs unchanged
+    entrypoint: ["sh", "-c", "touch /data/.lrfe-encrypted"]
+    volumes:
+      - e2e-search-data:/data
+  search-prepare:
+    profiles: ["e2e-search"]
+    environment:
+      OPENSEARCH_MIN_FREE_GB: "1"
+    volumes:
+      - e2e-search-data:/lrfe-search
+  opensearch:
+    profiles: ["e2e-search"]
+    volumes:
+      - e2e-search-data:/lrfe-search
+  search-users:
     profiles: ["e2e-search"]
 
   gateway:
@@ -60,3 +79,7 @@ services:
     environment:
       # the tests share one client address: the public check's limit high (its own unit tests)
       PUBLIC_RATE_LIMIT_MAX: "1000"
+
+volumes:
+  # the test search engine's index (see opensearch above)
+  e2e-search-data:

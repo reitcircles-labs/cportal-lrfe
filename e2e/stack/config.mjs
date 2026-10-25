@@ -2,7 +2,7 @@
  * Where the test stack runs. Ports differ from `npm run dev` (3500-3504, 4200), so the tests can
  * run while a developer copy is up. Override the base ports with E2E_API_PORT / E2E_WEB_PORT.
  */
-import {dirname, join} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 export const E2E_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -12,8 +12,21 @@ export const ANGULAR_DIR = join(REPO_DIR, 'angular-app');
 /** Scratch space for the running stack: emails written by identity, service working dirs. Gitignored. */
 export const STACK_DIR = join(E2E_DIR, '.stack');
 export const MAIL_DIR = join(STACK_DIR, 'mail');
-/** E2E_BAO=real: the throwaway OpenBao's data, config and the services' AppRole files. */
-export const BAO_DIR = join(STACK_DIR, 'bao');
+/**
+ * E2E_STORE_DIR: the stored files and their OpenBao, kept between runs (the test register with
+ * its files, backend/scripts/scale, API-810). The files are in `files/`, an encrypted directory.
+ */
+export const STORE_DIR = process.env.E2E_STORE_DIR
+  ? resolve(process.env.E2E_STORE_DIR)
+  : null;
+/** E2E_BAO=real: the throwaway OpenBao's data, config and the services' AppRole files (kept with E2E_STORE_DIR). */
+export const BAO_DIR = STORE_DIR
+  ? join(STORE_DIR, 'bao')
+  : join(STACK_DIR, 'bao');
+/** Where the services store files on PostgreSQL: edrms/, intake/, extracts/. */
+export const FILES_DIR = STORE_DIR
+  ? join(STORE_DIR, 'files')
+  : join(STACK_DIR, 'files');
 
 const apiBase = Number(process.env.E2E_API_PORT || 3600);
 export const PORTS = {

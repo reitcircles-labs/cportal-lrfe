@@ -247,6 +247,12 @@ paths:
           schema:
             type: string
             pattern: ^(queued|extracting|ready|failed|filed|rejected)(,(queued|extracting|ready|failed|filed|rejected))*$
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
         - name: limit
           in: query
           required: false
@@ -255,13 +261,6 @@ paths:
             minimum: 1
             maximum: 500
             default: 200
-        - name: offset
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
       responses:
         "200":
           description: OK
@@ -349,14 +348,79 @@ paths:
           - capture.view
           - verify.view
       x-gateway-path: /api/intake/documents/{id}
+  /documents/changed:
+    get:
+      tags:
+        - Documents
+      summary: Documents changed since a moment (search service only)
+      description: >-
+        `{ items: [{ documentId, status, updatedAt }], next, total }`, oldest change first; `since` (date-time, all when left out), `limit`
+        (≤ 500). Pass `next` as `after` for the next page; null at the end. `total` on the first page only. For the search re-index and
+        rebuild (API-808, API-804).
+
+
+        **Access:** Service token only, from: `search`. Browsers cannot call this.
+      operationId: getDocumentsChanged
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 300
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - search
+      x-gateway-path: /api/intake/documents/changed
   /documents/{id}/reading:
     get:
       tags:
         - Documents
       summary: The AI's reading of a document (search service only)
       description: >-
-        `{ documentId, status, docType, languages, fields: [{ k, label, v, edited? }], pages: [{ page, text }] }`: the fields as they stand
-        and the page text, decrypted. For indexing; never served to a browser.
+        `{ documentId, status, docType, reference, languages, capturedAt, updatedAt, filedDocumentId, fields: [{ k, label, v, edited?, ai?,
+        search? }], pages: [{ page, text }] }`: the fields as they stand (`ai`: the AI's value when the officer changed it; `search`:
+        reference, number, name or place) and the page text, decrypted. For indexing; never served to a browser.
 
 
         **Access:** Service token only, from: `search`. Browsers cannot call this.

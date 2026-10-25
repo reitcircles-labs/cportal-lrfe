@@ -299,7 +299,7 @@ function report({register, results, matching, workLists, startedAt}) {
 
 const db = new pg.Client({
   connectionString:
-    process.env.DB_CONNECTION_STRING ||
+    process.env.SCALE_DATABASE_URL ||
     `postgres://lrfe@127.0.0.1:${PORTS.postgres}/e2e`,
 });
 await db.connect();

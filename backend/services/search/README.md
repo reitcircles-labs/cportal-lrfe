@@ -1,11 +1,12 @@
 # search service
 
-*Document search (epic API-797): the connection to intake and edrms (API-802). Writing into the
-index is API-808; searching, API-803 and API-804.*
+*Document search (epic API-797): the connection to intake and edrms (API-802) and the writing of
+the index (API-808, the index itself: `packages/search-index`, API-801). Searching is API-803,
+rebuilding API-804.*
 
 A document is searchable as soon as the AI has read it, and the officer's corrections are added
-when it is filed. The search service follows the events that change what the index holds and
-fetches each document from where it is, with its own service token. Port 3508, no database, no
+when it is filed. The search service follows the events that change what the index holds,
+fetches each document from where it is, with its own service token, and writes its entry. Port 3508, no database, no
 route through the gateway: it is reached on the internal networks only (in the compose file, profile
 `search`, on the network `search` with the search engine).
 
@@ -30,9 +31,36 @@ filed document to the services in its `READ_SERVICES`, `search` among them.
   (API-808).
 - **Failures.** A document that is no longer there is counted (`missing`) and the event
   acknowledged. When intake or edrms cannot answer, the event is delivered again after 5 seconds.
-- **No content in the log.** Until API-808 what was fetched is only counted and logged: the
-  document's id, its status or EDRMS number, its type, how many fields and pages, its access
-  restriction. Never a field's value or the page text.
+- **No content in the log.** Only the document's id, its status or EDRMS number, its type, how
+  many fields and pages, its access restriction and what was done (`indexed`, `removed`, `stale`,
+  `skipped` for an upload the AI has not read).
+  Never a field's value or the page text.
+
+## The index
+
+One entry per document, keyed by intake's document id (`src/entry.js`), built from both sides as
+they are now on every event: intake's reading (the AI's values, the AI's value of a field the
+officer changed, the page text) and, once filed, the EDRMS document (the corrected and later
+amended values, the AI's values carried with them, its number, its access restriction). Each
+field's role (reference, number, name, place) comes from intake's catalogue (`searchRole`).
+
+- **Same event twice:** the same entry. **An older state never replaces a newer one:** an entry
+  is written with the time of the last change on either side as its version, and the index keeps
+  the newer (`stale` when it already had it).
+- **Rejected:** the entry is removed (also when a reading's event comes after the rejection).
+- **Retries:** a failed event is delivered again after 5 s, 10 s, 20 s, … at most 5 minutes apart;
+  after 8 failures the document goes to the dead-letter list (`lrfe-documents-failed`: its id,
+  the event, the error, when), shown at `/health/events` and by the readiness check, and leaves
+  it once indexed again.
+- **Re-index since a date:** `node src/reindex.js --since <date>` (all without it) fetches every
+  document intake or edrms changed since then (their `GET /documents/changed`, search service
+  only, a page at a time after a cursor) and writes its entries in bulk.
+- **Rebuild (API-804):** `node src/reindex.js --rebuild` fills a new index (`lrfe-documents-v<n+1>`)
+  from both sources while search uses the old one, catches up on what changed meanwhile, moves
+  the alias in one step and removes the old index (`src/rebuild.js`). Its progress is kept in
+  `lrfe-documents-rebuild` after each page: stopped (Ctrl-C) or failed, it resumes when run again.
+- **Without a search engine** (`OPENSEARCH_URL` not set: development, an install without the
+  profile) documents are only fetched and logged, as before API-808.
 
 ## Health
 
@@ -41,7 +69,9 @@ filed document to the services in its `READ_SERVICES`, `search` among them.
 
 ```json
 { "lag": 0, "consumers": [{ "event": "intake.document.extracted", "durable": "search-intake-extracted",
-  "received": 12, "fetched": 12, "missing": 0, "failed": 0, "lastHandledAt": "…", "pending": 0, "unacked": 0 }] }
+  "received": 12, "fetched": 12, "indexed": 12, "removed": 0, "stale": 0, "missing": 0, "failed": 0,
+  "deadLettered": 0, "lastHandledAt": "…", "pending": 0, "unacked": 0 }],
+  "deadLetters": { "total": 0, "items": [] } }
 ```
 
 The counts are since the service started. `pending` (not given to the service yet) and `unacked`
@@ -51,10 +81,14 @@ say (not connected, or a driver other than `nats`).
 ## Settings
 
 `JWT_SECRET` (its service token), `EVENT_BUS_DRIVER=nats` and `NATS_URL`, `INTAKE_URL` (default
-`http://localhost:3504`), `EDRMS_URL` (default `http://localhost:3502`), `PORT` (default 3508).
+`http://localhost:3504`), `EDRMS_URL` (default `http://localhost:3502`), `PORT` (default 3508);
+`OPENSEARCH_URL` and `OPENSEARCH_LOGIN_DIR` (its login: `user`, `password`, `ca.pem`), and
+`SEARCH_COUNTRY_CODE` (the country pack, default `NA`).
 
 ## Tests
 
 `npm test -w @lrfe/search`: the four events with a real intake and edrms in-process, the clients,
-the health. The catch-up and the lag on a real NATS: `backend/packages/common/tests/outbox.test.js`.
-In the containers: `e2e/tests/search-connection.spec.ts` (`npm run test:docker`).
+the health, and the writing on a real search engine (a throwaway container, as
+`packages/search-index`). The catch-up and the lag on a real NATS: `backend/packages/common/tests/outbox.test.js`.
+In the containers: `e2e/tests/search-connection.spec.ts`
+(`npm run test:docker`, with a throwaway search engine).

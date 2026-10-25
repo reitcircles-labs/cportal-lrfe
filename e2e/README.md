@@ -83,6 +83,15 @@ removes it at the end. It never touches another database on the machine. No Dock
 ([backend/scripts/scale](../backend/scripts/scale/README.md)), not for the Playwright tests, which
 expect an empty database.
 
+`E2E_STORE_DIR=<folder>` (with `E2E_PG_DIR`; it needs the default `E2E_BAO=real`) keeps the stored
+files and the OpenBao that encrypts them as well: OpenBao's data in `<folder>/bao`, the files in
+`<folder>/files`, a directory encrypted by the ext4 file system (fscrypt, as the search engine's
+directory of an install, [deploy/README.md](../deploy/README.md) part H) with a key wrapped by that
+OpenBao. The stack creates it on the first run and unlocks it once OpenBao is up; the file system
+needs the feature `encrypt` (`tune2fs -O encrypt`, once, with root). It is for the test register
+with its files (API-810); `python3 backend/scripts/scale/files_dir.py --store <folder> --bao
+http://127.0.0.1:3607 lock|status` locks it or says where it stands.
+
 ## Against the containers
 
 `npm run test:docker` (or `E2E_DOCKER=1` with any Playwright command) runs the same tests against
