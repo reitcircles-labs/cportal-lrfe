@@ -134,7 +134,7 @@ test(
     await evidence(
       page,
       'API-803',
-      'The administrator (no intake read permission) searches the same deed number: the scan in intake is not found',
+      'The administrator (no intake read permission) searches the deed number of a scan in intake: it is not found',
     );
     await page.context().close();
   },
@@ -229,7 +229,7 @@ test(
     await evidence(
       page,
       'API-803',
-      "Once filed: the same document, found by the corrected name, shows the reviewer's corrected value",
+      "A document once filed, found by the reviewer's corrected name, shows the corrected value",
     );
     await page.context().close();
   },
