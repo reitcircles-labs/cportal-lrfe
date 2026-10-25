@@ -432,8 +432,8 @@ configuration.
 1. Part H done: the directory created and unlocked.
 2. In `.env`: add `search` to `COMPOSE_PROFILES` (e.g. `COMPOSE_PROFILES=postgres,bao,search`), and
    if needed the memory settings:
-   - `OPENSEARCH_HEAP` (default `1g`): the engine's own memory; about half of `OPENSEARCH_MEMORY`,
-     never above `31g`. A small office: the defaults. A national register: e.g. `16g` and `32g`.
+   - `OPENSEARCH_HEAP` (default `1g`): the engine's own memory; at most half of `OPENSEARCH_MEMORY`,
+     never above `31g`. A small office: the defaults. A national register: see "Sizing" below.
    - `OPENSEARCH_MEMORY` (default `2g`): the most the container may use, the rest of it for the
      operating system's cache of the index. Docker applies it only where it can limit memory
      (not under rootless Docker without cgroup v2: there only the heap limits it).
@@ -487,6 +487,23 @@ older backup of the index, API-806). It can be run again safely; without `--sinc
 engine places no new index parts, below half of it it warns in its log, and below a quarter it takes
 no more writes until there is space again (searching goes on). The readiness check warns from the
 first.
+
+**Sizing** (measured on a test register of 199,470 documents with their page text, API-805):
+
+- **Disk:** the index takes about 8 KB per document (1.6 GB for 200,000): about 24 GB for
+  3,000,000 documents, and 1.2 GB more for each 150,000 a year. Leave room for twice that: a
+  rebuild (`--rebuild`) holds the old and the new index side by side until it switches over, and
+  the engine needs free space to merge its files. `OPENSEARCH_MIN_FREE_GB` (default 100) comes on
+  top.
+- **Memory:** at 200,000 documents the engine used 0.8 GB of a 2 GB heap; searches stayed under
+  0.1 s (95% of them, 8 at once) with the whole index in the operating system's cache. Give the
+  container its heap plus about the index's size: `OPENSEARCH_HEAP=2g` and `OPENSEARCH_MEMORY=4g`
+  up to about 300,000 documents; for 3,000,000, `8g` and `32g`.
+- **Upgrading to this version:** the first start builds an index of the documents each land record
+  holds (API-805); land records cannot be changed until it is built (6 s for 31,000 records).
+- **The encrypted directory** (part H) costs no measurable speed once the index is in the cache:
+  the same 600 searches took a median of 15 ms on it and on a plain copy. Right after a start the
+  first searches read from disk and are slower (95% under 0.12 s instead of 0.03 s).
 
 **For a national register**, the server's administrator should raise the number of memory areas a
 process may map (once, with root): `sudo sysctl -w vm.max_map_count=262144`, and the same in

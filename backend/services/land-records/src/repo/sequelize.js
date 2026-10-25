@@ -14,6 +14,22 @@ const pinnedOf = v =>
     ref: d.ref ?? null,
   }));
 
+/**
+ * A condition on record versions that pin any of these documents, answered by the index
+ * `record_version_documents` (API-805): one containment test per document, so the versions are
+ * found without reading them all.
+ * @param {string[]} documentIds
+ * @return {{where: string, replacements: !Object<string, string>}}
+ */
+function pinning(documentIds) {
+  const replacements = {};
+  const tests = documentIds.map((id, i) => {
+    replacements[`pin${i}`] = JSON.stringify([{edrmsDocumentId: id}]);
+    return `v."data"->'documents' @> CAST(:pin${i} AS jsonb)`;
+  });
+  return {where: tests.join(' OR '), replacements};
+}
+
 /** Postgres land-records repository. Same interface as ./memory.js. */
 export function createSequelizeRepo(sequelize) {
   const m = defineModels(sequelize);
@@ -54,6 +70,10 @@ export function createSequelizeRepo(sequelize) {
       // the audit service's backfill reads committed seals in this order (API-669)
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "record_version_seal_order" ON "${SCHEMA}"."record_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`,
+      );
+      // which versions pin a document, without reading every version (API-805)
+      await sequelize.query(
+        `CREATE INDEX IF NOT EXISTS "record_version_documents" ON "${SCHEMA}"."record_version" USING gin (("data"->'documents') jsonb_path_ops)`,
       );
     },
 
@@ -188,13 +208,14 @@ export function createSequelizeRepo(sequelize) {
     async findRecordsPinning(documentIds) {
       const out = new Map();
       if (!documentIds.length) return out;
+      const pinned = pinning(documentIds);
       const [rows] = await sequelize.query(
         `SELECT d->>'edrmsDocumentId' AS "documentId", r."id" AS "recordId", r."recordNo", r."label", v."versionNumber", v."state"
                    FROM "${SCHEMA}"."record_version" v
                    JOIN "${SCHEMA}"."land_record" r ON r."id" = v."recordId"
                    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(v."data"->'documents', '[]'::jsonb)) d
-                  WHERE v."state" <> 'superseded' AND r."discardedAt" IS NULL AND d->>'edrmsDocumentId' IN (:ids)`,
-        {replacements: {ids: documentIds}},
+                  WHERE (${pinned.where}) AND v."state" <> 'superseded' AND r."discardedAt" IS NULL AND d->>'edrmsDocumentId' IN (:ids)`,
+        {replacements: {ids: documentIds, ...pinned.replacements}},
       );
       for (const {documentId, ...rest} of rows) {
         out.set(documentId, [...(out.get(documentId) || []), rest]);
@@ -214,12 +235,13 @@ export function createSequelizeRepo(sequelize) {
     /** The committed versions (current or superseded) that pin any version of these documents: [{ documentId, version, recordId, versionNumber }]. */
     async findCommittedPinning(documentIds) {
       if (!documentIds.length) return [];
+      const pinned = pinning(documentIds);
       const [rows] = await sequelize.query(
         `SELECT d->>'edrmsDocumentId' AS "documentId", (d->>'version')::int AS "version", v."recordId", v."versionNumber"
                    FROM "${SCHEMA}"."record_version" v
                    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(v."data"->'documents', '[]'::jsonb)) d
-                  WHERE v."state" IN ('committed', 'superseded') AND d->>'edrmsDocumentId' IN (:ids)`,
-        {replacements: {ids: documentIds}},
+                  WHERE (${pinned.where}) AND v."state" IN ('committed', 'superseded') AND d->>'edrmsDocumentId' IN (:ids)`,
+        {replacements: {ids: documentIds, ...pinned.replacements}},
       );
       return rows;
     },

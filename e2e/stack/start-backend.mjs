@@ -19,6 +19,9 @@
  * kept there too, the files in an encrypted directory (`files/`, fscrypt, its key from that
  * OpenBao: backend/scripts/scale/files_dir.py), created on the first run and unlocked after: the
  * test register with its files (API-810).
+ * With E2E_OPENSEARCH_URL, edrms searches through that search engine's index
+ * (EDRMS_SEARCH=opensearch, no login: a test engine without its security plugin), for the load
+ * tests of search on the test register (API-805).
  * The gateway starts last, once the others answer /health, so "gateway up" means "stack ready".
  */
 import {execFileSync, spawn} from 'node:child_process';
@@ -121,6 +124,12 @@ const SERVICES = [
   'audit',
   'extracts',
 ];
+if (process.env.E2E_OPENSEARCH_URL) {
+  SERVICE_ENV.edrms = {
+    EDRMS_SEARCH: 'opensearch',
+    OPENSEARCH_URL: process.env.E2E_OPENSEARCH_URL,
+  };
+}
 const POSTGRES = process.env.E2E_DB === 'postgres';
 // E2E_PG_DIR: a database kept between runs, outside .stack/ (the load tests' test register)
 const KEPT_PG = !!process.env.E2E_PG_DIR;
@@ -429,7 +438,10 @@ function startBao(timeoutMs = 180_000) {
             ).trim(),
             BAO_SECRET_ID_FILE: join(BAO_DIR, 'approle', `${name}-secret-id`),
           });
-          SERVICE_ENV.edrms = login('edrms', 'edrms-files');
+          SERVICE_ENV.edrms = {
+            ...SERVICE_ENV.edrms,
+            ...login('edrms', 'edrms-files'),
+          };
           SERVICE_ENV.intake = login('intake', 'intake-files');
           SERVICE_ENV.extracts = login('extracts', 'extracts-files');
           resolve();
