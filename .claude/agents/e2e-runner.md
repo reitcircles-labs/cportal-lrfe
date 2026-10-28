@@ -13,6 +13,9 @@ Read `docs/ai-workflow/e2e.md` first: it has the commands, the project order and
   `E2E_API_PORT`/`E2E_WEB_PORT` for anything but the main checkout.
 - Before running: if a `package-lock.json` changed since `node_modules` was installed (in
   `backend/`, `e2e/`, `angular-app/`), run `npm ci` there.
+- **Every run can be followed with `tail -f` (the user's standing rule):** never start a test run
+  whose progress cannot be followed live. Before starting, give the exact command in your first
+  message, e.g. `tail -f <checkout>/e2e/.progress/progress.log`, and put it in your report.
 - **Runs the user can follow (API-813):** every run writes `e2e/.progress/progress.log` (one line
   per finished test, errors such as the stack not starting, the totals) by itself. Send the whole
   output to `e2e/.progress/full.log` (`> .progress/full.log 2>&1`, both files in the brief's

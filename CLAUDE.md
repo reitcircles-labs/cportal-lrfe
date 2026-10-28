@@ -78,6 +78,8 @@ demo 8088 · rehearsal 8716. Set `E2E_API_PORT`/`E2E_WEB_PORT` for anything outs
 
 - Plain, short English to the user, the same in Jira. Report results faithfully (failures with their
   output). Never print secrets; never send the user's email address to other services.
+- **Every test or long run can be followed with `tail -f`:** its output goes to a log file as it runs,
+  and the user gets the `tail -f <log>` command when it starts. No run without one, by an agent or not.
 - Asked for progress: one short status with counts ("e2e 89/98, 0 failed; next: deploy").
 - The user cannot copy from the terminal: values to copy (addresses, transaction ids, URLs) also go
   into a file, and its full path is given.
