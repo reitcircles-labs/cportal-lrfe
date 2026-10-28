@@ -1,5 +1,6 @@
 import {actorOf, BadRequestError, NotFoundError} from '@lrfe/common';
 import {DOC_TYPES} from './doc-types.js';
+import {isCleared} from './intake.service.js';
 
 const READ = ['capture.view', 'verify.view'];
 const uuid = {type: 'string', format: 'uuid'};
@@ -159,12 +160,16 @@ export async function intakeRoutes(
     async req => ({events: await service.listEvents(req.params.id)}),
   );
 
-  /** A short-lived link for the viewer (the browser cannot add an Authorization header to <iframe>/<img>). */
+  /**
+   * A short-lived link for the viewer (the browser cannot add an Authorization header to
+   * <iframe>/<img>). A cleared document's scan is the EDRMS' (API-807): its link instead.
+   */
   app.get(
     '/documents/:id/file-link',
     {...readGuard, schema: idParams()},
     async req => {
-      await service.requireDocument(req.params.id);
+      const d = await service.requireDocument(req.params.id);
+      if (isCleared(d)) return service.filedFileLink(d);
       const {exp, sig} = links.sign(req.params.id, linkTtlSeconds);
       return {
         url: `${fileLinkBase}/${req.params.id}?exp=${exp}&sig=${sig}`,
@@ -190,6 +195,8 @@ export async function intakeRoutes(
         throw new NotFoundError('Link expired or invalid');
       }
       const f = await service.openFile(req.params.id);
+      // a link given before the document was cleared: to the EDRMS' copy
+      if (f.redirect) return reply.redirect(f.redirect);
       reply.header('content-type', f.mimeType);
       reply.header('content-disposition', `inline; filename="${f.fileName}"`);
       reply.header('cache-control', 'private, max-age=300');

@@ -88,6 +88,9 @@ export function createMemoryRepo() {
               d.docType,
               d.edrmsNo,
               ...(d.fields || []).map(f => f.value),
+              // a cleared document's reference and property (API-815)
+              d.filedRecord?.ref,
+              d.filedRecord?.property,
             ].some(s =>
               String(s ?? '')
                 .toLowerCase()
@@ -142,6 +145,12 @@ export function createMemoryRepo() {
     async removePageText(documentId) {
       for (const e of extractions) {
         if (e.documentId === documentId && e.answer) delete e.answer.pages;
+      }
+    },
+    /** Remove the model answers of a document's readings (a cleared filed document, API-807). */
+    async clearAnswers(documentId) {
+      for (const e of extractions) {
+        if (e.documentId === documentId) e.answer = null;
       }
     },
     async usageSince(since) {

@@ -91,4 +91,62 @@ describe('edrms page text (API-798)', () => {
     expect(again.json()).to.deep.equal({created: false});
     expect(await ctx.service.readText(document.id)).to.deep.equal(PAGES);
   });
+
+  it('the search service reads the page text and the AI values of a filed document; nobody else can (API-807)', async () => {
+    const ctx = await makeApp();
+    const meta = deedMeta({
+      provenance: {extracted: {deedNo: 'T 2210/2008', tee1: 'Mr Nghishidi'}},
+    });
+    const {payload, headers} = upload(meta, JSON.stringify(PAGES));
+    const {document} = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: '/documents',
+        payload,
+        headers: {...headers, ...ctx.bearer(ctx.serviceToken('intake'))},
+      })
+    ).json();
+    const read = (token, id = document.id) =>
+      ctx.app.inject({
+        url: `/documents/${id}/reading`,
+        headers: ctx.bearer(token),
+      });
+    const res = await read(ctx.serviceToken('search'));
+    expect(res.statusCode).to.equal(200);
+    expect(res.json()).to.deep.equal({
+      documentId: document.id,
+      pages: PAGES,
+      extracted: {deedNo: 'T 2210/2008', tee1: 'Mr Nghishidi'},
+    });
+    expect((await read(ctx.serviceToken('intake'))).statusCode).to.equal(403);
+    expect(
+      (await read(ctx.userToken(['record.view', 'verify.view']))).statusCode,
+    ).to.equal(401);
+    expect(
+      (
+        await read(
+          ctx.serviceToken('search'),
+          '00000000-0000-4000-8000-000000000000',
+        )
+      ).statusCode,
+    ).to.equal(404);
+  });
+
+  it("a version says whether the page text is stored with it, never the text (intake's check, API-807)", async () => {
+    const ctx = await makeApp();
+    const withText = (await file(ctx, JSON.stringify(PAGES))).json().document;
+    // the same deed again, in another edrms, filed without its page text
+    const other = await makeApp();
+    const without = (await file(other)).json().document;
+    const version = (app, id) =>
+      app.app.inject({
+        url: `/documents/${id}/versions/1`,
+        headers: app.bearer(app.serviceToken('intake')),
+      });
+    const v = (await version(ctx, withText.id)).json();
+    expect(v.text).to.deep.equal({pages: 2});
+    expect(v.sha256).to.match(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(v)).not.to.include('Registrar');
+    expect((await version(other, without.id)).json().text).to.equal(null);
+  });
 });

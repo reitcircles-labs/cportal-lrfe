@@ -38,9 +38,11 @@ export function buildEntry({reading = null, filed = null}) {
   if (!reading && !filed) return null;
   const id = reading?.documentId ?? edrmsOnlyId(filed.id);
   // what each field is for the search, as intake's catalogue says
-  const roles = new Map(
-    (reading?.fields ?? []).filter(f => f.search).map(f => [f.k, f.search]),
-  );
+  // (a cleared reading, API-807, has no fields: it gives the roles on their own)
+  const roles = new Map([
+    ...Object.entries(reading?.roles ?? {}),
+    ...(reading?.fields ?? []).filter(f => f.search).map(f => [f.k, f.search]),
+  ]);
   const values = {reference: [], number: [], name: [], place: []};
   const add = (k, v) => roles.has(k) && values[roles.get(k)].push(v);
   // the AI's values, and the officer's where they changed them
@@ -48,11 +50,10 @@ export function buildEntry({reading = null, filed = null}) {
     add(f.k, f.v);
     if (f.ai) add(f.k, f.ai);
   }
-  // the filed values (also after a correction) and the AI's values carried with them
+  // the filed values (also after a correction) and, once intake has cleared its copy, the AI's
+  // values kept with them (API-807)
   for (const f of filed?.fields ?? []) add(f.k, f.v);
-  for (const [k, v] of Object.entries(filed?.provenance?.extracted ?? {})) {
-    add(k, v);
-  }
+  for (const [k, v] of Object.entries(reading?.extracted ?? {})) add(k, v);
   const reference = unique([filed?.instrumentRef, reading?.reference]);
   const shownFields = (filed?.fields ?? reading?.fields ?? []).map(f => ({
     k: f.k,

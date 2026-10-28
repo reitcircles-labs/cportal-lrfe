@@ -41,6 +41,9 @@ export function createSequelizeRepo(sequelize) {
       if (!columns.transcription) {
         await q.addColumn(document, 'transcription', {type: DataTypes.JSONB});
       } // API-798
+      if (!columns.filedRecord) {
+        await q.addColumn(document, 'filedRecord', {type: DataTypes.JSONB});
+      } // API-815
       // the search service's re-index reads documents in this order (API-804)
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "document_changed_order" ON "${SCHEMA}"."document" ("updatedAt", "id")`,
@@ -124,6 +127,11 @@ export function createSequelizeRepo(sequelize) {
           sequelize.where(sequelize.cast(sequelize.col('fields'), 'text'), {
             [Op.iLike]: like,
           }),
+          // a cleared document's reference and property (API-815)
+          sequelize.where(
+            sequelize.cast(sequelize.col('filedRecord'), 'text'),
+            {[Op.iLike]: like},
+          ),
         ];
       }
       const {rows, count} = await m.Document.findAndCountAll({
@@ -204,6 +212,10 @@ export function createSequelizeRepo(sequelize) {
                  WHERE "documentId" = :documentId AND jsonb_exists("answer", 'pages')`,
         {replacements: {documentId}},
       );
+    },
+    /** Remove the model answers of a document's readings (a cleared filed document, API-807). */
+    async clearAnswers(documentId) {
+      await m.Extraction.update({answer: null}, {where: {documentId}});
     },
     async usageSince(since) {
       return (

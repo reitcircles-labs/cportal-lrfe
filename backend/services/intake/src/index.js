@@ -20,6 +20,7 @@ const app = await buildApp({
   logger: {level: env('LOG_LEVEL', 'info')},
 });
 worker.logger = app.log;
+service.logger = app.log;
 
 // Local work: run the extraction worker inside the service. In production, run `npm run worker`
 // separately (and set INTAKE_RUN_WORKER=false here) so extraction scales on its own.

@@ -224,7 +224,8 @@ paths:
       summary: List captured documents
       description: >-
         `{ items, total }` of summaries. Filter by `batchId`, `status` (comma-separated, e.g. `ready,failed`) and `q` (file name, document
-        type, EDRMS number, field values).
+        type, EDRMS number, field values). `cleared: true` on a filed document whose copy intake has cleared once the EDRMS held it
+        (API-807): no fields; its values, text and scan are the EDRMS'.
 
 
         **Access:** Signed-in user with any of `capture.view`, `verify.view`.
@@ -420,7 +421,9 @@ paths:
       description: >-
         `{ documentId, status, docType, reference, languages, capturedAt, updatedAt, filedDocumentId, fields: [{ k, label, v, edited?, ai?,
         search? }], pages: [{ page, text }] }`: the fields as they stand (`ai`: the AI's value when the officer changed it; `search`:
-        reference, number, name or place) and the page text, decrypted. For indexing; never served to a browser.
+        reference, number, name or place) and the page text, decrypted. For indexing; never served to a browser. A filed document whose copy
+        intake has cleared (API-807) has no fields and no pages, `cleared: true` and `roles` (each field key's search role): its text and
+        values are read from the EDRMS.
 
 
         **Access:** Service token only, from: `search`. Browsers cannot call this.
@@ -527,8 +530,10 @@ paths:
       tags:
         - Documents
       summary: Short-lived link to the scan
-      description: |-
-        `{ url, expiresIn }` (300 s). For `<iframe>`/`<img>`, which cannot send the Authorization header.
+      description: >-
+        `{ url, expiresIn }` (300 s). For `<iframe>`/`<img>`, which cannot send the Authorization header. For a filed document whose copy
+        intake has cleared (API-807), the link to the EDRMS copy (version 1.0).
+
 
         **Access:** Signed-in user with any of `capture.view`, `verify.view`.
       operationId: getDocumentsIdFileLink
@@ -581,8 +586,10 @@ paths:
       tags:
         - Documents
       summary: The scan behind a signed link
-      description: |-
-        Use the `url` from GET /documents/{id}/file-link; 404 when expired or tampered with.
+      description: >-
+        Use the `url` from GET /documents/{id}/file-link; 404 when expired or tampered with. A link given before the document was cleared
+        (API-807) redirects to the EDRMS copy.
+
 
         **Access:** No token: the `exp` and `sig` of a signed link authorise it.
       operationId: getFilesId

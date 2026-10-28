@@ -163,12 +163,27 @@ describe('EdrmsService', () => {
         service.fileDocument({
           meta: deedMeta({
             sourceId: 'p2',
-            provenance: {big: 'x'.repeat(21_000)},
+            provenance: {big: 'x'.repeat(65_000)},
           }),
           file: pdfFile(),
         }),
         400,
+        'max 64 kB',
       );
+    });
+
+    it('takes provenance up to 64 kB: the reading intake clears after filing (API-807)', async () => {
+      const {service} = makeService();
+      const provenance = {
+        reading: {fields: {deedNo: {page: 1, evidence: 'x'.repeat(40_000)}}},
+        earlier: [],
+      };
+      const {document} = await service.fileDocument({
+        meta: deedMeta({sourceId: 'p3', provenance}),
+        file: pdfFile(),
+      });
+      const v1 = await service.getVersion(document.id, 1);
+      expect(v1.provenance).to.deep.equal(provenance);
     });
 
     it('numbers documents sequentially per year', async () => {

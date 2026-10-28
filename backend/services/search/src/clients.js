@@ -84,6 +84,8 @@ export function createIntakeClient({
 /**
  * The search service's calls to edrms, with its own service token (read only):
  *   getDocument(id) → the filed document: edrmsNo, corrected fields, recordMetadata, … | null
+ *   getReading(id) → { documentId, pages, extracted } | null: the page text and the AI's values
+ *     kept with the filed document, for one whose copy intake has cleared (API-807)
  *   listChanged({ since, after, limit }) → { items: [{ id, sourceId, updatedAt }], next, total }
  * `fetchImpl` lets tests route calls into an in-process edrms app.
  */
@@ -101,6 +103,15 @@ export function createEdrmsClient({
         fetchImpl,
         timeoutMs,
         path: `/documents/${encodeURIComponent(id)}`,
+        what: 'The document store',
+      }),
+    getReading: id =>
+      getJson({
+        baseUrl,
+        serviceToken,
+        fetchImpl,
+        timeoutMs,
+        path: `/documents/${encodeURIComponent(id)}/reading`,
         what: 'The document store',
       }),
     listChanged: query =>

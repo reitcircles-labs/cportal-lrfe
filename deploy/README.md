@@ -286,6 +286,26 @@ then have no page text in the EDRMS yet; once intake has moved it, copy it there
 documents got their text and which ones failed, and can be run again: it adds only what is
 missing. Going back to an older version afterwards shows no AI transcription in Verify.
 
+**What intake keeps of a filed document (API-807).** Once a document is filed and the EDRMS holds
+it completely (its version 1.0 with the same scan, and its page text when the AI read any), intake
+clears its own copy right after the filing: the fields, the notes, the page text and the AI's
+answers go from intake's database, and the scan and its page-text file from intake's file store
+(the `intake-files` volume or bucket). The EDRMS keeps all of it: the scan, the page text and, with
+version 1.0 (sealed), the AI's reading (evidence, page, legibility and checks of each field, and
+every earlier reading). The history, the AI's cost and documents in review or rejected stay in
+intake as they are. Intake keeps a small record of each filed document (its reference, property and
+review counts, API-815), so Verify's Filed list still shows and finds it, and still opens it: its
+scan comes from the EDRMS. This saves about 35 KB a document (measured on the 199,470-document test
+register: 6.4 GB of files in 398,940 files, and 700 MB of intake's database after `VACUUM FULL`;
+about 105 GB at 3 million documents).
+When the EDRMS's copy is incomplete, or the clearing fails, nothing is cleared and intake logs the
+document's id. From an earlier version, clear the documents filed before once with
+`docker compose exec intake node services/intake/scripts/clear-filed.js` (after `backfill-text.js`
+above, when coming from before API-798). It prints how many documents it cleared, skipped because
+their EDRMS copy is incomplete, or found already cleared, and can be run again (about 100
+documents a second). PostgreSQL reuses the freed space by itself; to give it back to the disk at
+once, run `VACUUM FULL intake.document, intake.extraction` in a quiet hour (it locks the tables).
+
 From a version without `db-setup` (0.1.0-260dab4 and earlier): the bundled database is now the
 profile `postgres`. Add it to `COMPOSE_PROFILES` in the copied `.env` (e.g.
 `COMPOSE_PROFILES=postgres` or `postgres,bao`) before `docker compose up -d`; otherwise `db-setup`

@@ -25,11 +25,141 @@ async function toBuffer(stream) {
   return Buffer.concat(chunks);
 }
 
+/**
+ * Whether intake has cleared its copy of a filed document (API-807): once the EDRMS holds it
+ * completely, the fields, notes, page text and scan go, and only its small record stays
+ * (`filedRecord`, API-815).
+ * @param {{status: string, filedRecord?: object}} d
+ * @return {boolean}
+ */
+export function isCleared(d) {
+  return d.status === 'filed' && !!d.filedRecord;
+}
+
+/**
+ * What the lists show of a document's fields: its reference, property, flags and review counts.
+ * Kept as the small record of a cleared document (API-815), so that the Filed list, its search and
+ * the filing message keep them once the fields are gone.
+ * @param {{docType?: string, fields?: Array<object>}} d
+ * @return {{ref: ?string, property: ?string, flags: object, reviewed: number, total: number}}
+ */
+export function fieldsSummary(d) {
+  const fields = d.fields || [];
+  const count = flag => fields.filter(f => f.flag === flag).length;
+  const refField = docType(d.docType)?.refField;
+  return {
+    ref: (refField && fields.find(f => f.k === refField)?.value) || null,
+    property: fields.find(f => f.k === 'property')?.value || null,
+    flags: {
+      ok: count('ok'),
+      check: count('check'),
+      conflict: count('conflict'),
+      missing: count('missing'),
+    },
+    reviewed: fields.filter(f => f.status !== 'pending').length,
+    total: fields.length,
+  };
+}
+
+/** The largest provenance the EDRMS takes (its `cleanProvenance`), as JSON characters. */
+const MAX_PROVENANCE = 64_000;
+
 /** A model answer without its page text: the text is kept in a file, not the database (API-798). */
 function withoutPages(answer) {
   if (!answer) return null;
   const {pages: _pages, ...rest} = answer;
   return rest;
+}
+
+/** A model answer's fields, per key: the value, page, quoted evidence and legibility the AI gave. */
+function answerFields(answer) {
+  const out = {};
+  for (const x of answer?.fields ?? []) {
+    out[x.k] ??= {
+      value: x.value,
+      page: x.page ?? null,
+      evidence: x.evidence ?? null,
+      legible: x.legible ?? null,
+    };
+  }
+  return out;
+}
+
+/**
+ * The provenance filed with version 1.0 (sealed with it): how the filed values were read, and
+ * everything of the reading that intake clears afterwards (API-807).
+ *   extracted, corrected, provider, model, promptVersion, escalated, crosscheck   as before
+ *   reading   per field of the filed reading: page, the AI's quoted evidence, legible, the check
+ *             messages; and the reading's notes
+ *   earlier   each other reading of the document (a first reading before an escalation, a reading
+ *             done again): role, provider, model, promptVersion, createdAt, and per field the AI's
+ *             value, page, evidence and legible. The cross-check judges, it does not read: its
+ *             record is `crosscheck`.
+ * The oldest earlier readings are left out (counted in `earlierLeftOut`) if it would not fit the
+ * EDRMS' limit.
+ */
+function provenanceOf(d, extraction, extractions) {
+  const filedReading = answerFields(extraction.answer);
+  const provenance = {
+    intakeDocumentId: d.id,
+    extractionId: extraction.id,
+    provider: extraction.provider,
+    model: extraction.model,
+    promptVersion: extraction.promptVersion,
+    extractedAt: extraction.createdAt,
+    escalated: !!d.escalated,
+    extracted: Object.fromEntries(
+      d.fields.filter(f => f.extracted != null).map(f => [f.k, f.extracted]),
+    ),
+    corrected: d.fields.filter(f => f.status === 'edited').map(f => f.k),
+    // tool, model, version and calls of the cross-check, and the fields it still
+    // flagged when filed as read (corrected ones are in `corrected`); audit only
+    ...(d.crosscheck
+      ? {
+          crosscheck: {
+            ...d.crosscheck,
+            flagged: d.fields
+              .filter(f => f.checks.some(c => XCHECK_CODES.includes(c.code)))
+              .map(f => f.k),
+          },
+        }
+      : {}),
+    reading: {
+      fields: Object.fromEntries(
+        d.fields.map(f => [
+          f.k,
+          {
+            page: f.evidence?.page ?? null,
+            evidence: f.evidence?.text ?? null,
+            legible: filedReading[f.k]?.legible ?? null,
+            checks: f.checks.map(c => c.message),
+          },
+        ]),
+      ),
+      notes: d.notes ?? [],
+    },
+    earlier: extractions
+      .filter(
+        e =>
+          e.ok && e.answer && e.role !== 'crosscheck' && e.id !== extraction.id,
+      )
+      .map(e => ({
+        role: e.role,
+        provider: e.provider,
+        model: e.model,
+        promptVersion: e.promptVersion,
+        createdAt: e.createdAt,
+        fields: answerFields(e.answer),
+      })),
+  };
+  while (
+    provenance.earlier.length &&
+    JSON.stringify(provenance).length > MAX_PROVENANCE
+  ) {
+    provenance.earlier.shift();
+    provenance.earlierLeftOut = (provenance.earlierLeftOut ?? 0) + 1;
+  }
+  return provenance;
 }
 
 /**
@@ -68,6 +198,7 @@ export class IntakeService {
     checker,
     clock = () => new Date(),
     config = {},
+    logger = console,
   }) {
     this.repo = repo;
     this.store = store;
@@ -75,6 +206,7 @@ export class IntakeService {
     this.edrms = edrms;
     this.checker = checker;
     this.clock = clock;
+    this.logger = logger;
     this.config = {
       registry: 'WDH',
       claimMinutes: 30,
@@ -106,12 +238,10 @@ export class IntakeService {
   }
 
   summary(d) {
-    const fields = d.fields || [];
-    const count = flag => fields.filter(f => f.flag === flag).length;
     const t = docType(d.docType);
-    const ref = t?.refField
-      ? fields.find(f => f.k === t.refField)?.value
-      : null;
+    // a cleared document's fields are gone: its small record keeps what lists show (API-815)
+    const {ref, property, flags, reviewed, total} =
+      d.filedRecord ?? fieldsSummary(d);
     return {
       id: d.id,
       batchId: d.batchId,
@@ -122,16 +252,11 @@ export class IntakeService {
       pages: d.pages,
       docType: d.docType,
       docTypeLabel: t?.label ?? null,
-      ref: ref || null,
-      property: fields.find(f => f.k === 'property')?.value || null,
-      flags: {
-        ok: count('ok'),
-        check: count('check'),
-        conflict: count('conflict'),
-        missing: count('missing'),
-      },
-      reviewed: fields.filter(f => f.status !== 'pending').length,
-      total: fields.length,
+      ref,
+      property,
+      flags,
+      reviewed,
+      total,
       escalated: !!d.escalated,
       extractionCostUsd: d.extractionCostUsd || 0,
       extractionError: d.extractionError || null,
@@ -141,6 +266,8 @@ export class IntakeService {
       claimedByName: this.claimActive(d) ? d.claimedByName : null,
       edrmsNo: d.edrmsNo || null,
       filedDocumentId: d.filedDocumentId || null,
+      // filed, and kept in the EDRMS only (API-807): its fields and scan are read there
+      cleared: isCleared(d),
       rejectedReason: d.rejectedReason || null,
     };
   }
@@ -501,13 +628,16 @@ export class IntakeService {
 
   /**
    * The AI's reading of a document for the search service (API-798): the fields as they stand and
-   * the page text. The route takes the search service's token only, never a browser's.
+   * the page text. The route takes the search service's token only, never a browser's. A cleared
+   * document (API-807) has neither: `cleared` says so, with each field's search role (`roles`),
+   * and the search service reads the rest from the EDRMS.
    */
   async getReading(id) {
     const d = await this.requireDocument(id);
     const roles = new Map(
       (docType(d.docType)?.fields ?? []).map(f => [f.k, searchRole(f)]),
     );
+    const cleared = isCleared(d);
     return {
       documentId: d.id,
       status: d.status,
@@ -517,6 +647,12 @@ export class IntakeService {
       capturedAt: d.capturedAt,
       updatedAt: d.updatedAt,
       filedDocumentId: d.filedDocumentId ?? null,
+      ...(cleared
+        ? {
+            cleared,
+            roles: Object.fromEntries([...roles].filter(([, role]) => role)),
+          }
+        : {}),
       fields: (d.fields || [])
         .filter(f => f.value)
         .map(f => ({
@@ -692,13 +828,113 @@ export class IntakeService {
     }
   }
 
+  /**
+   * The scan behind a signed link: `{ stream, mimeType, fileName }`, or `{ redirect }` (the EDRMS
+   * copy's link) for a cleared document, whose scan intake no longer has.
+   */
   async openFile(id) {
     const d = await this.requireDocument(id);
+    if (isCleared(d)) return {redirect: (await this.filedFileLink(d)).url};
     return {
       stream: await this.readFile(d.fileKey, d.encryption),
       mimeType: d.mimeType,
       fileName: d.fileName,
     };
+  }
+
+  /** A short-lived link to the scan as filed (the EDRMS' version 1.0): `{ url, expiresIn }`. */
+  async filedFileLink(d) {
+    const link = await this.edrms.contentLink(d.filedDocumentId, 1);
+    return {url: link.url, expiresIn: link.expiresIn};
+  }
+
+  // ---------------------------------------------------------------- clearing filed documents (API-807)
+
+  /**
+   * Whether the EDRMS holds a filed document completely: its version 1.0, with the same file as
+   * intake's scan (SHA-256), and its page text when intake has page text.
+   */
+  async edrmsHolds(d) {
+    if (!d.filedDocumentId) return false;
+    const v = await this.edrms.getVersion(d.filedDocumentId, 1);
+    if (!v || v.sha256 !== d.sha256) return false;
+    if (d.transcription && v.text?.pages !== d.transcription.pages) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Clear intake's copy of a filed document once the EDRMS holds it completely: the fields, the
+   * notes, the page text, the scan's encryption record and the model answers go from the
+   * database, the scan and the page text file from the store. Its small record stays (API-815),
+   * and everything else (the history, the model calls' cost). Returns `cleared`, `incomplete` (the EDRMS lacks something: nothing
+   * is cleared, a later run tries again), `already` (cleared before) or `kept` (not filed).
+   */
+  async clearFiled(d) {
+    if (d.status !== 'filed') return 'kept';
+    if (isCleared(d)) return 'already';
+    if (!(await this.edrmsHolds(d))) return 'incomplete';
+    await this.events.atomic(async () => {
+      // not this.save(): the document is unchanged for its readers (updatedAt stays, API-798)
+      const saved = await this.repo.updateDocument(
+        d.id,
+        {
+          fields: [],
+          notes: [],
+          transcription: null,
+          encryption: null,
+          filedRecord: fieldsSummary(d),
+        },
+        d.version,
+      );
+      if (!saved) {
+        throw new ConflictError('The document changed while clearing it');
+      }
+      await this.repo.clearAnswers(d.id);
+    });
+    // the files go once the database no longer points at them; the document is cleared either
+    // way, so a file the store fails to delete is logged with its key for removal by hand
+    const keys = [d.fileKey, d.transcription?.key].filter(Boolean);
+    for (const key of keys) {
+      await this.store.delete(key).catch(err => {
+        this.logger.warn?.(
+          {documentId: d.id, key, error: err.code ?? err.name},
+          "intake: a cleared document's file was not deleted from the store",
+        );
+      });
+    }
+    return 'cleared';
+  }
+
+  /**
+   * The back-fill (API-807): clears every document filed before intake cleared them at filing.
+   * Safe to run again. Returns the counts, and the documents that failed with their error (the
+   * others go on).
+   */
+  async clearFiledDocuments({batch = 200} = {}) {
+    const result = {cleared: 0, incomplete: 0, alreadyCleared: 0, failed: []};
+    const counter = {
+      cleared: 'cleared',
+      incomplete: 'incomplete',
+      already: 'alreadyCleared',
+    };
+    // clearing keeps a document filed, so the pages stay where they are
+    for (let offset = 0; ; offset += batch) {
+      const {items} = await this.repo.listDocuments({
+        status: ['filed'],
+        limit: batch,
+        offset,
+      });
+      for (const d of items) {
+        try {
+          result[counter[await this.clearFiled(d)]]++;
+        } catch (err) {
+          result.failed.push({documentId: d.id, error: err.message});
+        }
+      }
+      if (items.length < batch) return result;
+    }
   }
 
   // ---------------------------------------------------------------- review
@@ -903,6 +1139,7 @@ export class IntakeService {
     const extraction = d.latestExtractionId
       ? await this.repo.getExtraction(d.latestExtractionId)
       : null;
+    const extractions = extraction ? await this.repo.listExtractions(id) : [];
     // the plain scan and page text go to edrms over TLS; edrms encrypts them under its own key
     const buffer = await toBuffer(await this.readFile(d.fileKey, d.encryption));
     const transcription = await this.readTranscription(d);
@@ -927,35 +1164,7 @@ export class IntakeService {
           })),
         capturedBy: {id: d.capturedById, name: d.capturedByName},
         reviewedBy: {id: actor.id, name: actor.name},
-        provenance: extraction && {
-          intakeDocumentId: d.id,
-          extractionId: extraction.id,
-          provider: extraction.provider,
-          model: extraction.model,
-          promptVersion: extraction.promptVersion,
-          extractedAt: extraction.createdAt,
-          escalated: !!d.escalated,
-          extracted: Object.fromEntries(
-            d.fields
-              .filter(f => f.extracted != null)
-              .map(f => [f.k, f.extracted]),
-          ),
-          corrected: d.fields.filter(f => f.status === 'edited').map(f => f.k),
-          // tool, model, version and calls of the cross-check, and the fields it still
-          // flagged when filed as read (corrected ones are in `corrected`); audit only
-          ...(d.crosscheck
-            ? {
-                crosscheck: {
-                  ...d.crosscheck,
-                  flagged: d.fields
-                    .filter(f =>
-                      f.checks.some(c => XCHECK_CODES.includes(c.code)),
-                    )
-                    .map(f => f.k),
-                },
-              }
-            : {}),
-        },
+        provenance: extraction && provenanceOf(d, extraction, extractions),
       },
     });
     // the filed state, its history entry and its event are committed together (API-613)
@@ -983,6 +1192,24 @@ export class IntakeService {
       );
       return saved;
     });
+    // the EDRMS holds the document now: intake's copy goes (API-807); a failure leaves it for the
+    // back-fill and never fails the filing
+    try {
+      const outcome = await this.clearFiled(d);
+      if (outcome === 'cleared') {
+        d = await this.requireDocument(id);
+      } else if (outcome === 'incomplete') {
+        this.logger.warn?.(
+          {documentId: id},
+          "intake: the filed document's copy was kept, the EDRMS' is incomplete; the back-fill tries again",
+        );
+      }
+    } catch (err) {
+      this.logger.warn?.(
+        {documentId: id, error: err.code ?? err.statusCode ?? err.name},
+        "intake: the filed document's copy was not cleared; the back-fill tries again",
+      );
+    }
     return this.summary(d);
   }
 

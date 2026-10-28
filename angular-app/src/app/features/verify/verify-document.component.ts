@@ -63,14 +63,16 @@ import {VerifyStore} from './verify.store';
             </div>
 
             <div class="stack sticky" style="gap:10px">
-              <div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">Extracted metadata</h3><span class="small muted">{{ store.reviewed() }} of {{ d.fields.length }} reviewed</span></div>
+              <div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">Extracted metadata</h3><span class="small muted">{{ d.cleared ? d.reviewed : store.reviewed() }} of {{ d.cleared ? d.total : d.fields.length }} reviewed</span></div>
               <div class="row" style="gap:8px;flex-wrap:wrap">
                 <span class="tag tag-neutral">{{ d.docTypeLabel || 'Unknown type' }}</span>
                 @if (d.flags.conflict) { <span class="tag tag-danger">{{ d.flags.conflict }} conflict</span> }
                 @if (d.flags.check + d.flags.missing) { <span class="tag tag-outline">{{ d.flags.check + d.flags.missing }} to check</span> }
                 @if (d.escalated) { <span class="tag tag-info">read by two models</span> }
               </div>
-              @if (!d.fields.length) {
+              @if (d.cleared) {
+                <div class="small muted">The filed values and the scan are kept in the EDRMS: open the document in Documents to see them.</div>
+              } @else if (!d.fields.length) {
                 <div class="small muted">No fields: the document type was not recognised. Re-read it with the stronger model, or reject it.</div>
               }
               <div class="fields">

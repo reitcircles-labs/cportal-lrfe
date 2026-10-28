@@ -69,6 +69,8 @@ export interface IntakeSummary {
   claimedByName: string | null;
   edrmsNo: string | null;
   filedDocumentId: string | null;
+  /** Filed, and kept in the EDRMS only: intake has no fields or scan of it any more (API-807). */
+  cleared: boolean;
   rejectedReason: string | null;
 }
 

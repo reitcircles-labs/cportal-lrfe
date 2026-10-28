@@ -559,6 +559,7 @@ function pick(d: IntakeSummary): Partial<IntakeSummary> {
     claimedByName,
     edrmsNo,
     filedDocumentId,
+    cleared,
     rejectedReason,
   } = d;
   return {
@@ -575,6 +576,7 @@ function pick(d: IntakeSummary): Partial<IntakeSummary> {
     claimedByName,
     edrmsNo,
     filedDocumentId,
+    cleared,
     rejectedReason,
   };
 }

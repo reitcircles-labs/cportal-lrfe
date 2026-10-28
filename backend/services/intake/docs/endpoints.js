@@ -57,7 +57,7 @@ export const ENDPOINTS = {
       tag: 'Documents',
       summary: 'List captured documents',
       description:
-        '`{ items, total }` of summaries. Filter by `batchId`, `status` (comma-separated, e.g. `ready,failed`) and `q` (file name, document type, EDRMS number, field values).',
+        "`{ items, total }` of summaries. Filter by `batchId`, `status` (comma-separated, e.g. `ready,failed`) and `q` (file name, document type, EDRMS number, field values). `cleared: true` on a filed document whose copy intake has cleared once the EDRMS held it (API-807): no fields; its values, text and scan are the EDRMS'.",
     },
     'GET /documents/{id}': {
       tag: 'Documents',
@@ -70,7 +70,8 @@ export const ENDPOINTS = {
       summary: "The AI's reading of a document (search service only)",
       description:
         '`{ documentId, status, docType, reference, languages, capturedAt, updatedAt, filedDocumentId, fields: [{ k, label, v, edited?, ai?, search? }], pages: [{ page, text }] }`: ' +
-        "the fields as they stand (`ai`: the AI's value when the officer changed it; `search`: reference, number, name or place) and the page text, decrypted. For indexing; never served to a browser.",
+        "the fields as they stand (`ai`: the AI's value when the officer changed it; `search`: reference, number, name or place) and the page text, decrypted. For indexing; never served to a browser. " +
+        "A filed document whose copy intake has cleared (API-807) has no fields and no pages, `cleared: true` and `roles` (each field key's search role): its text and values are read from the EDRMS.",
     },
     'GET /documents/changed': {
       tag: 'Documents',
@@ -88,14 +89,14 @@ export const ENDPOINTS = {
       tag: 'Documents',
       summary: 'Short-lived link to the scan',
       description:
-        '`{ url, expiresIn }` (300 s). For `<iframe>`/`<img>`, which cannot send the Authorization header.',
+        '`{ url, expiresIn }` (300 s). For `<iframe>`/`<img>`, which cannot send the Authorization header. For a filed document whose copy intake has cleared (API-807), the link to the EDRMS copy (version 1.0).',
     },
     'GET /files/{id}': {
       tag: 'Documents',
       auth: 'signed-link',
       summary: 'The scan behind a signed link',
       description:
-        'Use the `url` from GET /documents/{id}/file-link; 404 when expired or tampered with.',
+        'Use the `url` from GET /documents/{id}/file-link; 404 when expired or tampered with. A link given before the document was cleared (API-807) redirects to the EDRMS copy.',
     },
     'POST /documents/{id}/extract': {
       tag: 'Documents',
