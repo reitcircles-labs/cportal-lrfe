@@ -24,6 +24,10 @@ Each event has its own durable consumer on the event stream (`LRFE`, `backend/pa
 Intake's reading route takes the search service's token only, never a browser's. Edrms gives the
 filed document to the services in its `READ_SERVICES`, `search` among them.
 
+Once a document is filed, intake clears its copy (API-807): its reading then says `cleared`, with
+no fields or page text, and the search service reads the page text and the AI's values from edrms
+`GET /documents/:id/reading` (the search service's token only), so the entry stays the same.
+
 - **Catch-up.** A consumer resumes where it stopped, so documents read, rejected, filed or
   corrected while the service was down are fetched once it is back, as long as the stream still
   has them (`EVENT_STREAM_MAX_AGE_DAYS`, 30 by default). A consumer made for the first time starts

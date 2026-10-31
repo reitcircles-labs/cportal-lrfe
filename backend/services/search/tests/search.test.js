@@ -164,6 +164,43 @@ describe('search: the four events, each document fetched (API-802)', () => {
   });
 });
 
+describe('search: a filed document whose intake copy is cleared (API-807)', () => {
+  it("its entry has the page text and the AI's values from the EDRMS, from either side", async () => {
+    const {captureAndExtract, service, search} = await makeSearch();
+    const doc = await captureAndExtract(pdf('cleared'));
+    await service.updateField(
+      doc.id,
+      'tee1Id',
+      {value: '72110800999', status: 'edited'},
+      actor(users.rev),
+    );
+    const filed = await reviewAndFile(service, doc.id);
+    expect(filed.cleared).to.equal(true);
+    const reading = await search.intake.getReading(doc.id);
+    expect(reading).to.include({cleared: true});
+    expect(reading.pages).to.deep.equal([]);
+
+    for (const [from, id] of [
+      ['intake', doc.id],
+      ['edrms', filed.filedDocumentId],
+    ]) {
+      const {action, entry, summary} = await search.prepare(from, id);
+      expect(action, from).to.equal('write');
+      expect(entry.id).to.equal(doc.id);
+      expect(entry.body).to.include({status: 'filed', edrmsNo: filed.edrmsNo});
+      expect(entry.body.text).to.contain('a secret owner name');
+      // the corrected value and the AI's, the reference and the party
+      expect(entry.body.numbers).to.include.members([
+        '72110800999',
+        '72110800345',
+      ]);
+      expect(entry.body.refs).to.include('T 2210/2008');
+      expect(entry.body.shown.party).to.contain('Nghishidi');
+      expect(summary).to.include({pages: 2});
+    }
+  });
+});
+
 describe('search: when a source cannot answer', () => {
   const consumer = CONSUMERS[0];
   const event = {id: 'e1', data: {documentId: 'd1'}};
@@ -430,6 +467,23 @@ const NA = loadCountryPack('NA');
       const old = await engine.request('HEAD', `/${INDEX_ALIAS}-v1`);
       expect(old.status).to.equal(404);
       expect(await readState(engine.request)).to.equal(null);
+    });
+
+    it('a rebuild after intake cleared its copy of filed documents is still complete (API-807)', async () => {
+      const {captureAndExtract, service, search, clock} = await indexed();
+      const filed = await captureAndExtract(pdf('filed and cleared'));
+      const summary = await reviewAndFile(service, filed.id);
+      expect(summary.cleared).to.equal(true);
+      const before = (await entry(filed.id))._source;
+      await rebuildIndex(search, {clock});
+      const after = (await entry(filed.id))._source;
+      expect(after.text).to.equal(before.text);
+      expect(after.text).to.contain('a secret owner name');
+      for (const k of ['refs', 'numbers', 'names', 'places', 'shown']) {
+        expect(after[k], k).to.deep.equal(before[k]);
+      }
+      expect(await found('a secret owner name')).to.deep.equal([filed.id]);
+      expect(await found('Nghishidi')).to.deep.equal([filed.id]);
     });
 
     it('a stopped rebuild resumes where it was; search keeps the old index meanwhile', async () => {

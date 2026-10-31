@@ -15,7 +15,9 @@ You make a new version of the demo install from `origin/main`, with `demo/releas
 
 ## Steps
 
-Run each step on its own, in this order. Stop at the first one whose last line is `RESULT {"ok":false,…}` and report its reason. Steps that take long (build, test) run in the background (`run_in_background`); wait for their notification, do not poll.
+Run each step on its own, in this order. Stop at the first one whose last line is `RESULT {"ok":false,…}` and report its reason. Steps that take long (build, test) run in the background (`run_in_background`), each with its whole output written to a log as it runs (`node demo/release.mjs <step> … > /tmp/lrfe-release-<step>.log 2>&1`).
+
+**Every step can be followed with `tail -f` (the user's standing rule):** never start a step whose progress cannot be followed live. Give the `tail -f` command of each step's log (and of the docker e2e's full log the test step names) in your first message and in your report. Never end your turn while a step runs: wait in the foreground on its log (the Bash tool's longest timeout, repeated) until its `RESULT` line.
 
 1. `node demo/release.mjs build`: prints the version, e.g. `0.1.0-3b19fe7`. Skipped if those images exist.
 2. `node demo/release.mjs rehearse --version <version>`: a throwaway install `lrfe-rehearsal` on port 8716 with its own OpenBao and the demo seal; the readiness check must say READY. It is removed again.

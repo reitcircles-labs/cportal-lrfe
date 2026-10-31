@@ -25,6 +25,7 @@
     "dev:search": "npm run dev -w @lrfe/search",
     "audit:backfill": "npm run backfill -w @lrfe/audit",
     "intake:backfill-text": "npm run backfill-text -w @lrfe/intake",
+    "intake:clear-filed": "npm run clear-filed -w @lrfe/intake",
     "db:setup": "node scripts/db-setup.js",
     "seed:identity": "npm run seed -w @lrfe/identity",
     "reset-password": "npm run reset-password -w @lrfe/identity --",

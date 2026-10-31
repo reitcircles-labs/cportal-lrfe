@@ -166,6 +166,7 @@ export async function makeIntake({
     edrms,
     checker,
     clock,
+    logger: {warn() {}, error() {}, info() {}},
   });
   const calls = [];
   const primary = createMockProvider({

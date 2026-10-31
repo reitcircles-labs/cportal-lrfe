@@ -93,6 +93,9 @@ export function defineModels(sequelize) {
       filedById: s(),
       filedByName: s(),
       rejectedReason: {type: DataTypes.TEXT},
+      // a filed document whose copy intake cleared (API-807): what lists show of its fields,
+      // { ref, property, flags, reviewed, total } (API-815); null otherwise
+      filedRecord: j(),
       updatedAt: {type: DataTypes.DATE, allowNull: false},
       version: {type: DataTypes.INTEGER, allowNull: false, defaultValue: 1},
     },

@@ -45,14 +45,17 @@ function assertComplete(file, size) {
   if (size === 0) throw new BadRequestError('The file is empty');
 }
 
-/** Optional provenance of the filed values (e.g. the intake extraction). A small JSON object. */
+/**
+ * Optional provenance of the filed values (e.g. the intake extraction, with the reading intake
+ * clears after filing, API-807). A JSON object of at most 64 kB.
+ */
 function cleanProvenance(p) {
   if (p === undefined || p === null) return null;
   if (typeof p !== 'object' || Array.isArray(p)) {
     throw new BadRequestError('meta.provenance must be an object');
   }
-  if (JSON.stringify(p).length > 20_000) {
-    throw new BadRequestError('meta.provenance is too large (max 20 kB)');
+  if (JSON.stringify(p).length > 64_000) {
+    throw new BadRequestError('meta.provenance is too large (max 64 kB)');
   }
   return p;
 }
@@ -401,6 +404,21 @@ export class EdrmsService {
     const chunks = [];
     for await (const c of stream) chunks.push(c);
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  }
+
+  /**
+   * The AI's reading kept with a filed document, for the search service once intake has cleared
+   * its copy (API-807): `{ documentId, pages, extracted }`, the page text and the AI's values
+   * (version 1.0's provenance).
+   */
+  async getReading(id) {
+    await this.requireDocument(id);
+    const v1 = await this.repo.getVersion(id, 1);
+    return {
+      documentId: id,
+      pages: await this.readText(id),
+      extracted: v1?.provenance?.extracted ?? {},
+    };
   }
 
   buildRecordMetadata(meta) {
@@ -752,6 +770,22 @@ export class EdrmsService {
     const v = await this.repo.getVersion(id, versionNumber);
     if (!v) throw new NotFoundError('Version not found');
     return v;
+  }
+
+  /**
+   * A version as clients see it, with `text`: `{ pages }` when the page text belongs to it (the
+   * filed version), else null. Intake checks it before clearing its copy (API-807).
+   */
+  async describeVersion(id, versionNumber) {
+    const v = await this.getVersion(id, versionNumber);
+    const text = await this.repo.getText(id);
+    return {
+      ...this.publicVersion(v),
+      text:
+        text && text.versionNumber === v.versionNumber
+          ? {pages: text.pages}
+          : null,
+    };
   }
 
   /**

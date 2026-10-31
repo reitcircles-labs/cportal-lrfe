@@ -57,6 +57,15 @@ export const ENDPOINTS = {
     'GET /documents/{id}/versions/{n}': {
       tag: 'Documents',
       summary: 'One version of a document',
+      description:
+        'The version with its fields, record metadata, seal and provenance, and `text`: `{ pages }` when the page text belongs to this version (the filed one), else null. Intake checks it before clearing its copy of a filed document (API-807).',
+    },
+    'GET /documents/{id}/reading': {
+      tag: 'Documents',
+      summary:
+        "A filed document's page text and AI values (search service only)",
+      description:
+        "`{ documentId, pages: [{ page, text }], extracted }`: the AI's page text, decrypted, and the values it read (version 1.0's provenance). For the search index once intake has cleared its copy (API-807); never served to a browser.",
     },
     'GET /documents/{id}/content': {
       tag: 'Documents',
@@ -88,7 +97,7 @@ export const ENDPOINTS = {
       tag: 'Filing',
       summary: 'File a document (intake only)',
       upload: {
-        meta: 'JSON: document type, fields, provenance… (must come before the file)',
+        meta: 'JSON: document type, fields, provenance (at most 64 kB)… (must come before the file)',
         transcription:
           "optional JSON: the AI's page text `[{ page, text }]`, stored encrypted beside the file (before the file)",
         file: 'the scanned file',

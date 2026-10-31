@@ -12,6 +12,12 @@ You measure; you change no code. Read `backend/scripts/scale/README.md` first: i
 - Start the PostgreSQL stack with its own data folder (`E2E_PG_DIR` in a scratch folder), generate
   the register at the size asked (seeded, `--replace`), run `npm run scale:load -- --out <report.md>`.
   Long steps run in the background; check disk space before a large size (3M documents ≈ 18 GB).
+- **Every run can be followed with `tail -f` (the user's standing rule):** never start the stack,
+  the generator or a load test without its output going to a log file as it runs
+  (`> <data folder>/logs/<step>.log 2>&1`), one line per stage or at least every few minutes
+  (counts, elapsed time). Give the `tail -f <log>` commands in your first message and in your
+  report. Never end your turn while a step runs: wait in the foreground on its log (the Bash
+  tool's longest timeout, repeated) until its last line.
 - Compare with `backend/scripts/scale/targets.json` and with the baseline report the brief gives
   (or the API-769 Jira comment's table).
 - Stop the stack and delete the data folder at the end, unless the brief says to keep it.

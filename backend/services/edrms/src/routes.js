@@ -320,10 +320,14 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
   app.get(
     '/documents/:id/versions/:n',
     {onRequest: canRead, schema: idParams(versionParam)},
-    async req =>
-      service.publicVersion(
-        await service.getVersion(req.params.id, req.params.n),
-      ),
+    async req => service.describeVersion(req.params.id, req.params.n),
+  );
+
+  /** The page text and the AI's values of a filed document, for the search service (API-807). */
+  app.get(
+    '/documents/:id/reading',
+    {onRequest: app.requireService('search'), schema: idParams()},
+    async req => service.getReading(req.params.id),
   );
 
   /** A short-lived URL for the viewer. `?version=` defaults to the current version. */

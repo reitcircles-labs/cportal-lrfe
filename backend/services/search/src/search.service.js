@@ -201,6 +201,17 @@ export class SearchService {
         ? await this.intake.getReading(filed.sourceId)
         : null;
     }
+    if (reading?.cleared && filed) {
+      // intake cleared its copy once the EDRMS held it (API-807): the page text and the AI's
+      // values are the EDRMS'. A reading asked for while intake clears may fail; the event's
+      // retry then finds the document cleared.
+      const kept = await this.edrms.getReading(filed.id);
+      reading = {
+        ...reading,
+        pages: kept?.pages ?? [],
+        extracted: kept?.extracted ?? {},
+      };
+    }
     const summary = summarise(reading, filed);
     const entry = buildEntry({reading, filed});
     // an upload the AI has not read (yet, or it failed): nothing to search; its reading's event
