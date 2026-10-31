@@ -23,7 +23,7 @@ These rules apply to every ticket; the details are in `docs/ai-workflow/`, read 
 
 Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in `.claude/agents/`:
 `reviewer` (the review gate), `e2e-runner`, `ui-evidence-checker`, `jira-reporter`, `demo-release`,
-`scale-tester`.
+`scale-tester`, `notifier` (emails the user when work waits on their decision).
 
 1. Read the ticket and its "Agreed design"/"Done when"; move it to In Progress (transition 11). A new
    screen needs a design the user has agreed (a design artifact or ticket) before it is built.
@@ -80,6 +80,8 @@ demo 8088 · rehearsal 8716. Set `E2E_API_PORT`/`E2E_WEB_PORT` for anything outs
   output). Never print secrets; never send the user's email address to other services.
 - **Every test or long run can be followed with `tail -f`:** its output goes to a log file as it runs,
   and the user gets the `tail -f <log>` command when it starts. No run without one, by an agent or not.
+- **Stuck on the user's decision or action:** send it by email through the `notifier` agent (ticket,
+  question, options with a recommendation, where the details are), then go on with what doesn't wait on it.
 - Asked for progress: one short status with counts ("e2e 89/98, 0 failed; next: deploy").
 - The user cannot copy from the terminal: values to copy (addresses, transaction ids, URLs) also go
   into a file, and its full path is given.
