@@ -17,7 +17,8 @@ manage offices, users, roles and security policies.
 
 ### Prerequisites
 
-- **Node.js 24.15+ or 22.22+** (Angular 22 needs one of these; check with `node -v`).
+- **Node.js 24.22.1+ or 22.23.4+** (Angular 22 needs 24 or 22; these patch versions have the
+  security fixes of 21 October 2026; check with `node -v`).
 - **PostgreSQL**, or none at all for a quick look (see [Without a database](#without-a-database)).
 - Optional: **tmux**, to keep everything running after you close the terminal or SSH session.
 
