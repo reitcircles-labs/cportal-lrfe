@@ -12,7 +12,7 @@ npm start          # http://localhost:4200
 npm run build      # production build in dist/cportal-lrfe
 ```
 
-Requires Node 22.22+ or 24.15+ (Angular 22).
+Requires Node 22.23.4+ or 24.22.1+ (Angular 22; these have the security fixes of 21 October 2026).
 
 ### The organisation's name (site settings)
 

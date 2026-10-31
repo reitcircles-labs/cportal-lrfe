@@ -1,7 +1,8 @@
 # One image for every backend service (npm workspaces); deploy/docker-compose.yml picks the
 # service with `working_dir` + `command`. Configuration comes from the environment only: .env
 # files are not copied into the image (see .dockerignore). Built by deploy/scripts/build.sh.
-FROM node:22.22-slim
+# Node.js pinned to a patch version, so a rebuild cannot fall back to an unpatched one (API-812)
+FROM node:22.23.4-slim
 
 ENV NODE_ENV=production
 WORKDIR /app

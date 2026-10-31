@@ -14,6 +14,9 @@ standard ones:
 | cardano (optional) | `cardanosolutions/cardano-node-ogmios:v7.0.0_11.0.1-<network>` | Blockchain node for anchoring |
 | opensearch (optional) | `opensearchproject/opensearch:3.9.0` | The search engine for the documents' text (part I) |
 
+The `lrfe-backend` image runs on Node.js 22.23.4 (`node:22.23.4-slim`), and `lrfe-web` is built with
+it; a Node.js security release means new images (API-812).
+
 The settings of a site and every secret are in one file, `.env`; no secret is in an image, so the
 same images install at every site, also the organisation's name and its offices (`LRFE_ORG_*`,
 `LRFE_OFFICES`, below). Data lives in named volumes, so containers can be replaced (for an

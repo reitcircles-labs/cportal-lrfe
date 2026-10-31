@@ -2,7 +2,8 @@
 # (docker/nginx.conf). Built by deploy/scripts/build.sh; no settings are baked in.
 
 # ---- build ----
-FROM node:22.22-slim AS build
+# Node.js pinned to a patch version, so a rebuild cannot fall back to an unpatched one (API-812)
+FROM node:22.23.4-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund

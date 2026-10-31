@@ -6,14 +6,16 @@ These rules apply to every ticket; the details are in `docs/ai-workflow/`, read 
 
 ## Git and branches
 
-- **Never push or merge.** The user does. Commit only by explicit paths (never `git add -A` or `.`); the
+- **Never merge; push only through the `pr-opener` agent** (`scripts/open-pr.mjs`), and **only when the
+  user asks for it in that conversation** (an earlier yes does not carry over): a ticket branch, never
+  `main`, never forced, and its PR against `main`, which starts the pipeline. The user merges. Commit only by explicit paths (never `git add -A` or `.`); the
   message starts with the ticket key (`API-123 …`) and ends with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - **One branch ↔ one directory.** New work: `git fetch origin`, then a new branch off `origin/main`, named for the
   epic or ticket. Parallel work goes in a separate clone (`~/projects/cportal-lrfe-<epic>`), never a second
   branch in the same directory.
-- **When an epic is done, stop:** list the branch, its commits and the PR to open, and ask the user to
-  push and merge. No new work in that directory until they confirm, and check `origin/main` contains it.
+- **When an epic is done, stop:** list the branch and its commits, and ask the user whether to open its
+  PR with `pr-opener` (their call), then to merge. No new work in that directory until they confirm, and check `origin/main` contains it.
 - Never commit `backend/services/identity/scripts/nginx-cportal-lrfe.conf`, `backend/nohup.out`,
   `demo/readiness.txt`, scratch files or generated data.
 - After a merge or branch switch, install dependencies when a lock file changed (`npm ci` in `backend/`,
@@ -23,7 +25,7 @@ These rules apply to every ticket; the details are in `docs/ai-workflow/`, read 
 
 Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in `.claude/agents/`:
 `reviewer` (the review gate), `e2e-runner`, `ui-evidence-checker`, `jira-reporter`, `demo-release`,
-`scale-tester`.
+`scale-tester`, `pr-opener` (push and PR, then the checks), `notifier` (emails the user when work waits on their decision).
 
 1. Read the ticket and its "Agreed design"/"Done when"; move it to In Progress (transition 11). A new
    screen needs a design the user has agreed (a design artifact or ticket) before it is built.
@@ -80,6 +82,8 @@ demo 8088 · rehearsal 8716. Set `E2E_API_PORT`/`E2E_WEB_PORT` for anything outs
   output). Never print secrets; never send the user's email address to other services.
 - **Every test or long run can be followed with `tail -f`:** its output goes to a log file as it runs,
   and the user gets the `tail -f <log>` command when it starts. No run without one, by an agent or not.
+- **Stuck on the user's decision or action:** send it by email through the `notifier` agent (ticket,
+  question, options with a recommendation, where the details are), then go on with what doesn't wait on it.
 - Asked for progress: one short status with counts ("e2e 89/98, 0 failed; next: deploy").
 - The user cannot copy from the terminal: values to copy (addresses, transaction ids, URLs) also go
   into a file, and its full path is given.
