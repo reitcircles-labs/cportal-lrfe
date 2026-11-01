@@ -65,7 +65,8 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     '/auth/login',
     {
       schema: body({
-        email: str({maxLength: 320}),
+        // the longest address mail can carry (RFC 5321), within the user table's 255 (API-819)
+        email: str({maxLength: 254}),
         password: str({maxLength: 1024}),
       }),
     },
@@ -155,7 +156,7 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
       schema: body(
         {
           name: str({minLength: 1, maxLength: 200}),
-          email: str({format: 'email', maxLength: 320}),
+          email: str({format: 'email', maxLength: 254}),
           officeId: officeRef,
           roles: roleList,
         },

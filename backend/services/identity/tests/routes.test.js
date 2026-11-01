@@ -245,4 +245,49 @@ describe('identity HTTP API', () => {
     expect(res.statusCode).to.equal(200);
     expect(res.json()).to.deep.equal({email: 'na@deeds.gov.na'});
   });
+
+  // Found by the penetration tests (API-814): each of these answered 500.
+  describe('malformed sign-in input is refused, not a server error (API-819)', () => {
+    it('an email longer than an address can be (300 characters): 400', async () => {
+      const {app} = await makeApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: {email: `${'0'.repeat(288)}@example.com`, password: 'x'},
+      });
+      expect(res.statusCode).to.equal(400);
+    });
+
+    it('refresh with a Content-Type it cannot parse: 415', async () => {
+      const {app} = await makeApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/refresh',
+        headers: {'content-type': 'multipart/form-data'},
+        payload: 'x',
+      });
+      expect(res.statusCode).to.equal(415);
+    });
+
+    it('a cookie that holds no session id: refresh 401, logout ends nothing', async () => {
+      const {app, service} = await makeApp();
+      // the database refuses a session id that is not a UUID: it must never be asked
+      service.repo.getSession = async sid => {
+        throw new Error(`asked for session ${sid}`);
+      };
+      const refresh = await app.inject({
+        method: 'POST',
+        url: '/auth/refresh',
+        cookies: {lrfe_rt: ':+&E.secret'},
+      });
+      expect(refresh.statusCode).to.equal(401);
+      const logout = await app.inject({
+        method: 'POST',
+        url: '/auth/logout',
+        cookies: {lrfe_rt: ':+&E'},
+      });
+      expect(logout.statusCode).to.equal(200);
+      expect(logout.json()).to.deep.equal({ok: true});
+    });
+  });
 });

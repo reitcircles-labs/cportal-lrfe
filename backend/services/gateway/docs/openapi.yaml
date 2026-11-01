@@ -1705,7 +1705,7 @@ paths:
               properties:
                 email:
                   type: string
-                  maxLength: 320
+                  maxLength: 254
                 password:
                   type: string
                   maxLength: 1024
@@ -7186,7 +7186,7 @@ paths:
                 email:
                   type: string
                   format: email
-                  maxLength: 320
+                  maxLength: 254
                 officeId:
                   type:
                     - string

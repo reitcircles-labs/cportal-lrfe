@@ -46,6 +46,20 @@ describe('errorHandler', () => {
     expect(res.statusCode).to.equal(400);
   });
 
+
+  it('answers 415 to a Content-Type it cannot parse, not 500 (API-819)', async () => {
+    const app = createBaseApp({name: 'test'});
+    app.post('/p', async () => ({ok: true}));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/p',
+      headers: {'content-type': 'multipart/form-data'},
+      payload: 'x',
+    });
+    expect(res.statusCode).to.equal(415);
+    expect(res.json().status).to.equal('Unsupported Media Type');
+  });
+
   it('serves /health', async () => {
     const res = await createBaseApp({name: 'svc'}).inject({url: '/health'});
     expect(res.json()).to.deep.equal({status: 'ok', service: 'svc'});
