@@ -3,12 +3,15 @@
  * The end-to-end tests against the application in containers (npm run test:docker): builds the
  * images from this checkout as it is (deploy/scripts/build.sh --worktree, version "e2e"), starts them with
  * deploy/docker-compose.yml plus the tests' additions (deploy/docker-compose.e2e.yml) as the
- * compose project "lrfe-e2e", and removes the containers and their volumes again when Playwright
+ * compose project "lrfe-e2e" (E2E_COMPOSE_PROJECT), and removes the containers and their volumes again when Playwright
  * stops it. The web app answers on the test web port, the gateway on the test API port, as with
  * the tests' own stack (start-backend.mjs), so the same tests run unchanged. The containers' logs
  * are kept in .stack/containers.log until the next run.
  *
  * E2E_DOCKER_VERSION=<version>: test images already built (or loaded from a bundle) instead.
+ * E2E_COMPOSE_PROJECT=<name>: another project name (the penetration tests use lrfe-pentest,
+ * security/README.md); never the demo's (lrfe) or the rehearsal's. E2E_COMPOSE_FILE=<file>: one
+ * more compose file on top of the two.
  * The site settings in deploy/.env are never read.
  */
 import {execFileSync, spawnSync} from 'node:child_process';
@@ -27,6 +30,17 @@ import {
 
 const DEPLOY_DIR = join(REPO_DIR, 'deploy');
 const version = process.env.E2E_DOCKER_VERSION || 'e2e';
+const project = process.env.E2E_COMPOSE_PROJECT || 'lrfe-e2e';
+// a test install removes its containers and volumes: never on the demo install or its rehearsal
+if (!/^lrfe-(e2e|pentest)[a-z0-9-]*$/.test(project)) {
+  console.error(
+    `E2E_COMPOSE_PROJECT=${project}: only lrfe-e2e… or lrfe-pentest… (never the demo or the rehearsal)`,
+  );
+  process.exit(1);
+}
+const extraFiles = process.env.E2E_COMPOSE_FILE
+  ? ['-f', process.env.E2E_COMPOSE_FILE]
+  : [];
 const {uid, gid} = userInfo();
 // The identity container writes the emails into the tests' folder as the user running the tests.
 // Rootless Docker maps the container's root to that user (other container users to unrelated ids).
@@ -75,13 +89,14 @@ const env = {
 const compose = (...args) => [
   'compose',
   '--project-name',
-  'lrfe-e2e',
+  project,
   '--env-file',
   '/dev/null',
   '-f',
   join(DEPLOY_DIR, 'docker-compose.yml'),
   '-f',
   join(DEPLOY_DIR, 'docker-compose.e2e.yml'),
+  ...extraFiles,
   ...args,
 ];
 const docker = (args, stdio = 'inherit', extraEnv = {}) =>

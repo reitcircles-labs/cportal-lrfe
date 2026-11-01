@@ -9,8 +9,13 @@ export const E2E_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const REPO_DIR = join(E2E_DIR, '..');
 export const BACKEND_DIR = join(REPO_DIR, 'backend');
 export const ANGULAR_DIR = join(REPO_DIR, 'angular-app');
-/** Scratch space for the running stack: emails written by identity, service working dirs. Gitignored. */
-export const STACK_DIR = join(E2E_DIR, '.stack');
+/**
+ * Scratch space for the running stack: emails written by identity, service working dirs. Gitignored.
+ * E2E_STACK_DIR: elsewhere (the penetration tests' install, security/README.md).
+ */
+export const STACK_DIR = process.env.E2E_STACK_DIR
+  ? resolve(process.env.E2E_STACK_DIR)
+  : join(E2E_DIR, '.stack');
 export const MAIL_DIR = join(STACK_DIR, 'mail');
 /**
  * E2E_STORE_DIR: the stored files and their OpenBao, kept between runs (the test register with

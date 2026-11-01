@@ -3,6 +3,7 @@
 #   every pull request and push to main   backend tests, API docs check, e2e on the in-memory stack
 #                                         lint and format checks (blocking, docs/coding-guide.md)
 #   nightly, and on demand (Run workflow)  the same e2e suite on PostgreSQL as well
+#   both                                   the penetration tests: quick on a PR, deep nightly (security/README.md)
 #
 # On failure, the Playwright HTML report and test-results (screenshots, videos, traces) are kept as
 # artifacts of the run for 14 days.
@@ -115,4 +116,31 @@ jobs:
           path: |
             e2e/playwright-report
             e2e/test-results
+          retention-days: 14
+
+  # Penetration tests (API-814, security/README.md): black-box scans of the application in
+  # containers, from the outside only. Every pull request: quick scans, signed out and signed in as
+  # the records officer; nightly and on demand: deep scans as each main role. Report only for now:
+  # the findings are in the job summary and the reports; PENTEST_BLOCKING: '1' makes a high finding
+  # fail the job.
+  pentest:
+    name: penetration tests (${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 240 || 40 }}
+    env:
+      PENTEST_BLOCKING: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Findings and verdict (unit tests)
+        run: node --test security/*.test.mjs
+      - name: Scans
+        run: node security/scan.mjs --level ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }} --out security/.reports/run
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: pentest-reports
+          path: security/.reports/run
           retention-days: 14

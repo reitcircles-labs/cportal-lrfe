@@ -63,7 +63,8 @@ Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in
 ## Ports per checkout (e2e, load tests)
 
 `~/projects/cportal-lrfe`: 3600/4300 · a second clone: 3700/4400 · `cportal-lrfe-api768`: 3800/4500 ·
-demo 8088 · rehearsal 8716. Set `E2E_API_PORT`/`E2E_WEB_PORT` for anything outside the main checkout.
+demo 8088 · rehearsal 8716 · penetration tests (`security/scan.mjs`) 3900/4600. Set
+`E2E_API_PORT`/`E2E_WEB_PORT` for anything outside the main checkout.
 
 ## Keep the context small (it is the main cost)
 

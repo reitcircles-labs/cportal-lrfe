@@ -1,0 +1,8 @@
+[
+  {
+    "id": "schemathesis-ignored_auth",
+    "where": "^POST /api/auth/logout$",
+    "reason": "Signing out without a session (no refresh cookie) ends nothing and answers ok; it needs no sign-in by design",
+    "accepted": "2026-11-01"
+  }
+]
