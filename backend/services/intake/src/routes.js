@@ -3,6 +3,33 @@ import {DOC_TYPES} from './doc-types.js';
 import {isCleared} from './intake.service.js';
 
 const READ = ['capture.view', 'verify.view'];
+
+/**
+ * What the multipart parser and the upload stream report about a body cut short or malformed
+ * (no boundary, an unfinished part): the client's mistake, so a 400, not a server error (API-824).
+ */
+const BROKEN_UPLOAD =
+  /^(Unexpected end of (multipart data|form)|Multipart: Boundary not found|Malformed part header|Premature close)/;
+
+/**
+ * An upload error as the client should see it: a broken body becomes a 400; anything else (a
+ * status of its own, a storage failure) is left as it is.
+ *
+ * @param {Error} err the error from parsing or storing the upload
+ * @return {Error} the error to throw
+ */
+function brokenUpload(err) {
+  const broken =
+    !err?.statusCode &&
+    (err?.code === 'ERR_STREAM_PREMATURE_CLOSE' ||
+      BROKEN_UPLOAD.test(err?.message ?? ''));
+  return broken
+    ? new BadRequestError(
+        'The upload was incomplete or malformed: send the file again',
+      )
+    : err;
+}
+
 const uuid = {type: 'string', format: 'uuid'};
 const idParams = (extra = {}) => ({
   params: {type: 'object', required: ['id'], properties: {id: uuid, ...extra}},
@@ -74,21 +101,27 @@ export async function intakeRoutes(
           'Send the file as multipart/form-data in a field named "file"',
         );
       }
-      const part = await req.file();
+      const part = await req.file().catch(err => {
+        throw brokenUpload(err);
+      });
       if (!part || part.fieldname !== 'file') {
         throw new BadRequestError('Send the file in a field named "file"');
       }
-      const doc = await service.captureDocument(
-        {
-          batchId: req.params.batchId,
-          file: {
-            stream: part.file,
-            fileName: part.filename,
-            mimeType: part.mimetype,
+      const doc = await service
+        .captureDocument(
+          {
+            batchId: req.params.batchId,
+            file: {
+              stream: part.file,
+              fileName: part.filename,
+              mimeType: part.mimetype,
+            },
           },
-        },
-        actorOf(req),
-      );
+          actorOf(req),
+        )
+        .catch(err => {
+          throw brokenUpload(err);
+        });
       return reply.status(201).send(doc);
     },
   );

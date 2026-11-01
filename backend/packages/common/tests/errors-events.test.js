@@ -46,6 +46,24 @@ describe('errorHandler', () => {
     expect(res.statusCode).to.equal(400);
   });
 
+  it('refuses text with a NUL character in a body, query or path: 400 (API-824)', async () => {
+    const app = createBaseApp({name: 'test'});
+    let reached = 0;
+    app.post('/t/:id', async () => {
+      reached++;
+      return {ok: true};
+    });
+    const post = (url, payload) => app.inject({method: 'POST', url, payload});
+    expect((await post('/t/a', {email: 'a\u0000b'})).statusCode).to.equal(400);
+    expect(
+      (await post('/t/a', {list: [{deep: 'x\u0000'}]})).statusCode,
+    ).to.equal(400);
+    expect((await post('/t/a?q=%00', {})).statusCode).to.equal(400);
+    expect((await post('/t/a%00', {})).statusCode).to.equal(400);
+    expect(reached).to.equal(0);
+    expect((await post('/t/a', {email: 'a@b.na'})).statusCode).to.equal(200);
+    expect(reached).to.equal(1);
+  });
 
   it('answers 415 to a Content-Type it cannot parse, not 500 (API-819)', async () => {
     const app = createBaseApp({name: 'test'});
