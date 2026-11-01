@@ -5,3 +5,6 @@ out-tsc/
 *.log
 .DS_Store
 __pycache__/
+
+# penetration test reports (security/scan.mjs)
+security/.reports/

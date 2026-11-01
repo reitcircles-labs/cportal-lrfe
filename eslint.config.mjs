@@ -69,6 +69,7 @@ export default tseslint.config(
       'e2e/playwright-report/',
       'e2e/test-results/',
       'deploy/dist/',
+      'security/.reports/',
     ],
   },
 
@@ -220,6 +221,7 @@ export default tseslint.config(
       'e2e/**/*.mjs',
       'angular-app/docs/**/*.mjs',
       'demo/**/*.mjs',
+      'security/**/*.mjs',
     ],
     languageOptions: {globals: {...globals.node, ...globals.browser}},
   },

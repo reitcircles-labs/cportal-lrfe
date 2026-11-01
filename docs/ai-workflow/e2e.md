@@ -62,3 +62,9 @@ conversation.
   `page.route` and a made-up answer, said so in the spec's header.
 - A class name in a component can collide with a global style (`.bar` hid a header): look at the
   screenshot (by agent) before trusting a passing assertion on layout.
+
+## Penetration tests
+
+Black-box scans (ZAP, Nuclei, Schemathesis, OSV-Scanner) of a throwaway install, on every pull
+request (report only for now) and nightly: `security/README.md`. Locally `node security/scan.mjs`
+(compose project `lrfe-pentest`, ports 3900/4600); a fixed finding gets an e2e or unit test.
