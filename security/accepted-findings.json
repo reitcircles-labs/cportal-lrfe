@@ -4,5 +4,34 @@
     "where": "^POST /api/auth/logout$",
     "reason": "Signing out without a session (no refresh cookie) ends nothing and answers ok; it needs no sign-in by design",
     "accepted": "2026-11-01"
+  },
+  {
+    "id": "osv-GHSA-w5hq-g745-h8pq",
+    "where": "^backend/package-lock.json$",
+    "reason": "uuid 8.3.2 comes with sequelize 6, whose newest release still requires it. The flaw is in v3()/v5()/v6() when given an output buffer; sequelize calls only v1() and v4(), without a buffer, so it is not reachable (API-821)",
+    "accepted": "2026-11-01"
+  },
+  {
+    "id": "osv-GHSA-5c6j-r48x-rmvq",
+    "where": "^backend/package-lock.json$",
+    "reason": "serialize-javascript 6.0.2 comes only with mocha 10, the unit-test runner: never in the images and never given outside input. The fix needs mocha 12, a major update of the test runner in every workspace (API-821)",
+    "accepted": "2026-11-01"
+  },
+  {
+    "id": "osv-GHSA-m5mm-p8h7-m29v",
+    "where": "^backend/package-lock.json$",
+    "reason": "serialize-javascript 6.0.2 comes only with mocha 10, the unit-test runner: never in the images and never given outside input. The fix needs mocha 12, a major update of the test runner in every workspace (API-821)",
+    "accepted": "2026-11-01"
+  },
+  {
+    "id": "osv-GHSA-qj8w-gfj5-8c6v",
+    "where": "^backend/package-lock.json$",
+    "reason": "serialize-javascript 6.0.2 comes only with mocha 10, the unit-test runner: never in the images and never given outside input. The fix needs mocha 12, a major update of the test runner in every workspace (API-821)",
+    "accepted": "2026-11-01"
+  },
+  {
+    "id": "osv-GHSA-g3hv-75wg-m249",
+    "reason": "minimatch 5.1.9 (backend, through mocha's glob) and 10.2.6 (root, through the lint tools) match only our own test and lint file patterns, never outside input, and never ship in the images. The fix needs minimatch 11, which those tools do not support (API-821)",
+    "accepted": "2026-11-01"
   }
 ]
