@@ -1,4 +1,4 @@
-import {actorOf, UnauthorizedError} from '@lrfe/common';
+import {actorOf, UnauthorizedError, OFFSET_SCHEMA} from '@lrfe/common';
 import {
   ACCESS_KINDS,
   OFFICE_CODE_PATTERN,
@@ -318,7 +318,7 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
           properties: {
             kind: str({enum: ACCESS_KINDS}),
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
           },
         },
       },

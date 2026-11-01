@@ -38,6 +38,7 @@ export {
 } from './auth.js';
 export {createEventBus} from './events.js';
 export {changedCursor, readChangedCursor, isAfterCursor} from './changed.js';
+export {OFFSET_SCHEMA} from './paging.js';
 export {createRevocationList, SESSION_REVOKED} from './revocations.js';
 export {createBaseApp, startService} from './app.js';
 export {canonicalJson, sha256Hex, normalizeSearch} from './canonical.js';

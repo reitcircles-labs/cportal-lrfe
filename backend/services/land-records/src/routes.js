@@ -3,6 +3,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
   describeGuard,
+  OFFSET_SCHEMA,
 } from '@lrfe/common';
 
 const idParams = (extra = {}) => ({
@@ -80,7 +81,7 @@ export async function recordsRoutes(app, {service}) {
             },
             match: {type: 'string', enum: ['all', 'parcel'], default: 'all'},
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
           },
         },
       },

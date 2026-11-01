@@ -344,6 +344,16 @@ describe('the Anchorings list and detail (API-671)', () => {
       403,
     );
     assert.equal((await get('/audit/anchors')).statusCode, 401);
+    // an offset the database cannot hold is refused, not a server error (API-820)
+    assert.equal(
+      (
+        await get(
+          '/audit/anchors?status=all&offset=9223372036854775808',
+          scanOperator,
+        )
+      ).statusCode,
+      400,
+    );
     await app.close();
   });
 });

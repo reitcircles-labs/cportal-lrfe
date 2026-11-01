@@ -5,6 +5,7 @@ import {
   NotFoundError,
   UnauthorizedError,
   describeGuard,
+  OFFSET_SCHEMA,
 } from '@lrfe/common';
 import {
   DOC_TYPES,
@@ -188,7 +189,7 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
             docType: {type: 'string', enum: DOC_TYPE_IDS},
             batchId: {type: 'string', maxLength: 50},
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
             // land-records, for a user who may read intake's documents (API-803)
             intake: {type: 'boolean'},
           },
