@@ -406,8 +406,13 @@ services:
     image: lrfe-web:${LRFE_VERSION:?set LRFE_VERSION in .env}
     restart: unless-stopped
     logging: *logging
-    # written into /config.json on start (angular-app/docker/site-config.sh)
-    environment: *org
+    # written into /config.json on start (angular-app/docker/site-config.sh); the S3 bucket's
+    # origin goes into the content security policy, so documents stored there open in the app
+    environment:
+      <<: *org
+      EDRMS_STORAGE: ${EDRMS_STORAGE:-local}
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME:-}
+      AWS_BUCKET_REGION: ${AWS_BUCKET_REGION:-}
     ports:
       - "${LRFE_BIND:-127.0.0.1}:${LRFE_HTTP_PORT:-8080}:8080"
     healthcheck:

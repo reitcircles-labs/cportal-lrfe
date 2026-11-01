@@ -17,6 +17,8 @@ RUN npx ng build --configuration production
 # nginx as a non-root user, listening on 8080
 FROM nginxinc/nginx-unprivileged:1.28.2-alpine
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+# included by default.conf (outside conf.d, which nginx reads as a whole)
+COPY docker/security-headers.conf /etc/nginx/lrfe-security-headers.conf
 # writes /config.json from the site's settings on every start, before nginx starts (API-712)
 COPY --chmod=0755 docker/site-config.sh /docker-entrypoint.d/40-lrfe-site-config.sh
 COPY --from=build /app/dist/cportal-lrfe/browser /usr/share/nginx/html

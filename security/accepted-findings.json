@@ -6,6 +6,16 @@
     "accepted": "2026-11-01"
   },
   {
+    "id": "zap-90004-2",
+    "reason": "Cross-Origin-Embedder-Policy is left out on purpose (API-822): it can stop the browser's PDF viewer in the document frames, and the app uses no feature that needs cross-origin isolation",
+    "accepted": "2026-11-01"
+  },
+  {
+    "id": "zap-10110",
+    "reason": "bypassSecurityTrustHtml is Angular's own sanitizer code; bypassSecurityTrustResourceUrl puts a scan or PDF from the app's own API (or a blob: of it) in the document frame, which the content security policy limits to 'self' and blob: (API-822)",
+    "accepted": "2026-11-01"
+  },
+  {
     "id": "osv-GHSA-w5hq-g745-h8pq",
     "where": "^backend/package-lock.json$",
     "reason": "uuid 8.3.2 comes with sequelize 6, whose newest release still requires it. The flaw is in v3()/v5()/v6() when given an output buffer; sequelize calls only v1() and v4(), without a buffer, so it is not reachable (API-821)",
@@ -32,6 +42,17 @@
   {
     "id": "osv-GHSA-g3hv-75wg-m249",
     "reason": "minimatch 5.1.9 (backend, through mocha's glob) and 10.2.6 (root, through the lint tools) match only our own test and lint file patterns, never outside input, and never ship in the images. The fix needs minimatch 11, which those tools do not support (API-821)",
+    "accepted": "2026-11-01"
+  },
+  {
+    "id": "zap-10055-6",
+    "reason": "The content security policy keeps style-src 'unsafe-inline': Angular injects its components' styles inline, and a nonce would have to be added to every answer, which the web image's static nginx cannot do. Scripts stay 'self' only, which is what stops cross-site scripting (API-822)",
+    "accepted": "2026-11-01"
+  },
+  {
+    "id": "zap-100001",
+    "where": "^GET http://web:8080",
+    "reason": "Any unknown path returns the app's index.html (text/html): the app routes after # (#/login, #/records/…), so every page is that one file; API paths under /api/ answer JSON (API-822)",
     "accepted": "2026-11-01"
   }
 ]
