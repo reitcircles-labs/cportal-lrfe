@@ -43,6 +43,10 @@ const OFFICE_TYPE_LABEL = {
   external: 'External body',
 };
 const isNational = roleIds => roleIds.some(r => NATIONAL_ROLES.includes(r));
+// a session id is a UUID (randomUUID); anything else in a cookie never reaches the database
+const SESSION_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isSessionId = sid => SESSION_ID.test(String(sid || ''));
 // the message id lets an admin find the email in the mail provider's delivery log (e.g. Google Email Log Search)
 const emailNote = e =>
   e.sent
@@ -333,7 +337,7 @@ export class IdentityService {
     const [sid, secret] = String(refreshToken || '').split('.');
     const expired = () =>
       new UnauthorizedError('Session expired, sign in again');
-    if (!sid || !secret) throw expired();
+    if (!isSessionId(sid) || !secret) throw expired();
     const session = await this.repo.getSession(sid);
     if (!session || session.revokedAt) throw expired();
     const now = this.clock();
@@ -375,7 +379,8 @@ export class IdentityService {
   }
 
   async logout({sid, actor}) {
-    if (!sid) return;
+    // a cookie that holds no session id ends nothing, like no cookie (API-819)
+    if (!isSessionId(sid)) return;
     const session = await this.repo.getSession(sid);
     if (!session || session.revokedAt) return;
     await this.repo.updateSession(sid, {revokedAt: this.clock()});

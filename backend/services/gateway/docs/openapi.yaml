@@ -109,6 +109,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
       responses:
         "200":
@@ -418,6 +419,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
       responses:
         "200":
@@ -541,6 +543,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
       responses:
         "200":
@@ -612,6 +615,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
       responses:
         "200":
@@ -1160,6 +1164,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
       responses:
         "200":
@@ -1470,6 +1475,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
       responses:
         "200":
@@ -1705,7 +1711,7 @@ paths:
               properties:
                 email:
                   type: string
-                  maxLength: 320
+                  maxLength: 254
                 password:
                   type: string
                   maxLength: 1024
@@ -2051,6 +2057,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
         - name: intake
           in: query
@@ -4658,6 +4665,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
       responses:
         "200":
@@ -5011,6 +5019,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 2147483647
             default: 0
       responses:
         "200":
@@ -7186,7 +7195,7 @@ paths:
                 email:
                   type: string
                   format: email
-                  maxLength: 320
+                  maxLength: 254
                 officeId:
                   type:
                     - string

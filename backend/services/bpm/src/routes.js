@@ -1,4 +1,4 @@
-import {UnauthorizedError, describeGuard} from '@lrfe/common';
+import {UnauthorizedError, describeGuard, OFFSET_SCHEMA} from '@lrfe/common';
 
 const userOf = req => ({
   id: req.user.sub,
@@ -101,7 +101,7 @@ export async function bpmRoutes(app, {engine}) {
             },
             mine: {type: 'boolean'},
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
           },
         },
       },

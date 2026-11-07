@@ -12,6 +12,11 @@
 # Only settings that are set are written: the app uses its defaults for the others
 # (angular-app/src/app/state/site-config.ts). An empty setting is written empty, and is not shown.
 # Display texts only, readable by anyone who opens the portal: never put a secret here.
+#
+# Also the other origins documents may come from, for the content security policy
+# (docker/security-headers.conf, API-822): with EDRMS_STORAGE=s3, documents open from links signed
+# by the S3 bucket (AWS_BUCKET_NAME, AWS_BUCKET_REGION), so its origin is allowed in frames and
+# images. Written as the nginx variable $lrfe_document_origins, empty with local storage.
 set -eu
 
 out=${SITE_CONFIG_FILE:-/tmp/lrfe/config.json}
@@ -39,3 +44,25 @@ mkdir -p "$(dirname "$out")"
 printf '{%s\n}\n' "$entries" > "$out.tmp"
 mv "$out.tmp" "$out"
 echo "site-config: wrote $out"
+
+origins_file=${DOCUMENT_ORIGINS_FILE:-/tmp/lrfe/document-origins.conf}
+bucket=${AWS_BUCKET_NAME:-}
+region=${AWS_BUCKET_REGION:-}
+origins=''
+if [ "${EDRMS_STORAGE:-local}" = s3 ]; then
+    # only a valid bucket and region name gets into nginx's configuration
+    if printf '%s' "$bucket" | grep -Eq '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$' &&
+        printf '%s' "$region" | grep -Eq '^[a-z0-9-]+$'; then
+        case "$bucket" in
+            # a bucket name with dots is signed on the region's host (path style)
+            *.*) origins="https://s3.$region.amazonaws.com" ;;
+            *) origins="https://$bucket.s3.$region.amazonaws.com" ;;
+        esac
+    else
+        echo "site-config: AWS_BUCKET_NAME or AWS_BUCKET_REGION is not a valid name; documents stored in S3 will not open in the app" >&2
+    fi
+fi
+mkdir -p "$(dirname "$origins_file")"
+printf 'map $host $lrfe_document_origins {\n    default "%s";\n}\n' "$origins" > "$origins_file.tmp"
+mv "$origins_file.tmp" "$origins_file"
+echo "site-config: document origins: ${origins:-none}"

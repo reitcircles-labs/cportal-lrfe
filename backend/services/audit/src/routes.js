@@ -1,4 +1,5 @@
 import {readFile} from 'node:fs/promises';
+import {OFFSET_SCHEMA} from '@lrfe/common';
 import {KINDS} from './proof.service.js';
 import {CLOSE_OUTCOMES} from './signoff.service.js';
 import {LIST_FILTERS} from './audit-list.service.js';
@@ -39,7 +40,7 @@ export async function auditRoutes(
             from: {type: 'string', maxLength: 40},
             to: {type: 'string', maxLength: 40},
             limit: {type: 'integer', minimum: 1, maximum: 500, default: 100},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
           },
         },
       },
@@ -201,7 +202,7 @@ export async function auditRoutes(
           properties: {
             status: {type: 'string', enum: ANCHOR_FILTERS, default: 'all'},
             limit: {type: 'integer', minimum: 1, maximum: 100, default: 25},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
           },
         },
       },
@@ -279,7 +280,7 @@ export async function auditRoutes(
           additionalProperties: false,
           properties: {
             limit: {type: 'integer', minimum: 1, maximum: 100, default: 25},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
           },
         },
       },
@@ -303,7 +304,7 @@ export async function auditRoutes(
           additionalProperties: false,
           properties: {
             limit: {type: 'integer', minimum: 1, maximum: 100, default: 25},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
           },
         },
       },
@@ -422,7 +423,7 @@ export async function auditRoutes(
             q: {type: 'string', maxLength: 200},
             filter: {type: 'string', enum: LIST_FILTERS, default: 'changed'},
             limit: {type: 'integer', minimum: 1, maximum: 100, default: 25},
-            offset: {type: 'integer', minimum: 0, default: 0},
+            offset: OFFSET_SCHEMA,
           },
         },
       },

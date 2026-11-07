@@ -234,10 +234,13 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
 const initFile = join(dataDir, 'dev-init.json');
 try {
   let status;
+  // up to 60 s: on a busy machine (a scan or load test beside it) OpenBao can take more than 10
   for (let i = 0; ; i++) {
     status = await sealStatus().catch(() => null);
     if (status) break;
-    if (i >= 50) throw new Error(`OpenBao did not answer on ${addr}`);
+    if (i >= 300) {
+      throw new Error(`OpenBao did not answer on ${addr} within 60 s`);
+    }
     await new Promise(r => setTimeout(r, 200));
   }
   if (!status.initialized) {

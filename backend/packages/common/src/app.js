@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import {errorHandler} from './errors.js';
+import {BadRequestError, errorHandler} from './errors.js';
 import {env} from './config.js';
 
 /** The token in the path of the public check of an extract (API-693): what follows /public/extracts/. */
@@ -22,7 +22,33 @@ function requestForLog(req) {
 }
 
 /**
- * Fastify instance with the shared error handler and a public GET /health.
+ * Whether a request value (a body, its query or path parameters) holds a NUL character anywhere.
+ * PostgreSQL cannot store one in text, so such a value would fail as a server error (API-824).
+ *
+ * @param {*} value a parsed JSON value, or the query or path parameters
+ * @return {boolean} true when a string in it holds U+0000
+ */
+export function holdsNul(value) {
+  if (typeof value === 'string') {
+    return value.includes('\u0000');
+  }
+  // binary bodies (a Buffer, a stream) are files, not text: never walked
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    ArrayBuffer.isView(value) ||
+    typeof value.pipe === 'function'
+  ) {
+    return false;
+  }
+  return Object.entries(value).some(
+    ([key, item]) => key.includes('\u0000') || holdsNul(item),
+  );
+}
+
+/**
+ * Fastify instance with the shared error handler, a public GET /health, and no NUL character in a
+ * request's text (holdsNul).
  * `onRoute(routeOptions)` sees every route as it is registered (the API docs generator uses it).
  * A `logger` given as options logs request paths without the token of an extract's public check:
  * the token is what lets anyone check the extract.
@@ -38,6 +64,12 @@ export function createBaseApp({name, onRoute, logger, ...fastifyOptions}) {
   });
   if (onRoute) app.addHook('onRoute', onRoute);
   app.setErrorHandler(errorHandler);
+  // no text with a NUL character reaches a route (or the database): a 400, before validation
+  app.addHook('preValidation', async req => {
+    if (holdsNul(req.params) || holdsNul(req.query) || holdsNul(req.body)) {
+      throw new BadRequestError('Text must not contain a NUL character');
+    }
+  });
   app.get('/health', async () => ({status: 'ok', service: name}));
   return app;
 }

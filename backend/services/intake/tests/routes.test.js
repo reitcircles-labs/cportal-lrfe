@@ -133,6 +133,34 @@ describe('intake HTTP API', () => {
     expect(dup.json().details.documentId).to.be.a('string');
   });
 
+  // Found by the penetration tests (API-814): each answered 500.
+  it('refuses an upload body cut short or without its boundary: 400, nothing kept (API-824)', async () => {
+    const {app, as, batch} = await makeHttp();
+    const post = (payload, headers) =>
+      app.inject({
+        method: 'POST',
+        url: `/batches/${batch.id}/documents`,
+        payload,
+        headers: {...headers, ...as(users.scan)},
+      });
+    const up = upload(pdf('cut short'));
+    const cut = await post(
+      up.payload.subarray(0, Math.floor(up.payload.length / 2)),
+      up.headers,
+    );
+    expect(cut.statusCode, cut.body).to.equal(400);
+    expect(cut.json().message).to.match(/incomplete or malformed/);
+    const noBoundary = await post(up.payload, {
+      'content-type': 'multipart/form-data',
+    });
+    expect(noBoundary.statusCode, noBoundary.body).to.equal(400);
+    const docs = await app.inject({
+      url: `/documents?batchId=${batch.id}`,
+      headers: as(users.scan),
+    });
+    expect(docs.json().items ?? docs.json()).to.have.length(0);
+  });
+
   it('serves the staged file through a signed, expiring link', async () => {
     const {app, as, captureAndExtract} = await makeHttp();
     const bytes = pdf('signed link');
