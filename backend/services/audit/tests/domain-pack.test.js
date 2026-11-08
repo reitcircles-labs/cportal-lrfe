@@ -1,7 +1,19 @@
 import {strict as assert} from 'node:assert';
-import {createEventBus, loadDomainPack} from '@lrfe/common';
+import {
+  createEventBus,
+  createServiceTokenSigner,
+  loadDomainPack,
+  recordServiceOf,
+} from '@lrfe/common';
 
 import {buildApp} from '../src/app.js';
+import {createListSources} from '../src/audit-list.service.js';
+import {createCoverageSources} from '../src/anchorings.service.js';
+import {createSealSources} from '../src/backfill.service.js';
+import {createEvidenceSources} from '../src/evidence.service.js';
+import {createLookupSources} from '../src/lookup.service.js';
+import {createVerifySources} from '../src/proof.service.js';
+import {createSignoffClients} from '../src/signoff.service.js';
 import {AnchorLookupService, classify} from '../src/lookup.service.js';
 import {ProofService} from '../src/proof.service.js';
 import {createMemoryRepo} from '../src/repo/memory.js';
@@ -126,5 +138,82 @@ describe('the audit service with a domain pack (CB-3)', () => {
       SignoffService.refusal({...none, actor: committer, pack: shipping}),
       null,
     );
+  });
+
+  it('names the record service from the pack; without one, record reads answer 503 (CB-4)', async () => {
+    assert.equal(recordServiceOf(land).name, 'land-records');
+    assert.equal(recordServiceOf(shipping), null);
+
+    const fetchImpl = async url => {
+      throw new Error(`no call expected, got ${url}`);
+    };
+    const options = {
+      recordsUrl: recordServiceOf(shipping)?.url ?? null,
+      recordsLabel: null,
+      edrmsUrl: 'http://edrms',
+      bpmUrl: 'http://bpm',
+      serviceToken: () => 't',
+      fetchImpl,
+    };
+    const noService = {
+      statusCode: 503,
+      message: 'This install has no record service',
+    };
+    const list = createListSources(options);
+    await assert.rejects(
+      list.records({status: 'committed', limit: 1, offset: 0}),
+      noService,
+    );
+    await assert.rejects(list.versions(RECORD_ID), noService);
+    await assert.rejects(
+      createVerifySources(options).recordVersion(RECORD_ID, 1),
+      noService,
+    );
+    const {sources} = createSignoffClients(options);
+    await assert.rejects(sources.record(RECORD_ID, 1), noService);
+    await assert.rejects(sources.recordInfo(RECORD_ID), noService);
+    await assert.rejects(
+      createCoverageSources(options).lookup({records: []}),
+      noService,
+    );
+    const lookup = createLookupSources(options);
+    await assert.rejects(lookup.records({q: 'x', limit: 1}), noService);
+    await assert.rejects(lookup.lookup({records: []}), noService);
+    const evidence = createEvidenceSources(options);
+    await assert.rejects(evidence.version(RECORD_ID, 1), noService);
+    await assert.rejects(
+      createSealSources(options).records(null, 10),
+      noService,
+    );
+  });
+
+  it('lets only edrms and extracts read the anchoring status without a record service (CB-4)', async () => {
+    const repo = createMemoryRepo();
+    const tree = new TreeService({repo, logger: quiet, pack: shipping});
+    const proofs = new ProofService({
+      repo,
+      tree,
+      logger: quiet,
+      pack: shipping,
+    });
+    const app = await buildApp({
+      service: new TrailService({repo, logger: quiet, pack: shipping}),
+      proofs,
+      jwtSecret: SECRET,
+    });
+    await app.ready();
+    const ask = service =>
+      app.inject({
+        method: 'POST',
+        url: '/audit/anchoring',
+        headers: {
+          authorization: `Bearer ${createServiceTokenSigner({secret: SECRET, service})()}`,
+        },
+        payload: {keys: []},
+      });
+    assert.equal((await ask('edrms')).statusCode, 200);
+    assert.equal((await ask('extracts')).statusCode, 200);
+    assert.equal((await ask('land-records')).statusCode, 403);
+    await app.close();
   });
 });

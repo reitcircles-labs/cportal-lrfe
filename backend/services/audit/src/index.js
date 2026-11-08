@@ -4,6 +4,7 @@ import {
   createRevocationList,
   createSequelize,
   createServiceTokenSigner,
+  domain,
   ensureSchema,
   env,
   envBool,
@@ -11,6 +12,7 @@ import {
   envOneOf,
   healthCheck,
   orgFromEnv,
+  recordServiceOf,
   startService,
 } from '@lrfe/common';
 import {buildApp} from './app.js';
@@ -77,7 +79,10 @@ const serviceToken = createServiceTokenSigner({
   secret: env('JWT_SECRET'),
   service: 'audit',
 });
-const recordsUrl = env('RECORDS_URL', 'http://localhost:3505');
+// the product's record service, as the domain pack names it (CB-4); none for a product without records
+const recordService = recordServiceOf(domain);
+const recordsUrl = recordService?.url ?? null;
+const recordsLabel = recordService?.label ?? null;
 const edrmsUrl = env('EDRMS_URL', 'http://localhost:3502');
 // proofs and verification (README.md section 4): the owning services recompute the seals
 const proofs = new ProofService({
@@ -85,9 +90,14 @@ const proofs = new ProofService({
   tree,
   cardano,
   logger: log,
-  sources: createVerifySources({recordsUrl, edrmsUrl, serviceToken}),
+  sources: createVerifySources({
+    recordsUrl,
+    recordsLabel,
+    edrmsUrl,
+    serviceToken,
+  }),
 });
-// sign-off and findings (README.md section 5): versions read from land-records and edrms, checked
+// sign-off and findings (README.md section 5): versions read from the record service and edrms, checked
 // against the blockchain (proofs), findings and re-review tasks sent to bpm
 const signoffs = new SignoffService({
   repo,
@@ -96,13 +106,14 @@ const signoffs = new SignoffService({
   logger: log,
   ...createSignoffClients({
     recordsUrl,
+    recordsLabel,
     edrmsUrl,
     bpmUrl: env('BPM_URL', 'http://localhost:3503'),
     serviceToken,
   }),
 });
 
-// the evidence pack (README.md section 6): versions, documents and files read from land-records and edrms
+// the evidence pack (README.md section 6): versions, documents and files read from the record service and edrms
 const evidence = new EvidenceService({
   trail: service,
   proofs,
@@ -111,14 +122,19 @@ const evidence = new EvidenceService({
   cardano,
   logger: log,
   organisation: orgFromEnv().fullName,
-  sources: createEvidenceSources({recordsUrl, edrmsUrl, serviceToken}),
+  sources: createEvidenceSources({
+    recordsUrl,
+    recordsLabel,
+    edrmsUrl,
+    serviceToken,
+  }),
 });
 
 // the records list of the Audit screen (API-661)
 const auditList = new AuditListService({
   repo,
   proofs,
-  sources: createListSources({recordsUrl, serviceToken}),
+  sources: createListSources({recordsUrl, recordsLabel, serviceToken}),
 });
 
 // the Anchorings screens (API-671): the job's settings, to say when the next batch is due
@@ -133,14 +149,19 @@ const anchorings = new AnchoringsService({
   anchoring: !!cardano,
   cardano,
   config: anchoringConfig,
-  sources: createCoverageSources({recordsUrl, serviceToken}),
+  sources: createCoverageSources({recordsUrl, recordsLabel, serviceToken}),
 });
 // "Is it on the blockchain?" (API-697)
 const lookup = new AnchorLookupService({
   repo,
   proofs,
   anchorings,
-  sources: createLookupSources({recordsUrl, edrmsUrl, serviceToken}),
+  sources: createLookupSources({
+    recordsUrl,
+    recordsLabel,
+    edrmsUrl,
+    serviceToken,
+  }),
 });
 
 // whether anchoring is working, for administrators (API-674)
@@ -234,7 +255,12 @@ if (cardano && !cardano.testDriver) {
     trail: service,
     tree,
     logger: app.log,
-    sources: createSealSources({recordsUrl, edrmsUrl, serviceToken}),
+    sources: createSealSources({
+      recordsUrl,
+      recordsLabel,
+      edrmsUrl,
+      serviceToken,
+    }),
   });
   const startAnchoring = async () => {
     let empty;

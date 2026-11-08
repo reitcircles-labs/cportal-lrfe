@@ -142,7 +142,7 @@ or service code; the services pass it the helpers it needs.
 | `documents` | edrms, intake, search | `documents/`: the six document types and their fields (with each field's search role), the reference format ("T 2210/2008"), the field types and their checks (deed and SG numbers, Namibian ID numbers, dates, extents, money), the reading prompt and its version, the land checks and cross-checks, the stand-in reader's demo answers |
 | `identity` | identity | `identity/`: the "Land records" group and its permissions, the roles `sup`, `scan`, `rev`, `rec`, `aud`, the rules `sod2` and `sod3`, the default offices, the demo users |
 | `workflows` | bpm | `workflows/`: `land-record-review`; who acknowledges the audit workflows (`rec`, `sup`); their descriptions |
-| `recordKind` | audit | `record-kind.js`: the source `land-records`, the commit event, the review process key, the linked documents of a record event, the commit permission, the lookup patterns (record and deed numbers). Null in a pack without records |
+| `recordKind` | audit; its `service`: identity, edrms, gateway, audit, extracts, bpm (CB-4) | `record-kind.js`: the record service (`service`: `land-records`, its label and `RECORDS_URL`), the source `land-records`, the commit event, the review process key, the linked documents of a record event, the commit permission, the lookup patterns (record and deed numbers). Null in a pack without records |
 | `wording` | edrms, identity, audit, extracts | `wording/`: the EDRMS business function and examples, the invitation's "land records system", "land record" in audit's messages and the evidence pack README, every text of the extract PDF and its number prefix `EX` |
 
 What stays in the platform, so that a product without these parts still works: the platform
@@ -171,18 +171,66 @@ exported as `pack`, a test that it passes `checkDomainPack`; add it to `backend/
 
 ### Land terms still in the shared services
 
-- **The calls to the product service (CB-4):** `land-records` in the HTTP clients of audit,
-  extracts and bpm (`connectors/records.js`), their error texts ("land records service"), and the
-  service-caller allow-lists of identity, edrms and audit.
-- **The record's data shape (CB-4):** extracts' owner check before issuing
-  (`issue-checks.js`, `version.data.owners`), the `ownerIndex` field of its API, the owner columns
-  it stores.
+The calls to the record service by name are gone (CB-4, see the record contract below). What
+remains:
+
+- **The record's data shape:** extracts' owner check before issuing (`issue-checks.js`,
+  `version.data.owners`), the `ownerIndex` field of its API, the owner columns it stores. The
+  record contract carries a version's `data` as the product's own; reading owners from it is
+  still land's.
 - **Stored names:** the `property` key of intake's summaries and search's results (filled from the
   field whose search role is `place`), the office type `registry`.
 - **Defaults:** the country `NA` and office `WDH` as default settings of edrms and intake
   (Namibian values as defaults only).
 - **Not code:** examples in the API docs, the developer scripts that check land sample scans, the
   design history in `services/audit/README.md`.
+
+## The record contract (CB-4)
+
+The shared services never call a product service by name. The pack names its record service in
+`recordKind.service` (land: `{name: 'land-records', label: 'land records', urlSetting:
+'RECORDS_URL', defaultUrl: 'http://localhost:3505'}`); `recordServiceOf(domain)` in `@lrfe/common`
+gives its name, label and address (from its setting), or null for a pack without records. From it:
+
+- **The callers' allow-lists:** identity lets the record service read `/policies/effective`;
+  edrms lets it read documents with a service token, and search documents still in intake for a
+  user who may read them (`intake=true`); audit's allow-list likewise.
+- **The gateway:** `/api/records/*` goes to the record service, at its setting's address
+  (`RECORDS_URL` for land, unchanged). A pack without records has no `/api/records` route, and the
+  gateway starts without that address.
+- **The calls:** audit, extracts and bpm send them through one client, `createRecordClient` of
+  `@lrfe/record-contract`, over their own transport (their timeouts, error texts, service token).
+  Error texts take the service's `label` ("The land records service cannot be reached: ..."). With
+  no record service (the shipping pack today) every service still starts; a call answers 503
+  "This install has no record service".
+
+Fixed names stay as they are, since they are stored or anchored: the event source `land-records`,
+the `records.*` events, the setting `RECORDS_URL`.
+
+Every call needs a service token (`typ: service`); the record service checks the caller.
+
+| Call | Method and path | Query or body | Answer | Called by |
+|---|---|---|---|---|
+| `list` | `GET /records` | `status`, `limit`, `offset`, optionally `q` and `match` (`all` or `parcel`) | `{items, total}`: each record's `id`, `recordNo`, `label`, `status`, `currentVersion`, `draftVersion`, `draftState` | audit (the Audit screen's list, the Anchorings search) |
+| `get` | `GET /records/:id` | | the record as in the list, with `current` (its current committed version, with `data`), `draft` and `draftDiff` | audit, extracts |
+| `versions` | `GET /records/:id/versions` | | the versions without their data: `versionNumber`, `state`, `seal`, `committedAt`, `approvedByName`, `changes` | audit |
+| `version` | `GET /records/:id/versions/:n` | | one version: `versionNumber`, `state`, `data`, `seal`, `previousSeal`, `approvedById`, `approvedByName`, `committedAt` | audit, extracts |
+| `lookup` | `POST /records/lookup` | `{recordIds, versions: [{recordId, versionNumber}], pinning: [documentId]}` | `{records: [{id, recordNo, label}], versions: [{recordId, versionNumber, documents: [{id, version}]}], pinnedBy: [{documentId, version, recordId, versionNumber}]}` | audit (Anchorings) |
+| `seals` | `GET /records/seals` | `limit`, optionally `after` (the previous page's `next`) | `{items: [{recordId, version, seal, at}], next}`, oldest first; `next` null on the last page | audit (backfill) |
+| `verify` | `GET /records/:id/verify` | | `{recordId, recordNo, intact, versions: [{versionNumber, seal, intact, linked}], checkedAt}`: the service's own recomputation | audit |
+| `commit` | `POST /records/:id/versions/:n/commit` | `{by: {id, name}, comment}` | the record as `get` answers it, the version now current; a retry by the same person answers the same | bpm (review approved) |
+| `reject` | `POST /records/:id/versions/:n/reject` | `{by: {id, name}, comment}` (a comment is required) | the record as `get` answers it, the version a draft again | bpm (review sent back) |
+
+Errors, in the shared error shape: 401 without a valid service token, 403 for a caller the call
+does not allow (and for an approver the four-eyes rule excludes), 404 for an unknown record or
+version, 400 for a bad query, body or cursor, 409 when the version is no longer in review.
+
+**The contract test.** `describeRecordContract({name, client, fixture})` from
+`@lrfe/record-contract/contract-suite` is a mocha suite that calls each of these on a running
+service and checks the shapes (never a product's values), the 404s, and commit and reject of a
+submitted version. land-records runs it in `services/land-records/tests/contract.test.js`, in
+process over `app.inject`; the bill-of-lading service will run the same suite. Details in
+[`backend/packages/record-contract/README.md`](../../backend/packages/record-contract/README.md).
 
 ## Country pack and domain pack
 

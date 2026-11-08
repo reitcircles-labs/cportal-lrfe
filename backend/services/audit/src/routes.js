@@ -1,5 +1,5 @@
 import {readFile} from 'node:fs/promises';
-import {OFFSET_SCHEMA} from '@lrfe/common';
+import {domain, OFFSET_SCHEMA, recordServiceOf} from '@lrfe/common';
 import {proofKinds} from './proof.service.js';
 import {CLOSE_OUTCOMES} from './signoff.service.js';
 import {LIST_FILTERS} from './audit-list.service.js';
@@ -24,6 +24,8 @@ export async function auditRoutes(
   },
 ) {
   const canView = app.requirePerm('audit.view');
+  // the product's record service, as the domain pack names it (CB-4); none for a product without records
+  const recordService = recordServiceOf(proofs?.pack ?? domain);
 
   // trail entries: of a record (with its documents' steps), a document, a user, a process
   app.get(
@@ -117,12 +119,16 @@ export async function auditRoutes(
     async req => proofs.verify(req.body.kind, req.body.id, req.body.version),
   );
 
-  // the anchoring status of versions, for land-records and edrms to show next to them, and for the
+  // the anchoring status of versions, for the record service and edrms to show next to them, and for the
   // extracts service: an extract is issued only of a version on the blockchain (API-692)
   app.post(
     '/audit/anchoring',
     {
-      onRequest: app.requireService('land-records', 'edrms', 'extracts'),
+      onRequest: app.requireService(
+        ...(recordService ? [recordService.name] : []),
+        'edrms',
+        'extracts',
+      ),
       schema: {
         body: {
           type: 'object',

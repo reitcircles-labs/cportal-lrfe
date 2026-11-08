@@ -43,4 +43,9 @@ export {createRevocationList, SESSION_REVOKED} from './revocations.js';
 export {createBaseApp, startService} from './app.js';
 export {canonicalJson, sha256Hex, normalizeSearch} from './canonical.js';
 export {createAnchoringClient} from './anchoring.js';
-export {domain, loadDomainPack, DEFAULT_DOMAIN} from './domain.js';
+export {
+  domain,
+  loadDomainPack,
+  recordServiceOf,
+  DEFAULT_DOMAIN,
+} from './domain.js';

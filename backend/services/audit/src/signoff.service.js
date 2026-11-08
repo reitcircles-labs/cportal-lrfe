@@ -7,6 +7,7 @@ import {
   NotFoundError,
 } from '@lrfe/common';
 import {auditWording, recordKindOf} from './domain.js';
+import {recordClientAt, recordServiceLabel} from './record-service.js';
 
 /**
  * What the screens and the re-review task say when an item no longer matches the blockchain.
@@ -57,7 +58,7 @@ export const CLOSE_OUTCOMES = ['agreed', 'mistake'];
  *
  * `sources`: { recordInfo(recordId), version(recordId, n), record(recordId, n) → { record, version },
  * document(documentId) }
- * read from land-records and edrms with the audit service's token; `bpm`: { start(variables, process),
+ * read from the record service and edrms with the audit service's token; `bpm`: { start(variables, process),
  * cancel(id, reason) }; `proofs`: the ProofService (anchoring status and verification).
  */
 export class SignoffService {
@@ -964,9 +965,10 @@ export class SignoffService {
   }
 }
 
-/** land-records, edrms and bpm, over HTTP with the audit service's token. */
+/** The record service, edrms and bpm, over HTTP with the audit service's token. */
 export function createSignoffClients({
   recordsUrl,
+  recordsLabel = recordServiceLabel(),
   edrmsUrl,
   bpmUrl,
   serviceToken,
@@ -1012,25 +1014,20 @@ export function createSignoffClients({
     }
     return json;
   };
+  const records = recordClientAt(recordsUrl, url =>
+    read(url, `${recordsLabel} service`),
+  );
   return {
     sources: {
       async record(recordId, n) {
         const [record, version] = await Promise.all([
-          read(`${recordsUrl}/records/${recordId}`, 'land records service'),
-          read(
-            `${recordsUrl}/records/${recordId}/versions/${n}`,
-            'land records service',
-          ),
+          records.get(recordId),
+          records.version(recordId, n),
         ]);
         return {record, version};
       },
-      recordInfo: recordId =>
-        read(`${recordsUrl}/records/${recordId}`, 'land records service'),
-      version: (recordId, n) =>
-        read(
-          `${recordsUrl}/records/${recordId}/versions/${n}`,
-          'land records service',
-        ),
+      recordInfo: recordId => records.get(recordId),
+      version: (recordId, n) => records.version(recordId, n),
       document: documentId =>
         read(`${edrmsUrl}/documents/${documentId}`, 'document service'),
     },

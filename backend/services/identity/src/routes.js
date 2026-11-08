@@ -1,4 +1,10 @@
-import {actorOf, UnauthorizedError, OFFSET_SCHEMA} from '@lrfe/common';
+import {
+  actorOf,
+  domain,
+  recordServiceOf,
+  UnauthorizedError,
+  OFFSET_SCHEMA,
+} from '@lrfe/common';
 import {
   ACCESS_KINDS,
   OFFICE_CODE_PATTERN,
@@ -43,6 +49,9 @@ const reasonOf = req =>
  * Refresh tokens live only in an httpOnly cookie; access tokens are returned in the body.
  */
 export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
+  // the product's record service, as the domain pack names it (CB-4): none for a pack without records
+  const recordService = recordServiceOf(domain);
+  const policyReaders = recordService ? [recordService.name] : [];
   const cookieOptions = {
     httpOnly: true,
     secure: cookie.secure,
@@ -271,7 +280,7 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
   // the policies other services enforce, read with their service token (API-663: Four-eyes finalization)
   app.get(
     '/policies/effective',
-    {onRequest: app.requireService('land-records')},
+    {onRequest: app.requireService(...policyReaders)},
     async () => service.effectivePolicies(),
   );
   app.put(

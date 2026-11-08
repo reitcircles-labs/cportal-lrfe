@@ -125,7 +125,7 @@ describe('the catalogue from the domain pack (CB-3)', () => {
     );
   });
 
-  it('builds the app and serves the catalogue with LRFE_DOMAIN=shipping', async () => {
+  it('builds the app and serves the catalogue with LRFE_DOMAIN=shipping, no record service', async () => {
     // the install's pack is loaded once per process: this runs in its own
     const script = `
       import {createEventBus} from '@lrfe/common';
@@ -143,10 +143,17 @@ describe('the catalogue from the domain pack (CB-3)', () => {
       const app = await buildApp({service, jwtSecret: 'x'.repeat(40), logger: false});
       await app.ready();
       const catalogue = await service.catalogue();
+      const policies = await app.inject({
+        url: '/policies/effective',
+        headers: {
+          authorization: 'Bearer ' + app.jwt.sign({typ: 'service', sub: 'land-records'}),
+        },
+      });
       console.log(JSON.stringify({
         groups: catalogue.groups,
         roles: catalogue.roles.map(r => r.id),
         users: (await repo.listUsers()).length,
+        policies: policies.statusCode,
       }));
       await app.close();
     `;
@@ -159,6 +166,8 @@ describe('the catalogue from the domain pack (CB-3)', () => {
       groups: ['General', 'Capture', 'Verification', 'Audit', 'Administration'],
       roles: ['adm'],
       users: 0,
+      // no record service in the pack: no service may read the effective policies (CB-4)
+      policies: 403,
     });
   });
 });

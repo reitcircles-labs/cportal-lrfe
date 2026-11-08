@@ -3,12 +3,14 @@ import {
   createSequelizeOutbox,
   createRevocationList,
   createSequelize,
+  domain,
   ensureSchema,
   env,
   envBool,
   envInt,
   envOneOf,
   healthCheck,
+  recordServiceOf,
   signServiceToken,
   startService,
 } from '@lrfe/common';
@@ -58,10 +60,12 @@ const app = await buildApp({
   revocations: createRevocationList({events}),
   logger: {level: env('LOG_LEVEL', 'info')},
 });
+// the product's record service, as the domain pack names it: none (null), and no records connectors
+const recordService = recordServiceOf(domain);
 engine.connectors = createConnectors({
   urls: {
     edrms: env('EDRMS_URL', 'http://localhost:3502'),
-    records: env('RECORDS_URL', 'http://localhost:3505'),
+    records: recordService ? recordService.url : null,
   },
   serviceToken: () => signServiceToken(app, 'bpm'),
 });

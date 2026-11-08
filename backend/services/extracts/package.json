@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@lrfe/common": "0.1.0",
+    "@lrfe/record-contract": "0.1.0",
     "@lrfe/storage": "0.1.0",
     "@signpdf/placeholder-pdf-lib": "3.3.0",
     "@signpdf/signpdf": "3.3.0",

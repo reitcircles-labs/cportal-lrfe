@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {AppError, DEFAULT_ORG_FULL_NAME, NotFoundError} from '@lrfe/common';
 import {auditWording} from './domain.js';
+import {recordClientAt, recordServiceLabel} from './record-service.js';
 import {zip} from './zip.js';
 
 export const PACK_FORMAT = 'lrfe-evidence-pack/1';
@@ -418,9 +419,10 @@ function readme({
   return t;
 }
 
-/** land-records and edrms for the pack, over HTTP with the audit service's token. */
+/** The record service and edrms for the pack, over HTTP with the audit service's token. */
 export function createEvidenceSources({
   recordsUrl,
+  recordsLabel = recordServiceLabel(),
   edrmsUrl,
   serviceToken,
   fetchImpl = globalThis.fetch,
@@ -455,13 +457,14 @@ export function createEvidenceSources({
     }
     return body;
   }
-  const records = 'land records service';
+  const records = recordClientAt(recordsUrl, url =>
+    get(url, `${recordsLabel} service`),
+  );
   const docs = 'document service';
   return {
-    record: id => get(`${recordsUrl}/records/${id}`, records),
-    versions: id => get(`${recordsUrl}/records/${id}/versions`, records),
-    version: (id, n) =>
-      get(`${recordsUrl}/records/${id}/versions/${n}`, records),
+    record: id => records.get(id),
+    versions: id => records.versions(id),
+    version: (id, n) => records.version(id, n),
     document: id => get(`${edrmsUrl}/documents/${id}`, docs),
     documentVersion: (id, n) =>
       get(`${edrmsUrl}/documents/${id}/versions/${n}`, docs),

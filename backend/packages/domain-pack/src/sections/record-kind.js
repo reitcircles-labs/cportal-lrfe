@@ -9,6 +9,9 @@ const SUBJECT_KINDS = ['document', 'edrmsNo', 'intake', 'process', 'user'];
  * service knows nothing more about):
  *
  * - `source`: the service whose events commit record versions (`land-records`).
+ * - `service`: the service that answers the record contract (CB-4): `{name, label, urlSetting,
+ *   defaultUrl}`: its token name, what error texts call it ("land records"), the setting holding
+ *   its address and the address when not set.
  * - `committedEvent`: the event type that commits a record version (`records.record.committed`).
  * - `businessKeyProcesses`: workflow process keys whose business key is a record id.
  * - `linkedSubjects`: further subjects a record's events name, in order: `{kind, path}`, `kind` one
@@ -28,6 +31,9 @@ export function checkRecordKind(pack, section) {
       fail(pack, `recordKind.${key} is not a text`);
     }
   }
+  if (section.service !== undefined) {
+    checkService(pack, section.service);
+  }
   const processes = section.businessKeyProcesses;
   if (processes !== undefined) {
     if (!Array.isArray(processes) || !processes.every(isText)) {
@@ -39,6 +45,25 @@ export function checkRecordKind(pack, section) {
   }
   if (section.lookup !== undefined) {
     checkLookup(pack, section.lookup);
+  }
+}
+
+/**
+ * Checks `recordKind.service`: `{name, label, urlSetting, defaultUrl}`, all texts; the setting in capitals.
+ * @param {string} pack the pack's name, for the error
+ * @param {unknown} service the field
+ */
+function checkService(pack, service) {
+  if (!isObject(service)) {
+    fail(pack, 'recordKind.service is not an object');
+  }
+  for (const key of ['name', 'label', 'urlSetting', 'defaultUrl']) {
+    if (!isText(service[key])) {
+      fail(pack, `recordKind.service.${key} is not a text`);
+    }
+  }
+  if (!/^[A-Z][A-Z0-9_]*$/.test(service.urlSetting)) {
+    fail(pack, 'recordKind.service.urlSetting is not a setting name');
   }
 }
 

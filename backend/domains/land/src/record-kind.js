@@ -10,6 +10,17 @@ export const recordKind = {
   source: 'land-records',
 
   /**
+   * The service that answers the record contract (CB-4, `@lrfe/record-contract`): the name other
+   * services know its token by, what error texts call it, and the setting holding its address.
+   */
+  service: {
+    name: 'land-records',
+    label: 'land records',
+    urlSetting: 'RECORDS_URL',
+    defaultUrl: 'http://localhost:3505',
+  },
+
+  /**
    * The event that commits a record version (`data.recordId`, `data.versionNumber`, `data.seal`):
    * it becomes a tree leaf of type 1, and resolves the findings on older versions of the record.
    */

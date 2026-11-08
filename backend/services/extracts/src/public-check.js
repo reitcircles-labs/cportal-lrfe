@@ -1,3 +1,4 @@
+import {domain, recordServiceOf} from '@lrfe/common';
 import {normalizeCheckCode} from './check-code.js';
 
 /** What a token looks like: 32 random bytes, base64url (newToken). */
@@ -17,15 +18,24 @@ const FINGERPRINT_SHOWN = 8;
  *   unavailable   it cannot be checked right now
  * An extract is found by its QR code's token or by its check code, typed in from the extract.
  * Current and replaced are answered only when the version has just been checked: its seal held by
- * land-records, in the audit tree, and in a confirmed batch on the blockchain. Every answer has the
+ * the record service, in the audit tree, and in a confirmed batch on the blockchain. Every answer has the
  * same fields, null where they do not apply, and never anything about the owners or the parcel.
  * Every answer also gives `timeZone`: the IANA time zone the extract prints its dates in
  * (EXTRACTS_TIME_ZONE, the server's when unset), so the check page shows the same times (API-786).
  */
 export class ExtractCheck {
-  constructor({repo, records, versions, timeZone, clock = () => new Date()}) {
+  constructor({
+    repo,
+    records,
+    recordsName = recordServiceOf(domain)?.name ?? 'records',
+    versions,
+    timeZone,
+    clock = () => new Date(),
+  }) {
     this.repo = repo;
-    this.records = records; // land-records: the record's current version
+    this.records = records; // the record service: the record's current version
+    // the record service's name in the log's `reason` (the pack's: land-records for land)
+    this.recordsName = recordsName;
     this.versions = versions; // the audit service: the version checked now
     // as the PDF resolves it: unset, the server's own time zone
     this.timeZone =
@@ -62,15 +72,15 @@ export class ExtractCheck {
     return this.verified(extract);
   }
 
-  /** A valid extract: its version checked now against land-records and the blockchain. */
+  /** A valid extract: its version checked now against the record service and the blockchain. */
   async verified(extract) {
     let record;
     try {
       record = await this.records.getRecord(extract.recordId);
     } catch {
-      return this.unavailable(extract, 'land-records');
+      return this.unavailable(extract, this.recordsName);
     }
-    if (!record?.current) return this.mismatch(extract, 'land-records');
+    if (!record?.current) return this.mismatch(extract, this.recordsName);
     const proof = await this.versions.checkVersion(
       extract.recordId,
       extract.versionNumber,
@@ -90,9 +100,9 @@ export class ExtractCheck {
     };
     const current = record.current;
     if (current.versionNumber === extract.versionNumber) {
-      // the seal land-records holds for its current version is the one on the blockchain
+      // the seal the record service holds for its current version is the one on the blockchain
       if (current.seal !== proof.seal) {
-        return this.mismatch(extract, 'land-records');
+        return this.mismatch(extract, this.recordsName);
       }
       return {
         answer: this.answer('current', extract, verifiedFacts),
@@ -100,7 +110,7 @@ export class ExtractCheck {
       };
     }
     if (current.versionNumber < extract.versionNumber) {
-      return this.mismatch(extract, 'land-records');
+      return this.mismatch(extract, this.recordsName);
     }
     // replaced when the version after it was committed, however many came since
     let next;
@@ -110,9 +120,9 @@ export class ExtractCheck {
         extract.versionNumber + 1,
       );
     } catch {
-      return this.unavailable(extract, 'land-records');
+      return this.unavailable(extract, this.recordsName);
     }
-    if (!next?.committedAt) return this.mismatch(extract, 'land-records');
+    if (!next?.committedAt) return this.mismatch(extract, this.recordsName);
     return {
       answer: this.answer('replaced', extract, {
         ...verifiedFacts,

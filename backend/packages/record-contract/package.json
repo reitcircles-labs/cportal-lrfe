@@ -1,0 +1,18 @@
+{
+  "name": "@lrfe/record-contract",
+  "version": "0.1.0",
+  "description": "The record contract a product's record service answers (land-records today), and its client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./contract-suite": "./src/contract-suite.js"
+  },
+  "scripts": {
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3"
+  }
+}

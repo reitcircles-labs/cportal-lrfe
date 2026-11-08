@@ -13,6 +13,7 @@ COPY packages/common/package.json packages/common/
 COPY packages/storage/package.json packages/storage/
 COPY packages/search-index/package.json packages/search-index/
 COPY packages/domain-pack/package.json packages/domain-pack/
+COPY packages/record-contract/package.json packages/record-contract/
 COPY domains/land/package.json domains/land/
 COPY domains/shipping/package.json domains/shipping/
 COPY services/gateway/package.json services/gateway/

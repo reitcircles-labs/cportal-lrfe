@@ -25,6 +25,7 @@ backend/
     └── search/             :3508  document search: follows intake's and edrms' document events (API-797)
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 packages/search-index/             @lrfe/search-index — the search index: fields, analysers from the country pack, alias, queries
+packages/record-contract/          @lrfe/record-contract — the calls a product's record service answers, their client and contract test (CB-4)
 ```
 
 Stored files are to be encrypted with keys protected by OpenBao. Settings per service

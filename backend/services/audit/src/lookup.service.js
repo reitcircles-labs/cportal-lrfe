@@ -1,6 +1,7 @@
 import {AppError, BadRequestError} from '@lrfe/common';
 import {auditWording, recordKindOf} from './domain.js';
 import {createServiceClient} from './service-client.js';
+import {recordClientAt, recordServiceLabel} from './record-service.js';
 
 /** At most this many records to choose from when a search matches several. */
 const MAX_CHOICES = 20;
@@ -308,32 +309,31 @@ function usedInItem(pin, label, batch) {
   };
 }
 
-/** The land-records and edrms reads of the search (with the audit service's token). */
+/** The record service's and edrms reads of the search (with the audit service's token). */
 export function createLookupSources({
   recordsUrl,
+  recordsLabel = recordServiceLabel(),
   edrmsUrl,
   serviceToken,
   fetchImpl,
   timeoutMs,
 }) {
   const request = createServiceClient({serviceToken, fetchImpl, timeoutMs});
-  const records = {name: 'land records service'};
+  const records = recordClientAt(recordsUrl, (url, method, body) =>
+    request(url, {name: `${recordsLabel} service`, method, body}),
+  );
   const edrms = {name: 'document service'};
   return {
-    // committed land records, matched on number and parcel only (never owners)
+    // committed records, matched on number and parcel only (never owners)
     records: ({q, limit}) =>
-      request(
-        `${recordsUrl}/records?${new URLSearchParams({q, status: 'committed', match: 'parcel', limit: String(limit)})}`,
-        records,
-      ),
-    versions: recordId =>
-      request(`${recordsUrl}/records/${recordId}/versions`, records),
-    lookup: body =>
-      request(`${recordsUrl}/records/lookup`, {
-        ...records,
-        method: 'POST',
-        body,
+      records.list({
+        q,
+        status: 'committed',
+        match: 'parcel',
+        limit: String(limit),
       }),
+    versions: recordId => records.versions(recordId),
+    lookup: body => records.lookup(body),
     documentByNumber: by =>
       request(`${edrmsUrl}/documents/lookup?${new URLSearchParams(by)}`, {
         ...edrms,

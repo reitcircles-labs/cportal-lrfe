@@ -33,3 +33,22 @@ export async function loadDomainPack(name) {
  * @type {import('@lrfe/domain-pack').DomainPack}
  */
 export const domain = await loadDomainPack(env('LRFE_DOMAIN', DEFAULT_DOMAIN));
+
+/**
+ * The product's record service (CB-4): the service that answers the record contract
+ * (`@lrfe/record-contract`), as the pack names it, with its address from its setting
+ * (`RECORDS_URL` for land). Null when the pack has no records (the shipping pack today).
+ * @param {import('@lrfe/domain-pack').DomainPack} pack
+ * @return {{name: string, label: string, url: string} | null}
+ */
+export function recordServiceOf(pack) {
+  const service = pack.recordKind?.service;
+  if (!service) {
+    return null;
+  }
+  return {
+    name: service.name,
+    label: service.label,
+    url: env(service.urlSetting, service.defaultUrl),
+  };
+}

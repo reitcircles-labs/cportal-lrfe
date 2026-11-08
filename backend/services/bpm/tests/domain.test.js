@@ -1,5 +1,5 @@
 import {expect} from 'chai';
-import {loadDomainPack} from '@lrfe/common';
+import {loadDomainPack, recordServiceOf} from '@lrfe/common';
 import {buildApp} from '../src/app.js';
 import {createConnectors} from '../src/connectors/index.js';
 import {loadDefinitions} from '../src/definitions/index.js';
@@ -52,6 +52,47 @@ describe('bpm and the domain pack (CB-3)', () => {
     const app = await buildApp({engine, jwtSecret: SECRET});
     await app.ready();
     await app.close();
+  });
+
+  it('commits and rejects through the record contract, with the same paths and bodies (CB-4)', async () => {
+    const land = await loadDomainPack('land');
+    const sent = [];
+    const connectors = createConnectors({
+      urls: {edrms: 'http://edrms', records: recordServiceOf(land).url},
+      serviceToken: () => 'token',
+      fetchImpl: async (url, init) => {
+        sent.push([init.method, url, JSON.parse(init.body)]);
+        return {ok: true, text: async () => '{"current":{"seal":"s1"}}'};
+      },
+    });
+    const variables = {
+      record: {id: 'rec-1', versionNumber: 2},
+      approval: {by: {id: 'u2', name: 'Ann'}, comment: 'ok'},
+    };
+    expect(
+      await connectors['records.commitVersion']({variables}),
+    ).to.deep.equal({seal: 's1'});
+    expect(
+      await connectors['records.rejectVersion']({variables}),
+    ).to.deep.equal({});
+    const body = {by: {id: 'u2', name: 'Ann'}, comment: 'ok'};
+    expect(sent).to.deep.equal([
+      ['POST', 'http://localhost:3505/records/rec-1/versions/2/commit', body],
+      ['POST', 'http://localhost:3505/records/rec-1/versions/2/reject', body],
+    ]);
+  });
+
+  it('with the shipping pack: no record service, so no records connectors (CB-4)', async () => {
+    const shipping = await loadDomainPack('shipping');
+    const connectors = createConnectors({
+      urls: {
+        edrms: 'http://edrms',
+        records: recordServiceOf(shipping)?.url ?? null,
+      },
+      serviceToken: () => 'token',
+    });
+    expect(Object.keys(connectors)).to.not.include('records.commitVersion');
+    expect(Object.keys(connectors)).to.not.include('records.rejectVersion');
   });
 
   it('with one acknowledger: the task alone, without a gateway', async () => {

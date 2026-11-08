@@ -4,6 +4,7 @@ import {leafHash, verifyInclusion} from './mmr.js';
 import {committedMetadata, LABEL} from './cardano/tx.js';
 import {explorerUrl} from './anchorings.service.js';
 import {auditWording, recordKindOf} from './domain.js';
+import {recordClientAt, recordServiceLabel} from './record-service.js';
 
 export const PROOF_FORMAT = 'lrfe-audit-proof/1';
 /** What a proof can be of; the names are fixed (they are in issued proofs). */
@@ -596,6 +597,7 @@ export class ProofService {
 /** The owning services' own recomputation of a version's seal, over HTTP with an audit service token. */
 export function createVerifySources({
   recordsUrl,
+  recordsLabel = recordServiceLabel(),
   edrmsUrl,
   serviceToken,
   fetchImpl = globalThis.fetch,
@@ -632,12 +634,10 @@ export function createVerifySources({
     }
     return json;
   };
+  const records = recordClientAt(recordsUrl, url => get(url, recordsLabel));
   return {
     async recordVersion(recordId, n) {
-      const r = await get(
-        `${recordsUrl}/records/${recordId}/verify`,
-        'land records',
-      );
+      const r = await records.verify(recordId);
       const v = r.versions.find(x => x.versionNumber === n);
       if (!v) throw new NotFoundError('Version not found');
       return {seal: v.seal, intact: v.intact, linked: v.linked};
