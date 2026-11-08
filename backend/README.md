@@ -260,9 +260,11 @@ miEnd, end; conditions in JsonLogic). Domain services keep their own data; bpm d
 does what, in which order**, and calls the owning service (via connectors, with a bpm service
 token) when a step is due.
 
-Process definitions are JSON files in `services/bpm/src/definitions/`, deployed at boot.
-Unchanged files are skipped; a changed file becomes a new version, and running instances keep
-the version they started on.
+Process definitions are deployed at boot: the platform's JSON files in
+`services/bpm/src/definitions/` and the product's from the domain pack (`workflows.definitions`,
+e.g. `domains/land/src/workflows/land-record-review.js`). The pack also says who acknowledges the
+audit workflows (`workflows.auditAcknowledgers`). Unchanged definitions are skipped; a changed
+one becomes a new version, and running instances keep the version they started on.
 
 | Method & path | Who | Purpose |
 |---|---|---|

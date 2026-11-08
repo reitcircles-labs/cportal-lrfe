@@ -14,6 +14,8 @@ import {ESLint} from 'eslint';
 const AREAS = [
   'backend/packages/common',
   'backend/packages/storage',
+  'backend/packages/domain-pack',
+  'backend/domains',
   'backend/services/gateway',
   'backend/services/land-records',
   'backend/services/bpm',

@@ -114,7 +114,7 @@ const evidence = new EvidenceService({
   sources: createEvidenceSources({recordsUrl, edrmsUrl, serviceToken}),
 });
 
-// the land records list of the Audit screen (API-661)
+// the records list of the Audit screen (API-661)
 const auditList = new AuditListService({
   repo,
   proofs,
@@ -189,7 +189,7 @@ await startService(app, {
 });
 
 // every durable event of every service becomes one trail entry (README.md section 1), and a
-// committed land record version or a filed document version also a leaf of the tree (section 2).
+// committed record version or a filed document version also a leaf of the tree (section 2).
 // Acknowledged once both are written, so an event published while the audit service is down is
 // recorded when it is back; both steps skip what they already have. Started once the tables exist.
 // A newer reviewed version also resolves the open findings on older ones (section 5).

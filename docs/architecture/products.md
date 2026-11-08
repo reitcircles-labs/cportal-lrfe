@@ -15,7 +15,7 @@ survey of ticket CB-2 (8 November 2026) and becomes the guide to the layout once
 - **Domain pack:** a JavaScript module that tells the shared services about its product (document
   types, record kind, roles, workflows, wording, extract layout, search fields). One setting,
   `LRFE_DOMAIN` (`land` by default), chooses the pack for an install. Existing installs need no
-  change.
+  change (CB-3, done: see "The domain pack").
 - **Guard:** a lint rule stops shared code from importing product code.
 
 ## The web app: one workspace, an app per product (CB-2, done)
@@ -66,7 +66,8 @@ own image when it is deployed.
 
 ### Land-specific parts of the shared services, by kind
 
-These are what the land pack must provide:
+The survey as written for CB-2. CB-3 moved them into the land pack (see "The domain pack" below),
+except the calls to the product service and the record's own data shape, which are CB-4.
 
 - **Document types and their fields:** `edrms/src/catalogue.js` (deed of transfer, mortgage bond,
   SG diagram, the deed-number format), `intake/src/doc-types.js`, the reading prompt and checks in
@@ -125,6 +126,63 @@ The pack maps to them; it never renames them.
 - **Stored ids:** role and permission ids (`record.*`, `sup`, `rec`, in the database and in tokens),
   document type ids (in edrms, intake and the search index), the event stream `LRFE` and its durable
   consumer names.
+
+## The domain pack (CB-3, done)
+
+A pack is a workspace package, `backend/domains/<name>` published as `@lrfe/domain-<name>`, that
+exports `pack`. `@lrfe/common` loads the pack named by `LRFE_DOMAIN` (`land` when not set) once,
+with a top-level `await`, checks it with `@lrfe/domain-pack` and freezes it; every service reads
+it as `domain` (`import {domain} from '@lrfe/common'`). A pack that is missing or fails its check
+stops the service at start, like the country pack (API-713). The web container writes the same
+value into `/config.json` as `domain`. A pack never imports `@lrfe/common` (common is loading it)
+or service code; the services pass it the helpers it needs.
+
+| Section | Read by | Land pack (`backend/domains/land/src/`) |
+|---|---|---|
+| `documents` | edrms, intake, search | `documents/`: the six document types and their fields (with each field's search role), the reference format ("T 2210/2008"), the field types and their checks (deed and SG numbers, Namibian ID numbers, dates, extents, money), the reading prompt and its version, the land checks and cross-checks, the stand-in reader's demo answers |
+| `identity` | identity | `identity/`: the "Land records" group and its permissions, the roles `sup`, `scan`, `rev`, `rec`, `aud`, the rules `sod2` and `sod3`, the default offices, the demo users |
+| `workflows` | bpm | `workflows/`: `land-record-review`; who acknowledges the audit workflows (`rec`, `sup`); their descriptions |
+| `recordKind` | audit | `record-kind.js`: the source `land-records`, the commit event, the review process key, the linked documents of a record event, the commit permission, the lookup patterns (record and deed numbers). Null in a pack without records |
+| `wording` | edrms, identity, audit, extracts | `wording/`: the EDRMS business function and examples, the invitation's "land records system", "land record" in audit's messages and the evidence pack README, every text of the extract PDF and its number prefix `EX` |
+
+What stays in the platform, so that a product without these parts still works: the platform
+permission groups and the `adm` role, the rules `sod1` and `sod4`, the audit workflows
+(`audit-finding`, `audit-rereview`: started by audit, so their variables are audit's contract; the
+pack only says who acknowledges) and `document-amendment`, the generic reading pipeline (the
+duplicate check, the `text` field type, a generic prompt), the extract PDF layout, and the trail,
+tree and proof formats.
+
+**The shipping pack** (`backend/domains/shipping`) has every section and nothing in it. With
+`LRFE_DOMAIN=shipping` the services start: no document types (filing says so), only the `adm`
+role and no demo users, only `document-amendment` deployed, no record leaves or record proofs
+(`record-version` proofs answer 400), lookups search documents only. It is a starting point, not a
+product: issuing an extract or raising an audit finding needs the wording and acknowledgers a
+real pack gives (the bill-of-lading pack, epic CB-1).
+
+**Byte-for-byte for land.** The land pack maps to the fixed names below and gives the same
+values the code held: the identity catalogue, the workflow definitions (so bpm deploys no new
+versions on upgrade), the reading prompt and its version, the subjects of each trail event in
+their order, and the extract PDF (checked by hashing PDFs before and after) are unchanged.
+
+**Adding a product:** a new folder `backend/domains/<name>` with its `package.json`, the pack
+exported as `pack`, a test that it passes `checkDomainPack`; add it to `backend/Dockerfile` (its
+`package.json`), and run `npm install` in `backend/`. A pack's prompt version
+(`documents.reading.promptVersion`) changes whenever its types or prompt texts change.
+
+### Land terms still in the shared services
+
+- **The calls to the product service (CB-4):** `land-records` in the HTTP clients of audit,
+  extracts and bpm (`connectors/records.js`), their error texts ("land records service"), and the
+  service-caller allow-lists of identity, edrms and audit.
+- **The record's data shape (CB-4):** extracts' owner check before issuing
+  (`issue-checks.js`, `version.data.owners`), the `ownerIndex` field of its API, the owner columns
+  it stores.
+- **Stored names:** the `property` key of intake's summaries and search's results (filled from the
+  field whose search role is `place`), the office type `registry`.
+- **Defaults:** the country `NA` and office `WDH` as default settings of edrms and intake
+  (Namibian values as defaults only).
+- **Not code:** examples in the API docs, the developer scripts that check land sample scans, the
+  design history in `services/audit/README.md`.
 
 ## Country pack and domain pack
 

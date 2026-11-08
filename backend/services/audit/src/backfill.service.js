@@ -2,7 +2,7 @@ import {AppError} from '@lrfe/common';
 import {LEAF_TYPES} from './mmr.js';
 
 /**
- * The one-time backfill (README.md section 1, "Before deployment"; API-669): land record versions
+ * The one-time backfill (README.md section 1, "Before deployment"; API-669): record versions
  * and document versions sealed before the audit service started go into the tree too, so the
  * anchored root covers the whole register. Both lists are read a page at a time (with an audit
  * service token) and merged oldest first; each seal becomes a leaf with the same key a live event

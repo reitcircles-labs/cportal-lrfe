@@ -1,133 +1,28 @@
-import {
-  ROLES,
-  SOD_RULES,
-  DEFAULT_POLICIES,
-  PERMS,
-  CATALOGUE_VERSION,
-  normalizePerms,
-} from './catalogue.js';
-
-const CATALOGUE_KEY = 'catalogue.version';
+import {CATALOGUE, DEFAULT_POLICIES, normalizePerms} from './catalogue.js';
 import {hashPassword} from './crypto.js';
 
-/** The users shown in the frontend demo (angular-app/projects/platform/src/lib/state/rbac.service.ts). Fictitious. */
-export const DEMO_USERS = [
-  [
-    'Elina Shivute',
-    'e.shivute@deeds.gov.na',
-    'Deeds Registry · Windhoek',
-    ['sup'],
-    'Active',
-  ],
-  [
-    'Kristofina Iipinge',
-    'k.iipinge@deeds.gov.na',
-    'Registry floor 2',
-    ['scan'],
-    'Active',
-  ],
-  [
-    'Aina Mwandingi',
-    'a.mwandingi@deeds.gov.na',
-    'Review desk',
-    ['rev'],
-    'Active',
-  ],
-  [
-    'Johannes !Gawaseb',
-    'j.gawaseb@deeds.gov.na',
-    'Records desk',
-    ['rec'],
-    'Active',
-  ],
-  [
-    'Maria Nakale',
-    'm.nakale@oag.gov.na',
-    'Office of the Auditor-General',
-    ['aud'],
-    'Active',
-  ],
-  [
-    'Paulus Hamutenya',
-    'p.hamutenya@deeds.gov.na',
-    'ICT · Deeds Registry',
-    ['adm'],
-    'Active',
-  ],
-  [
-    'Selma Nangolo',
-    's.nangolo@deeds.gov.na',
-    'Registry floor 2',
-    ['scan'],
-    'Active',
-  ],
-  ['Tangeni Iita', 't.iita@deeds.gov.na', 'Review desk', ['rev'], 'Active'],
-  [
-    'Willem Beukes',
-    'w.beukes@deeds.gov.na',
-    'Review desk',
-    ['rev', 'aud'],
-    'Active',
-  ],
-  [
-    'Hilma Haimbodi',
-    'h.haimbodi@deeds.gov.na',
-    'Records desk',
-    ['rec'],
-    'Active',
-  ],
-  [
-    'David Garoeb',
-    'd.garoeb@deeds.gov.na',
-    'Keetmanshoop sub-registry',
-    ['scan', 'rev'],
-    'Active',
-  ],
-  [
-    'Frieda Katjiuongua',
-    'f.katjiuongua@deeds.gov.na',
-    'Records desk',
-    ['rec'],
-    'Suspended',
-  ],
-  [
-    'Simon Uirab',
-    's.uirab@oag.gov.na',
-    'Office of the Auditor-General',
-    ['aud'],
-    'Invited',
-  ],
-  [
-    'Lucia Tjiueza',
-    'l.tjiueza@deeds.gov.na',
-    'Review desk',
-    ['rev'],
-    'Invited',
-  ],
-].map(([name, email, office, roles, status]) => ({
-  name,
-  email,
-  office,
-  roles,
-  status,
-}));
+const CATALOGUE_KEY = 'catalogue.version';
+
+/** The demo users of this install's domain pack (fictitious), created with a demo password. */
+export const DEMO_USERS = CATALOGUE.demoUsers;
 
 /**
  * Idempotent. Adds whatever of the fixed catalogue is missing, never overwrites edits
  * (a role's edited permissions, a rule switched off, changed policies).
  *
  *   admin:        { name, email, password } — created only if no user exists yet
- *   demoPassword: when set, creates the DEMO_USERS that don't exist yet, with this password
- *                 (invited demo users get no password and stay Invited)
+ *   demoPassword: when set, creates the catalogue's demo users that don't exist yet, with this
+ *                 password (invited demo users get no password and stay Invited)
  *   offices:      [{ code, name, type, address, contact }] created only if no office exists yet
  *                 (DEFAULT_OFFICES at start-up); once any office exists, never touched again
+ *   catalogue:    the catalogue to seed (catalogueOf(pack)), this install's by default
  */
 export async function seedIdentity(
   repo,
-  {admin, demoPassword, offices, log = () => {}} = {},
+  {admin, demoPassword, offices, catalogue = CATALOGUE, log = () => {}} = {},
 ) {
   const roles = await repo.listRoles();
-  for (const role of ROLES) {
+  for (const role of catalogue.roles) {
     if (!roles.some(r => r.id === role.id)) {
       await repo.upsertRole(role);
       log(`role ${role.id} created`);
@@ -138,29 +33,31 @@ export async function seedIdentity(
   // one whose roles were all created just now is already current.
   const created = roles.length === 0;
   const version =
-    (await repo.getSetting(CATALOGUE_KEY)) ?? (created ? CATALOGUE_VERSION : 1);
-  const newer = PERMS.filter(p => (p.since ?? 1) > version);
+    (await repo.getSetting(CATALOGUE_KEY)) ?? (created ? catalogue.version : 1);
+  const newer = catalogue.perms.filter(p => (p.since ?? 1) > version);
   if (newer.length) {
     for (const role of await repo.listRoles()) {
-      const def = ROLES.find(r => r.id === role.id);
+      const def = catalogue.roles.find(r => r.id === role.id);
       const add = newer
         .filter(p => def?.perms.includes(p.id) && !role.perms.includes(p.id))
         .map(p => p.id);
       if (add.length) {
         await repo.updateRolePerms(
           role.id,
-          normalizePerms([...role.perms, ...add]),
+          normalizePerms([...role.perms, ...add], catalogue.permIds),
         );
         log(`role ${role.id}: granted new permission(s) ${add.join(', ')}`);
       }
     }
   }
-  if (version !== CATALOGUE_VERSION) {
-    await repo.setSetting(CATALOGUE_KEY, CATALOGUE_VERSION);
+  if (version !== catalogue.version) {
+    await repo.setSetting(CATALOGUE_KEY, catalogue.version);
   }
 
   const sod = await repo.listSod();
-  const missingSod = SOD_RULES.filter(r => !sod.some(x => x.id === r.id));
+  const missingSod = catalogue.sodRules.filter(
+    r => !sod.some(x => x.id === r.id),
+  );
   if (missingSod.length) await repo.saveSod(missingSod);
   if (!(await repo.getPolicies())) await repo.savePolicies(DEFAULT_POLICIES);
 
@@ -183,7 +80,7 @@ export async function seedIdentity(
 
   if (demoPassword) {
     const passwordHash = await hashPassword(demoPassword);
-    for (const u of DEMO_USERS) {
+    for (const u of catalogue.demoUsers) {
       if (await repo.getUserByEmail(u.email)) continue;
       await repo.createUser({
         ...u,

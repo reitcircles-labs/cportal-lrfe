@@ -1,4 +1,5 @@
 import {BadRequestError, NotFoundError} from '@lrfe/common';
+import {recordKindOf} from './domain.js';
 import {
   consistencyPositions,
   inclusionPositions,
@@ -14,16 +15,19 @@ const hex = b => b.toString('hex');
 const HEX64 = /^[0-9a-f]{64}$/;
 
 /**
- * The growing Merkle tree (README.md section 2) over every committed land record version, every
- * EDRMS document version and the trail's checkpoints. Leaves are added once each (by `key`), in
+ * The growing Merkle tree (README.md section 2) over every committed record version (leaf type 1,
+ * key `record-version:<id>:<n>`: fixed, whatever the domain pack), every EDRMS document version
+ * and the trail's checkpoints. Leaves are added once each (by `key`), in
  * the order they arrive; the root of any size so far, and inclusion and consistency proofs, are
  * read from the stored nodes.
  */
 export class TreeService {
-  constructor({repo, clock = () => new Date(), logger = console}) {
+  /** @param pack the domain pack (default: the install's): which event commits a record version (CB-3) */
+  constructor({repo, clock = () => new Date(), logger = console, pack}) {
     this.repo = repo;
     this.clock = clock;
     this.logger = logger;
+    this.pack = pack;
   }
 
   /**
@@ -213,12 +217,17 @@ export class TreeService {
 
   // ------------------------------------------------ leaf sources
 
-  /** The leaf an event adds, or null: a committed land record version or a filed/amended document version. */
-  static leafOf(event) {
+  /**
+   * The leaf an event adds, or null: a committed record version (the event the domain pack's record
+   * kind names; none without a record kind) or a filed/amended document version.
+   */
+  static leafOf(event, pack) {
     const d = event?.data || {};
     if (!HEX64.test(d.seal || '')) return null;
+    const committedEvent = recordKindOf(pack)?.committedEvent;
     if (
-      event.type === 'records.record.committed' &&
+      committedEvent &&
+      event.type === committedEvent &&
       d.recordId &&
       d.versionNumber
     ) {
@@ -250,7 +259,7 @@ export class TreeService {
 
   /** The consumer's handler: add the event's leaf, if it has one (again on redelivery: a no-op). */
   async fromEvent(event) {
-    const leaf = TreeService.leafOf(event);
+    const leaf = TreeService.leafOf(event, this.pack);
     return leaf ? ((await this.append([leaf]))[0] ?? null) : null;
   }
 

@@ -12,6 +12,9 @@ COPY package.json package-lock.json ./
 COPY packages/common/package.json packages/common/
 COPY packages/storage/package.json packages/storage/
 COPY packages/search-index/package.json packages/search-index/
+COPY packages/domain-pack/package.json packages/domain-pack/
+COPY domains/land/package.json domains/land/
+COPY domains/shipping/package.json domains/shipping/
 COPY services/gateway/package.json services/gateway/
 COPY services/identity/package.json services/identity/
 COPY services/edrms/package.json services/edrms/
@@ -24,6 +27,7 @@ COPY services/search/package.json services/search/
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY packages ./packages
+COPY domains ./domains
 COPY services ./services
 # the one-shot database setup the services wait for (deploy/docker-compose.yml: db-setup)
 COPY scripts/db-setup.js ./scripts/

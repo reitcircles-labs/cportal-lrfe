@@ -7,7 +7,7 @@ export const LIST_FILTERS = ['changed', 'attention', 'all'];
 const READ_PAGE = 200;
 
 /**
- * The land records list of the Audit screen (API-661). Auditors check a sample, so the list offers
+ * The records list of the Audit screen (API-661). Auditors check a sample, so the list offers
  * the population to pick from, not a to-do list:
  *
  *   changed     records with a version committed since their last audit sign-off
@@ -56,7 +56,7 @@ export class AuditListService {
     return {items, total: matching.length, counts};
   }
 
-  /** Every land record with a committed version, matching `q`, newest change first. */
+  /** Every record with a committed version, matching `q`, newest change first. */
   async allRecords(q) {
     const out = [];
     for (let offset = 0; ; offset += READ_PAGE) {
@@ -194,7 +194,7 @@ export class AuditListService {
   }
 }
 
-/** The leaf keys of the document versions a land record version pins. */
+/** The leaf keys of the document versions a record version pins. */
 function pinKeys(version) {
   return (version.data?.documents || []).map(
     d => `document-version:${d.edrmsDocumentId}:${d.version}`,

@@ -8,6 +8,7 @@
 #   LRFE_ORG_SUBTITLE   shown under the name, e.g. Republic of Namibia
 #   LRFE_ORG_PARENT     the body it belongs to, on the sign-in page, e.g. a ministry
 #   LRFE_ORG_PLACE      where it is, e.g. Windhoek
+#   LRFE_DOMAIN         the product of the install (CB-3), written as "domain": land or shipping
 #
 # Only settings that are set are written: the app uses its defaults for the others
 # (angular-app/projects/platform/src/lib/state/site-config.ts). An empty setting is written empty, and is not shown.
@@ -38,6 +39,10 @@ add orgName "${LRFE_ORG_NAME+set}" "${LRFE_ORG_NAME-}"
 add orgSubtitle "${LRFE_ORG_SUBTITLE+set}" "${LRFE_ORG_SUBTITLE-}"
 add orgParent "${LRFE_ORG_PARENT+set}" "${LRFE_ORG_PARENT-}"
 add orgPlace "${LRFE_ORG_PLACE+set}" "${LRFE_ORG_PLACE-}"
+# the product: only when set and not empty (empty means land for the services, like not set)
+if [ -n "${LRFE_DOMAIN:-}" ]; then
+    add domain set "$LRFE_DOMAIN"
+fi
 
 mkdir -p "$(dirname "$out")"
 # written next to it, then moved: nginx never serves a half-written file

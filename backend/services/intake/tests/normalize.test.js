@@ -1,18 +1,18 @@
 import {expect} from 'chai';
+import {normalize, occursIn} from '../src/extraction/normalize.js';
+// the land field types' own helpers (the land domain pack, CB-3)
 import {
-  normalize,
   parseDate,
   parseExtent,
   sameName,
-  occursIn,
-} from '../src/extraction/normalize.js';
+} from '../../../domains/land/src/documents/field-types.js';
 import {
   buildPrompt,
   buildResponseSchema,
   PROMPT_VERSION,
 } from '../src/extraction/prompt.js';
 import {costUsd} from '../src/extraction/pricing.js';
-import {ALL_FIELD_KEYS, DOC_TYPES} from '../src/doc-types.js';
+import {allFieldKeysOf, docTypesOf} from '../src/doc-types.js';
 
 const codes = r => r.checks.map(c => `${c.level}:${c.code}`);
 
@@ -121,12 +121,12 @@ describe('normalisation & format checks', () => {
 describe('prompt, schema and pricing', () => {
   it('the prompt and schema cover every field of every document type', () => {
     const prompt = buildPrompt();
-    for (const t of DOC_TYPES) {
+    for (const t of docTypesOf()) {
       for (const f of t.fields) expect(prompt).to.include(`- ${f.k}`);
     }
     const schema = buildResponseSchema();
     expect(schema.properties.fields.items.properties.k.enum).to.deep.equal(
-      ALL_FIELD_KEYS,
+      allFieldKeysOf(),
     );
     expect(schema.properties.docType.enum).to.include.members([
       'deed_of_transfer',

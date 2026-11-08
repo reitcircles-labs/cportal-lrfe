@@ -1,6 +1,7 @@
+import {domain} from '@lrfe/common';
 import {docType} from '../doc-types.js';
 import {normalize, occursIn} from './normalize.js';
-import {PROMPT_VERSION} from './prompt.js';
+import {promptVersionOf} from './prompt.js';
 import {costUsd} from './pricing.js';
 import {crossCheck, preferReadings} from './crosscheck.js';
 
@@ -14,11 +15,12 @@ export function flagOf(row) {
 
 /**
  * Turn the model's answer into review rows for the document type's schema: required fields
- * always, optional ones when found. Adds format checks and evidence checks (the quote must be on
- * the cited page and contain the value — the guard against invented values).
+ * always, optional ones when found. Adds format checks, evidence checks (the quote must be on
+ * the cited page and contain the value — the guard against invented values) and the product's
+ * checks between the fields (`documents.reading.checkRows` of the domain pack).
  */
-export function buildRows(answer, {model} = {}) {
-  const t = docType(answer.docType);
+export function buildRows(answer, {model, pack = domain} = {}) {
+  const t = docType(answer.docType, pack);
   if (!t) return {rows: [], ignored: answer.fields.map(x => x.k)};
   const byKey = new Map();
   for (const x of answer.fields) if (!byKey.has(x.k)) byKey.set(x.k, x);
@@ -29,7 +31,7 @@ export function buildRows(answer, {model} = {}) {
     if (!x && !def.required) continue;
     const raw = x?.value?.trim() || '';
     const n = raw
-      ? normalize(def.type, raw)
+      ? normalize(def.type, raw, pack)
       : {value: '', normalized: null, checks: []};
     const checks = [...n.checks];
     if (!raw && def.required) {
@@ -79,22 +81,7 @@ export function buildRows(answer, {model} = {}) {
       alt: null,
     });
   }
-  // A purchase price equal to the deposit is usually the deposit read into the wrong field.
-  const price = rows.find(r => r.k === 'price' && r.normalized);
-  const deposit = rows.find(r => r.k === 'deposit' && r.normalized);
-  if (
-    price &&
-    deposit &&
-    price.normalized === deposit.normalized &&
-    t.id === 'deed_of_sale'
-  ) {
-    price.checks.push({
-      level: 'warn',
-      code: 'same_as_deposit',
-      message:
-        'Same amount as the deposit; check that this is the full purchase price',
-    });
-  }
+  pack.documents.reading?.checkRows?.(t.id, rows);
   const known = new Set(t.fields.map(d => d.k));
   return {
     rows,
@@ -215,7 +202,7 @@ export function mergeRows(a, b, {firstModel, secondModel, prefer = new Map()}) {
 const transcriptionLength = answer =>
   answer.pages.reduce((n, p) => n + p.text.length, 0);
 
-async function attempt(provider, file, role, clock) {
+async function attempt(provider, file, role, clock, promptVersion) {
   const at = clock();
   try {
     const r = await provider.extract(file);
@@ -224,7 +211,7 @@ async function attempt(provider, file, role, clock) {
       role,
       provider: provider.name,
       model: r.model,
-      promptVersion: PROMPT_VERSION,
+      promptVersion,
       usage: r.usage,
       costUsd: costUsd(r.model, r.usage, {at}),
       durationMs: r.durationMs,
@@ -237,7 +224,7 @@ async function attempt(provider, file, role, clock) {
       role,
       provider: provider.name,
       model: provider.model,
-      promptVersion: PROMPT_VERSION,
+      promptVersion,
       usage: null,
       costUsd: null,
       durationMs: null,
@@ -249,8 +236,8 @@ async function attempt(provider, file, role, clock) {
   }
 }
 
-async function evaluate(answer, model, checker) {
-  const {rows, ignored} = buildRows(answer, {model});
+async function evaluate(answer, model, checker, pack) {
+  const {rows, ignored} = buildRows(answer, {model, pack});
   await checker.check(answer.docType, rows);
   rows.forEach(r => {
     r.flag = flagOf(r);
@@ -269,6 +256,8 @@ async function evaluate(answer, model, checker) {
  * one more attempt; a failed one never fails the extraction (the decision then falls back to the
  * rules used without a judge).
  *
+ * The document types, field checks and prompt version are the domain pack's (`pack`, CB-3).
+ *
  * Returns { attempts, answer, rows, notes, escalated } or throws the primary's error (so the job
  * can be retried) with the failed attempt attached.
  */
@@ -283,13 +272,16 @@ export async function runExtraction({
   pages = null,
   maxEscalationPages = Infinity,
   clock = () => new Date(),
+  pack = domain,
 }) {
+  const promptVersion = promptVersionOf(pack);
   const attempts = [];
   const first = await attempt(
     forceEscalation && escalation ? escalation : primary,
     file,
     forceEscalation && escalation ? 'escalation' : 'primary',
     clock,
+    promptVersion,
   );
   attempts.push(first);
   if (!first.ok) {
@@ -300,7 +292,7 @@ export async function runExtraction({
     throw err;
   }
   let {answer} = first;
-  let {rows, ignored} = await evaluate(answer, first.model, checker);
+  let {rows, ignored} = await evaluate(answer, first.model, checker, pack);
   const notes = [];
   if (ignored.length) {
     notes.push({
@@ -319,6 +311,7 @@ export async function runExtraction({
       rows: rs,
       flagAt: jevConfig?.flagAt ?? 0.8,
       clock,
+      pack,
     });
     if (x.attempt) attempts.push(x.attempt);
     if (x.note && !notes.some(n => n.code === x.note.code)) notes.push(x.note);
@@ -347,7 +340,13 @@ export async function runExtraction({
     });
   }
   if (decision?.reason) {
-    const second = await attempt(escalation, file, 'escalation', clock);
+    const second = await attempt(
+      escalation,
+      file,
+      'escalation',
+      clock,
+      promptVersion,
+    );
     attempts.push(second);
     // the error (with the model) is kept on the attempt; the note is shown on screen
     if (!second.ok) {
@@ -367,14 +366,19 @@ export async function runExtraction({
         second.answer.docType !== answer.docType &&
         answer.docType !== 'unknown'
       ) {
-        const label = id => docType(id)?.label || 'not recognised';
+        const label = id => docType(id, pack)?.label || 'not recognised';
         notes.push({
           level: 'warn',
           code: 'doctype_disagree',
           message: `The two readings disagree on the document type (${label(answer.docType)} / ${label(second.answer.docType)}); keeping ${label(answer.docType)}`,
         });
       } else {
-        const again = await evaluate(second.answer, second.model, checker);
+        const again = await evaluate(
+          second.answer,
+          second.model,
+          checker,
+          pack,
+        );
         const pagesKept =
           transcriptionLength(second.answer) > transcriptionLength(answer)
             ? second.answer.pages
@@ -389,6 +393,7 @@ export async function runExtraction({
             second: again.rows,
             pages: pagesKept,
             clock,
+            pack,
           });
           if (p.attempt) attempts.push(p.attempt);
           prefer = p.prefer;

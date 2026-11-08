@@ -6,10 +6,16 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '@lrfe/common';
+import {auditWording, recordKindOf} from './domain.js';
 
-/** What the screens and the re-review task say when an item no longer matches the blockchain. */
-export const CHANGED_SINCE_REVIEW =
-  'This land record has changed since it was last reviewed and submitted, so its documents and details can\u2019t be audited as true. It must be re-reviewed and submitted again before it can be audited.';
+/**
+ * What the screens and the re-review task say when an item no longer matches the blockchain.
+ * @param {{record: string}} wording the audit wording of the domain pack
+ * @return {string}
+ */
+function changedSinceReview(wording) {
+  return `This ${wording.record} has changed since it was last reviewed and submitted, so its documents and details can\u2019t be audited as true. It must be re-reviewed and submitted again before it can be audited.`;
+}
 /** How many items are checked against the blockchain at once (each check calls other services). */
 const VERIFY_AT_ONCE = 4;
 
@@ -26,25 +32,28 @@ export const CLOSE_OUTCOMES = ['agreed', 'mistake'];
 /**
  * Sign-off and findings (README.md section 5; API-659, API-680). An auditor (`audit.signoff`):
  *
- *   checkpoint(recordId, actor)    what the next audit sign-off of a land record covers: every version
+ *   checkpoint(recordId, actor)    what the next audit sign-off of a record covers: every version
  *                                  committed since the last audit sign-off and the documents they added,
  *                                  each checked against the blockchain, the open findings, and whether
  *                                  the sign-off would be accepted (and if not, why)
  *   signOff({ recordId }, actor)   one audit sign-off for that whole checkpoint, accepted only when
  *                                  everything is on the blockchain, matches it, and no finding is open
- *   raiseFinding(target, text)     a finding on a land record version or a document version; the records
- *                                  officers and the registrars get it in their task inbox (bpm process
- *                                  "audit-finding"). Open until a newer reviewed version resolves it
+ *   raiseFinding(target, text)     a finding on a record version or a document version; the records
+ *                                  desk gets it in its task inbox (bpm process "audit-finding", whose
+ *                                  roles the domain pack's workflows name). Open until a newer reviewed version resolves it
  *                                  (onEvent) or an auditor answers and closes it (closeFinding)
  *   answerFinding(id, text)        an auditor's answer in the finding's thread
  *
  * Each is stored here and published as a durable event in the same transaction, so it becomes a trail
- * entry of the land record and the document it is about and, at the next anchoring, part of the root on
+ * entry of the record and the document it is about and, at the next anchoring, part of the root on
  * the blockchain. Finding events carry the whole thread under the key `Findings`.
  *
- * A changed item (its data no longer matches the blockchain) is not a finding: the land record changed
- * since it was reviewed, so the records officers and the registrars get a re-review task (bpm process
- * "audit-rereview"), once per item.
+ * A changed item (its data no longer matches the blockchain) is not a finding: the record changed
+ * since it was reviewed, so the records desk gets a re-review task (bpm process "audit-rereview"),
+ * once per item.
+ *
+ * The domain pack (CB-3) gives the record's name in the messages, the event that commits a record
+ * version and the permission to commit one (whoever holds it cannot sign off audits).
  *
  * `sources`: { recordInfo(recordId), version(recordId, n), record(recordId, n) → { record, version },
  * document(documentId) }
@@ -60,6 +69,7 @@ export class SignoffService {
     proofs,
     clock = () => new Date(),
     logger = console,
+    pack,
   }) {
     this.repo = repo;
     this.events = events;
@@ -68,6 +78,8 @@ export class SignoffService {
     this.proofs = proofs;
     this.clock = clock;
     this.logger = logger;
+    this.pack = pack;
+    this.wording = auditWording(pack);
   }
 
   atomic(fn) {
@@ -75,7 +87,7 @@ export class SignoffService {
   }
 
   /**
-   * What a sign-off or finding is about: a committed land record version (recordId, version), a
+   * What a sign-off or finding is about: a committed record version (recordId, version), a
    * document version pinned in it (also documentId), or, for findings, a document version on its own
    * (documentId, version).
    */
@@ -86,12 +98,12 @@ export class SignoffService {
     }
     if (!recordId && recordRequired) {
       throw new BadRequestError(
-        'A sign-off is on a land record version: give "recordId" and "version"',
+        `A sign-off is on a ${this.wording.record} version: give "recordId" and "version"`,
       );
     }
     if (!recordId && !documentId) {
       throw new BadRequestError(
-        'Give a land record ("recordId") or a document ("documentId")',
+        `Give a ${this.wording.record} ("recordId") or a document ("documentId")`,
       );
     }
     const out = {};
@@ -180,7 +192,7 @@ export class SignoffService {
   // ------------------------------------------------ audit sign-off: one per checkpoint (API-680)
 
   /**
-   * The open checkpoint of a land record, for the screen and for the sign-off itself:
+   * The open checkpoint of a record, for the screen and for the sign-off itself:
    *
    *   range                 { from, to }: the versions committed since the last audit sign-off, or null
    *   lastSignoff           the last audit sign-off, or null; with `withProof` (the screen), also
@@ -222,7 +234,7 @@ export class SignoffService {
     if (from > to) {
       const reason = lastSignoff
         ? `Nothing to audit: no version was committed since the last audit sign-off (v${lastSignoff.toVersion}).`
-        : 'Nothing to audit: the land record has no committed version yet.';
+        : `Nothing to audit: the ${this.wording.record} has no committed version yet.`;
       return {
         ...base,
         range: null,
@@ -276,6 +288,7 @@ export class SignoffService {
       documents,
       openFindings,
       actor,
+      pack: this.pack,
     });
     // the pinned documents and the approver's id are for the checks above, not for the screen
     const strip = ({pins, approvedById, ...rest}) => rest;
@@ -377,15 +390,22 @@ export class SignoffService {
   /**
    * Why the checkpoint cannot be signed off now, or null. Rules the auditor cannot change come first,
    * then the blockchain, then the findings (README.md section 5). `status` is the HTTP status.
+   * `pack`: the domain pack (default: the install's), for the permission to commit a record version
+   * and the messages' wording.
    */
-  static refusal({versions, documents, openFindings, actor}) {
+  static refusal({versions, documents, openFindings, actor, pack}) {
     const items = [...versions, ...documents];
-    if (actor && (actor.perms || []).includes('record.finalize')) {
+    const wording = auditWording(pack);
+    const commitPermission = recordKindOf(pack)?.commitPermission;
+    if (
+      actor &&
+      commitPermission &&
+      (actor.perms || []).includes(commitPermission)
+    ) {
       return {
         status: 403,
         rule: 'sod2',
-        reason:
-          'You can commit land record versions, so you can’t sign off audits. Another auditor signs off.',
+        reason: `You can commit ${wording.record} versions, so you can’t sign off audits. Another auditor signs off.`,
       };
     }
     const approved = actor
@@ -416,8 +436,7 @@ export class SignoffService {
     if (items.some(i => i.match === 'changed' && !i.superseded)) {
       return {
         status: 409,
-        reason:
-          'The audit can’t be signed off until the land record has been re-reviewed and submitted again.',
+        reason: `The audit can’t be signed off until the ${wording.record} has been re-reviewed and submitted again.`,
       };
     }
     if (items.some(i => i.match === 'unavailable')) {
@@ -438,7 +457,7 @@ export class SignoffService {
   }
 
   /**
-   * A changed item: the records officers and the registrars get a re-review task, once per item.
+   * A changed item: the records desk gets a re-review task, once per item.
    * Returns the alert (with `foundAt`), or null when bpm cannot be reached (tried again at the next
    * check; the checkpoint stays refused either way).
    */
@@ -453,7 +472,11 @@ export class SignoffService {
     try {
       instance = await this.bpm.start(
         {
-          alert: {key: item.key, about, message: CHANGED_SINCE_REVIEW},
+          alert: {
+            key: item.key,
+            about,
+            message: changedSinceReview(this.wording),
+          },
           record: {
             id: record.id,
             recordNo: record.recordNo,
@@ -493,7 +516,7 @@ export class SignoffService {
           edrmsNo: alert.edrmsNo ?? undefined,
           documentVersion: alert.documentVersion ?? undefined,
           key: item.key,
-          message: CHANGED_SINCE_REVIEW,
+          message: changedSinceReview(this.wording),
           instanceId: alert.instanceId ?? undefined,
         },
         {actor: {id: null, name: 'System'}},
@@ -503,7 +526,7 @@ export class SignoffService {
   }
 
   /**
-   * One audit sign-off for the open checkpoint of a land record. The checkpoint is checked again now;
+   * One audit sign-off for the open checkpoint of a record. The checkpoint is checked again now;
    * the screen's view of it is never trusted. One sign-off per checkpoint, also for two requests at
    * the same moment.
    */
@@ -706,7 +729,7 @@ export class SignoffService {
               data: {documentId: row.documentId, version: newer},
             }
           : {
-              type: 'records.record.committed',
+              type: recordKindOf(this.pack)?.committedEvent,
               data: {recordId: row.recordId, versionNumber: newer},
             },
       );
@@ -855,15 +878,17 @@ export class SignoffService {
 
   /**
    * The consumer's handler (after the trail and the tree): a newer reviewed version resolves the open
-   * findings on older versions of the same land record (records.record.committed) or document
+   * findings on older versions of the same record (the domain pack's committed event) or document
    * (edrms.document.amended: an approved correction). A redelivered event finds them resolved.
    */
   async onEvent(event) {
     const d = event?.data || {};
     let open = [];
     let by = null;
+    const committedEvent = recordKindOf(this.pack)?.committedEvent;
     if (
-      event?.type === 'records.record.committed' &&
+      committedEvent &&
+      event?.type === committedEvent &&
       d.recordId &&
       d.versionNumber
     ) {

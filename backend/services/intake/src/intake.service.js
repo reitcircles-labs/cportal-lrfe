@@ -7,6 +7,7 @@ import {
   ForbiddenError,
   NotFoundError,
   changedCursor,
+  domain,
   readChangedCursor,
 } from '@lrfe/common';
 import {storageKey} from '@lrfe/storage';
@@ -15,6 +16,7 @@ import {normalize} from './extraction/normalize.js';
 import {countPages} from './pages.js';
 import {flagOf} from './extraction/pipeline.js';
 import {XCHECK_CODES} from './extraction/crosscheck.js';
+import {crossCheckCodesOf} from './extraction/checks.js';
 
 export const ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 const SYSTEM = {id: null, name: 'System'};
@@ -37,19 +39,24 @@ export function isCleared(d) {
 }
 
 /**
- * What the lists show of a document's fields: its reference, property, flags and review counts.
+ * What the lists show of a document's fields: its reference, property (the value of its type's
+ * `place` field), flags and review counts.
  * Kept as the small record of a cleared document (API-815), so that the Filed list, its search and
  * the filing message keep them once the fields are gone.
  * @param {{docType?: string, fields?: Array<object>}} d
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
  * @return {{ref: ?string, property: ?string, flags: object, reviewed: number, total: number}}
  */
-export function fieldsSummary(d) {
+export function fieldsSummary(d, pack = domain) {
   const fields = d.fields || [];
   const count = flag => fields.filter(f => f.flag === flag).length;
-  const refField = docType(d.docType)?.refField;
+  const type = docType(d.docType, pack);
+  const refField = type?.refField;
+  const placeField = type?.fields.find(f => searchRole(f) === 'place')?.k;
   return {
     ref: (refField && fields.find(f => f.k === refField)?.value) || null,
-    property: fields.find(f => f.k === 'property')?.value || null,
+    property:
+      (placeField && fields.find(f => f.k === placeField)?.value) || null,
     flags: {
       ok: count('ok'),
       check: count('check'),
@@ -199,7 +206,10 @@ export class IntakeService {
     clock = () => new Date(),
     config = {},
     logger = console,
+    pack = domain,
   }) {
+    // the product's document types and reading checks (CB-3)
+    this.pack = pack;
     this.repo = repo;
     this.store = store;
     this.events = events;
@@ -238,10 +248,10 @@ export class IntakeService {
   }
 
   summary(d) {
-    const t = docType(d.docType);
+    const t = docType(d.docType, this.pack);
     // a cleared document's fields are gone: its small record keeps what lists show (API-815)
     const {ref, property, flags, reviewed, total} =
-      d.filedRecord ?? fieldsSummary(d);
+      d.filedRecord ?? fieldsSummary(d, this.pack);
     return {
       id: d.id,
       batchId: d.batchId,
@@ -635,7 +645,10 @@ export class IntakeService {
   async getReading(id) {
     const d = await this.requireDocument(id);
     const roles = new Map(
-      (docType(d.docType)?.fields ?? []).map(f => [f.k, searchRole(f)]),
+      (docType(d.docType, this.pack)?.fields ?? []).map(f => [
+        f.k,
+        searchRole(f),
+      ]),
     );
     const cleared = isCleared(d);
     return {
@@ -884,7 +897,7 @@ export class IntakeService {
           notes: [],
           transcription: null,
           encryption: null,
-          filedRecord: fieldsSummary(d),
+          filedRecord: fieldsSummary(d, this.pack),
         },
         d.version,
       );
@@ -976,7 +989,7 @@ export class IntakeService {
    */
   async updateField(id, k, {value, status}, actor) {
     const d = await this.claim(id, actor);
-    const t = docType(d.docType);
+    const t = docType(d.docType, this.pack);
     const def = t?.fields.find(x => x.k === k);
     if (!def) {
       throw new BadRequestError(
@@ -1011,7 +1024,7 @@ export class IntakeService {
     }
     if (value !== undefined) {
       const before = row.value;
-      const n = normalize(def.type, value);
+      const n = normalize(def.type, value, this.pack);
       if (n.value === before) {
         row.status = 'accepted';
       } else {
@@ -1058,24 +1071,11 @@ export class IntakeService {
     return this.getDocument(id);
   }
 
-  /** Re-run cross-document checks for all rows (a corrected deed number changes the duplicate check, etc.). */
+  /** Re-run cross-document checks for all rows (a corrected reference changes the duplicate check, etc.). */
   async recheck(typeId, rows) {
+    const codes = crossCheckCodesOf(this.pack);
     for (const r of rows) {
-      r.checks = r.checks.filter(
-        c =>
-          ![
-            'duplicate',
-            'prior_missing',
-            'prior_found',
-            'prior_property',
-            'chain',
-            'chain_ok',
-            'sg_missing',
-            'sg_found',
-            'extent_mismatch',
-            'crosscheck_unavailable',
-          ].includes(c.code),
-      );
+      r.checks = r.checks.filter(c => !codes.includes(c.code));
     }
     await this.checker.check(typeId, rows);
     rows.forEach(r => {
@@ -1106,7 +1106,9 @@ export class IntakeService {
   blockers(d) {
     const out = [];
     if (d.status !== 'ready') out.push(`The document is ${d.status}`);
-    if (!docType(d.docType)) out.push('The document type is not recognised');
+    if (!docType(d.docType, this.pack)) {
+      out.push('The document type is not recognised');
+    }
     const pending = d.fields.filter(f => f.status === 'pending');
     if (pending.length) {
       out.push(
@@ -1135,7 +1137,7 @@ export class IntakeService {
     if (blockers.length) {
       throw new ConflictError('Not ready to file', {blockers});
     }
-    const t = docType(d.docType);
+    const t = docType(d.docType, this.pack);
     const extraction = d.latestExtractionId
       ? await this.repo.getExtraction(d.latestExtractionId)
       : null;
@@ -1213,7 +1215,7 @@ export class IntakeService {
     return this.summary(d);
   }
 
-  /** Not a land-registry instrument, a duplicate, unreadable… Kept, never deleted. */
+  /** Not a document of the product's kinds, a duplicate, unreadable… Kept, never deleted. */
   async rejectDocument(id, reason, actor) {
     if (!String(reason || '').trim()) {
       throw new BadRequestError('A reason is required');

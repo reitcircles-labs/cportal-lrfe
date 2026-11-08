@@ -54,7 +54,7 @@ const admin = process.env.BOOTSTRAP_ADMIN_EMAIL
     }
   : undefined;
 // The offices created on an empty database: the site's (IDENTITY_OFFICES; set but empty: none), or
-// Namibia's two when not set at all (development)
+// the domain pack's when not set at all (development)
 const offices =
   process.env.IDENTITY_OFFICES === undefined
     ? DEFAULT_OFFICES

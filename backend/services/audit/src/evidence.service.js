@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {AppError, DEFAULT_ORG_FULL_NAME, NotFoundError} from '@lrfe/common';
+import {auditWording} from './domain.js';
 import {zip} from './zip.js';
 
 export const PACK_FORMAT = 'lrfe-evidence-pack/1';
@@ -8,12 +9,12 @@ const json = v => `${JSON.stringify(v, null, 2)}\n`;
 const safe = s => String(s).replace(/[^A-Za-z0-9._-]+/g, '_');
 
 /**
- * The evidence pack of a land record (README.md section 6; API-660): one zip with everything needed
+ * The evidence pack of a record (README.md section 6; API-660): one zip with everything needed
  * to defend the record outside the portal, checked by the offline verifier (verifier/lrfe-verify.mjs).
  *
  *   README.txt                                 a readable summary and how to check the pack
  *   manifest.json                              format, the record, who exported it when, every file's SHA-256
- *   record/record.json                         the land record
+ *   record/record.json                         the record
  *   record/versions/v<n>.json                  each committed version, as sealed (its seal recomputes from it)
  *   documents/<edrmsNo>/v<n>.json              each pinned document version's sealed metadata
  *   documents/<edrmsNo>/v<n>-<file>            its file (its SHA-256 is in the metadata, and so in the seal)
@@ -23,9 +24,13 @@ const safe = s => String(s).replace(/[^A-Za-z0-9._-]+/g, '_');
  *                                              a proof for each version, document version and trail entry
  *
  * The export itself is a trail entry (`audit.evidence.exported`: who, which record, the manifest's hash).
+ * The README names the record and the portal in the domain pack's words (CB-3).
  */
 export class EvidenceService {
-  /** @param organisation who runs the portal, in the pack's README (API-712) */
+  /**
+   * @param organisation who runs the portal, in the pack's README (API-712)
+   * @param pack the domain pack (default: the install's), for the README's wording (CB-3)
+   */
   constructor({
     trail,
     proofs,
@@ -36,6 +41,7 @@ export class EvidenceService {
     clock = () => new Date(),
     logger = console,
     organisation = DEFAULT_ORG_FULL_NAME,
+    pack,
   }) {
     this.trail = trail;
     this.proofs = proofs;
@@ -46,6 +52,7 @@ export class EvidenceService {
     this.clock = clock;
     this.logger = logger;
     this.organisation = organisation;
+    this.wording = auditWording(pack);
   }
 
   async build(recordId, actor) {
@@ -229,6 +236,7 @@ export class EvidenceService {
         wallet,
         network: this.cardano?.network ?? null,
         organisation: this.organisation,
+        wording: this.wording,
       }),
     );
     const manifest = {
@@ -326,12 +334,15 @@ function readme({
   wallet,
   network,
   organisation,
+  wording,
 }) {
   const line = (s = '') => `${s}\n`;
   let t = '';
-  t += line(`Evidence pack: land record ${record.recordNo} (${record.label})`);
   t += line(
-    `Exported ${exportedAt} by ${actor.name ?? actor.id} from the land records portal of the ${organisation}.`,
+    `Evidence pack: ${wording.record} ${record.recordNo} (${record.label})`,
+  );
+  t += line(
+    `Exported ${exportedAt} by ${actor.name ?? actor.id} from the ${wording.portal} of the ${organisation}.`,
   );
   t += line();
   t += line('Committed versions');
@@ -391,12 +402,7 @@ function readme({
     '     the last anchoring; export the pack again after the next anchoring, or check them with the portal.',
   );
   t += line();
-  t += line(
-    'Not covered by any seal, shown as exported: this README, who exported the pack and when, the land',
-  );
-  t += line(
-    "record's summary (record/record.json) beyond its id and current version, document titles, and the",
-  );
+  t += line(wording.evidenceUnsealed);
   t += line(
     'times of sign-offs and findings. An offline check also cannot show that nothing was left out (the',
   );

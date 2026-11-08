@@ -1,0 +1,18 @@
+{
+  "name": "@lrfe/domain-land",
+  "version": "0.1.0",
+  "description": "The land registry's domain pack: its documents, roles, workflows, record kind and wording",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "devDependencies": {
+    "@lrfe/domain-pack": "0.1.0",
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3"
+  }
+}

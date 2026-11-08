@@ -1,6 +1,6 @@
 import {BadRequestError} from '@lrfe/common';
 import {checkEntries, nextEntry} from './chain.js';
-import {FOLLOWS, parseSubject, subjectsOf} from './subjects.js';
+import {FOLLOWS, parseSubject, subjectKinds, subjectsOf} from './subjects.js';
 
 const VERIFY_PAGE = 1000;
 const MAX_ROUNDS = 5; // record → documents → their capture and processes: 2-3 in practice
@@ -10,10 +10,12 @@ const MAX_ROUNDS = 5; // record → documents → their capture and processes: 2
  * by the consumer only; read by subject, type and time; verified by recomputing the chain.
  */
 export class TrailService {
-  constructor({repo, clock = () => new Date(), logger = console}) {
+  /** @param pack the domain pack (default: the install's), for the product's record kind (CB-3) */
+  constructor({repo, clock = () => new Date(), logger = console, pack}) {
     this.repo = repo;
     this.clock = clock;
     this.logger = logger;
+    this.pack = pack;
   }
 
   /**
@@ -36,7 +38,7 @@ export class TrailService {
         source: event.source ?? 'unknown',
         time: event.time ?? this.clock().toISOString(),
         actor: event.actor ?? {id: null, name: 'System'},
-        subjects: subjectsOf(event),
+        subjects: subjectsOf(event, this.pack),
         data: event.data ?? {},
       }),
       recordedAt: this.clock(),
@@ -82,7 +84,7 @@ export class TrailService {
 
   /**
    * Trail entries, oldest first. `subject` (`record:<id>`, `document:<id>`, `user:<id>` …): for a
-   * land record or a document also the steps of what it is made of — its documents' capture,
+   * record or a document also the steps of what it is made of — its documents' capture,
    * filing, amendments and review processes — but not those of other records.
    */
   async list({subject, type, from, to, limit = 100, offset = 0} = {}) {
@@ -93,10 +95,11 @@ export class TrailService {
     };
     let subjects = null;
     if (subject) {
-      const parsed = parseSubject(subject);
+      const parsed = parseSubject(subject, this.pack);
       if (!parsed) {
+        const kinds = subjectKinds(this.pack).map(k => `${k}:`);
         throw new BadRequestError(
-          `Unknown subject "${subject}": use record:, document:, edrmsNo:, intake:, process: or user: and an id`,
+          `Unknown subject "${subject}": use ${kinds.slice(0, -1).join(', ')} or ${kinds.at(-1)} and an id`,
         );
       }
       if (parsed[0] === 'record') filter.exceptRecord = subject;
@@ -111,14 +114,14 @@ export class TrailService {
 
   /** `subject` and every subject that follows from it (FOLLOWS), up to MAX_ROUNDS links away. */
   async related(subject, exceptRecord) {
-    const [kind] = parseSubject(subject);
+    const [kind] = parseSubject(subject, this.pack);
     const found = new Set([subject]);
     if (kind === 'user') return [...found];
     let frontier = [subject];
     for (let round = 0; round < MAX_ROUNDS && frontier.length; round++) {
       const linked = await this.repo.linkedSubjects(frontier, {exceptRecord});
       frontier = linked.filter(
-        s => !found.has(s) && FOLLOWS.has(parseSubject(s)?.[0]),
+        s => !found.has(s) && FOLLOWS.has(parseSubject(s, this.pack)?.[0]),
       );
       frontier.forEach(s => found.add(s));
     }

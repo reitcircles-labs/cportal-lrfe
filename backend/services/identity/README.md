@@ -24,13 +24,13 @@ Settings come from `services/identity/.env` (copy `backend/.env_example`):
 | `DB_CONNECTION_STRING`, `DB_SYNC` | Postgres; `DB_SYNC=true` creates the `identity` schema and tables on start |
 | `JWT_SECRET` | signs access tokens; must be the same in every service |
 | `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | the first administrator (see below) |
-| `SEED_DEMO_PASSWORD` | when set, creates the 14 fictitious demo users with this password |
+| `SEED_DEMO_PASSWORD` | when set, creates the domain pack's fictitious demo users with this password (the land pack has 14) |
 | `COOKIE_SECURE` | `false` only while serving over plain `http://localhost` |
 | `IDENTITY_INVITE_URL_BASE` | start of the link in invitation emails: the address users open the app at, e.g. `https://lr.example.com/#/invite` |
 | `IDENTITY_EXPOSE_INVITE_LINKS` | dev only: also show the invitation link to the admin (needed while email is not set up) |
 | `MAIL_TRANSPORT`, `MAIL_FROM`, `SMTP_*` | invitation email, see [Email](#email-invitations) |
 | `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | the organisation, as "name · subtitle" in invitation emails and as the authenticator app's entry; set but empty = left out; not set = "Deeds Registry · Republic of Namibia" (`orgFromEnv` in `@lrfe/common`) |
-| `IDENTITY_OFFICES` | the offices created on an empty database: `CODE=Name;CODE=Name`; set but empty = none; not set = Namibia's two (`DEFAULT_OFFICES`). The containers pass `LRFE_OFFICES` |
+| `IDENTITY_OFFICES` | the offices created on an empty database: `CODE=Name;CODE=Name`; set but empty = none; not set = the domain pack's (land: Namibia's two). The containers pass `LRFE_OFFICES` |
 
 ## First sign-in
 
@@ -39,10 +39,11 @@ Settings come from `services/identity/.env` (copy `backend/.env_example`):
 `BOOTSTRAP_ADMIN_*` settings are ignored: changing `BOOTSTRAP_ADMIN_PASSWORD` later does **not**
 change the admin's password. Use the reset command below instead.
 
-**Demo users** are created when `SEED_DEMO_PASSWORD` is set: any of the 14 that don't exist yet
+**Demo users** are created when `SEED_DEMO_PASSWORD` is set: any of the domain pack's that don't exist yet
 get that password (existing users are never changed). For example `p.hamutenya@deeds.gov.na`
 (administrator), `d.garoeb@deeds.gov.na` (scan operator + reviewer), `a.mwandingi@deeds.gov.na`
-(reviewer). The full list is in `src/seed.js`. They are fictitious and share one password, so
+(reviewer), from the land pack; the full list is in `backend/domains/land/src/identity/demo-users.js`.
+They are fictitious and share one password, so
 never enable them where real staff can sign in.
 
 ## Offices
@@ -58,13 +59,25 @@ Offices** (permission "Manage offices"):
 - **Inviting** requires an active office; only system administrators can be "National" (no office).
   **Users → Manage → Change office** moves a user.
 
-**Default offices.** When the database has no offices, identity creates Namibia's two deeds
-offices (`DEFAULT_OFFICES` in `src/catalogue.js`), as listed by the Directorate of Deeds
+**Default offices.** When the database has no offices and `IDENTITY_OFFICES` is not set, identity
+creates the domain pack's offices. The land pack's are Namibia's two deeds offices (`offices` in
+`backend/domains/land/src/identity/index.js`), as listed by the Directorate of Deeds
 Registration in October 2026: `WDH` Deeds Registry · Windhoek, which registers land everywhere except
 Rehoboth, and `REH` Deeds Registry · Rehoboth, for Rehoboth town, constituency and the surrounding
 farmland. Rehoboth's address is left blank to fill in. Once any office exists, nothing is added
 again. (The Registration of Deeds in Rehoboth Act 1976 was repealed by the Deeds Registries Act 2015,
 in force since April 2021; confirm with the Registrar whether the Rehoboth office remains separate.)
+
+## Roles and permissions from the domain pack
+
+The platform's permissions (dashboard, capture, verification, audit, administration), its
+separation-of-duty rules `sod1` and `sod4` and the system administrator role are in
+`src/catalogue.js`. The product's permission groups, permissions, roles, rules, default offices and
+demo users come from the `identity` section of the domain pack chosen by `LRFE_DOMAIN` (CB-3), and
+its `wording.identity` names the system in the invitation email ("land records system") and may
+reword the platform's entries. With the land pack the catalogue is the one installs have always had;
+with the shipping pack identity has only the system administrator. Role and permission ids are
+stored in databases and tokens and never change.
 
 ## Email (invitations)
 

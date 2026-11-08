@@ -4,11 +4,10 @@ import {
   createMockProvider,
   createGeminiProvider,
   sanitize,
-  DEMO_ANSWER,
   mockAnswer,
 } from '../src/extraction/providers.js';
 import {createChecker, noChecks} from '../src/extraction/checks.js';
-import {answer, withField} from './helpers.js';
+import {DEMO_ANSWER, answer, withField} from './helpers.js';
 
 const file = {
   buffer: Buffer.from('%PDF-1.7 test'),

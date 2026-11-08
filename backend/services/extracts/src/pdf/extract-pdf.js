@@ -9,20 +9,10 @@ import {
   rectangle,
   setFillingColor,
 } from 'pdf-lib';
+import {domain} from '@lrfe/common';
 import {printedCheckCode} from '../check-code.js';
 import {COLOURS, MARGIN, PageWriter} from './page-writer.js';
 import {qrModules} from './qr.js';
-import {
-  CHECK_INTRO,
-  SEAL_TITLE,
-  WARNING,
-  extentText,
-  idNumberShown,
-  sealNotice,
-  shareText,
-  tenureText,
-  titleDeeds,
-} from './wording.js';
 
 /** The QR code's side on the page, in points (about 42 mm: easy to scan from a printout). */
 const QR_SIDE = 120;
@@ -57,14 +47,15 @@ export function dateTimeText(value, timeZone, month = 'long') {
 }
 
 /**
- * The ownership extract as a PDF document, not saved or sealed yet (README.md, "The PDF"), laid out
- * as the design draft (API-690): the registry, the extract and its issue; the record's version as
- * it stands; its owners with only the last 4 digits of each ID number; the check against the
- * blockchain with the QR code; the warning to scan it; the seal notice and the legal wording. The
- * proof of the version is attached inside it.
+ * The extract as a PDF document, not saved or sealed yet (README.md, "The PDF"), laid out as the
+ * design draft (API-690): the organisation, the extract and its issue; the record's version as it
+ * stands; its parties; the check against the blockchain with the QR code; the warning to scan it;
+ * the seal notice and the legal wording. The proof of the version is attached inside it. The texts
+ * are the domain pack's (`wording.extracts`, CB-3), the layout is this file's.
  * @param {{extract: !Object, record: !Object, proof: !Object, explorerUrl: ?string,
- *     settings: !Object}} input
+ *     settings: !Object, wording: (!Object|undefined)}} input
  *     settings: {org, checkUrlBase, legalText, timeZone, coatOfArms} (extractSettingsFromEnv)
+ *     wording: the pack's texts for extracts, this install's by default
  * @return {!Promise<!PDFDocument>}
  */
 export async function renderExtract({
@@ -73,11 +64,12 @@ export async function renderExtract({
   proof,
   explorerUrl,
   settings,
+  wording = domain.wording.extracts,
 }) {
   const pdfDoc = await PDFDocument.create();
   const issuedAt = new Date(extract.issuedAt);
   const registry = registryName(settings.org);
-  pdfDoc.setTitle(`Ownership extract ${extract.extractNo}`);
+  pdfDoc.setTitle(`${wording.title} ${extract.extractNo}`);
   pdfDoc.setSubject(
     `${record.recordNo}, version ${extract.versionNumber}: ${record.label ?? ''}`,
   );
@@ -106,13 +98,14 @@ export async function renderExtract({
     explorerUrl,
     settings,
     registry,
+    wording,
   };
 
   header(writer, facts);
-  landRecord(writer, facts);
-  owners(writer, facts);
+  recordSection(writer, facts);
+  parties(writer, facts);
   check(writer, facts);
-  warning(writer);
+  warning(writer, facts);
   seal(writer, facts);
   footers(pdfDoc, fonts, facts);
 
@@ -129,7 +122,7 @@ export async function renderExtract({
   return pdfDoc;
 }
 
-/** "Deeds Registry, Republic of Namibia", or the name alone. */
+/** The organisation's name and subtitle, "<name>, <subtitle>", or the name alone. */
 function registryName(org) {
   return org.subtitle ? `${org.name}, ${org.subtitle}` : org.name;
 }
@@ -137,9 +130,9 @@ function registryName(org) {
 /** The coat of arms' side, in points: it fits a square this size, the header's least height. */
 const ARMS_SIDE = 48;
 
-function header(writer, {extract, settings, coatOfArms}) {
+function header(writer, {extract, settings, coatOfArms, wording}) {
   const {bold, regular, mono} = writer.fonts;
-  writer.textRight('Ownership extract', {font: bold, size: 16, top: 0});
+  writer.textRight(wording.title, {font: bold, size: 16, top: 0});
   writer.textRight(extract.extractNo, {font: mono, size: 8, top: 22});
   writer.textRight(
     `Issued ${dateTimeText(extract.issuedAt, settings.timeZone)}`,
@@ -219,43 +212,42 @@ function heading(writer, text, size = 11) {
   writer.space(4);
 }
 
-function landRecord(writer, {extract, record, version}) {
-  heading(
-    writer,
-    `The land record, version ${extract.versionNumber} (current on the issue date)`,
-  );
-  const data = version.data ?? {};
-  row(writer, 'Parcel', record.label);
-  row(
-    writer,
-    'Land record',
-    `${record.recordNo} · version ${extract.versionNumber}`,
-  );
-  row(writer, 'Registration division', data.parcel?.regDiv);
-  row(writer, 'Extent', extentText(data.extent));
-  row(writer, 'Tenure', tenureText(data.tenure));
-  row(writer, 'Title deed', titleDeeds(data.owners));
+/** The record's version as it stands: the pack's heading and rows. */
+function recordSection(writer, {extract, record, version, wording}) {
+  const versionNumber = extract.versionNumber;
+  heading(writer, wording.recordHeading(versionNumber));
+  for (const [label, value] of wording.recordRows({
+    record,
+    version,
+    versionNumber,
+  })) {
+    row(writer, label, value);
+  }
   writer.space(6);
 }
 
-function owners(writer, {extract, version}) {
-  heading(writer, 'Registered owners', 10);
+/**
+ * The parties table (name, ID number, share), as the pack prints them, then who the extract was
+ * issued to.
+ */
+function parties(writer, {extract, version, wording}) {
+  heading(writer, wording.partiesHeading, 10);
   const columns = {name: 0, idNo: 260, share: 400};
   const headerRow = () => {
     const top = writer.y;
-    for (const [key, label] of [
-      ['name', 'Name'],
-      ['idNo', 'ID number'],
-      ['share', 'Share'],
-    ]) {
+    for (const key of ['name', 'idNo', 'share']) {
       writer.y = top;
-      writer.text(label, {size: 8.5, x: columns[key], colour: COLOURS.muted});
+      writer.text(wording.partyColumns[key], {
+        size: 8.5,
+        x: columns[key],
+        colour: COLOURS.muted,
+      });
     }
     writer.rule(3);
   };
   headerRow();
-  for (const owner of version.data?.owners ?? []) {
-    const nameHeight = writer.text(owner.name, {
+  for (const party of wording.parties(version)) {
+    const nameHeight = writer.text(party.name, {
       dryRun: true,
       width: columns.idNo - 12,
     });
@@ -264,22 +256,20 @@ function owners(writer, {extract, version}) {
       headerRow();
     }
     const top = writer.y;
-    writer.text(owner.name, {width: columns.idNo - 12});
+    writer.text(party.name, {width: columns.idNo - 12});
     const bottom = writer.y;
     writer.y = top;
-    writer.text(idNumberShown(owner.idNo), {
+    writer.text(party.idNo, {
       font: writer.fonts.mono,
       x: columns.idNo,
       width: columns.share - columns.idNo - 8,
     });
     writer.y = top;
-    writer.text(shareText(owner.share), {x: columns.share});
+    writer.text(party.share, {x: columns.share});
     writer.y = Math.min(writer.y, bottom) - 3;
   }
   writer.space(8);
-  writer.text(
-    `Issued to ${extract.ownerName}, registered owner, identity document seen at the counter.`,
-  );
+  writer.text(wording.issuedTo(extract.ownerName));
   writer.space(10);
 }
 
@@ -323,7 +313,7 @@ function drawQr(page, text, {x, y, side}) {
 const CHECK_PADDING = 12;
 
 /** The check box: the QR code and how to check by hand, then the blockchain facts, framed. */
-function check(writer, {extract, proof, explorerUrl, settings}) {
+function check(writer, {extract, proof, explorerUrl, settings, wording}) {
   const {bold, mono} = writer.fonts;
   const url = checkUrl(settings.checkUrlBase, extract.token);
   const textX = CHECK_PADDING + QR_SIDE + 16;
@@ -337,7 +327,7 @@ function check(writer, {extract, proof, explorerUrl, settings}) {
   // check code are for typing in (API-692)
   const texts = [
     ['Check this extract against the blockchain', {font: bold, size: 11}, 3],
-    [CHECK_INTRO, {size: 9.5}, 4],
+    [wording.checkIntro, {size: 9.5}, 4],
     [
       'No camera? Open this address and type the check code:',
       {size: 9, colour: COLOURS.muted},
@@ -416,8 +406,8 @@ function box(writer, {fillColour, edgeColour, height, padding = 10}, draw) {
   writer.y = top - height - 2 * padding - 10;
 }
 
-function warning(writer) {
-  const {title, body} = WARNING;
+function warning(writer, {wording}) {
+  const {title, body} = wording.warning;
   const width = writer.width - 20;
   const height =
     writer.text(title, {
@@ -444,9 +434,9 @@ function warning(writer) {
   );
 }
 
-function seal(writer, {settings, registry}) {
-  const title = SEAL_TITLE;
-  const body = sealNotice(registry);
+function seal(writer, {settings, registry, wording}) {
+  const title = wording.sealTitle;
+  const body = wording.sealNotice(registry);
   const width = writer.width - 20;
   const legal = settings.legalText;
   const height =

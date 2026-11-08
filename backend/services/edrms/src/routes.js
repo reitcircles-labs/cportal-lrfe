@@ -5,11 +5,12 @@ import {
   NotFoundError,
   UnauthorizedError,
   describeGuard,
+  domain,
   OFFSET_SCHEMA,
 } from '@lrfe/common';
 import {
-  DOC_TYPES,
-  DOC_TYPE_IDS,
+  docTypeIdsOf,
+  docTypesOf,
   FILING_SERVICES,
   INTAKE_READ_PERMS,
   READ_PERMS,
@@ -103,6 +104,13 @@ function mayReadIntake(user, asked) {
 
 /** The edrms HTTP routes. */
 export async function edrmsRoutes(app, {service, contentUrl}) {
+  // the product's document types: the service's domain pack (CB-3)
+  const pack = service.pack ?? domain;
+  const typeIds = docTypeIdsOf(pack);
+  // a list of no values is not a valid schema: without types, the service refuses any docType
+  const docTypeSchema = typeIds.length
+    ? {type: 'string', enum: typeIds}
+    : {type: 'string', maxLength: 50};
   const sign = (id, n, exp) =>
     createHmac('sha256', contentUrl.secret)
       .update(`${id}:${n}:${exp}`)
@@ -131,8 +139,8 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
   // ------------------------------------------------------------------ catalogue
 
   app.get('/catalogue', {onRequest: app.authenticate}, async () => ({
-    docTypes: DOC_TYPES,
-    recordMetadataFields: describeRecordMetadataFields(),
+    docTypes: docTypesOf(pack),
+    recordMetadataFields: describeRecordMetadataFields(pack),
   }));
 
   // ------------------------------------------------------------------ filing (intake only)
@@ -186,14 +194,14 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
           type: 'object',
           properties: {
             q: {type: 'string', maxLength: 200},
-            docType: {type: 'string', enum: DOC_TYPE_IDS},
+            docType: docTypeSchema,
             batchId: {type: 'string', maxLength: 50},
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
             offset: OFFSET_SCHEMA,
             // land-records, for a user who may read intake's documents (API-803)
             intake: {type: 'boolean'},
           },
-          // field.<key>=<value> filters on extracted fields, e.g. field.property=Erf 1873, Klein Windhoek
+          // field.<key>=<value> filters on extracted fields
           patternProperties: {
             '^field\\.[A-Za-z0-9_]+$': {type: 'string', maxLength: 200},
           },

@@ -129,7 +129,7 @@ export async function bpmRoutes(app, {engine}) {
     },
   );
 
-  // A service may withdraw an instance it started (land-records, when the officer withdraws).
+  // A service may withdraw an instance it started (a product service, when its user withdraws).
   app.post(
     '/instances/:id/cancel',
     {onRequest: userOrService, schema: uuidParams},

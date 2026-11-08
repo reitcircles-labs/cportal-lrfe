@@ -81,8 +81,10 @@ with the footer on each), as the design draft of API-690 lays it out:
   `node lrfe-verify.mjs extract.pdf --address <published wallet> --seal <seal fingerprint>` (the
   audit service's offline verifier, API-694).
 
-The texts (`src/pdf/wording.js`) say "blockchain", never the network, and name no tool behind the
-portal. Characters the standard PDF fonts cannot print are written as the closest ones they can: a
+The layout is the service's; the product's texts (the title, the record section's rows, the
+parties table, the check, warning and seal texts, and the extract number's prefix `EX`) come from
+the domain pack, `wording.extracts` (for land, `backend/domains/land/src/wording/extracts.js`,
+CB-3). They say "blockchain", never the network, and name no tool behind the portal. Characters the standard PDF fonts cannot print are written as the closest ones they can: a
 Khoekhoe click as typed on a keyboard (ǃ "!", ǀ "|", ǁ "||", ǂ "‡"), a letter without its accents
 or stroke; "?" only for a character with no such form.
 

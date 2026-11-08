@@ -3,9 +3,23 @@ import {chainHash, contentHash} from './chain.js';
 import {leafHash, verifyInclusion} from './mmr.js';
 import {committedMetadata, LABEL} from './cardano/tx.js';
 import {explorerUrl} from './anchorings.service.js';
+import {auditWording, recordKindOf} from './domain.js';
 
 export const PROOF_FORMAT = 'lrfe-audit-proof/1';
-export const KINDS = ['record-version', 'document-version', 'trail-entry'];
+/** What a proof can be of; the names are fixed (they are in issued proofs). */
+const ALL_KINDS = ['record-version', 'document-version', 'trail-entry'];
+
+/**
+ * The proof kinds of an install: every kind, without `record-version` when the product has no
+ * record kind (CB-3).
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {!Array<string>}
+ */
+export function proofKinds(pack) {
+  return recordKindOf(pack)
+    ? ALL_KINDS
+    : ALL_KINDS.filter(k => k !== 'record-version');
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** How far an anchoring has got, as the screens say it: no anchoring yet is `waiting`, a submitted one `sent`. */
@@ -18,7 +32,7 @@ function anchoringStatus(anchor) {
 }
 
 /**
- * Proofs and verification (README.md section 4; API-658). A proof shows that a land record version,
+ * Proofs and verification (README.md section 4; API-658). A proof shows that a record version,
  * a document version or a trail entry is a leaf of the tree whose root was put on Cardano in one
  * anchoring transaction; anyone can check it without the portal (verifier/lrfe-verify.mjs).
  *
@@ -26,7 +40,7 @@ function anchoringStatus(anchor) {
  *                               while none does, against the tree as it is now: status `waiting`)
  *   verify(kind, id, version)   the item's seal recomputed from the current data, the path to the
  *                               root, and the root in the anchoring transaction on the chain
- *   statusOf(keys)              per leaf key: waiting | anchored | confirmed (land-records, edrms)
+ *   statusOf(keys)              per leaf key: waiting | anchored | confirmed (the product service, edrms)
  *   anchoringOf(keys), batchOf(keys), entryBatch(seq), signoffBatch(recordId, signoffId)
  *                               how far an item has got (waiting | sent | onChain | confirmed), and
  *                               with batchOf and entryBatch the batch (the Anchorings screens)
@@ -42,6 +56,7 @@ export class ProofService {
     sources = null,
     clock = () => new Date(),
     logger = console,
+    pack,
   }) {
     this.repo = repo;
     this.tree = tree;
@@ -49,13 +64,17 @@ export class ProofService {
     this.sources = sources;
     this.clock = clock;
     this.logger = logger;
+    // the domain pack (default: the install's): the record kind and its name in messages (CB-3)
+    this.pack = pack;
+    this.wording = auditWording(pack);
   }
 
   /** The item named by `kind`, `id` (and `version`): its leaf key. */
-  static itemOf(kind, id, version) {
-    if (!KINDS.includes(kind)) {
+  static itemOf(kind, id, version, pack) {
+    const kinds = proofKinds(pack);
+    if (!kinds.includes(kind)) {
       throw new BadRequestError(
-        `Unknown kind "${kind}": use ${KINDS.join(', ')}`,
+        `Unknown kind "${kind}": use ${kinds.join(', ')}`,
       );
     }
     if (kind === 'trail-entry') {
@@ -67,7 +86,7 @@ export class ProofService {
     }
     if (!UUID.test(String(id))) {
       throw new BadRequestError(
-        `A ${kind} is named by its ${kind === 'record-version' ? 'land record' : 'document'} id (a uuid)`,
+        `A ${kind} is named by its ${kind === 'record-version' ? auditWording(pack).record : 'document'} id (a uuid)`,
       );
     }
     const n = Number(version);
@@ -80,7 +99,7 @@ export class ProofService {
   }
 
   async proof(kind, id, version) {
-    const item = ProofService.itemOf(kind, id, version);
+    const item = ProofService.itemOf(kind, id, version, this.pack);
     return item.kind === 'trail-entry'
       ? this.entryProof(item)
       : this.versionProof(item);
@@ -90,7 +109,7 @@ export class ProofService {
     const leaf = await this.repo.tree.leafByKey(item.key);
     if (!leaf) {
       throw new NotFoundError(
-        `This ${item.kind === 'record-version' ? 'land record' : 'document'} version is not in the audit tree yet`,
+        `This ${item.kind === 'record-version' ? this.wording.record : 'document'} version is not in the audit tree yet`,
       );
     }
     const anchor = await this.repo.anchorForLeaf(leaf.leafIndex);
@@ -283,8 +302,8 @@ export class ProofService {
   }
 
   /**
-   * A land record version checked now, as verify() checks it, in the few facts the public check of
-   * an ownership extract needs (API-693): whether it is valid, each check's `ok`, the seal and the
+   * A record version checked now, as verify() checks it, in the few facts the public check of
+   * an extract needs (API-693): whether it is valid, each check's `ok`, the seal and the
    * anchoring. Never the proof itself.
    */
   async versionCheck(recordId, version) {
@@ -308,9 +327,9 @@ export class ProofService {
   }
 
   /**
-   * The proof of a land record version, as the evidence pack holds it (proofs/record-v<n>.json),
+   * The proof of a record version, as the evidence pack holds it (proofs/record-v<n>.json),
    * and its transaction's page on a public blockchain explorer (null while waiting): attached to an
-   * ownership extract's PDF (API-691).
+   * extract's PDF (API-691).
    */
   async recordProof(recordId, version) {
     const proof = await this.proof('record-version', recordId, version);
@@ -353,6 +372,8 @@ export class ProofService {
       return {ok: null, problem: 'the owning service is not configured'};
     }
     const record = p.item.kind === 'record-version';
+    // the service that owns the version, as the pack's record kind names it
+    const owner = record ? (recordKindOf(this.pack)?.source ?? null) : 'edrms';
     let now;
     try {
       now = record
@@ -362,20 +383,20 @@ export class ProofService {
       if (err.statusCode === 404) {
         return {
           ok: false,
-          source: record ? 'land-records' : 'edrms',
+          source: owner,
           problem: 'the version no longer exists',
         };
       }
       return {
         ok: null,
-        source: record ? 'land-records' : 'edrms',
+        source: owner,
         problem: `the seal could not be recomputed now: ${err.message}`,
       };
     }
     const ok = now.intact === true && now.seal === p.item.seal;
     return {
       ok,
-      source: record ? 'land-records' : 'edrms',
+      source: owner,
       seal: now.seal,
       ...(ok
         ? {}
@@ -474,7 +495,7 @@ export class ProofService {
     };
   }
 
-  // ------------------------------------------------ status for land-records and edrms
+  // ------------------------------------------------ status for the product service and edrms
 
   /**
    * Per leaf key, how far its anchoring has got and in which batch: `{ status, batch }`, status
@@ -519,7 +540,7 @@ export class ProofService {
     return anchoringStatus(await this.repo.anchorForEntry(seq));
   }
 
-  /** A land record's audit sign-off `signoffId`, as entryBatch says for its trail entry (waiting until it is in the trail). */
+  /** A record's audit sign-off `signoffId`, as entryBatch says for its trail entry (waiting until it is in the trail). */
   async signoffBatch(recordId, signoffId) {
     const {entries} = await this.repo.list(
       {subjects: [`record:${recordId}`], type: 'audit.signoff.recorded'},

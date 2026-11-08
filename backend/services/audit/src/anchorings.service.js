@@ -209,7 +209,7 @@ export class AnchoringsService {
 
   /**
    * What batch `batch` covers (API-696): the fingerprints it put on the blockchain for the first
-   * time, counted by kind, and the land records with a version or an audit sign-off in it, by record
+   * time, counted by kind, and the records with a version or an audit sign-off in it, by record
    * number, paged. Each version comes with what its fingerprint stands for: the documents it is
    * made of (how many of them reached the blockchain in earlier batches) and, through the previous
    * version's seal, the versions before it. A failed batch covers nothing: its replacement does.
@@ -263,8 +263,8 @@ export class AnchoringsService {
 
   /**
    * The document versions batch `batch` put on the blockchain for the first time (API-696), in the
-   * order they were sealed, paged: number, type and deed number from their filing in the trail, and
-   * the land record versions in the same batch that are made of them. A failed batch has none.
+   * order they were sealed, paged: number, type and instrument number from their filing in the trail, and
+   * the record versions in the same batch that are made of them. A failed batch has none.
    */
   async documents(batch, {limit = 25, offset = 0} = {}) {
     const c = await this.contents(batch);
@@ -365,7 +365,7 @@ export class AnchoringsService {
   }
 
   /**
-   * Number, type and deed number of each document version, from its filing or correction in the
+   * Number, type and instrument number of each document version, from its filing or correction in the
    * trail (a correction names no type: that comes from the filing). Null fields for a document
    * sealed before the audit service (the backfill has no trail entry for it).
    */

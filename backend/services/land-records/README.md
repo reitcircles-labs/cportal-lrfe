@@ -129,7 +129,7 @@ create ──► draft ──submit──► in review ──approve (second per
 - **Submit** (`POST /records/:id/draft/submit {revision}`): refused while the data is incomplete for
   the parcel kind's schema or any error check fails (the lists are returned). The draft is frozen
   (`in_review`, checks stored as submitted) and land-records starts the bpm process
-  **`land-record-review`** (`bpm/src/definitions/land-record-review.json`) with the record, the
+  **`land-record-review`** (in the land domain pack: `backend/domains/land/src/workflows/land-record-review.js`) with the record, the
   version and the submitter. If bpm cannot be reached, the draft stays editable.
 - Its approval task is for users with `record.finalize`, **excluding the submitter**, and appears
   in the task inbox (the bell), like document corrections. Due in 72 hours.

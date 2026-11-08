@@ -507,7 +507,10 @@ and Blockfrost.
 ## 5. Sign-off and findings
 
 API-659, API-680. `src/signoff.service.js`, the routes in `src/routes.js`, the bpm processes
-`services/bpm/src/definitions/audit-finding.json` and `audit-rereview.json`.
+`services/bpm/src/definitions/audit-finding.json` and `audit-rereview.json` (templates: who
+acknowledges comes from the domain pack's `workflows.auditAcknowledgers`). The record kind and the
+words "land record" in messages come from the domain pack (`recordKind`, `wording.audit`; CB-3,
+`src/domain.js`).
 
 **Who owns what.** The approver owns the land record: approving commits and seals the version (the
 record's details, every document with its own seal, the previous version's seal), and the seal is

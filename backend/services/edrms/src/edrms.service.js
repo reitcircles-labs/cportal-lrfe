@@ -6,11 +6,12 @@ import {
   ConflictError,
   NotFoundError,
   changedCursor,
+  domain,
   readChangedCursor,
 } from '@lrfe/common';
 import {
-  DOC_TYPE_IDS,
   docType,
+  docTypeIdsOf,
   formatEdrmsNo,
   instrumentRefOf,
   normalizeRef,
@@ -123,7 +124,26 @@ const INDEX_WINDOW = 10000;
 const propsOf = fields => Object.fromEntries(fields.map(f => [f.k, f.v]));
 
 /**
- * The EDRMS: documents of record for the land registry. A document is created once, by filing
+ * The record metadata a filed document gets unless it says otherwise: the product's business
+ * function (from its domain pack) and this store's defaults.
+ * @param {import('@lrfe/domain-pack').DomainPack} pack
+ * @return {object}
+ */
+function defaultRecordMetadataOf(pack) {
+  const businessFunction = pack.wording.edrms.businessFunction;
+  return {
+    aggregationLevel: 'item',
+    language: 'en',
+    ...(businessFunction ? {businessFunction} : {}),
+    retentionSchedule: 'permanent',
+    dispositionAction: 'retain',
+    accessRestriction: 'restricted',
+  };
+}
+
+/**
+ * The EDRMS: documents of record for the product (its document types come from the domain pack,
+ * `pack`). A document is created once, by filing
  * (intake service, after metadata review), and never deleted. Every version is immutable and
  * sealed; a correction is an amendment — a new major version with a reason.
  */
@@ -136,7 +156,9 @@ export class EdrmsService {
     indexSearch = null,
     clock = () => new Date(),
     config = {},
+    pack = domain,
   }) {
+    this.pack = pack;
     this.repo = repo;
     this.store = store;
     this.events = events;
@@ -147,14 +169,7 @@ export class EdrmsService {
       country: 'NA',
       registry: 'WDH',
       urlTtlSeconds: 300,
-      defaultRecordMetadata: {
-        aggregationLevel: 'item',
-        language: 'en',
-        businessFunction: 'Deeds registration',
-        retentionSchedule: 'permanent',
-        dispositionAction: 'retain',
-        accessRestriction: 'restricted',
-      },
+      defaultRecordMetadata: defaultRecordMetadataOf(pack),
       ...config,
     };
   }
@@ -192,9 +207,12 @@ export class EdrmsService {
         await discard(file?.stream);
         return {document: existing, created: false};
       }
-      if (!DOC_TYPE_IDS.includes(meta.docType)) {
+      const typeIds = docTypeIdsOf(this.pack);
+      if (!typeIds.includes(meta.docType)) {
         throw new BadRequestError(
-          `docType must be one of ${DOC_TYPE_IDS.join(', ')}`,
+          typeIds.length
+            ? `docType must be one of ${typeIds.join(', ')}`
+            : 'This install has no document types to file',
         );
       }
       if (!String(meta.title || '').trim()) {
@@ -214,10 +232,11 @@ export class EdrmsService {
       }
 
       const fields = cleanFields(meta.fields);
-      const instrumentRef = instrumentRefOf(meta.docType, fields);
-      if (docType(meta.docType).refField && !instrumentRef) {
+      const instrumentRef = instrumentRefOf(meta.docType, fields, this.pack);
+      const type = docType(meta.docType, this.pack);
+      if (type.refField && !instrumentRef) {
         throw new BadRequestError(
-          `A ${docType(meta.docType).label.toLowerCase()} needs the "${docType(meta.docType).refField}" field`,
+          `A ${type.label.toLowerCase()} needs the "${type.refField}" field`,
         );
       }
       if (instrumentRef) {
@@ -435,9 +454,11 @@ export class EdrmsService {
         name: meta.reviewedBy.name,
       },
     ].filter(Boolean);
+    const label = docType(meta.docType, this.pack).label;
+    const activity = this.pack.wording.edrms.businessActivity;
     return validateRecordMetadata({
       ...this.config.defaultRecordMetadata,
-      businessActivity: `Registration: ${docType(meta.docType).label.toLowerCase()}`,
+      businessActivity: activity ? activity(label) : label,
       agents,
       ...provided,
     });
@@ -576,12 +597,12 @@ export class EdrmsService {
             fields,
             props: propsOf(fields),
             recordMetadata: nextMetadata,
-            instrumentRef: instrumentRefOf(doc.docType, fields),
+            instrumentRef: instrumentRefOf(doc.docType, fields, this.pack),
             currentVersion: n,
             updatedAt: now,
             searchText: searchTextOf({
               title: doc.title,
-              instrumentRef: instrumentRefOf(doc.docType, fields),
+              instrumentRef: instrumentRefOf(doc.docType, fields, this.pack),
               edrmsNo: doc.edrmsNo,
               fields,
             }),
@@ -675,7 +696,7 @@ export class EdrmsService {
    * @param {{intake?: boolean}} [options]
    */
   async searchDocuments(query, {intake = false} = {}) {
-    if (query.docType && !DOC_TYPE_IDS.includes(query.docType)) {
+    if (query.docType && !docTypeIdsOf(this.pack).includes(query.docType)) {
       throw new BadRequestError(`Unknown docType "${query.docType}"`);
     }
     const filtered = query.batchId || Object.keys(query.props ?? {}).length > 0;
@@ -753,7 +774,7 @@ export class EdrmsService {
     const where = edrmsNo
       ? {edrmsNo}
       : instrumentRef
-        ? {instrumentRef: normalizeRef(instrumentRef)}
+        ? {instrumentRef: normalizeRef(instrumentRef, this.pack)}
         : sourceId
           ? {sourceId}
           : null;
