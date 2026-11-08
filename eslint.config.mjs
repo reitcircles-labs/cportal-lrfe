@@ -226,6 +226,72 @@ export default tseslint.config(
     languageOptions: {globals: {...globals.node, ...globals.browser}},
   },
 
+  // Shared code does not import product code (CB-5, docs/architecture/products.md). Shared code:
+  // the platform web library, the shared services (all but land-records) and backend/packages.
+  // Product code: the domain packs in backend/domains (@lrfe/domain-land, @lrfe/domain-shipping and
+  // any later @lrfe/domain-*), the land-records service and the land-registry and shipping apps.
+  // Products may import shared code, so they are not listed here. @lrfe/domain-pack is shared (the
+  // contract every pack follows) and stays allowed.
+  //
+  // - Test files are left out: a few shared-service tests use land as their reference fixtures
+  //   (extracts and audit tests import land-records' test helpers and seal).
+  // - @lrfe/common loads the configured pack with import(`@lrfe/domain-${name}`). That is the
+  //   agreed mechanism, and no-restricted-imports does not check dynamic import(), so it passes.
+  // - This is the only no-restricted-imports setting for these files; a later block that sets the
+  //   rule for them would replace it, so add to these patterns instead.
+  // - scripts/lint-guard.test.mjs shows that the guard catches such imports.
+  {
+    files: [
+      'backend/packages/**/*.js',
+      'backend/packages/**/*.mjs',
+      'backend/services/**/*.js',
+      'backend/services/**/*.mjs',
+    ],
+    ignores: [
+      'backend/services/land-records/**',
+      '**/tests/**',
+      '**/*.test.js',
+      '**/*.test.mjs',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '^@lrfe/(domain-(?!pack(/|$))|land-records(/|$))',
+              message:
+                'Shared code may not import a product (a domain pack other than @lrfe/domain-pack, or land-records). Move what both need into shared code, or load the pack through @lrfe/common. See docs/architecture/products.md.',
+            },
+            {
+              regex: '^(\\.\\./)+(domains/|(services/)?land-records(/|$))',
+              message:
+                'Shared code may not import product code (backend/domains or the land-records service). Move what both need into shared code. See docs/architecture/products.md.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['angular-app/projects/platform/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '^(\\.\\./)+(projects/)?(land-registry|shipping)(/|$)',
+              message:
+                'The platform library may not import from a product app (land-registry or shipping). Move what both need into the platform library. See docs/architecture/products.md.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Tool configuration files must default-export their configuration.
   {
     files: ['eslint.config.mjs', '**/*.config.ts', 'e2e/stack/proxy.e2e.mjs'],

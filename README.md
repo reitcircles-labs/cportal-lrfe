@@ -1,17 +1,21 @@
-# cportal-lrfe: Deeds Registry land records
+# cportal-lrfe: land records and more, on one platform
 
 Scanned deeds go into an EDRMS as documents of record: AI reads each scan, reviewers check and
 correct the extracted metadata, and verified documents are filed as sealed records. Administrators
 manage offices, users, roles and security policies.
 
+The land registry is the first product on a shared platform; shipping (electronic bills of
+lading) is the next. Where each app and service lives, the domain packs (`LRFE_DOMAIN`) and how to
+add a product: [docs/architecture/products.md](docs/architecture/products.md).
+
 | Folder | What | Details |
 |---|---|---|
-| `angular-app/` | The web app (Angular 22) | [angular-app/README.md](angular-app/README.md), user guides in [angular-app/docs/](angular-app/docs/README.md) |
-| `backend/` | Five Node.js services behind one gateway | [backend/README.md](backend/README.md) |
+| `angular-app/` | The web apps (Angular 22): `projects/land-registry`, `projects/shipping` and their shared library `projects/platform` | [angular-app/README.md](angular-app/README.md), user guides in [angular-app/docs/](angular-app/docs/README.md) |
+| `backend/` | Node.js services behind one gateway: `services/`, shared `packages/`, a domain pack per product in `domains/` | [backend/README.md](backend/README.md) |
 | `backend/services/identity/` | Sign-in, MFA, users, offices, roles, email | [identity README](backend/services/identity/README.md) |
 | `backend/scripts/` | `npm run dev`, API docs, remote access | [scripts README](backend/scripts/README.md) |
 | `e2e/` | End-to-end tests in a browser: sign-in, every role × screen and role × endpoint | [e2e/README.md](e2e/README.md) |
-| `docs/` | How code is written: the style guide, lint and format checks | [docs/coding-guide.md](docs/coding-guide.md) |
+| `docs/` | How code is written: the style guide, lint and format checks; the products on the platform | [docs/coding-guide.md](docs/coding-guide.md), [docs/architecture/products.md](docs/architecture/products.md) |
 
 ## Running it locally
 
@@ -31,7 +35,7 @@ cd ../angular-app && npm install
 
 Each backend service reads its own `.env` file, `backend/services/<name>/.env` (never committed).
 Create them from [backend/.env_example](backend/.env_example), which explains every setting.
-`JWT_SECRET` must be the same in all five. Documents are stored on disk unless S3 is configured: set
+`JWT_SECRET` must be the same in all of them. Documents are stored on disk unless S3 is configured: set
 `INTAKE_LOCAL_DIR` and `EDRMS_LOCAL_DIR` to folders **outside** the repository (e.g.
 `~/data/cportal-lrfe/intake-store` and `…/edrms-store`) and back them up together with the database,
 which refers to every file in them. The identity README covers
@@ -42,26 +46,33 @@ After pulling changes, run `npm install` again in both folders if `package-lock.
 
 ### Start
 
-Two processes: the backend (six services and the API docs) and the frontend. With tmux:
+Two processes: the backend (the services and the API docs) and the frontend. With tmux:
 
 ```bash
 tmux new -s lr                          # a session named "lr"
 cd backend && npm run dev               # window 1: NATS + backend; wait for the services to start
 # Ctrl-b c   opens a second window
-cd angular-app && npm start             # window 2: frontend
+cd angular-app && npm start             # window 2: frontend (the land registry)
 # Ctrl-b d   leaves tmux; everything keeps running. Back to it: tmux attach -t lr
 ```
 
 Without tmux, use two terminals for the same two commands.
 
 Then open **http://localhost:4200**. The frontend passes every `/api/...` request to the gateway,
-so no other port is needed in the browser.
+so no other port is needed in the browser. The shipping app runs with `npm run start:shipping` in
+`angular-app/`, on http://localhost:4201.
+
+The product of the backend is chosen by `LRFE_DOMAIN` (`land` when not set, so nothing to do for
+the land registry; `shipping` is an empty pack for now): for example
+`LRFE_DOMAIN=shipping npm run dev`.
 
 | Port | What |
 |---|---|
-| 4200 | the web app (`npm start` in `angular-app`) |
-| 3500 | gateway: the only backend entry point the app uses |
+| 4200 | the land registry web app (`npm start` in `angular-app`) |
+| 4201 | the shipping web app (`npm run start:shipping` in `angular-app`) |
+| 3500 | gateway: the only backend entry point the apps use |
 | 3501 · 3502 · 3503 · 3504 | identity · edrms · bpm · intake |
+| 3505 · 3506 · 3507 · 3508 | land-records · audit · extracts · search |
 | 3510 | API docs (Swagger UI), started by `npm run dev` |
 | 4222 · 8222 | NATS, the event bus between the services · its monitoring page; started by `npm run dev` |
 
@@ -75,7 +86,7 @@ The first run downloads the NATS server into `backend/.tools/`. With email confi
 `Ctrl-C` in each window, or `tmux kill-session -t lr`. To see what is still running:
 
 ```bash
-ss -ltnp | grep -E ':(350[0-4]|3510|4200) '
+ss -ltnp | grep -E ':(350[0-8]|3510|420[01]) '
 ```
 
 A service started on its own (`npm run dev:identity`, an old copy) keeps its port busy, and
@@ -133,7 +144,10 @@ when the database has no offices).
 | Tests of one service | `npm test -w @lrfe/identity` |
 | Regenerate the API docs after changing routes | `npm run docs` (`npm run docs:check` fails if they are out of date) |
 | Browse the API docs | `npm run docs:serve`, http://localhost:3510 (also part of `npm run dev`) |
-| One service only | `npm run dev:identity`, `dev:edrms`, `dev:bpm`, `dev:intake`, `dev:gateway` |
+| One service only | `npm run dev:identity`, `dev:edrms`, `dev:bpm`, `dev:intake`, `dev:land-records`, `dev:audit`, `dev:extracts`, `dev:search`, `dev:gateway` |
 | Everything in containers (build, run, export for a site) | see [deploy/README.md](deploy/README.md) |
 
-Frontend: `npm start` (development server), `npm run build` (production build), in `angular-app/`.
+Frontend, in `angular-app/`: `npm start` and `npm run build` for the land registry,
+`npm run start:shipping` and `npm run build:shipping` for the shipping app. Lint and format, at the
+root: `npm run -s lint` (it includes the guard that keeps shared code from importing product
+code) and `npm run -s format:check`.

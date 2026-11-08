@@ -104,7 +104,8 @@ Docker, in the folder the bundle is unpacked in.
    services start, with no document types, product roles or workflows. Choose it when installing;
    never change it on an install that holds data. The web container also writes it into
    `/config.json` (`domain`). A pack that is missing or broken stops each service at start, with
-   the reason in `docker compose logs <service>`.
+   the reason in `docker compose logs <service>`. The `web` image holds the land registry's app;
+   the shipping app has no image yet.
 
    **The offices** (`CODE=Name` pairs, separated by `;`, codes of 2 to 5 capital letters) are
    created only once, on an empty database; empty means none, and the administrator adds them under

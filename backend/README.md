@@ -26,7 +26,14 @@ backend/
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 packages/search-index/             @lrfe/search-index — the search index: fields, analysers from the country pack, alias, queries
 packages/record-contract/          @lrfe/record-contract — the calls a product's record service answers, their client and contract test (CB-4)
+packages/domain-pack/              @lrfe/domain-pack — what a domain pack holds, and its check (CB-3)
+domains/land/                      @lrfe/domain-land — the land registry's pack: documents, roles, workflows, record kind, wording
+domains/shipping/                  @lrfe/domain-shipping — the shipping pack, empty for now
 ```
+
+`land-records` and `domains/*` are product code; everything else here is shared by every product.
+`LRFE_DOMAIN` (`land` when not set) chooses the pack of an install. Layout, the record contract,
+the fixed names and how to add a product: [`../docs/architecture/products.md`](../docs/architecture/products.md).
 
 Stored files are to be encrypted with keys protected by OpenBao. Settings per service
 (`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION` = `off` (default) | `bao` | `fake`; with `bao`: `BAO_ADDR`,

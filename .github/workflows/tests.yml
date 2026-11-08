@@ -44,6 +44,10 @@ jobs:
       - name: Format
         if: ${{ !cancelled() }}
         run: npm run format:check
+      # The lint guard that keeps shared code from importing product code (CB-5) still catches it.
+      - name: Lint guard
+        if: ${{ !cancelled() }}
+        run: npm run test:lint-guard
       - name: Findings per area
         if: ${{ !cancelled() }}
         run: npm run -s lint:report >> "$GITHUB_STEP_SUMMARY"

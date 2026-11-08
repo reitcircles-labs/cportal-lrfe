@@ -7,7 +7,7 @@ The data is local mock data for Namibia (Deeds Registries Act 14 of 2015 convent
 ## The workspace: two apps on one library
 
 This folder is one Angular workspace (`angular.json`) with three projects (CB-2; the layout of the
-whole repository: `docs/architecture/products.md`):
+whole repository and how to add an app for a new product: `docs/architecture/products.md`):
 
 | Project | What it is |
 |---|---|
@@ -17,7 +17,8 @@ whole repository: `docs/architecture/products.md`):
 
 Each app tells the library about itself once, with `provideProduct()` in its `app.config.ts`
 (`src/app/product.ts`): its title, its default organisation settings, its permission list and
-its sign-in texts. The apps have their own builds and URLs (the docker image is the land registry's for now); they share one
+its sign-in texts. The library never imports an app's code: the lint guard
+(`npm run -s lint` at the root) refuses it. The apps have their own builds and URLs (the docker image is the land registry's for now); they share one
 `package.json`, so Angular and every package are updated once for both.
 
 ## Run

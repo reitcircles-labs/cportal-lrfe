@@ -1,189 +1,113 @@
 # Products on one platform
 
 The repository holds one platform and the products built on it: the **land registry** today, and
-**shipping** (electronic bills of lading, epic CB-1) next. This page describes which code is shared
-and which belongs to a product, and what may never change for existing installs. It starts as the
-survey of ticket CB-2 (8 November 2026) and becomes the guide to the layout once the split is done.
+**shipping** (electronic bills of lading, epic CB-1) next. This page is the guide to that split:
+where each part lives, how the shared services learn about a product, which names never change,
+and how to add a product.
 
-## The target layout
+The split was made in CB-2 (the web workspace), CB-3 (domain packs), CB-4 (the record contract)
+and CB-5 (the lint guard and this guide).
 
-- **Shared platform:** the services `identity`, `audit`, `extracts`, `edrms`, `search`, `bpm`,
-  `gateway`, the packages in `backend/packages/`, and the web library `platform`. They know nothing
-  about land or shipping.
-- **Products:** product services (`land-records` for the land registry; shipping services later),
-  a web app per product, and a **domain pack** per product in `backend/domains/<product>/`.
-- **Domain pack:** a JavaScript module that tells the shared services about its product (document
-  types, record kind, roles, workflows, wording, extract layout, search fields). One setting,
-  `LRFE_DOMAIN` (`land` by default), chooses the pack for an install. Existing installs need no
-  change (CB-3, done: see "The domain pack").
-- **Guard:** a lint rule stops shared code from importing product code.
+## The layout
 
-## The web app: one workspace, an app per product (CB-2, done)
+| Where | What | Shared or product |
+| --- | --- | --- |
+| `angular-app/projects/platform` | the web library `@lrfe/platform`: sign-in, API client, roles and permissions, site settings, toasts and dialogs, proofs and blockchain checks, the theme | shared |
+| `angular-app/projects/land-registry` | the land registry web app | land |
+| `angular-app/projects/shipping` | the shipping web app: the shared sign-in and an empty home page so far | shipping |
+| `backend/packages/common` | `@lrfe/common`: settings, events, auth, database, app start; loads the domain pack | shared |
+| `backend/packages/domain-pack` | `@lrfe/domain-pack`: what a pack holds, and its check (`checkDomainPack`) | shared |
+| `backend/packages/record-contract` | `@lrfe/record-contract`: the calls a record service answers, their client and the contract test | shared |
+| `backend/packages/storage`, `backend/packages/search-index` | file storage and keys; the search index and country pack | shared |
+| `backend/services/{identity,audit,extracts,edrms,search,bpm,gateway,intake}` | the shared services | shared |
+| `backend/services/land-records` | the land registry's record service | land |
+| `backend/domains/land` | `@lrfe/domain-land`, the land pack | land |
+| `backend/domains/shipping` | `@lrfe/domain-shipping`, an empty pack | shipping |
 
-`angular-app/` is one Angular workspace with three projects:
+The shared services know nothing about land or shipping. They read their product from the
+**domain pack** of the install, chosen by one setting, `LRFE_DOMAIN` (`land` when not set), and
+call the product's **record service** through the **record contract**. A **lint guard** keeps
+shared code from importing product code.
 
-- `projects/land-registry`: the land registry app.
-- `projects/shipping`: the shipping app; only the shared sign-in and an empty home page so far.
-- `projects/platform`: the library both use, imported as `@lrfe/platform` (a path in
-  `angular-app/tsconfig.json`; it is compiled with each app, not published as a package). It holds
-  the sign-in screen, the API client and auth interceptor, roles and permissions, site settings,
-  toasts and dialogs, proofs and blockchain checks (`ProofApi`), and the theme. It never imports an
-  app's code.
+### Ports
 
-Each app describes itself to the library once, with `provideProduct()` in its `app.config.ts`
-(`ProductConfig`, in its `src/app/product.ts`): the title in the browser tab, the default
-organisation settings for a site that sets none, its permission list, and its sign-in texts
-(the logo placeholder, and optionally a picture under the texts, served from the app's `public/`
-folder: the shipping app's port, CB-6).
-Screens that are generic but still carry land wording (dashboard, documents, audit, anchorings,
-administration) stay in the land registry until shipping needs them.
+| Port | What | Run with |
+| --- | --- | --- |
+| 4200 | land registry web app | `npm start` in `angular-app/` |
+| 4201 | shipping web app | `npm run start:shipping` in `angular-app/` |
+| 3500 | gateway, the only backend entry point of the apps | `npm run dev` in `backend/` |
+| 3501 to 3508 | identity, edrms, bpm, intake, land-records, audit, extracts, search | `npm run dev` in `backend/` |
+| 3510 | API docs | `npm run dev` in `backend/` |
+
+Both apps pass `/api/...` to the gateway on 3500 (`angular-app/proxy.conf.json`). In the e2e
+tests the shipping app runs on the web port + 1 (`e2e/stack/config.mjs`).
+
+## The web apps (CB-2)
+
+`angular-app/` is one Angular workspace (`angular.json`) with three projects: the library
+`platform` and an app per product. The library is imported as `@lrfe/platform` (a path in
+`angular-app/tsconfig.json`); it is compiled with each app, not published as a package. It never
+imports an app's code. The apps share one `package.json`, so Angular and every package are
+updated once for all.
+
+Each app describes itself to the library once, with `provideProduct()` in its `app.config.ts`. Its
+`ProductConfig` (in its `src/app/product.ts`) holds the title in the browser tab, the default
+organisation settings for a site that sets none, its permission list, and its sign-in texts (the
+logo placeholder, and optionally a picture under the texts, served from the app's `public/`
+folder, like the shipping app's port, CB-6).
 
 | | Land registry | Shipping |
-|---|---|---|
+| --- | --- | --- |
 | Run | `npm start` (port 4200) | `npm run start:shipping` (port 4201) |
 | Build | `npm run build`: `dist/land-registry` | `npm run build:shipping`: `dist/shipping` |
 | e2e | the web port | the web port + 1 (`e2e/tests/shipping-app.spec.ts`) |
+| Docker image | `lrfe-web` (`angular-app/Dockerfile`) | none yet |
 
-The docker image (`angular-app/Dockerfile`) is the land registry's; the shipping app gets its
-own image when it is deployed.
+Screens that are generic but still carry land wording (dashboard, documents, audit, anchorings,
+administration) stay in the land registry until shipping needs them; they then move to the
+library, without their land wording.
 
-## Survey: the backend today
+## The domain pack (CB-3)
 
-| Unit | What it does | Today |
-|---|---|---|
-| `identity` | users, roles, sessions, MFA, offices, invitation mail | shared, with land bits |
-| `audit` | audit trail, Merkle tree, blockchain anchoring, proofs, sign-offs, evidence pack, offline verifier | shared, with many land bits |
-| `bpm` | workflow engine, its definitions and connectors | shared, with land bits |
-| `edrms` | filed documents, versions, seals, storage | shared, with land bits |
-| `extracts` | sealed PDF extracts, check codes, public check | shared, with many land bits (built as an ownership extract) |
-| `gateway` | routes requests to the services | shared (only its routing table names `land-records`) |
-| `search` | search entries from intake and edrms events | shared, with a few land bits |
-| `intake` | batches, automatic reading of scans, review | a generic pipeline with land document types and checks |
-| `land-records` | land records, versions, seals, owners | land only |
-| `packages/common` | settings, events, auth, database | shared (default organisation name says "Deeds Registry") |
-| `packages/storage` | file storage, encryption keys | shared |
-| `packages/search-index` | search mapping and queries, country pack | shared |
+A pack is a workspace package, `backend/domains/<name>`, named `@lrfe/domain-<name>`, that exports
+`pack`. `@lrfe/common` loads the pack named by `LRFE_DOMAIN` once, by a dynamic import of
+`@lrfe/domain-<name>`, checks it with `checkDomainPack` from `@lrfe/domain-pack` and freezes it.
+Every service reads it as `domain` (`import {domain} from '@lrfe/common'`). A pack that is
+missing or fails its check stops the service at start, with the reason. The web container writes
+the same value into `/config.json` as `domain`.
 
-### Land-specific parts of the shared services, by kind
+A pack never imports `@lrfe/common` (common is loading it) or service code; the services pass it
+the helpers it needs. The pack's name is lower-case letters, digits and dashes, and equals its
+`LRFE_DOMAIN` value.
 
-The survey as written for CB-2. CB-3 moved them into the land pack (see "The domain pack" below),
-except the calls to the product service and the record's own data shape, which are CB-4.
+What a pack holds (the check, section by section, is in `backend/packages/domain-pack/src/`):
 
-- **Document types and their fields:** `edrms/src/catalogue.js` (deed of transfer, mortgage bond,
-  SG diagram, the deed-number format), `intake/src/doc-types.js`, the reading prompt and checks in
-  `intake/src/extraction/`, the party fields in `search/src/entry.js`.
-- **The record kind:** the audit subject kind and business key (`audit/src/subjects.js`), the tree
-  leaf for a record version (`audit/src/mmr.js`, `audit/src/tree.service.js`), proof kinds
-  (`audit/src/proof.service.js`), lookup patterns (`audit/src/lookup.service.js`).
-- **Calls to the product service:** audit, extracts and bpm call `land-records` over HTTP
-  (`/records`, versions, lookup, seals, verify, commit and reject). Search calls `intake`. The
-  allow-lists of service callers in identity, edrms and audit name `land-records`.
-- **Roles and permissions:** the "Land records" permission group, `record.*` permissions, the
-  Registrar role, separation-of-duty rules and offices (`identity/src/catalogue.js`), demo users
-  (`identity/src/seed.js`).
-- **Workflows:** `bpm/src/definitions/land-record-review.json`, the registrar steps in the audit
-  workflows, and the records connector (`bpm/src/connectors/records.js`).
-- **Wording and layouts:** the extract PDF and its wording (`extracts/src/pdf/`), the extract number
-  prefix, the evidence pack README and sign-off messages (audit), the invitation mail (identity),
-  the EDRMS defaults.
-- **Extract owner columns:** `extracts/src/repo/models.js` stores the record and owner of each
-  extract.
-
-There is no SQL across schemas: each service has its own schema.
-
-## Survey: the web app today
-
-| Folder | Today |
-|---|---|
-| `api/` | mixed: `records.api.ts` is land; `extracts.api.ts`, `intake.api.ts` carry land fields; the rest is shared |
-| `shared/` | mixed: `record-diff` is land; the inbox and viewer contain land values (`erf1873`) |
-| `state/` | mixed: `registry.store.ts` is land; the rest is shared |
-| `data/` | land only (models and mock data) |
-| `features/link`, `features/check-extract` | land only |
-| `features/dashboard`, `flow`, `capture`, `verify`, `documents`, `audit`, `anchorings`, `login` | generic screens with land wording or fields |
-| `features/admin`, `check-proof`, `invite`, `denied` | shared |
-
-Moving the app into a workspace touches `angular.json`, `tsconfig.app.json`, the Dockerfile (it
-copies `dist/cportal-lrfe/browser`), the test scripts in `package.json`, the e2e stack
-(`e2e/stack/config.mjs`, `playwright.config.ts`, `e2e/support/catalogue.ts` which reads
-`app.routes.ts`, `e2e/support/samples.ts`), the lint configuration (`eslint.config.mjs`,
-`scripts/lint-report.mjs`).
-
-## What may never change
-
-Existing installs and the evidence they have already published depend on these names and formats.
-The pack maps to them; it never renames them.
-
-- **In the anchored audit trail:** the trail hash covers each event's type, source, subjects and
-  data (`audit/src/chain.js`). So `source: 'land-records'`, the `records.*` event types,
-  `record:<id>` subjects and the `land-record-review` key are permanent.
-- **In the tree:** leaf type 1 (record version) and the `record-version:` keys are stored and part of
-  published roots.
-- **Offline verifier:** `audit/verifier/lrfe-verify.mjs` repeats the land seal formula and checks
-  the formats `lrfe-audit-proof/1`, `lrfe-evidence-pack/1` and the on-chain marker `lrfe-audit`.
-  They stay byte-compatible; a new product's seal is added to the verifier.
-- **Sealed extract PDFs** already issued keep verifying, offline and at `/check/:code`.
-- **Stored ids:** role and permission ids (`record.*`, `sup`, `rec`, in the database and in tokens),
-  document type ids (in edrms, intake and the search index), the event stream `LRFE` and its durable
-  consumer names.
-
-## The domain pack (CB-3, done)
-
-A pack is a workspace package, `backend/domains/<name>` published as `@lrfe/domain-<name>`, that
-exports `pack`. `@lrfe/common` loads the pack named by `LRFE_DOMAIN` (`land` when not set) once,
-with a top-level `await`, checks it with `@lrfe/domain-pack` and freezes it; every service reads
-it as `domain` (`import {domain} from '@lrfe/common'`). A pack that is missing or fails its check
-stops the service at start, like the country pack (API-713). The web container writes the same
-value into `/config.json` as `domain`. A pack never imports `@lrfe/common` (common is loading it)
-or service code; the services pass it the helpers it needs.
-
-| Section | Read by | Land pack (`backend/domains/land/src/`) |
-|---|---|---|
-| `documents` | edrms, intake, search | `documents/`: the six document types and their fields (with each field's search role), the reference format ("T 2210/2008"), the field types and their checks (deed and SG numbers, Namibian ID numbers, dates, extents, money), the reading prompt and its version, the land checks and cross-checks, the stand-in reader's demo answers |
-| `identity` | identity | `identity/`: the "Land records" group and its permissions, the roles `sup`, `scan`, `rev`, `rec`, `aud`, the rules `sod2` and `sod3`, the default offices, the demo users |
-| `workflows` | bpm | `workflows/`: `land-record-review`; who acknowledges the audit workflows (`rec`, `sup`); their descriptions |
-| `recordKind` | audit; its `service`: identity, edrms, gateway, audit, extracts, bpm (CB-4) | `record-kind.js`: the record service (`service`: `land-records`, its label and `RECORDS_URL`), the source `land-records`, the commit event, the review process key, the linked documents of a record event, the commit permission, the lookup patterns (record and deed numbers). Null in a pack without records |
-| `wording` | edrms, identity, audit, extracts | `wording/`: the EDRMS business function and examples, the invitation's "land records system", "land record" in audit's messages and the evidence pack README, every text of the extract PDF and its number prefix `EX` |
+| Section | Read by | What it holds | Land pack (`backend/domains/land/src/`) |
+| --- | --- | --- | --- |
+| `name` | common | the pack's name | `land` |
+| `documents` | edrms, intake, search | document types and their fields (with each field's search role), the reference format, field types and their checks, the reading prompt and its version, checks and cross-checks, the stand-in reader's demo answers | `documents/`: six document types, deed and SG numbers, Namibian ID numbers |
+| `identity` | identity | permission groups and permissions, roles, separation-of-duty rules, default offices, demo users | `identity/`: the "Land records" group, the roles `sup`, `scan`, `rev`, `rec`, `aud`, the rules `sod2` and `sod3` |
+| `workflows` | bpm | the product's workflow definitions; who acknowledges the audit workflows | `workflows/`: `land-record-review`; `rec` and `sup` acknowledge |
+| `recordKind` | audit, and (its `service`) identity, edrms, gateway, extracts, bpm | the record service (`service`), the source of its events, the commit event, the review process key, the linked documents of a record event, the commit permission, the lookup patterns; null when the product has no records | `record-kind.js` |
+| `wording` | edrms, identity, audit, extracts | texts per service: the EDRMS business function, the invitation, audit's messages and the evidence pack README, the extract PDF and its number prefix | `wording/` |
 
 What stays in the platform, so that a product without these parts still works: the platform
 permission groups and the `adm` role, the rules `sod1` and `sod4`, the audit workflows
-(`audit-finding`, `audit-rereview`: started by audit, so their variables are audit's contract; the
-pack only says who acknowledges) and `document-amendment`, the generic reading pipeline (the
-duplicate check, the `text` field type, a generic prompt), the extract PDF layout, and the trail,
-tree and proof formats.
+(`audit-finding`, `audit-rereview`: started by audit; the pack only says who acknowledges) and
+`document-amendment`, the generic reading pipeline (the duplicate check, the `text` field type, a
+generic prompt), the extract PDF layout, and the trail, tree and proof formats.
 
-**The shipping pack** (`backend/domains/shipping`) has every section and nothing in it. With
-`LRFE_DOMAIN=shipping` the services start: no document types (filing says so), only the `adm`
-role and no demo users, only `document-amendment` deployed, no record leaves or record proofs
-(`record-version` proofs answer 400), lookups search documents only. It is a starting point, not a
-product: issuing an extract or raising an audit finding needs the wording and acknowledgers a
-real pack gives (the bill-of-lading pack, epic CB-1).
+**The shipping pack** has every section and nothing in it. With `LRFE_DOMAIN=shipping` the
+services start: no document types (filing says so), only the `adm` role and no demo users, only
+`document-amendment` deployed, no record service (`/api/records` is not routed, record calls answer
+503, `record-version` proofs answer 400), lookups search documents only. It is a starting point:
+issuing an extract or raising an audit finding needs the wording and acknowledgers a real pack
+gives.
 
-**Byte-for-byte for land.** The land pack maps to the fixed names below and gives the same
-values the code held: the identity catalogue, the workflow definitions (so bpm deploys no new
-versions on upgrade), the reading prompt and its version, the subjects of each trail event in
-their order, and the extract PDF (checked by hashing PDFs before and after) are unchanged.
-
-**Adding a product:** a new folder `backend/domains/<name>` with its `package.json`, the pack
-exported as `pack`, a test that it passes `checkDomainPack`; add it to `backend/Dockerfile` (its
-`package.json`), and run `npm install` in `backend/`. A pack's prompt version
-(`documents.reading.promptVersion`) changes whenever its types or prompt texts change.
-
-### Land terms still in the shared services
-
-The calls to the record service by name are gone (CB-4, see the record contract below). What
-remains:
-
-- **The record's data shape:** extracts' owner check before issuing (`issue-checks.js`,
-  `version.data.owners`), the `ownerIndex` field of its API, the owner columns it stores. The
-  record contract carries a version's `data` as the product's own; reading owners from it is
-  still land's.
-- **Stored names:** the `property` key of intake's summaries and search's results (filled from the
-  field whose search role is `place`), the office type `registry`.
-- **Defaults:** the country `NA` and office `WDH` as default settings of edrms and intake
-  (Namibian values as defaults only).
-- **Not code:** examples in the API docs, the developer scripts that check land sample scans, the
-  design history in `services/audit/README.md`.
+**The country pack** (API-713, `backend/packages/search-index/src/country-pack.js`) is a different
+thing: a JSON file chosen by a two-letter code, for a country's conventions (names, numbers,
+search analysers). The domain pack is a JavaScript module because it also brings code (field
+checks, the PDF wording, the event-to-leaf mapping). Both are checked at start and fail early.
 
 ## The record contract (CB-4)
 
@@ -195,22 +119,18 @@ gives its name, label and address (from its setting), or null for a pack without
 - **The callers' allow-lists:** identity lets the record service read `/policies/effective`;
   edrms lets it read documents with a service token, and search documents still in intake for a
   user who may read them (`intake=true`); audit's allow-list likewise.
-- **The gateway:** `/api/records/*` goes to the record service, at its setting's address
-  (`RECORDS_URL` for land, unchanged). A pack without records has no `/api/records` route, and the
-  gateway starts without that address.
+- **The gateway:** `/api/records/*` goes to the record service, at its setting's address. A pack
+  without records has no `/api/records` route, and the gateway starts without that address.
 - **The calls:** audit, extracts and bpm send them through one client, `createRecordClient` of
   `@lrfe/record-contract`, over their own transport (their timeouts, error texts, service token).
-  Error texts take the service's `label` ("The land records service cannot be reached: ..."). With
-  no record service (the shipping pack today) every service still starts; a call answers 503
-  "This install has no record service".
-
-Fixed names stay as they are, since they are stored or anchored: the event source `land-records`,
-the `records.*` events, the setting `RECORDS_URL`.
+  Error texts take the service's `label` ("The land records service cannot be reached: ...").
+  With no record service every service still starts; a call answers 503 "This install has no
+  record service".
 
 Every call needs a service token (`typ: service`); the record service checks the caller.
 
 | Call | Method and path | Query or body | Answer | Called by |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `list` | `GET /records` | `status`, `limit`, `offset`, optionally `q` and `match` (`all` or `parcel`) | `{items, total}`: each record's `id`, `recordNo`, `label`, `status`, `currentVersion`, `draftVersion`, `draftState` | audit (the Audit screen's list, the Anchorings search) |
 | `get` | `GET /records/:id` | | the record as in the list, with `current` (its current committed version, with `data`), `draft` and `draftDiff` | audit, extracts |
 | `versions` | `GET /records/:id/versions` | | the versions without their data: `versionNumber`, `state`, `seal`, `committedAt`, `approvedByName`, `changes` | audit |
@@ -229,13 +149,151 @@ version, 400 for a bad query, body or cursor, 409 when the version is no longer 
 `@lrfe/record-contract/contract-suite` is a mocha suite that calls each of these on a running
 service and checks the shapes (never a product's values), the 404s, and commit and reject of a
 submitted version. land-records runs it in `services/land-records/tests/contract.test.js`, in
-process over `app.inject`; the bill-of-lading service will run the same suite. Details in
+process over `app.inject`. Details in
 [`backend/packages/record-contract/README.md`](../../backend/packages/record-contract/README.md).
 
-## Country pack and domain pack
+## Fixed names: never renamed
 
-The country pack (API-713, `backend/packages/search-index/src/country-pack.js`) is a JSON file
-checked at start, with examples that double as self-tests, chosen by a two-letter code. The domain
-pack follows the same ideas (checked at start, fails early, one selector) but is a JavaScript
-module, because it also brings code: connectors, the PDF layout, reading checks, the event-to-leaf
-mapping. It is loaded in one place (`@lrfe/common`) instead of one setting per service.
+Existing installs and the evidence they have already published depend on these names and formats.
+A pack maps to them; it never renames them. A new product uses them as they are, or adds its own
+beside them.
+
+- **In the anchored audit trail:** the trail hash covers each event's type, source, subjects and
+  data (`audit/src/chain.js`). So the source `land-records`, the `records.*` event types,
+  `record:<id>` subjects and the `land-record-review` process key are permanent.
+- **In the tree:** leaf type 1 (a record version) and the `record-version:<id>:<n>` keys are stored
+  and part of published roots; so is the proof kind `record-version`. Every product's record
+  versions use them.
+- **Offline verifier and proof formats:** `audit/verifier/lrfe-verify.mjs` repeats the land seal
+  formula and checks the formats `lrfe-audit-proof/1`, `lrfe-evidence-pack/1` and the on-chain
+  marker `lrfe-audit`. They stay byte-compatible; a new product's seal is added to the verifier.
+- **Sealed extract PDFs** already issued keep verifying, offline and at `/check/:code`.
+- **Stored ids:** role and permission ids (`record.*`, `sup`, `rec`, ..., in the database and in
+  tokens), document type ids (in edrms, intake and the search index), the event stream `LRFE`
+  (subjects `lrfe.>`) and its durable consumer names.
+- **Settings:** `RECORDS_URL` (the land record service's address) and the other settings of
+  existing installs keep their names. `LRFE_DOMAIN` not set means `land`.
+
+**Byte-for-byte for land.** The land pack gives the same values the code held before CB-3: the
+identity catalogue, the workflow definitions (so bpm deploys no new versions on upgrade), the
+reading prompt and its version, the subjects of each trail event in their order, and the extract
+PDF (checked by hashing PDFs before and after).
+
+## The lint guard (CB-5)
+
+Shared code may not import product code. The guard is a `no-restricted-imports` block in
+`eslint.config.mjs`, part of `npm run -s lint` at the root, so it runs in the pipeline with the
+rest of the lint. `npm run test:lint-guard` (`scripts/lint-guard.test.mjs`) shows that it still
+catches such imports.
+
+- **Product code:** the packs in `backend/domains/*` (`@lrfe/domain-*`, any later one too;
+  `@lrfe/domain-pack` is shared), `backend/services/land-records`, and the apps
+  `angular-app/projects/land-registry` and `angular-app/projects/shipping`.
+- **Shared code:** `backend/packages/*`, the shared services, the web library
+  `angular-app/projects/platform`. Its production code may not import product code.
+- **Products may import shared code** (`@lrfe/common`, `@lrfe/platform`, ...).
+- **Not covered:** `backend/scripts` (the development and setup tools, which start or set up every
+  service, land-records included).
+- **Not covered:** the shared services' tests. They may use land as a reference product (fixtures,
+  `LRFE_DOMAIN=land` cases), since land is the product that exists.
+- **The one way in:** `@lrfe/common` loads the pack by its configured name with a dynamic import
+  (`` import(`@lrfe/domain-${name}`) ``), never by a static import of a pack.
+
+## How to add a product
+
+The steps for a new product, say `bol` (bills of lading). Use the shipping pack and app as the
+starting point, and land as the full example.
+
+1. **The domain pack.** Create `backend/domains/<name>/` with:
+   - a `package.json` named `@lrfe/domain-<name>`, `"type": "module"`, `"exports": {".":
+     "./src/index.js"}`, a `test` script (mocha) and `@lrfe/domain-pack` as a dev dependency
+     (copy `backend/domains/shipping/package.json`);
+   - `src/index.js` exporting `pack`, with `name: '<name>'` and every section (`documents`,
+     `identity`, `workflows`, `recordKind`, `wording`); an empty section is allowed, `recordKind`
+     may be null;
+   - `tests/pack.test.js`, which checks `checkDomainPack(pack, '<name>')` (copy the shipping one).
+
+   Then add its `package.json` to `backend/Dockerfile` (next to `domains/land/package.json`) and
+   run `npm install` in `backend/` (the workspace `domains/*` picks it up).
+   `npm test -w @lrfe/domain-<name>` runs the check. When the pack reads scans (`documents.reading`),
+   change its `promptVersion` whenever the types or prompt texts change.
+
+2. **The pack's content.** Fill the sections the product needs: its document types and fields, its
+   roles and permissions, its workflow definitions, the wording of each shared service. Pick ids
+   that are new (never reuse a land id for something else): they are stored and cannot be renamed
+   later.
+3. **The record service** (when the product has records). Create `backend/services/<service>/`, a
+   Fastify service like `land-records`, that answers every call of the record contract (above)
+   and checks the caller's service token. Service tokens need no new secret: every service signs
+   its own with the shared `JWT_SECRET` (`signServiceToken` in `@lrfe/common`), and the caller's
+   name in the token is what the allow-lists check. Then:
+   - point the pack at it: `recordKind.service: {name, label, urlSetting, defaultUrl}` (a new
+     setting name, e.g. `BOL_RECORDS_URL`, and a free port), and `recordKind.source`,
+     `committedEvent`, `businessKeyProcesses`, `linkedSubjects`, `commitPermission`, `lookup`;
+   - its record versions become tree leaves of type 1 keyed `record-version:<id>:<n>`, so record
+     ids must be unique (UUIDs); its seal formula is added to the offline verifier
+     (`backend/services/audit/verifier/lrfe-verify.mjs`);
+   - add the contract test, `tests/contract.test.js`, calling `describeRecordContract({name,
+     client, fixture})` from `@lrfe/record-contract/contract-suite` (copy land-records' test);
+   - add the service to `backend/Dockerfile`, `backend/scripts/dev.js`,
+     `backend/scripts/db-setup.js` (its schema), `backend/.env_example` and `backend/install.md`
+     (its port and schema), and run `npm run docs` in `backend/` for its API docs.
+
+   No shared service needs a change: the allow-lists, the gateway's `/api/records` route and the
+   calls follow the pack.
+
+4. **The web app.** Copy `angular-app/projects/shipping` to `angular-app/projects/<app>`, add its
+   project to `angular.json` (copy the `shipping` entry; give `serve` a free port), and add
+   `start:<app>` and `build:<app>` scripts to `angular-app/package.json`. Write its
+   `ProductConfig` in `src/app/product.ts` and pass it to `provideProduct()` in
+   `src/app/app.config.ts`. Import shared screens and services from `@lrfe/platform`; never import
+   another app's code. Its permission list mirrors the pack's `identity` section.
+5. **The guard.** A new pack is covered already (`@lrfe/domain-*`). Add the new record service
+   (beside `land-records`: to the `ignores` and the import patterns) and the new app (beside
+   `land-registry` and `shipping`) to the guard's block in `eslint.config.mjs`, a case for each to
+   `scripts/lint-guard.test.mjs`, and check `npm run -s lint` and `npm run test:lint-guard` at the
+   root.
+6. **Settings.** An install of the product sets `LRFE_DOMAIN=<name>` (in `deploy/.env`, or in each
+   service's `.env` for a server install) and the record service's address setting. Document both
+   in `deploy/README.md` and `backend/.env_example`. Choose the product when installing; never
+   change it on an install that holds data.
+7. **Compose and deploy.** Add the record service to `deploy/docker-compose.yml` (the
+   `lrfe-backend` image, its port, its address setting in the services that call it), and a web
+   image for the app (a build of the app like `angular-app/Dockerfile`, built by
+   `deploy/scripts/build.sh`).
+8. **e2e.** Add the app to `e2e/playwright.config.ts` (an `ng serve <app>` web server on a port of
+   its own, in `e2e/stack/config.mjs`), its record service to `e2e/stack/start-backend.mjs`, and
+   specs under `e2e/tests/` (like `e2e/tests/shipping-app.spec.ts`). The suite must pass in memory
+   and on PostgreSQL (`docs/ai-workflow/e2e.md`).
+
+**What not to change:** the names in "Fixed names" above; the land pack and `land-records`; the
+shared services, beyond moving a land term into the pack when the new product needs that part
+(land then keeps its value byte for byte); `@lrfe/platform`, beyond moving a generic screen into
+it without its product wording.
+
+## Land terms still in the shared services
+
+Parts of the shared code still assume land. A new product that needs one of them moves it into the
+pack first:
+
+- **The record's data shape:** extracts' owner check before issuing (`issue-checks.js`,
+  `version.data.owners`), the `ownerIndex` field of its API, the owner columns it stores. The
+  record contract carries a version's `data` as the product's own; reading owners from it is
+  still land's.
+- **Stored names:** the `property` key of intake's summaries and search's results (filled from the
+  field whose search role is `place`), the office type `registry`.
+- **Defaults:** the country `NA` and office `WDH` as default settings of edrms and intake
+  (Namibian values as defaults only).
+- **Web screens:** the generic screens still in the land registry app (see "The web apps").
+- **Not code:** examples in the API docs, the developer scripts that check land sample scans, the
+  design history in `services/audit/README.md`.
+
+## History
+
+- **CB-2** surveyed the land terms in every service and screen (the record kind, calls to
+  `land-records`, roles, workflows, wording, document types) and split the web app into the
+  workspace.
+- **CB-3** moved the land terms into the land pack, byte for byte, and added the empty shipping
+  pack.
+- **CB-4** replaced the calls to `land-records` by name with the record contract.
+- **CB-5** added the lint guard and turned this page into the guide.
