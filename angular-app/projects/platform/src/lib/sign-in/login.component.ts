@@ -23,7 +23,7 @@ import {PRODUCT_CONFIG} from '../product';
         <div class="flag" aria-hidden="true"></div>
         <div class="hero-in">
           <div class="brand">
-            <span class="arms">Coat of<br>arms</span>
+            <span class="arms">@for (line of pitch.logoPlaceholder; track $index) {@if (!$first) {<br>}{{ line }}}</span>
             <span class="stack" style="gap:0"><b>{{ site.config().orgName }}</b>@if (site.config().orgParent) { <span>{{ site.config().orgParent }}</span> }</span>
           </div>
           <div class="pitch">
@@ -38,6 +38,12 @@ import {PRODUCT_CONFIG} from '../product';
           </ul>
           <span class="legal">{{ pitch.legal }}</span>
         </div>
+        @if (pitch.picture; as picture) {
+          <picture class="picture" aria-hidden="true">
+            <source media="(max-width: 960px)" [srcset]="picture.narrow" [width]="picture.narrowSize[0]" [height]="picture.narrowSize[1]">
+            <img [src]="picture.wide" [width]="picture.wideSize[0]" [height]="picture.wideSize[1]" alt="">
+          </picture>
+        }
       </section>
 
       <section class="formside">
@@ -120,6 +126,9 @@ import {PRODUCT_CONFIG} from '../product';
     .facts app-icon { color: var(--nam-gold); margin-top: 1px; }
     .facts b { color: #fff; }
     .legal { font-size: 12px; color: #8ea3c0; }
+    /* a product's picture (CB-6): under the texts, as wide as the panel */
+    .picture { position: relative; z-index: 1; display: block; line-height: 0; }
+    .picture img { display: block; width: 100%; height: auto; }
     .formside { position: relative; display: grid; place-items: center; padding: 40px 24px; background: var(--color-bg); }
     .theme { position: absolute; top: 16px; right: 16px; }
     .card { width: min(420px, 100%); padding: 32px; gap: 18px; box-shadow: var(--shadow-md); }

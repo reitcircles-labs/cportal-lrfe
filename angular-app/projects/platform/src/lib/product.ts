@@ -13,14 +13,33 @@ export interface SignInFact {
   readonly text: string;
 }
 
+/**
+ * A picture along the bottom of the sign-in panel, under the texts (decoration only). The app
+ * serves the files itself (its `public/` folder): the content security policy allows no pictures
+ * from other sites.
+ */
+export interface SignInPicture {
+  /** The picture on a wide screen, e.g. "sign-in/port-wide.svg". */
+  readonly wide: string;
+  /** Its size in pixels, [width, height], so the panel keeps its place while it loads. */
+  readonly wideSize: readonly [number, number];
+  /** A lower strip of it on a phone (960 px wide or less). */
+  readonly narrow: string;
+  readonly narrowSize: readonly [number, number];
+}
+
 /** The product's presentation on the sign-in page, beside the form. */
 export interface SignInPitch {
+  /** The lines shown in the logo place until the site has a logo, e.g. ["Coat of", "arms"]. */
+  readonly logoPlaceholder: readonly string[];
   readonly eyebrow: string;
   readonly title: string;
   readonly text: string;
   readonly facts: readonly SignInFact[];
   /** The notice at the bottom, e.g. the law under which access is logged. */
   readonly legal: string;
+  /** Without one, the panel is the plain navy background. */
+  readonly picture?: SignInPicture;
 }
 
 /**

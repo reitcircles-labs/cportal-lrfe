@@ -32,7 +32,9 @@ survey of ticket CB-2 (8 November 2026) and becomes the guide to the layout once
 
 Each app describes itself to the library once, with `provideProduct()` in its `app.config.ts`
 (`ProductConfig`, in its `src/app/product.ts`): the title in the browser tab, the default
-organisation settings for a site that sets none, its permission list, and its sign-in texts.
+organisation settings for a site that sets none, its permission list, and its sign-in texts
+(the logo placeholder, and optionally a picture under the texts, served from the app's `public/`
+folder: the shipping app's port, CB-6).
 Screens that are generic but still carry land wording (dashboard, documents, audit, anchorings,
 administration) stay in the land registry until shipping needs them.
 

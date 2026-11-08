@@ -15,6 +15,7 @@ export const LAND_REGISTRY: ProductConfig = {
   permGroups: PERM_GROUPS,
   perms: PERMS,
   signIn: {
+    logoPlaceholder: ['Coat of', 'arms'],
     eyebrow: 'National land records programme',
     title: 'Every erf, every owner, one verified record.',
     text: 'Scan and verify historical deeds, link them into land records, and prepare each record for tokenization, with a complete audit trail at every step.',
