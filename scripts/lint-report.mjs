@@ -23,8 +23,8 @@ const AREAS = [
   'backend/services/intake',
   'backend/services/extracts',
   'backend/scripts',
-  'angular-app/src/app/features',
-  'angular-app/src',
+  'angular-app/projects/land-registry/src/app/features',
+  'angular-app/projects',
   'angular-app',
   'e2e',
 ];

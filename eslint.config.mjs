@@ -185,7 +185,7 @@ export default tseslint.config(
 
   // The web app: Angular's own rules, including those for the inline templates.
   {
-    files: ['angular-app/src/**/*.ts'],
+    files: ['angular-app/projects/**/*.ts'],
     extends: [...angular.configs.tsRecommended],
     processor: angular.processInlineTemplates,
     languageOptions: {globals: {...globals.browser}},
@@ -196,7 +196,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['angular-app/src/**/*.html'],
+    files: ['angular-app/projects/**/*.html'],
     extends: [...angular.configs.templateRecommended],
   },
 

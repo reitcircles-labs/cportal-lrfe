@@ -4,12 +4,30 @@ Angular 22 demo of Phase 1 of the national land-tokenization programme: scanned 
 
 The data is local mock data for Namibia (Deeds Registries Act 14 of 2015 conventions, with the Dutch Kadaster used as a reference). All names, ID numbers and deed references are fictitious.
 
+## The workspace: two apps on one library
+
+This folder is one Angular workspace (`angular.json`) with three projects (CB-2; the layout of the
+whole repository: `docs/architecture/products.md`):
+
+| Project | What it is |
+|---|---|
+| `projects/land-registry` | the land registry app (everything below) |
+| `projects/shipping` | the shipping app (electronic bills of lading): only the shared sign-in and an empty home page so far |
+| `projects/platform` | the library both apps use, imported as `@lrfe/platform`: sign-in, the API client, roles and permissions, site settings, toasts and dialogs, proofs and blockchain checks, the theme. It never imports an app's code. |
+
+Each app tells the library about itself once, with `provideProduct()` in its `app.config.ts`
+(`src/app/product.ts`): its title, its default organisation settings, its permission list and
+its sign-in texts. The apps have their own builds and URLs (the docker image is the land registry's for now); they share one
+`package.json`, so Angular and every package are updated once for both.
+
 ## Run
 
 ```bash
 npm install
-npm start          # http://localhost:4200
-npm run build      # production build in dist/cportal-lrfe
+npm start                # the land registry, http://localhost:4200
+npm run start:shipping   # the shipping app, http://localhost:4201
+npm run build            # production build of the land registry in dist/land-registry
+npm run build:shipping   # production build of the shipping app in dist/shipping
 ```
 
 Requires Node 22.23.4+ or 24.22.1+ (Angular 22; these have the security fixes of 21 October 2026).
@@ -19,7 +37,7 @@ Requires Node 22.23.4+ or 24.22.1+ (Angular 22; these have the security fixes of
 The app has no build-time environment files: the same build serves every site. The organisation
 running the portal (name, subtitle, parent body, place: API-712) is read once at start from
 `config.json` (`state/site-config.ts`, `SiteConfigService`). With `ng serve` that is
-`public/config.json`, which holds the defaults; edit it locally to try other texts. In the
+`projects/land-registry/public/config.json`, which holds the defaults; edit it locally to try other texts. In the
 container, `docker/site-config.sh` writes it on every start from the site's `LRFE_ORG_*` settings
 (`deploy/README.md`). A missing or broken file means the defaults. Tests: `npm run
 test:site-config`.
@@ -51,14 +69,14 @@ cd ../angular-app && npm start   # http://localhost:4200
 | `#/documents` (EDRMS) | edrms + bpm | filed documents, versions, open file, integrity check, *Request correction* (four-eyes) |
 | Dashboard, capture, verify, land records, audit | demo data | until the intake, land-records and audit services exist |
 
-Code: `api/api.service.ts` (client), `api/auth.interceptor.ts` (token, refresh-and-retry on
-401), `state/auth.service.ts` (session), `state/rbac.service.ts` (identity API),
-`state/tasks.service.ts` + `shared/inbox.component.ts` (bpm), `features/documents`,
-`features/invite`.
+Code: in the platform library (`projects/platform/src/lib/`), `api/api.service.ts` (client),
+`api/auth.interceptor.ts` (token, refresh-and-retry on 401), `state/auth.service.ts` (session),
+`state/rbac.service.ts` (identity API), `state/tasks.service.ts` (bpm); in the land registry,
+`shared/inbox.component.ts`, `features/documents`, `features/invite`.
 
 ## Look & feel
 
-Government-enterprise theme (`src/styles/theme.css`): white cards on a light grey ground, deep navy sidebar, one blue accent, Public Sans throughout. Namibian flag colours appear as the brand stripe and in status semantics (green = done, gold = needs attention, red = danger). Light and dark mode (toggle in the top bar; follows the OS on first visit). The coat-of-arms tile is a placeholder, so swap in the official artwork before any public demo.
+Government-enterprise theme (`projects/platform/src/styles/theme.css`): white cards on a light grey ground, deep navy sidebar, one blue accent, Public Sans throughout. Namibian flag colours appear as the brand stripe and in status semantics (green = done, gold = needs attention, red = danger). Light and dark mode (toggle in the top bar; follows the OS on first visit). The coat-of-arms tile is a placeholder, so swap in the official artwork before any public demo.
 
 ## Screens (routes)
 
@@ -76,7 +94,7 @@ The sidebar role switcher changes the acting user and jumps to that role's queue
 
 ## Role-based access control
 
-`state/rbac.service.ts` holds the permission catalogue (19 permissions in 6 groups), the role → permission matrix, users (multiple roles each), segregation-of-duties rules, security policies and an access log.
+`state/perm-catalogue.ts` holds the permission catalogue (19 permissions in 6 groups); the platform's `state/rbac.service.ts` the role → permission matrix, users (multiple roles each), segregation-of-duties rules, security policies and an access log.
 
 - **Routes** are protected by `permGuard` (route `data.perm`). A missing permission lands on `#/denied` and is logged.
 - **Sidebar** shows only the areas the current role may open.
@@ -90,25 +108,34 @@ The sidebar role switcher changes the acting user and jumps to that role's queue
 
 In production, enforce the same permissions server-side. The client only mirrors them.
 
-## Structure
+## Structure (the land registry, `projects/land-registry/`)
+
+The shared parts (sign-in, API client, auth and permissions, toasts, theme) are in
+`projects/platform/src/lib/`.
 
 ```
-src/
-  styles/theme.css         Tokens (light/dark), buttons, tags, forms, tables, cards, dialogs
-  styles/app.css           Layout helpers
+projects/land-registry/src/
   app/
     app.component.ts       Shell: navy sidebar, role switcher, top bar, mobile drawer, viewer + overlays
-    state/auth.service.ts  Demo roles, sign-in, route guard
-    state/theme.service.ts Light/dark
-    state/toast.service.ts, confirm.service.ts
-    features/login, features/dashboard
+    app.config.ts          Providers, with provideProduct(LAND_REGISTRY)
+    product.ts             The land registry for the platform: title, default site settings, sign-in texts
     app.routes.ts
     data/models.ts         Types: LandDoc, DocField, Batch, Candidate, AuditEntry…
     data/mock-data.ts      Sample instruments, queue generator, candidates, flow model, schema
+    state/perm-catalogue.ts  The permission list (mirrors the identity service)
     state/registry.store.ts  Signals store: capture, field edits, filing, linking, owners, checks, audit trail
     state/viewer.service.ts
-    shared/                doc-page (renders a scanned page), viewer, icon (Lucide, 1.5 stroke)
-    features/              flow, capture, verify, link, audit
+    shared/                doc-page (renders a scanned page), viewer, inbox, record diff, audit tabs
+    features/              dashboard, flow, capture, verify, link, documents, audit, anchorings, admin, …
+projects/platform/src/
+  index.ts                 What the library exports (@lrfe/platform)
+  lib/product.ts           ProductConfig and provideProduct()
+  lib/api/                 API client, auth interceptor, proofs, anchorings
+  lib/state/               Sign-in session, roles and permissions, site settings, theme, toasts, dialogs, tasks
+  lib/shared/              Icons, info tips, overlays, permission directive, blockchain check, proof download
+  lib/sign-in/             The sign-in screen (password, authenticator code, enrolment)
+  styles/theme.css         Tokens (light/dark), buttons, tags, forms, tables, cards, dialogs
+  styles/app.css           Layout helpers
 ```
 
 ## Moving past the demo

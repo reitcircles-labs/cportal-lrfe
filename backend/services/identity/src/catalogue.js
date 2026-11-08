@@ -1,6 +1,6 @@
 /**
  * Fixed catalogue: permissions, the six system roles, segregation-of-duties rules and default
- * security policies. Mirrors angular-app/src/app/state/rbac.service.ts. Roles cannot be created
+ * security policies. Mirrors angular-app/projects/land-registry/src/app/state/perm-catalogue.ts. Roles cannot be created
  * or deleted; only their permission sets (the admin "Roles & permissions" matrix) are editable.
  */
 

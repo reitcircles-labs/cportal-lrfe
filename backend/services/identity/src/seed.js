@@ -10,7 +10,7 @@ import {
 const CATALOGUE_KEY = 'catalogue.version';
 import {hashPassword} from './crypto.js';
 
-/** The users shown in the frontend demo (angular-app/src/app/state/rbac.service.ts). Fictitious. */
+/** The users shown in the frontend demo (angular-app/projects/platform/src/lib/state/rbac.service.ts). Fictitious. */
 export const DEMO_USERS = [
   [
     'Elina Shivute',

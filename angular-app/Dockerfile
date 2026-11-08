@@ -7,11 +7,10 @@ FROM node:22.23.4-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY angular.json tsconfig.json tsconfig.app.json ./
-COPY src ./src
-COPY public ./public
+COPY angular.json tsconfig.json ./
+COPY projects ./projects
 ENV NG_CLI_ANALYTICS=false
-RUN npx ng build --configuration production
+RUN npx ng build land-registry --configuration production
 
 # ---- serve ----
 # nginx as a non-root user, listening on 8080
@@ -21,7 +20,7 @@ COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/security-headers.conf /etc/nginx/lrfe-security-headers.conf
 # writes /config.json from the site's settings on every start, before nginx starts (API-712)
 COPY --chmod=0755 docker/site-config.sh /docker-entrypoint.d/40-lrfe-site-config.sh
-COPY --from=build /app/dist/cportal-lrfe/browser /usr/share/nginx/html
+COPY --from=build /app/dist/land-registry/browser /usr/share/nginx/html
 
 ARG VERSION=dev
 ARG REVISION=unknown

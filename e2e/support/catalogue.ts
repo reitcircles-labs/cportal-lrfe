@@ -4,7 +4,7 @@
  *
  *   roles & permissions   backend/services/identity/src/catalogue.js
  *   demo users            backend/services/identity/src/seed.js (DEMO_USERS)
- *   screens               angular-app/src/app/app.routes.ts (path, required permission, title)
+ *   screens               angular-app/projects/land-registry/src/app/app.routes.ts (path, required permission, title)
  *   API access rules      backend/services/gateway/docs/openapi.yaml (x-access, from the route guards)
  *
  * The routes file is TypeScript that imports Angular components, so it is parsed as text. The
@@ -104,7 +104,14 @@ export interface Screen {
 }
 
 function parseScreens(): Screen[] {
-  const file = join(ANGULAR_DIR, 'src', 'app', 'app.routes.ts');
+  const file = join(
+    ANGULAR_DIR,
+    'projects',
+    'land-registry',
+    'src',
+    'app',
+    'app.routes.ts',
+  );
   const src = readFileSync(file, 'utf8');
   const consts = new Map<string, string[]>();
   for (const m of src.matchAll(/const (\w+)\s*=\s*\[([^\]]*)\];/g)) {

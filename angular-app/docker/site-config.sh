@@ -10,7 +10,7 @@
 #   LRFE_ORG_PLACE      where it is, e.g. Windhoek
 #
 # Only settings that are set are written: the app uses its defaults for the others
-# (angular-app/src/app/state/site-config.ts). An empty setting is written empty, and is not shown.
+# (angular-app/projects/platform/src/lib/state/site-config.ts). An empty setting is written empty, and is not shown.
 # Display texts only, readable by anyone who opens the portal: never put a secret here.
 #
 # Also the other origins documents may come from, for the content security policy

@@ -219,7 +219,7 @@ From the repository root, with the backend running (`npm run dev` in `backend/`)
 # 1. build the app and copy it where nginx serves it from
 (cd angular-app && npm run build)
 sudo mkdir -p /var/www/cportal-lrfe
-sudo rsync -a --delete angular-app/dist/cportal-lrfe/browser/ /var/www/cportal-lrfe/
+sudo rsync -a --delete angular-app/dist/land-registry/browser/ /var/www/cportal-lrfe/
 
 # 2. install the site and reload nginx
 sudo cp backend/services/identity/scripts/nginx-cportal-lrfe.conf /etc/nginx/sites-available/cportal-lrfe
@@ -254,7 +254,7 @@ next `sudo systemctl reload nginx` (certbot usually does that itself). Check how
 
 ```bash
 (cd angular-app && npm run build)
-sudo rsync -a --delete angular-app/dist/cportal-lrfe/browser/ /var/www/cportal-lrfe/
+sudo rsync -a --delete angular-app/dist/land-registry/browser/ /var/www/cportal-lrfe/
 ```
 
 No nginx reload is needed. Backend changes need only the services restarted. If you change the
