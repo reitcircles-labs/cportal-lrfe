@@ -138,6 +138,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      # The scan signs the demo users in with identity's own seed and authenticator code, which
+      # imports the shared workspace packages (@lrfe/common), so the backend must be installed.
+      - name: Install
+        run: npm ci --prefix backend
       - name: Findings and verdict (unit tests)
         run: node --test security/*.test.mjs
       - name: Scans
