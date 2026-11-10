@@ -1,0 +1,147 @@
+/**
+ * The review of a land record version (bpm process "land-record-review", a fixed name: it is in the
+ * anchored audit trail). Started by land-records when a records officer submits a version; a
+ * different person who can finalize records approves it, then land-records commits (seals) it, or
+ * the rejection goes back to land-records. Definitions are data: conditions, assignees and titles
+ * are JsonLogic, never code (bpm, engine/condition.js).
+ */
+export const landRecordReview = {
+  key: 'land-record-review',
+  name: 'Review of a land record version',
+  description:
+    "A land record version submitted by a records officer, approved by a different person who can finalize records, then committed (sealed) by land-records. Started by land-records when the officer submits. Four-eyes: neither the submitter nor, with the security policy Four-eyes finalization on, the reviewers who filed the record's documents (filedBy) may approve it.",
+  start: {
+    services: ['land-records'],
+  },
+  managePerm: 'record.finalize',
+  businessKey: {
+    var: 'record.id',
+  },
+  variables: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['record', 'submittedBy'],
+    properties: {
+      record: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'recordNo', 'label', 'versionNumber'],
+        properties: {
+          id: {
+            type: 'string',
+            format: 'uuid',
+          },
+          recordNo: {
+            type: 'string',
+          },
+          label: {
+            type: 'string',
+          },
+          versionNumber: {
+            type: 'integer',
+            minimum: 1,
+          },
+        },
+      },
+      submittedBy: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'name'],
+        properties: {
+          id: {
+            type: 'string',
+            minLength: 1,
+          },
+          name: {
+            type: 'string',
+          },
+        },
+      },
+      filedBy: {
+        type: 'array',
+        maxItems: 200,
+        items: {
+          type: 'string',
+          minLength: 1,
+        },
+      },
+    },
+  },
+  startAt: 'start',
+  nodes: {
+    start: {
+      type: 'start',
+      next: 'approve',
+    },
+    approve: {
+      type: 'humanTask',
+      title: {
+        cat: [
+          'Approve land record ',
+          {
+            var: 'record.recordNo',
+          },
+          ' (',
+          {
+            var: 'record.label',
+          },
+          ') version ',
+          {
+            var: 'record.versionNumber',
+          },
+        ],
+      },
+      assignee: {
+        perm: 'record.finalize',
+      },
+      exclude: [
+        {
+          var: 'submittedBy.id',
+        },
+        {
+          var: 'filedBy',
+        },
+      ],
+      outcomes: ['approved', 'rejected'],
+      requireCommentFor: ['rejected'],
+      outputVar: 'approval',
+      dueInHours: 72,
+      next: 'decision',
+    },
+    decision: {
+      type: 'exclusiveGateway',
+      cases: [
+        {
+          when: {
+            '==': [
+              {
+                var: 'approval.outcome',
+              },
+              'approved',
+            ],
+          },
+          next: 'commit',
+        },
+      ],
+      default: 'reject',
+    },
+    commit: {
+      type: 'serviceTask',
+      connector: 'records.commitVersion',
+      next: 'committed',
+    },
+    reject: {
+      type: 'serviceTask',
+      connector: 'records.rejectVersion',
+      next: 'rejected',
+    },
+    committed: {
+      type: 'end',
+      outcome: 'committed',
+    },
+    rejected: {
+      type: 'end',
+      outcome: 'rejected',
+    },
+  },
+};

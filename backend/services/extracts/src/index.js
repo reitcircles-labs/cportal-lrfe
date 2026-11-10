@@ -5,12 +5,14 @@ import {
   createSequelize,
   createSequelizeOutbox,
   createServiceTokenSigner,
+  domain,
   ensureSchema,
   env,
   envBool,
   envInt,
   envOneOf,
   healthCheck,
+  recordServiceOf,
   startService,
 } from '@lrfe/common';
 import {buildApp} from './app.js';
@@ -58,14 +60,20 @@ const events = createEventBus({
   source: 'extracts',
   outbox,
 });
-// the record's current version and its owners are read from land-records with an extracts service token
-const records = createRecordsClient({
-  baseUrl: env('RECORDS_URL', 'http://localhost:3505'),
-  serviceToken: createServiceTokenSigner({
-    secret: jwtSecret,
-    service: 'extracts',
-  }),
-});
+// the record's current version and its owners are read from the record service with an extracts
+// service token; an install whose pack has no record service has none (no extract can be issued)
+const recordService = recordServiceOf(domain);
+const records = recordService
+  ? createRecordsClient({
+      baseUrl: recordService.url,
+      label: recordService.label,
+      record: domain.wording.audit.record,
+      serviceToken: createServiceTokenSigner({
+        secret: jwtSecret,
+        service: 'extracts',
+      }),
+    })
+  : null;
 // whether a version is on the blockchain yet, from the audit service
 const anchoring = createAnchoringClient({
   baseUrl: env('AUDIT_URL', 'http://localhost:3506'),
@@ -102,6 +110,7 @@ const service = new ExtractsService({
 const check = new ExtractCheck({
   repo,
   records,
+  recordsName: recordService?.name,
   versions: createVersionCheckClient({
     baseUrl: env('AUDIT_URL', 'http://localhost:3506'),
     serviceToken: createServiceTokenSigner({

@@ -1,24 +1,38 @@
 import {AppError, BadRequestError} from '@lrfe/common';
+import {auditWording, recordKindOf} from './domain.js';
 import {createServiceClient} from './service-client.js';
+import {recordClientAt, recordServiceLabel} from './record-service.js';
 
-/** At most this many land records to choose from when a search matches several. */
+/** At most this many records to choose from when a search matches several. */
 const MAX_CHOICES = 20;
 /** Searches one user may run per minute. */
 const SEARCHES_PER_MINUTE = 30;
-/** Audit sign-offs of one land record read for its history. */
+/** Audit sign-offs of one record read for its history. */
 const MAX_SIGNOFFS = 200;
 
-const LAND_RECORD_NO = /^LR-/i;
+/** An EDRMS document number: EDR-NA-2026-000412. */
 const DOCUMENT_NO = /^EDR-/i;
-/** A deed or other instrument number: T 2210/2008, A 412/2007, B 3301/2015 (spaces around the slash allowed). */
-const INSTRUMENT_NO = /^[A-Z]{1,3}\s?\d{1,7}\s?\/\s?\d{4}$/i;
 
-/** What a search names: a land record number, a document number, an instrument number, or words (Erf, township). */
-export function classify(q) {
-  if (LAND_RECORD_NO.test(q)) return 'recordNo';
-  if (DOCUMENT_NO.test(q)) return 'edrmsNo';
-  if (INSTRUMENT_NO.test(q)) return 'instrument';
-  return 'words';
+/**
+ * What a search names: a record number, a document number, an instrument number (as the domain
+ * pack's record kind recognises record and instrument numbers), or words (`none` without a record
+ * kind: then only document numbers can be looked up).
+ * @param {string} q the search
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {string} recordNo | edrmsNo | instrument | words | none
+ */
+export function classify(q, pack) {
+  const kind = recordKindOf(pack);
+  if (kind?.lookup.recordNumber?.test(q)) {
+    return 'recordNo';
+  }
+  if (DOCUMENT_NO.test(q)) {
+    return 'edrmsNo';
+  }
+  if (kind?.lookup.instrumentNumber?.test(q)) {
+    return 'instrument';
+  }
+  return kind ? 'words' : 'none';
 }
 
 const recordKey = (recordId, versionNumber) =>
@@ -29,23 +43,33 @@ const isCommitted = v => v.state === 'committed' || v.state === 'superseded';
 const newestFirst = (x, y) => new Date(y.at ?? 0) - new Date(x.at ?? 0);
 
 /**
- * "Is it on the blockchain?" (API-697): find a land record or a document by number, Erf or deed
- * number, and answer in plain terms, with its history of batches. For a land record the answer is
- * its current version's: that version's seal stands for its documents and every version before it.
- * Numbers match exactly; words may match several land records, which are then offered to choose
- * from. Every signed-in user may search (`anchors.view`), within a limit per minute.
+ * "Is it on the blockchain?" (API-697): find a record or a document by number (or other words the
+ * product service matches a record on), and answer in plain terms, with its history of batches. For
+ * a record the answer is its current version's: that version's seal stands for its documents and
+ * every version before it. Numbers match exactly; words may match several records, which are then
+ * offered to choose from. Every signed-in user may search (`anchors.view`), within a limit per minute.
+ * Without a record kind in the domain pack, only documents are looked up.
  *
- * `sources`: from land-records { records({ q, limit }) (committed land records matched on number and
- * parcel only), versions(recordId), lookup(body) }, and from edrms { documentByNumber({ edrmsNo |
- * instrumentRef }), document(id) }.
+ * `sources`: from the product service { records({ q, limit }) (committed records matched on number
+ * and the like, never on people), versions(recordId), lookup(body) }, and from edrms
+ * { documentByNumber({ edrmsNo | instrumentRef }), document(id) }.
  */
 export class AnchorLookupService {
-  constructor({repo, proofs, anchorings, sources, clock = () => new Date()}) {
+  /** @param pack the domain pack (default: the install's): how numbers are recognised (CB-3) */
+  constructor({
+    repo,
+    proofs,
+    anchorings,
+    sources,
+    clock = () => new Date(),
+    pack,
+  }) {
     this.repo = repo;
     this.proofs = proofs;
     this.anchorings = anchorings;
     this.sources = sources;
     this.clock = clock;
+    this.pack = pack;
     this.recent = new Map(); // user id → times of their searches in the last minute
   }
 
@@ -55,11 +79,12 @@ export class AnchorLookupService {
       .trim()
       .replace(/\s+/g, ' ');
     if (!q) {
-      throw new BadRequestError(
-        'Give a land record number, document number, Erf or deed number',
-      );
+      throw new BadRequestError(auditWording(this.pack).lookupHint);
     }
-    const kind = classify(q);
+    const kind = classify(q, this.pack);
+    if (kind === 'none') {
+      return {query: q, kind: 'none'};
+    }
     if (kind === 'edrmsNo' || kind === 'instrument') {
       const found = await this.sources.documentByNumber(
         kind === 'edrmsNo' ? {edrmsNo: q.toUpperCase()} : {instrumentRef: q},
@@ -68,7 +93,7 @@ export class AnchorLookupService {
         ? this.documentResult(q, found.id)
         : {query: q, kind: 'none'};
     }
-    // committed land records, by number or parcel only: never by an owner's name or ID number
+    // committed records, matched by the product service on number and the like: never on people
     const {items} = await this.sources.records({q, limit: MAX_CHOICES + 1});
     let matches = items.filter(r => r.currentVersion);
     if (kind === 'recordNo') {
@@ -89,7 +114,7 @@ export class AnchorLookupService {
     return this.recordResult(q, matches[0]);
   }
 
-  /** A land record: the answer for its current version, and its versions, documents and audit sign-offs, newest first. */
+  /** A record: the answer for its current version, and its versions, documents and audit sign-offs, newest first. */
   async recordResult(q, record) {
     const committed = (await this.sources.versions(record.id))
       .filter(isCommitted)
@@ -148,7 +173,7 @@ export class AnchorLookupService {
     };
   }
 
-  /** A document: the answer for its current version, its versions, and the land record versions made of it, newest first. */
+  /** A document: the answer for its current version, its versions, and the record versions made of it, newest first. */
   async documentResult(q, documentId) {
     const doc = await this.sources.document(documentId);
     const {pinnedBy, records} = await this.sources.lookup({
@@ -234,7 +259,7 @@ function statusAndBatch(batch) {
     : {status: 'notRecorded', batch: null};
 }
 
-/** A committed land record version in its history. */
+/** A committed record version in its history. */
 function versionItem(v, batch) {
   return {
     kind: 'version',
@@ -244,7 +269,7 @@ function versionItem(v, batch) {
   };
 }
 
-/** A document a land record version is made of, in the record's history. */
+/** A document a record version is made of, in the record's history. */
 function documentItem(d, batch) {
   return {
     kind: 'document',
@@ -270,7 +295,7 @@ function signoffItem(entry, batch) {
   };
 }
 
-/** A land record version made of the document, in the document's history. */
+/** A record version made of the document, in the document's history. */
 function usedInItem(pin, label, batch) {
   return {
     kind: 'usedIn',
@@ -284,32 +309,31 @@ function usedInItem(pin, label, batch) {
   };
 }
 
-/** The land-records and edrms reads of the search (with the audit service's token). */
+/** The record service's and edrms reads of the search (with the audit service's token). */
 export function createLookupSources({
   recordsUrl,
+  recordsLabel = recordServiceLabel(),
   edrmsUrl,
   serviceToken,
   fetchImpl,
   timeoutMs,
 }) {
   const request = createServiceClient({serviceToken, fetchImpl, timeoutMs});
-  const records = {name: 'land records service'};
+  const records = recordClientAt(recordsUrl, (url, method, body) =>
+    request(url, {name: `${recordsLabel} service`, method, body}),
+  );
   const edrms = {name: 'document service'};
   return {
-    // committed land records, matched on number and parcel only (never owners)
+    // committed records, matched on number and parcel only (never owners)
     records: ({q, limit}) =>
-      request(
-        `${recordsUrl}/records?${new URLSearchParams({q, status: 'committed', match: 'parcel', limit: String(limit)})}`,
-        records,
-      ),
-    versions: recordId =>
-      request(`${recordsUrl}/records/${recordId}/versions`, records),
-    lookup: body =>
-      request(`${recordsUrl}/records/lookup`, {
-        ...records,
-        method: 'POST',
-        body,
+      records.list({
+        q,
+        status: 'committed',
+        match: 'parcel',
+        limit: String(limit),
       }),
+    versions: recordId => records.versions(recordId),
+    lookup: body => records.lookup(body),
     documentByNumber: by =>
       request(`${edrmsUrl}/documents/lookup?${new URLSearchParams(by)}`, {
         ...edrms,

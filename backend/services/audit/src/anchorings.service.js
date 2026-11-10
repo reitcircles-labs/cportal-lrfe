@@ -1,6 +1,7 @@
 import {AppError, NotFoundError} from '@lrfe/common';
 import {nextAnchoring} from './anchor.service.js';
 import {createServiceClient} from './service-client.js';
+import {recordClientAt, recordServiceLabel} from './record-service.js';
 
 /** The filters of the Anchorings list (API-671): every batch, those on their way, those that failed. */
 export const ANCHOR_FILTERS = ['all', 'progress', 'failed'];
@@ -9,7 +10,7 @@ const IN_PROGRESS = ['prepared', 'submitted', 'onChain'];
 const NOT_FAILED = ['prepared', 'submitted', 'onChain', 'confirmed'];
 const FILTER_STATUSES = {all: null, progress: IN_PROGRESS, failed: ['failed']};
 
-/** How many items one lookup in land-records takes (its limit). */
+/** How many items one lookup in the record service takes (its limit). */
 const LOOKUP_CHUNK = 1000;
 
 /** Where anyone can read a transaction, per network. The only place the screens get the network from. */
@@ -31,7 +32,7 @@ export function addressExplorerUrl(network, address) {
     : null;
 }
 
-/** By record number; a record land-records no longer knows (no number) last. */
+/** By record number; a record the record service no longer knows (no number) last. */
 function byRecordNo(x, y) {
   if (x.recordNo === null || y.recordNo === null) {
     return (x.recordNo === null) - (y.recordNo === null);
@@ -71,7 +72,7 @@ export function reasonOf(a) {
  * `config`: { periodMs, retryMs, confirmations } of the anchoring job; `anchoring`: false when no
  * blockchain is configured (no next batch is due then); `cardano`: the blockchain adapter, for the
  * published wallet address. `sources`: { lookup({ recordIds, versions }) }
- * from land-records, for what a batch covers.
+ * from the record service, for what a batch covers.
  */
 export class AnchoringsService {
   constructor({
@@ -209,7 +210,7 @@ export class AnchoringsService {
 
   /**
    * What batch `batch` covers (API-696): the fingerprints it put on the blockchain for the first
-   * time, counted by kind, and the land records with a version or an audit sign-off in it, by record
+   * time, counted by kind, and the records with a version or an audit sign-off in it, by record
    * number, paged. Each version comes with what its fingerprint stands for: the documents it is
    * made of (how many of them reached the blockchain in earlier batches) and, through the previous
    * version's seal, the versions before it. A failed batch covers nothing: its replacement does.
@@ -263,8 +264,8 @@ export class AnchoringsService {
 
   /**
    * The document versions batch `batch` put on the blockchain for the first time (API-696), in the
-   * order they were sealed, paged: number, type and deed number from their filing in the trail, and
-   * the land record versions in the same batch that are made of them. A failed batch has none.
+   * order they were sealed, paged: number, type and instrument number from their filing in the trail, and
+   * the record versions in the same batch that are made of them. A failed batch has none.
    */
   async documents(batch, {limit = 25, offset = 0} = {}) {
     const c = await this.contents(batch);
@@ -296,7 +297,7 @@ export class AnchoringsService {
 
   /**
    * What a batch holds, read once for both views: its new leaves (versions and documents), the
-   * audit sign-offs in the trail up to its checkpoint, and from land-records the labels of the land
+   * audit sign-offs in the trail up to its checkpoint, and from the record service the labels of the
    * records and the documents each version is made of. Null for a failed batch.
    */
   async contents(batch) {
@@ -331,7 +332,7 @@ export class AnchoringsService {
     return {anchor, versions, documents, signoffs, labels, versionDocuments};
   }
 
-  /** From land-records, in chunks: labels of the land records, and the documents each version is made of. */
+  /** From the record service, in chunks: labels of the records, and the documents each version is made of. */
   async lookup(recordIds, versions) {
     const labels = new Map();
     const versionDocuments = new Map();
@@ -358,14 +359,14 @@ export class AnchoringsService {
     return {labels, versionDocuments};
   }
 
-  /** A land record's number and label, as land-records gave them (null when it no longer knows it). */
+  /** A record's number and label, as the record service gave them (null when it no longer knows it). */
   labelOf(contents, recordId) {
     const known = contents.labels.get(recordId);
     return {recordNo: known?.recordNo ?? null, label: known?.label ?? null};
   }
 
   /**
-   * Number, type and deed number of each document version, from its filing or correction in the
+   * Number, type and instrument number of each document version, from its filing or correction in the
    * trail (a correction names no type: that comes from the filing). Null fields for a document
    * sealed before the audit service (the backfill has no trail entry for it).
    */
@@ -436,20 +437,19 @@ export class AnchoringsService {
   }
 }
 
-/** The land-records lookup for what a batch covers (`POST /records/lookup`, service only). */
+/** The record service's lookup for what a batch covers (`POST /records/lookup`, service only). */
 export function createCoverageSources({
   recordsUrl,
+  recordsLabel = recordServiceLabel(),
   serviceToken,
   fetchImpl,
   timeoutMs,
 }) {
   const request = createServiceClient({serviceToken, fetchImpl, timeoutMs});
+  const records = recordClientAt(recordsUrl, (url, method, body) =>
+    request(url, {name: `${recordsLabel} service`, method, body}),
+  );
   return {
-    lookup: body =>
-      request(`${recordsUrl}/records/lookup`, {
-        name: 'land records service',
-        method: 'POST',
-        body,
-      }),
+    lookup: body => records.lookup(body),
   };
 }

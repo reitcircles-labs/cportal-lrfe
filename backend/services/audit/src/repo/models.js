@@ -110,10 +110,10 @@ export function defineModels(sequelize) {
     opts(),
   );
 
-  // Sign-offs and findings (README.md section 5, API-659): what an auditor recorded about a land record
+  // Sign-offs and findings (README.md section 5, API-659): what an auditor recorded about a record
   // version or a document version. Each is also a durable event, so it is in the trail and anchored.
   const item = {
-    recordId: {type: DataTypes.UUID}, // the land record version …
+    recordId: {type: DataTypes.UUID}, // the record version …
     recordNo: {type: DataTypes.STRING},
     recordVersion: {type: DataTypes.INTEGER},
     documentId: {type: DataTypes.UUID}, // … or a document version (in it)

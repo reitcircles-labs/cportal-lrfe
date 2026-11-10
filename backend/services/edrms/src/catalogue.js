@@ -1,18 +1,38 @@
+import {domain} from '@lrfe/common';
+
 /**
- * Document types held in the EDRMS. `refField` is the extracted field that carries the
- * instrument reference (deed number, SG diagram number), which must be unique across the store.
+ * The document types held in the EDRMS, from the product's domain pack (CB-3): `{id, label,
+ * refField}`, `refField` being the field that carries the document's own reference (an instrument
+ * number, say), which must be unique across the store.
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {Array<{id: string, label: string, refField: ?string}>}
  */
-export const DOC_TYPES = [
-  {id: 'deed_of_transfer', label: 'Deed of transfer', refField: 'deedNo'},
-  {id: 'deed_of_sale', label: 'Deed of sale', refField: null},
-  {id: 'deed_of_grant', label: 'Deed of grant', refField: 'deedNo'},
-  {id: 'sg_diagram', label: 'Surveyor-General diagram', refField: 'sgNo'},
-  {id: 'mortgage_bond', label: 'Mortgage bond', refField: 'bondNo'},
-  {id: 'other', label: 'Other supporting document', refField: null},
-];
-export const DOC_TYPE_IDS = DOC_TYPES.map(t => t.id);
-/** The document type with this id, or undefined. */
-export const docType = id => DOC_TYPES.find(t => t.id === id);
+export function docTypesOf(pack = domain) {
+  return (pack.documents.types ?? []).map(({id, label, refField}) => ({
+    id,
+    label,
+    refField,
+  }));
+}
+
+/**
+ * The ids of the document types held in the EDRMS.
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {Array<string>}
+ */
+export function docTypeIdsOf(pack = domain) {
+  return docTypesOf(pack).map(t => t.id);
+}
+
+/**
+ * The document type with this id, or undefined.
+ * @param {string} id
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {{id: string, label: string, refField: ?string}|undefined}
+ */
+export function docType(id, pack = domain) {
+  return docTypesOf(pack).find(t => t.id === id);
+}
 
 /** Anyone who works with documents in any stage may read them. Writes are separate. */
 export const READ_PERMS = [
@@ -32,21 +52,34 @@ export const INTAKE_READ_PERMS = ['capture.view', 'verify.view'];
 export const FILING_SERVICES = ['intake'];
 
 /**
- * "t2210 / 2008" → "T 2210/2008", "a412/2007" → "A 412/2007". Anything that doesn't look like
- * <letters> <number>/<year> is only trimmed and upper-cased.
+ * A reference in the form the EDRMS keeps it: trimmed, upper-cased, single spaces, then in the
+ * product's own form (`formatReference` of the domain pack, e.g. "t2210 / 2008" → "T 2210/2008").
+ * @param {?string} ref
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {?string} null for no reference
  */
-export function normalizeRef(ref) {
-  if (ref === undefined || ref === null) return null;
+export function normalizeRef(ref, pack = domain) {
+  if (ref === undefined || ref === null) {
+    return null;
+  }
   const s = String(ref).trim().toUpperCase().replace(/\s+/g, ' ');
-  if (!s) return null;
-  const m = s.match(/^([A-Z]{1,3})\s*(\d+)\s*\/\s*(\d{4})$/);
-  return m ? `${m[1]} ${m[2]}/${m[3]}` : s;
+  if (!s) {
+    return null;
+  }
+  const format = pack.documents.formatReference;
+  return format ? format(s) : s;
 }
 
-/** Instrument reference for a document, taken from its fields. */
-export function instrumentRefOf(typeId, fields) {
-  const field = docType(typeId)?.refField;
-  return field ? normalizeRef(fields.find(f => f.k === field)?.v) : null;
+/**
+ * The reference of a document, taken from its fields.
+ * @param {string} typeId
+ * @param {Array<{k: string, v: string}>} fields
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {?string}
+ */
+export function instrumentRefOf(typeId, fields, pack = domain) {
+  const field = docType(typeId, pack)?.refField;
+  return field ? normalizeRef(fields.find(f => f.k === field)?.v, pack) : null;
 }
 
 /** EDR-NA-2026-018204 */

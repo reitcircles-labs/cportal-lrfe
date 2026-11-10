@@ -40,12 +40,12 @@ export function wordSimilarity(a, b) {
 }
 
 /**
- * Spelling variants only for words with letters (names): numbers (ID numbers, deed and erf numbers)
+ * Spelling variants only for words with letters (names): numbers (ID numbers, reference numbers)
  * must match exactly or as the start of a number, so "9999" never finds "1873".
  */
 export const fuzzy = word => /[a-z]/.test(word) && word.length >= 4;
 
-/** Query words of 3 or more letters also match as the start of a word ("wind" finds "windhoek"). */
+/** Query words of 3 or more letters also match as the start of a word ("docu" finds "document"). */
 export const PREFIX_MIN = 3;
 
 /**

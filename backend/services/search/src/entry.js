@@ -1,3 +1,5 @@
+import {domain} from '@lrfe/common';
+
 /**
  * A document's entry in the search index (API-801's fields, written here, API-808), made from
  * what intake and edrms say about it now: intake's reading (the AI's values and page text) and,
@@ -14,14 +16,16 @@ const unique = values => [
 ];
 
 /**
- * The fields that name whom a document is for, first found first: the (first) transferee of a
- * deed, the owner who grants a bond. Otherwise the first name the document has.
+ * The party a document is for: the first of the product's party fields it has (`partyFields` of
+ * the domain pack's documents, CB-3), otherwise the first name the document has.
+ * @param {Array<{k: string, v: string}>} fields
+ * @param {Map<string, string>} roles each field's search role
+ * @param {Array<string>} partyFields
+ * @return {?string}
  */
-const PARTY_FIELDS = ['tee1', 'mortgagor'];
-
-function partyOf(fields, roles) {
+function partyOf(fields, roles, partyFields) {
   const named = fields.filter(f => roles.get(f.k) === 'name' && f.v);
-  for (const k of PARTY_FIELDS) {
+  for (const k of partyFields) {
     const field = named.find(f => f.k === k);
     if (field) return field.v;
   }
@@ -33,8 +37,9 @@ function partyOf(fields, roles) {
  * last change on either side (ms): the index keeps an entry only if it is not older than the one
  * it has, so a slow handler never brings back an older state.
  * @param {{reading?: object|null, filed?: object|null}} sides
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
  */
-export function buildEntry({reading = null, filed = null}) {
+export function buildEntry({reading = null, filed = null}, pack = domain) {
   if (!reading && !filed) return null;
   const id = reading?.documentId ?? edrmsOnlyId(filed.id);
   // what each field is for the search, as intake's catalogue says
@@ -82,7 +87,7 @@ export function buildEntry({reading = null, filed = null}) {
           }
         : {audience: 'intake'},
       refs: unique([...reference, ...values.reference, filed?.edrmsNo]),
-      // ID numbers, and the erf, farm and portion numbers in the property's description
+      // ID numbers, and the numbers in the place's description
       numbers: unique([
         ...values.number,
         ...values.place.flatMap(p => String(p).match(/\d+/g) ?? []),
@@ -95,7 +100,7 @@ export function buildEntry({reading = null, filed = null}) {
         reference: reference[0] ?? null,
         property: shownFields.find(f => roles.get(f.k) === 'place')?.v ?? null,
         // the party the document is for, for a row in intake (API-803)
-        party: partyOf(shownFields, roles),
+        party: partyOf(shownFields, roles, pack.documents.partyFields ?? []),
         fields: shownFields,
       },
     },

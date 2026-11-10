@@ -1,7 +1,7 @@
 {
   "key": "audit-rereview",
   "name": "Audit: changed since review",
-  "description": "A land record version or a document version in it no longer matches the blockchain: the land record changed since it was reviewed and submitted, so it cannot be audited as true. The records officers and the registrars see it in their task inbox and acknowledge it; the records office then opens a new draft, corrects what changed and submits it for review. Started by the audit service once per changed item (API-680).",
+  "description": "A record version or a document version in it no longer matches the blockchain: it changed since it was reviewed and submitted, so it cannot be audited as true. The people the product names acknowledge it in their task inbox, one task per role, and correct what changed. Started by the audit service once per changed item (API-680).",
   "start": {"services": ["audit"]},
   "managePerm": "audit.signoff",
   "businessKey": {"var": "alert.key"},
@@ -33,32 +33,14 @@
     }
   },
   "startAt": "start",
+  "acknowledgeTask": {
+    "title": {
+      "cat": ["Re-review: changed since review, ", {"var": "alert.about"}]
+    },
+    "outcomes": ["acknowledged"],
+    "dueInHours": 120
+  },
   "nodes": {
-    "start": {"type": "start", "next": "notify"},
-    "notify": {"type": "parallelGateway", "next": ["officer", "registrar"]},
-    "officer": {
-      "type": "humanTask",
-      "title": {
-        "cat": ["Re-review: changed since review, ", {"var": "alert.about"}]
-      },
-      "assignee": {"role": "rec"},
-      "outcomes": ["acknowledged"],
-      "outputVar": "officerAck",
-      "dueInHours": 120,
-      "next": "acknowledged"
-    },
-    "registrar": {
-      "type": "humanTask",
-      "title": {
-        "cat": ["Re-review: changed since review, ", {"var": "alert.about"}]
-      },
-      "assignee": {"role": "sup"},
-      "outcomes": ["acknowledged"],
-      "outputVar": "registrarAck",
-      "dueInHours": 120,
-      "next": "acknowledged"
-    },
-    "acknowledged": {"type": "join", "next": "done"},
     "done": {"type": "end", "outcome": "acknowledged"}
   }
 }

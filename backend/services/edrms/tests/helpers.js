@@ -79,14 +79,17 @@ export function makeClock(start = Date.parse('2026-09-28T09:00:00Z')) {
   return clock;
 }
 
-/** `store`: e.g. an encrypting store around a memory store (default: a plain memory store). */
-export function makeService({store = createMemoryStore()} = {}) {
+/**
+ * `store`: e.g. an encrypting store around a memory store (default: a plain memory store);
+ * `pack`: a domain pack (default: the install's, land).
+ */
+export function makeService({store = createMemoryStore(), pack} = {}) {
   const repo = createMemoryRepo();
   const events = createEventBus({driver: 'memory', source: 'edrms'});
   const published = [];
   events.subscribe('*', e => published.push(e));
   const clock = makeClock();
-  const service = new EdrmsService({repo, store, events, clock});
+  const service = new EdrmsService({repo, store, events, clock, pack});
   return {repo, store, service, published, clock};
 }
 

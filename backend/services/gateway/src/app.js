@@ -1,53 +1,75 @@
 import cors from '@fastify/cors';
 import proxy from '@fastify/http-proxy';
 import rateLimit from '@fastify/rate-limit';
-import {createBaseApp} from '@lrfe/common';
+import {createBaseApp, domain, recordServiceOf} from '@lrfe/common';
 
 /**
- * Public path prefix → upstream service. The prefix is stripped except for the part the
- * service expects (e.g. /api/auth/login → identity /auth/login). Add a row per new service.
+ * The routing table of an install: public path prefix → upstream service. The prefix is stripped
+ * except for the part the service expects (e.g. /api/auth/login → identity /auth/login). Add a
+ * row per new service. `/api/records` goes to the product's record service, as the domain pack
+ * names it (CB-4: land-records for land); a pack without records has no such route.
+ * @param {{name: string} | null} recordService
+ * @return {Array<{prefix: string, service: string, rewritePrefix: string}>}
  */
-export const ROUTES = [
-  {prefix: '/api/auth', service: 'identity', rewritePrefix: '/auth'},
-  {
-    prefix: '/api/invitations',
-    service: 'identity',
-    rewritePrefix: '/invitations',
-  },
-  {prefix: '/api/catalogue', service: 'identity', rewritePrefix: '/catalogue'},
-  {prefix: '/api/users', service: 'identity', rewritePrefix: '/users'},
-  {prefix: '/api/roles', service: 'identity', rewritePrefix: '/roles'},
-  {prefix: '/api/policies', service: 'identity', rewritePrefix: '/policies'},
-  {
-    prefix: '/api/access-log',
-    service: 'identity',
-    rewritePrefix: '/access-log',
-  },
-  {prefix: '/api/offices', service: 'identity', rewritePrefix: '/offices'},
-  {prefix: '/api/documents', service: 'edrms', rewritePrefix: '/documents'},
-  {
-    prefix: '/api/document-content',
-    service: 'edrms',
-    rewritePrefix: '/content',
-  },
-  {
-    prefix: '/api/document-catalogue',
-    service: 'edrms',
-    rewritePrefix: '/catalogue',
-  },
-  {prefix: '/api/processes', service: 'bpm', rewritePrefix: '/processes'},
-  {
-    prefix: '/api/process-instances',
-    service: 'bpm',
-    rewritePrefix: '/instances',
-  },
-  {prefix: '/api/tasks', service: 'bpm', rewritePrefix: '/tasks'},
-  {prefix: '/api/intake', service: 'intake', rewritePrefix: ''},
-  {prefix: '/api/records', service: 'land-records', rewritePrefix: '/records'},
-  {prefix: '/api/audit', service: 'audit', rewritePrefix: '/audit'},
-  {prefix: '/api/extracts', service: 'extracts', rewritePrefix: '/extracts'},
-  // Next: search (/api/search).
-];
+export function routesOf(recordService) {
+  const records = recordService
+    ? [
+        {
+          prefix: '/api/records',
+          service: recordService.name,
+          rewritePrefix: '/records',
+        },
+      ]
+    : [];
+  return [
+    {prefix: '/api/auth', service: 'identity', rewritePrefix: '/auth'},
+    {
+      prefix: '/api/invitations',
+      service: 'identity',
+      rewritePrefix: '/invitations',
+    },
+    {
+      prefix: '/api/catalogue',
+      service: 'identity',
+      rewritePrefix: '/catalogue',
+    },
+    {prefix: '/api/users', service: 'identity', rewritePrefix: '/users'},
+    {prefix: '/api/roles', service: 'identity', rewritePrefix: '/roles'},
+    {prefix: '/api/policies', service: 'identity', rewritePrefix: '/policies'},
+    {
+      prefix: '/api/access-log',
+      service: 'identity',
+      rewritePrefix: '/access-log',
+    },
+    {prefix: '/api/offices', service: 'identity', rewritePrefix: '/offices'},
+    {prefix: '/api/documents', service: 'edrms', rewritePrefix: '/documents'},
+    {
+      prefix: '/api/document-content',
+      service: 'edrms',
+      rewritePrefix: '/content',
+    },
+    {
+      prefix: '/api/document-catalogue',
+      service: 'edrms',
+      rewritePrefix: '/catalogue',
+    },
+    {prefix: '/api/processes', service: 'bpm', rewritePrefix: '/processes'},
+    {
+      prefix: '/api/process-instances',
+      service: 'bpm',
+      rewritePrefix: '/instances',
+    },
+    {prefix: '/api/tasks', service: 'bpm', rewritePrefix: '/tasks'},
+    {prefix: '/api/intake', service: 'intake', rewritePrefix: ''},
+    ...records,
+    {prefix: '/api/audit', service: 'audit', rewritePrefix: '/audit'},
+    {prefix: '/api/extracts', service: 'extracts', rewritePrefix: '/extracts'},
+    // Next: search (/api/search).
+  ];
+}
+
+/** This install's routing table, from its domain pack's record service. */
+export const ROUTES = routesOf(recordServiceOf(domain));
 
 /**
  * Routes anyone may call without signing in, rate-limited per client address: only these, only
@@ -118,11 +140,13 @@ async function publicRoutes(scope, {upstreams, rateLimit: limit}) {
  *   upstreams:   { identity: 'http://localhost:3501', ... }
  *   corsOrigins: allowed browser origins (not needed when the app is served from the same origin)
  *   publicRateLimit: { max, timeWindow } for PUBLIC_ROUTES, per client address
+ *   routes:      the routing table (this install's ROUTES by default)
  */
 export async function buildApp({
   upstreams,
   corsOrigins = [],
   publicRateLimit = PUBLIC_RATE_LIMIT,
+  routes = ROUTES,
   ...fastifyOptions
 }) {
   const app = createBaseApp({
@@ -134,7 +158,7 @@ export async function buildApp({
     await app.register(cors, {origin: corsOrigins, credentials: true});
   }
 
-  for (const route of [...ROUTES, ...PUBLIC_ROUTES]) {
+  for (const route of [...routes, ...PUBLIC_ROUTES]) {
     if (!upstreams[route.service]) {
       throw new Error(
         `gateway: no upstream URL configured for service "${route.service}"`,
@@ -143,7 +167,7 @@ export async function buildApp({
   }
   await app.register(publicRoutes, {upstreams, rateLimit: publicRateLimit});
 
-  for (const route of ROUTES) {
+  for (const route of routes) {
     await app.register(proxy, {
       upstream: upstreams[route.service],
       prefix: route.prefix,

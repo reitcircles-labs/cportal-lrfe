@@ -5,11 +5,13 @@ import {
   NotFoundError,
   UnauthorizedError,
   describeGuard,
+  domain,
   OFFSET_SCHEMA,
+  recordServiceOf,
 } from '@lrfe/common';
 import {
-  DOC_TYPES,
-  DOC_TYPE_IDS,
+  docTypeIdsOf,
+  docTypesOf,
   FILING_SERVICES,
   INTAKE_READ_PERMS,
   READ_PERMS,
@@ -17,8 +19,16 @@ import {
 import {describeRecordMetadataFields} from './record-metadata.js';
 import {safeEqual} from './util.js';
 
-/** Services that may read documents with a service token. */
-const READ_SERVICES = ['intake', 'land-records', 'audit', 'search', 'bpm'];
+/**
+ * Services that may read documents with a service token: the platform's and the product's record
+ * service, as the domain pack names it (CB-4; none when the pack has no records).
+ * @param {{name: string} | null} recordService
+ * @return {string[]}
+ */
+function readServicesOf(recordService) {
+  const records = recordService ? [recordService.name] : [];
+  return ['intake', ...records, 'audit', 'search', 'bpm'];
+}
 
 const idParams = (extra = {}) => ({
   params: {
@@ -92,17 +102,35 @@ async function withUpload(req, handle) {
 
 /**
  * Whether a search may include documents still in intake (API-803): a user with intake's read
- * permission; land-records when it searches for such a user (it says so with `intake`).
+ * permission; the record service (land-records for land) when it searches for such a user (it
+ * says so with `intake`).
+ * @param {object} user the verified token's claims
+ * @param {boolean | undefined} asked the `intake` query
+ * @param {{name: string} | null} recordService the pack's record service, if any
+ * @return {boolean}
  */
-function mayReadIntake(user, asked) {
+function mayReadIntake(user, asked, recordService) {
   if (user.typ === 'service') {
-    return user.sub === 'land-records' && asked === true;
+    return (
+      recordService !== null &&
+      user.sub === recordService.name &&
+      asked === true
+    );
   }
   return INTAKE_READ_PERMS.some(p => (user.perms ?? []).includes(p));
 }
 
 /** The edrms HTTP routes. */
 export async function edrmsRoutes(app, {service, contentUrl}) {
+  // the product's document types: the service's domain pack (CB-3)
+  const pack = service.pack ?? domain;
+  const recordService = recordServiceOf(pack);
+  const readServices = readServicesOf(recordService);
+  const typeIds = docTypeIdsOf(pack);
+  // a list of no values is not a valid schema: without types, the service refuses any docType
+  const docTypeSchema = typeIds.length
+    ? {type: 'string', enum: typeIds}
+    : {type: 'string', maxLength: 50};
   const sign = (id, n, exp) =>
     createHmac('sha256', contentUrl.secret)
       .update(`${id}:${n}:${exp}`)
@@ -115,7 +143,7 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
       throw new UnauthorizedError('Invalid or expired token');
     }
     if (req.user.typ === 'service') {
-      if (!READ_SERVICES.includes(req.user.sub)) {
+      if (!readServices.includes(req.user.sub)) {
         throw new ForbiddenError('Not permitted', {service: req.user.sub});
       }
       return;
@@ -125,14 +153,14 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
   describeGuard(canRead, {
     kind: 'user-or-service',
     anyOf: READ_PERMS,
-    services: READ_SERVICES,
+    services: readServices,
   });
 
   // ------------------------------------------------------------------ catalogue
 
   app.get('/catalogue', {onRequest: app.authenticate}, async () => ({
-    docTypes: DOC_TYPES,
-    recordMetadataFields: describeRecordMetadataFields(),
+    docTypes: docTypesOf(pack),
+    recordMetadataFields: describeRecordMetadataFields(pack),
   }));
 
   // ------------------------------------------------------------------ filing (intake only)
@@ -186,14 +214,14 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
           type: 'object',
           properties: {
             q: {type: 'string', maxLength: 200},
-            docType: {type: 'string', enum: DOC_TYPE_IDS},
+            docType: docTypeSchema,
             batchId: {type: 'string', maxLength: 50},
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
             offset: OFFSET_SCHEMA,
-            // land-records, for a user who may read intake's documents (API-803)
+            // the record service, for a user who may read intake documents (API-803)
             intake: {type: 'boolean'},
           },
-          // field.<key>=<value> filters on extracted fields, e.g. field.property=Erf 1873, Klein Windhoek
+          // field.<key>=<value> filters on extracted fields
           patternProperties: {
             '^field\\.[A-Za-z0-9_]+$': {type: 'string', maxLength: 200},
           },
@@ -208,7 +236,7 @@ export async function edrmsRoutes(app, {service, contentUrl}) {
       );
       return service.searchDocuments(
         {q, docType, batchId, props, limit, offset},
-        {intake: mayReadIntake(req.user, intake)},
+        {intake: mayReadIntake(req.user, intake, recordService)},
       );
     },
   );

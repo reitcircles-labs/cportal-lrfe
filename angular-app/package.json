@@ -4,13 +4,15 @@
   "description": "Namibia land-records EDRMS → ERP intake — frontend demo",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test:audit": "node --test src/app/features/audit/*.test.ts src/app/features/anchorings/*.test.ts src/app/features/admin/*.test.ts",
-    "test:link": "node --test src/app/features/link/*.test.ts",
-    "test:check-extract": "node --test src/app/features/check-extract/*.test.ts",
-    "test:site-config": "node --test src/app/state/site-config.test.ts docker/site-config.test.mjs"
+    "start": "ng serve land-registry",
+    "start:shipping": "ng serve shipping",
+    "build": "ng build land-registry",
+    "build:shipping": "ng build shipping",
+    "watch": "ng build land-registry --watch --configuration development",
+    "test:audit": "node --test projects/land-registry/src/app/features/audit/*.test.ts projects/land-registry/src/app/features/anchorings/*.test.ts projects/land-registry/src/app/features/admin/*.test.ts projects/platform/src/lib/shared/verify-wording.test.ts",
+    "test:link": "node --test projects/land-registry/src/app/features/link/*.test.ts",
+    "test:check-extract": "node --test projects/land-registry/src/app/features/check-extract/*.test.ts",
+    "test:site-config": "node --test projects/platform/src/lib/state/site-config.test.ts docker/site-config.test.mjs"
   },
   "private": true,
   "dependencies": {

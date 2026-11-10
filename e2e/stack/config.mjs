@@ -48,8 +48,11 @@ export const PORTS = {
   docs: apiBase + 11, // the API docs container (npm run test:docker)
   extracts: apiBase + 12,
   web: Number(process.env.E2E_WEB_PORT || 4300),
+  // the shipping app (CB-2): the port after the land registry's
+  shipping: Number(process.env.E2E_WEB_PORT || 4300) + 1,
 };
 export const WEB_URL = `http://localhost:${PORTS.web}`;
+export const SHIPPING_URL = `http://localhost:${PORTS.shipping}`;
 export const GATEWAY_URL = `http://localhost:${PORTS.gateway}`;
 
 /**
@@ -76,7 +79,7 @@ export const DEMO_PASSWORD = 'e2e-demo-password-2026';
 /**
  * The organisation of the test install in containers (API-712, start-docker.mjs): other texts than
  * the defaults, so the tests see the site's settings arrive in every place; a quote and a backslash
- * check the escaping. The tests' own stack uses the defaults (angular-app/public/config.json).
+ * check the escaping. The tests' own stack uses the defaults (angular-app/projects/land-registry/public/config.json).
  */
 export const E2E_ORG = {
   name: 'Land Titles Office',

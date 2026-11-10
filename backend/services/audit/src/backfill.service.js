@@ -1,8 +1,9 @@
 import {AppError} from '@lrfe/common';
 import {LEAF_TYPES} from './mmr.js';
+import {recordClientAt, recordServiceLabel} from './record-service.js';
 
 /**
- * The one-time backfill (README.md section 1, "Before deployment"; API-669): land record versions
+ * The one-time backfill (README.md section 1, "Before deployment"; API-669): record versions
  * and document versions sealed before the audit service started go into the tree too, so the
  * anchored root covers the whole register. Both lists are read a page at a time (with an audit
  * service token) and merged oldest first; each seal becomes a leaf with the same key a live event
@@ -137,24 +138,22 @@ export class BackfillService {
   }
 }
 
-/** The two lists over HTTP, from land-records and edrms, with an audit service token. */
+/** The two lists over HTTP, from the record service and edrms, with an audit service token. */
 export function createSealSources({
   recordsUrl,
+  recordsLabel = recordServiceLabel(),
   edrmsUrl,
   serviceToken,
   fetchImpl = globalThis.fetch,
   timeoutMs = 30_000,
 }) {
-  const get = (base, path, what) => async (after, limit) => {
+  const read = async (url, what) => {
     let res;
     try {
-      res = await fetchImpl(
-        `${base}${path}?limit=${limit}${after ? `&after=${encodeURIComponent(after)}` : ''}`,
-        {
-          headers: {authorization: `Bearer ${serviceToken()}`},
-          signal: AbortSignal.timeout(timeoutMs),
-        },
-      );
+      res = await fetchImpl(url, {
+        headers: {authorization: `Bearer ${serviceToken()}`},
+        signal: AbortSignal.timeout(timeoutMs),
+      });
     } catch (err) {
       throw new AppError(
         503,
@@ -171,8 +170,14 @@ export function createSealSources({
     }
     return json;
   };
+  const records = recordClientAt(recordsUrl, url => read(url, recordsLabel));
   return {
-    records: get(recordsUrl, '/records/seals', 'land records'),
-    documents: get(edrmsUrl, '/documents/seals', 'document'),
+    records: (after, limit) =>
+      records.seals({limit, after: after || undefined}),
+    documents: (after, limit) =>
+      read(
+        `${edrmsUrl}/documents/seals?limit=${limit}${after ? `&after=${encodeURIComponent(after)}` : ''}`,
+        'document',
+      ),
   };
 }

@@ -8,6 +8,7 @@ import {
   E2E_DIR,
   GATEWAY_URL,
   PORTS,
+  SHIPPING_URL,
   WEB_URL,
 } from './stack/config.mjs';
 
@@ -29,9 +30,18 @@ const ownStack: PlaywrightTestConfig['webServer'] = [
     stdout: 'pipe',
   },
   {
-    command: `npx ng serve --port ${PORTS.web} --proxy-config ${E2E_DIR}/stack/proxy.e2e.mjs`,
+    command: `npx ng serve land-registry --port ${PORTS.web} --proxy-config ${E2E_DIR}/stack/proxy.e2e.mjs`,
     cwd: ANGULAR_DIR,
     url: WEB_URL,
+    reuseExistingServer: reuse,
+    timeout: 180_000,
+    env: {NG_CLI_ANALYTICS: 'false'},
+  },
+  // the shipping app on the same backend (CB-2): only its sign-in and home page so far
+  {
+    command: `npx ng serve shipping --port ${PORTS.shipping} --proxy-config ${E2E_DIR}/stack/proxy.e2e.mjs`,
+    cwd: ANGULAR_DIR,
+    url: SHIPPING_URL,
     reuseExistingServer: reuse,
     timeout: 180_000,
     env: {NG_CLI_ANALYTICS: 'false'},

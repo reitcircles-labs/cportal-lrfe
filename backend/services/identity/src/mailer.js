@@ -1,6 +1,7 @@
 import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {lookup} from 'node:dns/promises';
+import {domain} from '@lrfe/common';
 import nodemailer from 'nodemailer';
 
 /**
@@ -47,7 +48,7 @@ export function createMailer({
   }
   if (!from) {
     throw new Error(
-      'MAIL_FROM is required when MAIL_TRANSPORT is set (e.g. "Deeds Registry <noreply@example.com>")',
+      'MAIL_FROM is required when MAIL_TRANSPORT is set (e.g. "Records Office <noreply@example.com>")',
     );
   }
 
@@ -155,16 +156,19 @@ function smtpProblem(err) {
   return 'The email could not be sent';
 }
 
-/** The invitation email: plain text and a simple HTML version with the same content. */
-export function invitationEmail({
-  name,
-  link,
-  expiresAt,
-  invitedBy,
-  roles,
-  issuer,
-  resend = false,
-}) {
+/**
+ * The invitation email: plain text and a simple HTML version with the same content. It invites to
+ * "the <issuer> <system>", the system named by the domain pack (`invitationSystem` in its
+ * identity wording), "system" when the pack names none.
+ * @param {object} invitation
+ * @param {object=} wording the domain pack's identity wording, this install's by default
+ * @return {{subject: string, text: string, html: string}}
+ */
+export function invitationEmail(
+  {name, link, expiresAt, invitedBy, roles, issuer, resend = false},
+  wording = domain.wording.identity,
+) {
+  const system = wording.invitationSystem ?? 'system';
   const until = expiresAt.toUTCString().replace(/:\d\d GMT$/, ' UTC');
   const subject = resend
     ? `Your new invitation to ${issuer}`
@@ -172,7 +176,7 @@ export function invitationEmail({
   const text = [
     `Hello ${name},`,
     '',
-    `${invitedBy} has ${resend ? 'sent you a new invitation' : 'invited you'} to the ${issuer} land records system${roles ? ` as ${roles}` : ''}.`,
+    `${invitedBy} has ${resend ? 'sent you a new invitation' : 'invited you'} to the ${issuer} ${system}${roles ? ` as ${roles}` : ''}.`,
     '',
     'To activate your account, open this link and choose a password (at least 12 characters):',
     link,
@@ -192,7 +196,7 @@ export function invitationEmail({
     );
   const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2937;max-width:560px;margin:0 auto;padding:24px">
 <p>Hello ${esc(name)},</p>
-<p>${esc(invitedBy)} has ${resend ? 'sent you a new invitation' : 'invited you'} to the <b>${esc(issuer)}</b> land records system${roles ? ` as <b>${esc(roles)}</b>` : ''}.</p>
+<p>${esc(invitedBy)} has ${resend ? 'sent you a new invitation' : 'invited you'} to the <b>${esc(issuer)}</b> ${esc(system)}${roles ? ` as <b>${esc(roles)}</b>` : ''}.</p>
 <p>To activate your account, choose a password (at least 12 characters):</p>
 <p style="margin:24px 0"><a href="${esc(link)}" style="background:#1d4ed8;color:#ffffff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Activate my account</a></p>
 <p style="font-size:13px;color:#4b5563">Or copy this link into your browser:<br><span style="word-break:break-all">${esc(link)}</span></p>

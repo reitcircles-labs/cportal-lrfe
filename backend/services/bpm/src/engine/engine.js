@@ -554,7 +554,7 @@ export class BpmEngine {
       kind === 'user'
         ? evaluate(node.assignee.user, data)
         : node.assignee[kind];
-    // each rule names one user or a list of them (land-record-review: the reviewers who filed the record's documents)
+    // each rule names one user or a list of them (e.g. the people who prepared what is approved)
     const excludedUserIds = [
       ...new Set(
         (node.exclude || [])

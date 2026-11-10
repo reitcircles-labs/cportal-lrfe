@@ -110,6 +110,7 @@ export class ExtractionWorker {
         pages: doc.pages ?? null,
         maxEscalationPages: this.maxEscalationPages,
         clock: this.clock,
+        pack: this.service.pack,
       });
       await this.service.applyExtraction(job.documentId, result);
       await this.repo.updateJob(job.id, {

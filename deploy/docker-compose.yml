@@ -48,11 +48,15 @@ x-env: &env
   DB_POOL_SIZE: "5"
   # the schema and tables are set up by db-setup before the services start, not by each service
   DB_SYNC: "false"
+  # the product of this install, its domain pack (CB-3): land (the default) or shipping
+  LRFE_DOMAIN: ${LRFE_DOMAIN:-land}
 
 # The organisation running the portal (API-712): shown by the web app, and in identity's emails and
 # audit's evidence packs. Taken from .env as they are (keys without a value): set but empty = not
 # shown; not in .env at all = the first site's text (an older .env shows what it showed before).
 x-org: &org
+  # the product of this install, for the web app's /config.json (CB-3)
+  LRFE_DOMAIN:
   LRFE_ORG_NAME:
   LRFE_ORG_SUBTITLE:
   LRFE_ORG_PARENT:

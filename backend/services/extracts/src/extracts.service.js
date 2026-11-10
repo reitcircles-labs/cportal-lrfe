@@ -9,6 +9,7 @@ import {
   BadRequestError,
   ConflictError,
   NotFoundError,
+  domain,
 } from '@lrfe/common';
 import {
   newCheckCode,
@@ -29,13 +30,25 @@ export const newToken = () => randomBytes(32).toString('base64url');
 
 export {newCheckCode, normalizeCheckCode, printedCheckCode};
 
-/** The number printed on an extract: EX-<country>-<year>-<nnnnnn>, like record numbers. */
-export const formatExtractNo = (country, year, seq) =>
-  `EX-${country}-${year}-${String(seq).padStart(6, '0')}`;
+/**
+ * The number printed on an extract: <prefix>-<country>-<year>-<nnnnnn>, like record numbers; the
+ * prefix is the domain pack's (`wording.extracts.numberPrefix`, EX for land).
+ * @param {string} country
+ * @param {number} year
+ * @param {number} seq the year's sequence number
+ * @param {string=} prefix
+ * @return {string}
+ */
+export const formatExtractNo = (
+  country,
+  year,
+  seq,
+  prefix = domain.wording.extracts.numberPrefix,
+) => `${prefix}-${country}-${year}-${String(seq).padStart(6, '0')}`;
 
 /**
  * The register of ownership extracts (README.md). An extract is issued for an owner on a land
- * record's current committed version (read from land-records) once that version is on the
+ * record's current committed version (read from the record service) once that version is on the
  * blockchain (asked of the audit service); it can be revoked with a reason. Each issue and
  * revocation is an event, so it is in the audit trail.
  */
@@ -49,18 +62,20 @@ export class ExtractsService {
     files = null,
     sealer = null,
     settings = null,
+    wording = domain.wording.extracts,
     clock = () => new Date(),
     token = newToken,
     checkCode = newCheckCode,
   }) {
     this.repo = repo;
     this.events = events;
-    this.records = records; // land-records, read with the extracts service's token
+    this.records = records; // the record service, read with the extracts service's token
     this.anchoring = anchoring; // the audit service: is a version on the blockchain
     this.proofs = proofs; // the audit service: the version's proof, attached to the PDF
     this.files = files; // where the sealed PDFs are kept (packages/storage)
     this.sealer = sealer; // the organisation seal (seal/sealers.js); none: issuing is refused
     this.settings = settings; // the site's texts on the PDF (settings.js)
+    this.wording = wording; // the product's texts on the PDF: the domain pack's (CB-3)
     this.clock = clock;
     this.token = token;
     this.checkCode = checkCode;
@@ -149,7 +164,12 @@ export class ExtractsService {
     const build = async seq => {
       const extract = {
         ...draft,
-        extractNo: formatExtractNo(this.settings?.country ?? 'NA', year, seq),
+        extractNo: formatExtractNo(
+          this.settings?.country ?? 'NA',
+          year,
+          seq,
+          this.wording.numberPrefix,
+        ),
       };
       const pdf = await this.sealedPdf(extract, record, proof, explorerUrl);
       // the SHA-256 of the plain PDF; its wrapped key, when encrypted, kept with the row (API-780)
@@ -187,7 +207,7 @@ export class ExtractsService {
 
   /**
    * The proof of the record's current version from the audit service, for the PDF: confirmed on
-   * the blockchain, and for the seal land-records holds for that version.
+   * the blockchain, and for the seal the record service holds for that version.
    */
   async requireProof(record) {
     if (!this.proofs) {
@@ -222,11 +242,12 @@ export class ExtractsService {
       proof,
       explorerUrl,
       settings: this.settings,
+      wording: this.wording,
     });
     const {org} = this.settings;
     return sealPdf(pdfDoc, this.sealer, {
       name: org.subtitle ? `${org.name}, ${org.subtitle}` : org.name,
-      reason: `Ownership extract ${extract.extractNo} of ${record.recordNo}, version ${extract.versionNumber}`,
+      reason: `${this.wording.title} ${extract.extractNo} of ${record.recordNo}, version ${extract.versionNumber}`,
       signingTime: extract.issuedAt,
     });
   }
@@ -307,10 +328,10 @@ export class ExtractsService {
     return withCurrent(revoked, record);
   }
 
-  /** The land record with its current version, from land-records. */
+  /** The land record with its current version, from the record service. */
   async requireRecord(recordId) {
     if (!this.records) {
-      throw new AppError(503, 'The land records are not available');
+      throw new AppError(503, 'This install has no record service');
     }
     const record = await this.records.getRecord(recordId);
     if (!record) throw new NotFoundError('Land record not found');

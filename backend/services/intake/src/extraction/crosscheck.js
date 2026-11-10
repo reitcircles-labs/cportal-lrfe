@@ -1,3 +1,4 @@
+import {domain} from '@lrfe/common';
 import {docType} from '../doc-types.js';
 import {costUsd} from './pricing.js';
 import {choice, noul} from './jev.js';
@@ -51,9 +52,18 @@ const fieldOf = (def, row) => ({
     : {}),
 });
 
-/** The questions for one document: id `${k}|${kind}` → noul. */
-export function buildQuestions(typeId, rows) {
-  const t = docType(typeId);
+/**
+ * The questions for one document: id `${k}|${kind}` → noul. The example of a value that belongs to
+ * someone else is the product's (`documents.reading.wrongPartyExample` of the domain pack).
+ * @param {string} typeId
+ * @param {Array<object>} rows
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {object}
+ */
+export function buildQuestions(typeId, rows, pack = domain) {
+  const t = docType(typeId, pack);
+  const example = pack.documents.reading?.wrongPartyExample;
+  const wrongParty = `The value belongs to someone or something else in the document${example ? `, ${example}` : ''}`;
   const questions = {};
   for (const row of rows) {
     const def = t?.fields.find(f => f.k === row.k);
@@ -77,7 +87,7 @@ export function buildQuestions(typeId, rows) {
           field: fieldOf(def, row),
         },
         {
-          true: 'The value belongs to someone or something else in the document, e.g. the seller instead of the buyer, or the deceased instead of the heirs',
+          true: wrongParty,
           false: 'The value describes exactly what the field asks for',
         },
       );
@@ -121,9 +131,12 @@ export async function crossCheck({
   rows,
   flagAt = 0.8,
   clock = () => new Date(),
+  pack = domain,
 }) {
-  if (!jev || !docType(answer.docType)) return {attempt: null, note: null};
-  const questions = buildQuestions(answer.docType, rows);
+  if (!jev || !docType(answer.docType, pack)) {
+    return {attempt: null, note: null};
+  }
+  const questions = buildQuestions(answer.docType, rows, pack);
   if (!Object.keys(questions).length) return {attempt: null, note: null};
   const pages = statePages(answer, rows);
   if (!pages.length) return {attempt: null, note: UNAVAILABLE_NOTE}; // no transcription to check against
@@ -138,7 +151,7 @@ export async function crossCheck({
   let r;
   try {
     r = await jev.ask({
-      state: {document: {type: docType(answer.docType).label, pages}},
+      state: {document: {type: docType(answer.docType, pack).label, pages}},
       questions,
     });
   } catch (err) {
@@ -208,9 +221,10 @@ export async function preferReadings({
   second,
   pages,
   clock = () => new Date(),
+  pack = domain,
 }) {
   const prefer = new Map();
-  const t = docType(typeId);
+  const t = docType(typeId, pack);
   if (!jev || !t || !pages?.length) return {prefer, attempt: null};
   const questions = {};
   const pairs = {};

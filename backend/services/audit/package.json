@@ -17,6 +17,7 @@
   "dependencies": {
     "@emurgo/cardano-serialization-lib-nodejs": "^17.0.0",
     "@lrfe/common": "0.1.0",
+    "@lrfe/record-contract": "0.1.0",
     "sequelize": "^6.37.3",
     "dotenv": "^16.4.5"
   },

@@ -1,7 +1,7 @@
 {
   "key": "audit-finding",
   "name": "Audit finding",
-  "description": "An auditor raised a finding on a land record version or a document version. The records officers and the registrars see it in their task inbox and acknowledge it. The finding stays open in the audit service until a newer reviewed version resolves it or the auditor closes it; then the audit service withdraws this process if it is still open. Started by the audit service (API-659).",
+  "description": "An auditor raised a finding on a record version or a document version. The people the product names acknowledge it in their task inbox, one task per role. The finding stays open in the audit service until a newer reviewed version resolves it or the auditor closes it; then the audit service withdraws this process if it is still open. Started by the audit service (API-659).",
   "start": {"services": ["audit"]},
   "managePerm": "audit.signoff",
   "businessKey": {"var": "finding.id"},
@@ -54,28 +54,12 @@
     }
   },
   "startAt": "start",
+  "acknowledgeTask": {
+    "title": {"cat": ["Audit finding on ", {"var": "finding.about"}]},
+    "outcomes": ["acknowledged"],
+    "dueInHours": 120
+  },
   "nodes": {
-    "start": {"type": "start", "next": "notify"},
-    "notify": {"type": "parallelGateway", "next": ["officer", "registrar"]},
-    "officer": {
-      "type": "humanTask",
-      "title": {"cat": ["Audit finding on ", {"var": "finding.about"}]},
-      "assignee": {"role": "rec"},
-      "outcomes": ["acknowledged"],
-      "outputVar": "officerAck",
-      "dueInHours": 120,
-      "next": "acknowledged"
-    },
-    "registrar": {
-      "type": "humanTask",
-      "title": {"cat": ["Audit finding on ", {"var": "finding.about"}]},
-      "assignee": {"role": "sup"},
-      "outcomes": ["acknowledged"],
-      "outputVar": "registrarAck",
-      "dueInHours": 120,
-      "next": "acknowledged"
-    },
-    "acknowledged": {"type": "join", "next": "done"},
     "done": {"type": "end", "outcome": "acknowledged"}
   }
 }

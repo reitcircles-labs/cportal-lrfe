@@ -15,7 +15,7 @@ import {EdrmsService} from '../../services/edrms/src/edrms.service.js';
 import {sealOf} from '../../services/edrms/src/seal.js';
 import {searchTextOf} from '../../services/edrms/src/search.js';
 import {storageKey} from '../../services/edrms/src/storage/index.js';
-import {DOC_TYPES} from '../../services/intake/src/doc-types.js';
+import {docTypesOf} from '../../services/intake/src/doc-types.js';
 import {
   createRandom,
   madeUpCompany,
@@ -41,7 +41,7 @@ const MONTHS = [
 ];
 /** Field labels as the intake review screen files them, per document type. */
 const LABELS = new Map(
-  DOC_TYPES.map(t => [t.id, new Map(t.fields.map(f => [f.k, f.label]))]),
+  docTypesOf().map(t => [t.id, new Map(t.fields.map(f => [f.k, f.label]))]),
 );
 const OTHER_TITLES = [
   'Power of attorney to pass transfer',

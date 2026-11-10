@@ -1,4 +1,4 @@
-import {AppError} from '@lrfe/common';
+import {AppError, domain} from '@lrfe/common';
 import {
   DEAD_LETTER_INDEX,
   INDEX_ALIAS,
@@ -75,8 +75,10 @@ const READ = new Set(['ready', 'filed', 'rejected']);
  */
 export class SearchService {
   /**
+   * `pack` is the country pack of the index; `domainPack` the product's domain pack (CB-3), whose
+   * documents say which field names whom a document is for.
    * @param {{events: object, intake: object, edrms: object, engine?: Function|null,
-   *   pack?: object, clock?: () => Date}} deps
+   *   pack?: object, domainPack?: object, clock?: () => Date}} deps
    */
   constructor({
     events,
@@ -84,8 +86,10 @@ export class SearchService {
     edrms,
     engine = null,
     pack = null,
+    domainPack = domain,
     clock = () => new Date(),
   }) {
+    this.domainPack = domainPack;
     this.events = events;
     this.intake = intake;
     this.edrms = edrms;
@@ -213,7 +217,7 @@ export class SearchService {
       };
     }
     const summary = summarise(reading, filed);
-    const entry = buildEntry({reading, filed});
+    const entry = buildEntry({reading, filed}, this.domainPack);
     // an upload the AI has not read (yet, or it failed): nothing to search; its reading's event
     // indexes it (the re-index meets these)
     if (!filed && !READ.has(reading.status)) {

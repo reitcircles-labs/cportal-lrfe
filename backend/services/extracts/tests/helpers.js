@@ -1,4 +1,9 @@
-import {createEventBus, createServiceTokenSigner} from '@lrfe/common';
+import {
+  createEventBus,
+  createServiceTokenSigner,
+  domain,
+  recordServiceOf,
+} from '@lrfe/common';
 import {createMemoryStore} from '@lrfe/storage';
 import {ExtractsService} from '../src/extracts.service.js';
 import {createTestSealer} from '../src/seal/sealers.js';
@@ -213,6 +218,8 @@ export async function makeExtracts({
     settings,
     records: createRecordsClient({
       baseUrl: 'http://records',
+      label: recordServiceOf(domain).label,
+      record: domain.wording.audit.record,
       serviceToken: createServiceTokenSigner({
         secret: SECRET,
         service: 'extracts',
@@ -224,6 +231,7 @@ export async function makeExtracts({
   const check = new ExtractCheck({
     repo,
     records: service.records,
+    recordsName: recordServiceOf(domain).name,
     versions,
     timeZone: settings.timeZone,
     clock,

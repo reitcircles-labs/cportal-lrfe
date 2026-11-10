@@ -68,7 +68,7 @@ export const DEFAULT_ORG_FULL_NAME = `${DEFAULT_ORG.name} · ${DEFAULT_ORG.subti
 /**
  * The organisation running the portal, from the site's settings (API-712): LRFE_ORG_NAME,
  * LRFE_ORG_SUBTITLE, LRFE_ORG_PARENT, LRFE_ORG_PLACE, the same ones the web app shows
- * (angular-app/src/app/state/site-config.ts). Unlike env(), a setting that is set but empty stays
+ * (angular-app/projects/platform/src/lib/state/site-config.ts). Unlike env(), a setting that is set but empty stays
  * empty (not shown); only one that is not set at all gets the default. The name is never empty.
  * `fullName` is the one-line form for emails and the authenticator app: "Deeds Registry · Republic
  * of Namibia", or only the name without a subtitle.

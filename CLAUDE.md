@@ -4,6 +4,12 @@ A general land registry portal (Namibia is the first client): Angular app, Fasti
 NATS, OpenBao, anchoring on a blockchain. Work is tracked in Jira (project API) and done ticket by ticket.
 These rules apply to every ticket; the details are in `docs/ai-workflow/`, read only when a task needs them.
 
+**Layout** (details and how to add a product: `docs/architecture/products.md`): web apps in
+`angular-app/projects/{land-registry,shipping}` on the library `platform` (`npm start`: 4200,
+`npm run start:shipping`: 4201); shared `backend/packages` and `backend/services` (gateway 3500,
+services 3501–3508, `npm run dev`); product code in `backend/domains/{land,shipping}` and
+`land-records`. `LRFE_DOMAIN` (default `land`) picks the pack. Shared code never imports product code (lint guard).
+
 ## Git and branches
 
 - **Never merge; push only through the `pr-opener` agent** (`scripts/open-pr.mjs`), and **only when the
@@ -63,8 +69,8 @@ Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in
 ## Ports per checkout (e2e, load tests)
 
 `~/projects/cportal-lrfe`: 3600/4300 · a second clone: 3700/4400 · `cportal-lrfe-api768`: 3800/4500 ·
-demo 8088 · rehearsal 8716 · penetration tests (`security/scan.mjs`) 3900/4600. Set
-`E2E_API_PORT`/`E2E_WEB_PORT` for anything outside the main checkout.
+`cportal-lrfe-cb`: 4000/4700 · demo 8088 · rehearsal 8716 · penetration tests (`security/scan.mjs`) 3900/4600. Set
+`E2E_API_PORT`/`E2E_WEB_PORT` for anything outside the main checkout; the shipping app takes the web port + 1.
 
 ## Keep the context small (it is the main cost)
 

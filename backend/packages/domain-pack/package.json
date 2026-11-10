@@ -1,0 +1,17 @@
+{
+  "name": "@lrfe/domain-pack",
+  "version": "0.1.0",
+  "description": "What a domain pack (land, shipping) gives the shared services, and its check at start",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3"
+  }
+}

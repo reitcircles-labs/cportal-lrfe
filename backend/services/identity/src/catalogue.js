@@ -1,24 +1,28 @@
+import {domain} from '@lrfe/common';
+
 /**
- * Fixed catalogue: permissions, the six system roles, segregation-of-duties rules and default
- * security policies. Mirrors angular-app/src/app/state/rbac.service.ts. Roles cannot be created
- * or deleted; only their permission sets (the admin "Roles & permissions" matrix) are editable.
+ * Fixed catalogue: permissions, system roles, segregation-of-duties rules and default security
+ * policies. The platform's own entries are here; the product's (its permission groups, roles,
+ * rules, default offices and demo users) come from the domain pack's `identity` section (CB-3),
+ * and the pack's `wording.identity` may give the platform entries its own descriptions. Mirrors
+ * the web app's permission catalogue (angular-app/projects/land-registry/src/app/state/perm-catalogue.ts).
+ * Roles cannot be created or deleted; only their permission sets (the admin "Roles & permissions"
+ * matrix) are editable. Role and permission ids are stored in databases and tokens: they never
+ * change.
  */
 
-export const PERM_GROUPS = [
-  'General',
-  'Capture',
-  'Verification',
-  'Land records',
-  'Audit',
-  'Administration',
-];
+/** The platform's permission groups that come before the product's. */
+const GROUPS_BEFORE = ['General', 'Capture', 'Verification'];
+/** The platform's permission groups that come after the product's. */
+const GROUPS_AFTER = ['Audit', 'Administration'];
 
-export const PERMS = [
+/** The platform's permissions, by group. */
+const PLATFORM_PERMS = [
   {
     id: 'dashboard.view',
     group: 'General',
     label: 'View dashboard',
-    desc: 'KPIs, land records register, recent activity',
+    desc: 'KPIs, register, recent activity',
   },
   {
     id: 'capture.view',
@@ -55,49 +59,6 @@ export const PERMS = [
     group: 'Verification',
     label: 'File documents to EDRMS',
     desc: 'Approve a document as a record',
-  },
-  {
-    id: 'record.view',
-    group: 'Land records',
-    label: 'View land records',
-    desc: 'ERP records, linked documents, owners',
-  },
-  {
-    id: 'record.create',
-    group: 'Land records',
-    label: 'Create land records',
-    desc: 'Open a new erf or farm record',
-  },
-  {
-    id: 'record.link',
-    group: 'Land records',
-    label: 'Add documents to records',
-    desc: 'Link EDRMS documents to a record',
-  },
-  {
-    id: 'record.unlink',
-    group: 'Land records',
-    label: 'Remove documents from records',
-    desc: 'Return a document to the unlinked pool',
-  },
-  {
-    id: 'record.comment',
-    group: 'Land records',
-    label: 'Comment on records',
-    desc: 'Post to the record discussion thread',
-  },
-  {
-    id: 'record.finalize',
-    group: 'Land records',
-    label: 'Finalize records',
-    desc: 'Commit a version for tokenization',
-  },
-  {
-    id: 'extract.issue',
-    group: 'Land records',
-    label: 'Issue ownership extracts',
-    desc: 'Issue an extract of a record for its owner, revoke one',
-    since: 4,
   },
   {
     id: 'audit.view',
@@ -152,118 +113,16 @@ export const PERMS = [
 ];
 
 /**
- * Catalogue version. A permission with `since: n` was added in version n: when an existing
- * database is on an older version, the seed grants it to the roles that hold it by default
- * (below), once, and never touches it again (an administrator may have removed it since).
+ * The platform's roles, after the product's: the system administrator (national: no office).
+ * @type {!Array<{id: string, label: string, desc: string, home: string, perms: !Array<string>}>}
  */
-export const CATALOGUE_VERSION = 4;
-
-export const PERM_IDS = PERMS.map(p => p.id);
-/** Whether `id` is a permission in the catalogue. */
-export const isKnownPerm = id => PERM_IDS.includes(id);
-/** The label of a permission, or its id when it is not in the catalogue. */
-export const permLabel = id => PERMS.find(p => p.id === id)?.label || id;
-/** Order a permission list by catalogue order and drop unknown/duplicate ids. */
-export const normalizePerms = perms => PERM_IDS.filter(p => perms.includes(p));
-
-const role = (id, label, desc, home, perms) => ({
-  id,
-  label,
-  desc,
-  home,
-  system: true,
-  perms,
-});
-
-export const ROLES = [
-  role(
-    'sup',
-    'Registrar (supervisor)',
-    'Oversees the registry. Finalizes records and reviews audit evidence.',
-    '/',
-    [
-      'dashboard.view',
-      'capture.view',
-      'verify.view',
-      'record.view',
-      'record.comment',
-      'record.finalize',
-      'audit.view',
-      'audit.export',
-      'anchors.view',
-      'admin.users',
-    ],
-  ),
-  role(
-    'scan',
-    'Scan operator',
-    'Captures deeds, grants and SG diagrams at the scan station.',
-    '/capture',
-    [
-      'dashboard.view',
-      'capture.view',
-      'capture.scan',
-      'capture.rescan',
-      'anchors.view',
-    ],
-  ),
-  role(
-    'rev',
-    'Metadata reviewer',
-    'Verifies extracted metadata against the image and files to the EDRMS.',
-    '/verify',
-    [
-      'dashboard.view',
-      'capture.view',
-      'capture.rescan',
-      'verify.view',
-      'verify.edit',
-      'verify.file',
-      'record.view',
-      'record.comment',
-      'anchors.view',
-    ],
-  ),
-  role(
-    'rec',
-    'Records officer',
-    'Creates land records, links documents and prepares them for finalization.',
-    '/link',
-    [
-      'dashboard.view',
-      'verify.view',
-      'record.view',
-      'record.create',
-      'record.link',
-      'record.unlink',
-      'record.comment',
-      'record.finalize',
-      'extract.issue',
-      'anchors.view',
-    ],
-  ),
-  role(
-    'aud',
-    'Auditor · read-only',
-    'Office of the Auditor-General. Inspects evidence and signs off; cannot change records.',
-    '/audit',
-    [
-      'dashboard.view',
-      'capture.view',
-      'verify.view',
-      'record.view',
-      'audit.view',
-      'audit.signoff',
-      'audit.export',
-      'anchors.view',
-    ],
-  ),
-  role(
-    'adm',
-    'System administrator',
-    'Manages users, roles and security policies. No rights over land-record data.',
-    '/admin/users',
-    [
+const PLATFORM_ROLES = [
+  {
+    id: 'adm',
+    label: 'System administrator',
+    desc: "Manages users, roles and security policies. No rights over the product's records.",
+    home: '/admin/users',
+    perms: [
       'dashboard.view',
       'audit.view',
       'anchors.view',
@@ -272,31 +131,16 @@ export const ROLES = [
       'admin.policies',
       'admin.offices',
     ],
-  ),
+  },
 ];
 
-export const ROLE_IDS = ROLES.map(r => r.id);
-
-export const SOD_RULES = [
+/** The platform's separation-of-duty rules, between its own permissions. */
+const PLATFORM_SOD_RULES = [
   {
     id: 'sod1',
     a: 'verify.file',
     b: 'audit.signoff',
     label: 'Reviewers cannot audit documents they can file',
-    on: true,
-  },
-  {
-    id: 'sod2',
-    a: 'record.finalize',
-    b: 'audit.signoff',
-    label: 'Whoever finalizes records cannot sign off audits',
-    on: true,
-  },
-  {
-    id: 'sod3',
-    a: 'admin.roles',
-    b: 'record.finalize',
-    label: 'Administrators cannot finalize land records',
     on: true,
   },
   {
@@ -307,6 +151,14 @@ export const SOD_RULES = [
     on: false,
   },
 ];
+
+/**
+ * Catalogue version. A permission with `since: n` (the platform's or the pack's) was added in
+ * version n: when an existing database is on an older version, the seed grants it to the roles that
+ * hold it by default, once, and never touches it again (an administrator may have removed it
+ * since). The version is the highest of this one and every `since` of the pack.
+ */
+const PLATFORM_CATALOGUE_VERSION = 4;
 
 export const ACCESS_KINDS = [
   'role',
@@ -324,31 +176,162 @@ export const OFFICE_CODE_PATTERN = '^[A-Z]{2,5}$';
 export const NATIONAL_ROLES = ['adm'];
 
 /**
- * Offices created when a database has none, to start from: Namibia's two deeds offices, as listed
- * by the Directorate of Deeds Registration (checked 1 October 2026). Windhoek registers land
- * everywhere except Rehoboth; Rehoboth registers title in Rehoboth town and constituency and the
- * surrounding farmland. Codes are permanent; names and details can be edited, offices suspended.
+ * The whole catalogue of an install: the platform's entries and its domain pack's, in the order
+ * the administration screens list them. Throws, naming the pack, when the pack's entries clash
+ * with the platform's or name a permission or role that does not exist.
+ * @param {import('@lrfe/domain-pack').DomainPack} pack
+ * @return {{
+ *   groups: !Array<string>,
+ *   perms: !Array<{id: string, group: string, label: string, desc: string, since: (number|undefined)}>,
+ *   permIds: !Array<string>,
+ *   roles: !Array<{id: string, label: string, desc: string, home: string, system: boolean, perms: !Array<string>}>,
+ *   roleIds: !Array<string>,
+ *   sodRules: !Array<{id: string, a: string, b: string, label: string, on: boolean}>,
+ *   version: number,
+ *   offices: !Array<{code: string, name: string, type: string, address: string, contact: string}>,
+ *   demoUsers: !Array<{name: string, email: string, office: string, roles: !Array<string>, status: string}>,
+ * }}
  */
-export const DEFAULT_OFFICES = [
-  {
-    code: 'WDH',
-    name: 'Deeds Registry · Windhoek',
-    type: 'registry',
-    address: 'Robert Mugabe Avenue, Windhoek',
-    contact: '',
-  },
-  {
-    code: 'REH',
-    name: 'Deeds Registry · Rehoboth',
-    type: 'registry',
-    address: '',
-    contact: '',
-  },
-];
+export function catalogueOf(pack) {
+  const section = pack.identity;
+  const wording = pack.wording.identity;
+  const problem = what =>
+    new Error(`Domain pack ${pack.name}: identity: ${what}`);
+
+  const packGroups = section.permissionGroups ?? [];
+  const groups = [...GROUPS_BEFORE, ...packGroups, ...GROUPS_AFTER];
+  const clashingGroup = packGroups.find(
+    g => GROUPS_BEFORE.includes(g) || GROUPS_AFTER.includes(g),
+  );
+  if (clashingGroup) {
+    throw problem(`the group "${clashingGroup}" is the platform's`);
+  }
+  const packPerms = section.permissions ?? [];
+  for (const perm of packPerms) {
+    if (PLATFORM_PERMS.some(p => p.id === perm.id)) {
+      throw problem(`the permission ${perm.id} is the platform's`);
+    }
+    if (!groups.includes(perm.group)) {
+      throw problem(
+        `the permission ${perm.id} is in the unknown group "${perm.group}"`,
+      );
+    }
+  }
+  const described = perm => {
+    const desc = wording.permissionDescriptions?.[perm.id] ?? perm.desc;
+    return {...perm, desc};
+  };
+  const perms = groups.flatMap(group =>
+    [...PLATFORM_PERMS, ...packPerms]
+      .filter(p => p.group === group)
+      .map(described),
+  );
+  const permIds = perms.map(p => p.id);
+
+  const packRoles = section.roles ?? [];
+  const clashingRole = packRoles.find(r =>
+    PLATFORM_ROLES.some(p => p.id === r.id),
+  );
+  if (clashingRole) {
+    throw problem(`the role ${clashingRole.id} is the platform's`);
+  }
+  const roles = [...packRoles, ...PLATFORM_ROLES].map(r => ({
+    id: r.id,
+    label: r.label,
+    desc: wording.roleDescriptions?.[r.id] ?? r.desc,
+    home: r.home,
+    system: true,
+    perms: [...r.perms],
+  }));
+  for (const role of roles) {
+    const unknown = role.perms.filter(p => !permIds.includes(p));
+    if (unknown.length) {
+      throw problem(
+        `the role ${role.id} holds unknown permission(s) ${unknown.join(', ')}`,
+      );
+    }
+  }
+  const roleIds = roles.map(r => r.id);
+
+  // in id order, as the database lists them
+  const sodRules = [
+    ...PLATFORM_SOD_RULES,
+    ...(section.separationOfDuties ?? []),
+  ]
+    .map(r => ({...r}))
+    .sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  for (const [i, rule] of sodRules.entries()) {
+    if (i > 0 && sodRules[i - 1].id === rule.id) {
+      throw problem(`the rule ${rule.id} is the platform's`);
+    }
+    if (!permIds.includes(rule.a) || !permIds.includes(rule.b)) {
+      throw problem(`the rule ${rule.id} names an unknown permission`);
+    }
+  }
+
+  const offices = (section.offices ?? []).map(o => ({...o}));
+  const badOffice = offices.find(o => !OFFICE_TYPES.includes(o.type));
+  if (badOffice) {
+    throw problem(
+      `the office ${badOffice.code} has a type other than ${OFFICE_TYPES.join(', ')}`,
+    );
+  }
+  const demoUsers = (section.demoUsers ?? []).map(u => ({
+    ...u,
+    roles: [...u.roles],
+  }));
+  const badUser = demoUsers.find(u => u.roles.some(r => !roleIds.includes(r)));
+  if (badUser) {
+    throw problem(`the demo user ${badUser.email} has an unknown role`);
+  }
+
+  const version = Math.max(
+    PLATFORM_CATALOGUE_VERSION,
+    ...perms.map(p => p.since ?? 1),
+  );
+  return {
+    groups,
+    perms,
+    permIds,
+    roles,
+    roleIds,
+    sodRules,
+    version,
+    offices,
+    demoUsers,
+  };
+}
+
+/** The catalogue of this install, from its domain pack. */
+export const CATALOGUE = catalogueOf(domain);
+
+export const PERM_GROUPS = CATALOGUE.groups;
+export const PERMS = CATALOGUE.perms;
+export const CATALOGUE_VERSION = CATALOGUE.version;
+export const PERM_IDS = CATALOGUE.permIds;
+/** Whether `id` is a permission in the catalogue. */
+export const isKnownPerm = id => PERM_IDS.includes(id);
+/** The label of a permission, or its id when it is not in the catalogue. */
+export const permLabel = id => PERMS.find(p => p.id === id)?.label || id;
+/**
+ * Order a permission list by catalogue order and drop unknown/duplicate ids.
+ * @param {!Array<string>} perms
+ * @param {!Array<string>=} permIds the catalogue's permission ids, this install's by default
+ * @return {!Array<string>}
+ */
+export const normalizePerms = (perms, permIds = PERM_IDS) =>
+  permIds.filter(p => perms.includes(p));
+
+export const ROLES = CATALOGUE.roles;
+export const ROLE_IDS = CATALOGUE.roleIds;
+export const SOD_RULES = CATALOGUE.sodRules;
+
+/** The offices created when a database has none and the site sets none: the domain pack's. */
+export const DEFAULT_OFFICES = CATALOGUE.offices;
 
 /**
  * The offices to create on an empty database, from the site's setting (API-712), e.g.
- * `WDH=Deeds Registry · Windhoek;REH=Deeds Registry · Rehoboth`: code=name pairs separated by
+ * `HQ=Head office;NTH=North office`: code=name pairs separated by
  * semicolons, each a registry office. Empty: none (the administrator adds them). Addresses and
  * contacts are added in Administration. Throws on a malformed entry, naming the setting.
  * @param {string} text
@@ -385,13 +368,20 @@ export const DEFAULT_POLICIES = {
   fourEyes: true,
 };
 
-/** Union of the permissions granted by `roleIds`, given the current role definitions. */
-export function effectivePerms(roleIds, roles) {
+/**
+ * Union of the permissions granted by `roleIds`, given the current role definitions, in catalogue
+ * order.
+ * @param {!Array<string>} roleIds
+ * @param {!Array<{id: string, perms: !Array<string>}>} roles
+ * @param {!Array<string>=} permIds the catalogue's permission ids, this install's by default
+ * @return {!Array<string>}
+ */
+export function effectivePerms(roleIds, roles, permIds = PERM_IDS) {
   const granted = new Set();
   for (const id of roleIds) {
     roles.find(r => r.id === id)?.perms.forEach(p => granted.add(p));
   }
-  return PERM_IDS.filter(p => granted.has(p));
+  return permIds.filter(p => granted.has(p));
 }
 
 /** Enabled SoD rules violated by holding all of `perms`. */

@@ -1,6 +1,6 @@
 import {readFile} from 'node:fs/promises';
-import {OFFSET_SCHEMA} from '@lrfe/common';
-import {KINDS} from './proof.service.js';
+import {domain, OFFSET_SCHEMA, recordServiceOf} from '@lrfe/common';
+import {proofKinds} from './proof.service.js';
 import {CLOSE_OUTCOMES} from './signoff.service.js';
 import {LIST_FILTERS} from './audit-list.service.js';
 import {ANCHOR_FILTERS} from './anchorings.service.js';
@@ -24,8 +24,10 @@ export async function auditRoutes(
   },
 ) {
   const canView = app.requirePerm('audit.view');
+  // the product's record service, as the domain pack names it (CB-4); none for a product without records
+  const recordService = recordServiceOf(proofs?.pack ?? domain);
 
-  // trail entries: of a land record (with its documents' steps), a document, a user, a process
+  // trail entries: of a record (with its documents' steps), a document, a user, a process
   app.get(
     '/audit/trail',
     {
@@ -73,12 +75,12 @@ export async function auditRoutes(
   );
 
   const item = {
-    kind: {type: 'string', enum: KINDS},
+    kind: {type: 'string', enum: proofKinds(proofs?.pack)},
     id: {type: 'string', maxLength: 64},
     version: {type: 'integer', minimum: 1},
   };
 
-  // the proof of a land record version, a document version or a trail entry (README.md section 4)
+  // the proof of a record version, a document version or a trail entry (README.md section 4)
   app.get(
     '/audit/proofs/:kind/:id',
     {
@@ -117,12 +119,16 @@ export async function auditRoutes(
     async req => proofs.verify(req.body.kind, req.body.id, req.body.version),
   );
 
-  // the anchoring status of versions, for land-records and edrms to show next to them, and for the
+  // the anchoring status of versions, for the record service and edrms to show next to them, and for the
   // extracts service: an extract is issued only of a version on the blockchain (API-692)
   app.post(
     '/audit/anchoring',
     {
-      onRequest: app.requireService('land-records', 'edrms', 'extracts'),
+      onRequest: app.requireService(
+        ...(recordService ? [recordService.name] : []),
+        'edrms',
+        'extracts',
+      ),
       schema: {
         body: {
           type: 'object',
@@ -145,7 +151,7 @@ export async function auditRoutes(
     async req => ({items: await proofs.statusOf(req.body.keys)}),
   );
 
-  // a land record version checked now (seal, path, blockchain) for the public check of an ownership
+  // a record version checked now (seal, path, blockchain) for the public check of an
   // extract (API-693): the extracts service only
   app.post(
     '/audit/anchoring/check',
@@ -166,7 +172,7 @@ export async function auditRoutes(
     async req => proofs.versionCheck(req.body.recordId, req.body.version),
   );
 
-  // the proof of a land record version, the same as in the evidence pack, attached to an ownership
+  // the proof of a record version, the same as in the evidence pack, attached to an
   // extract's PDF (API-691): the extracts service only
   app.post(
     '/audit/anchoring/proof',
@@ -231,7 +237,7 @@ export async function auditRoutes(
       .send(await readFile(VERIFIER_FILE)),
   );
 
-  // "Is it on the blockchain?": a land record or document by number, Erf or deed number, with its batches (API-697)
+  // "Is it on the blockchain?": a record or document by number (as the domain pack recognises them), with its batches (API-697)
   app.get(
     '/audit/anchors/lookup',
     {
@@ -264,7 +270,7 @@ export async function auditRoutes(
     async req => anchorings.detail(req.params.batch),
   );
 
-  // what one batch covers: counts by kind, and its land record versions with what they are made of (API-696)
+  // what one batch covers: counts by kind, and its record versions with what they are made of (API-696)
   app.get(
     '/audit/anchors/:batch/coverage',
     {
@@ -288,7 +294,7 @@ export async function auditRoutes(
     async req => anchorings.coverage(req.params.batch, req.query),
   );
 
-  // the document versions one batch put on the blockchain, with the land record versions made of them (API-696)
+  // the document versions one batch put on the blockchain, with the record versions made of them (API-696)
   app.get(
     '/audit/anchors/:batch/documents',
     {
@@ -410,7 +416,7 @@ export async function auditRoutes(
     properties: {recordId: uuid, documentId: uuid},
   };
 
-  // the land records list of the Audit screen: filters, counts and a summary per record (API-661)
+  // the records list of the Audit screen: filters, counts and a summary per record (API-661)
   app.get(
     '/audit/records',
     {
@@ -431,7 +437,7 @@ export async function auditRoutes(
     async req => auditList.list(req.query),
   );
 
-  // the open checkpoint of a land record: what the next audit sign-off covers, checked against the
+  // the open checkpoint of a record: what the next audit sign-off covers, checked against the
   // blockchain, and whether the user asking may sign it off now (API-680)
   app.get(
     '/audit/records/:id/check',
@@ -472,7 +478,7 @@ export async function auditRoutes(
     async req => ({items: await signoffs.listSignoffs(req.query)}),
   );
 
-  // a finding on a land record version or a document version: the records desk is notified
+  // a finding on a record version or a document version: the records desk is notified
   app.post(
     '/audit/findings',
     {
@@ -495,7 +501,7 @@ export async function auditRoutes(
         .send(await signoffs.raiseFinding(req.body, actorOf(req))),
   );
 
-  // findings are seen by auditors and by the records desk (records officers, registrars)
+  // findings are seen by auditors and by the records desk (the roles the audit-finding workflow names)
   const canSeeFindings = app.requireAnyPerm('audit.view', 'record.view');
   app.get(
     '/audit/findings',

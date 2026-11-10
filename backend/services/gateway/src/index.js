@@ -1,5 +1,18 @@
-import {env, envInt, envList, startService} from '@lrfe/common';
+import {
+  domain,
+  env,
+  envInt,
+  envList,
+  recordServiceOf,
+  startService,
+} from '@lrfe/common';
 import {PUBLIC_RATE_LIMIT, buildApp} from './app.js';
+
+// the product's record service (CB-4): land-records at RECORDS_URL for land, none for shipping
+const recordService = recordServiceOf(domain);
+const recordUpstream = recordService
+  ? {[recordService.name]: recordService.url}
+  : {};
 
 const app = await buildApp({
   upstreams: {
@@ -7,7 +20,7 @@ const app = await buildApp({
     edrms: env('EDRMS_URL', 'http://localhost:3502'),
     bpm: env('BPM_URL', 'http://localhost:3503'),
     intake: env('INTAKE_URL', 'http://localhost:3504'),
-    'land-records': env('RECORDS_URL', 'http://localhost:3505'),
+    ...recordUpstream,
     audit: env('AUDIT_URL', 'http://localhost:3506'),
     extracts: env('EXTRACTS_URL', 'http://localhost:3507'),
   },

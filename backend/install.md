@@ -16,6 +16,11 @@ nginx and the gateway; testers on a laptop use the SSH tunnel.
 | land-records | 3505 | `records` |
 | audit | 3506 | `audit` |
 | extracts | 3507 | `extracts` |
+| search | 3508 | none |
+
+`land-records` is the land registry's record service; the others are shared by every product. An
+install of another product sets `LRFE_DOMAIN` (step 2) and runs that product's record service
+instead ([`docs/architecture/products.md`](../docs/architecture/products.md)).
 
 Needs: Node ≥ 20 and PostgreSQL 15 on the same machine.
 
@@ -73,6 +78,7 @@ are in `.gitignore` and must never be committed. In each file set:
 | `DB_CONNECTION_STRING` | `postgres://ladmin:…@localhost:5432/testdb` | All services except the gateway; they share the database, each in its own schema |
 | `<SERVICE>_STORE` | `postgres` | `IDENTITY_STORE`, `EDRMS_STORE`, `BPM_STORE`, `INTAKE_STORE`, `RECORDS_STORE`, `AUDIT_STORE`, `EXTRACTS_STORE` |
 | `DB_SYNC` | `true` | Creates the service's tables on start (development and test; real migrations before production) |
+| `LRFE_DOMAIN` | not set (the land registry), or the product's pack, e.g. `shipping` | The same in every service; chosen when installing, never changed on an install that holds data ([products](../docs/architecture/products.md)) |
 
 Service-specific settings (storage folders, mail, the AI provider, …) are described in the
 template's comments and in each service's README. For land-records, besides the shared ones:

@@ -1,0 +1,308 @@
+import {
+  Component,
+  HostListener,
+  computed,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {Router} from '@angular/router';
+import {
+  ApiError,
+  fmtTime,
+  IconComponent,
+  TaskDetail,
+  TaskItem,
+  TasksService,
+  ToastService,
+} from '@lrfe/platform';
+import {RecordDiffComponent} from './record-diff.component';
+import {Review, RecordsApi} from '../api/records.api';
+import {DiscussionEvent, discussionEvents} from '../features/link/discussion';
+
+/**
+ * Top-bar bell: the workflow inbox (bpm tasks), and the dialog to approve or reject a task: a
+ * correction to a filed document, or a land record version (with its checks, what it changes, the
+ * latest of its discussion, and a link to review it on the record page: API-729).
+ */
+@Component({
+  selector: 'app-inbox',
+  imports: [IconComponent, RecordDiffComponent],
+  template: `
+    <div class="wrap">
+      <button class="btn btn-ghost btn-icon bell" (click)="open.set(!open()); tasks.refresh()" title="Tasks" aria-label="Tasks" [attr.aria-expanded]="open()">
+        <app-icon name="bell" [size]="19" />
+        @if (count()) { <span class="count" [class.overdue]="overdue()">{{ count() }}</span> }
+      </button>
+      @if (open()) {
+        <div class="menu" role="menu">
+          <div class="mh"><b>My tasks</b><span class="small muted">{{ count() }} open</span></div>
+          @for (t of tasks.tasks(); track t.id) {
+            <button class="item" role="menuitem" (click)="review(t)">
+              <span class="stack" style="gap:2px;min-width:0">
+                <span class="t">{{ t.title }}</span>
+                <span class="small muted">{{ label(t) }} · {{ fmt(t.createdAt) }}@if (t.claimedByName) { · claimed by you }</span>
+              </span>
+              @if (t.overdue) { <span class="tag tag-danger">Overdue</span> } @else if (t.dueAt) { <span class="small muted">due {{ fmt(t.dueAt).slice(0, 6) }}</span> }
+            </button>
+          } @empty { <div class="small muted" style="padding:22px 16px;text-align:center">Nothing waiting for you.</div> }
+        </div>
+      }
+    </div>
+
+    @if (detail(); as d) {
+      <div class="dialog-backdrop" (click)="close()">
+        <form class="dialog" style="width:min(640px,100%)" (click)="$event.stopPropagation()" (submit)="$event.preventDefault()">
+          <div class="dialog-title">{{ d.title }}</div>
+          <div class="kv">
+            <span>{{ isRecord(d) ? 'Submitted by' : isFinding(d) ? 'Raised by' : 'Requested by' }}</span><span>{{ (isFinding(d) ? d.input.raisedBy : (d.input.submittedBy ?? d.input.startedBy))?.name }} · {{ fmt(d.createdAt) }}</span>
+            @if (d.input.finding; as f) { <span>Finding</span><span style="white-space:pre-wrap">{{ f.description }}</span> }
+            @if (d.input.document; as doc) { <span>Document</span><span>{{ doc.edrmsNo }} · {{ doc.title }} · v{{ doc.currentVersion }}.0</span> }
+            @if (d.input.record; as rec) { <span>Land record</span><span>{{ rec.recordNo }} · {{ rec.label }} · version {{ rec.versionNumber }}</span> }
+            @if (d.input.reason) { <span>Reason</span><span>{{ d.input.reason }}</span> }
+            @if (d.dueAt) { <span>Due</span><span [style.color]="d.overdue ? 'var(--danger)' : null">{{ fmt(d.dueAt) }}</span> }
+          </div>
+          @if (d.input.preview?.length) {
+            <table class="table" style="font-size:13.5px">
+              <thead><tr><th>Field</th><th>Current</th><th>Proposed</th></tr></thead>
+              <tbody>@for (c of d.input.preview; track c.k) { <tr><td class="small muted">{{ c.label }}</td><td class="strike">{{ c.from }}</td><td><b>{{ c.to }}</b></td></tr> }</tbody>
+            </table>
+          }
+          @if (isRecord(d)) {
+            @if (recordReview(); as rv) {
+              <div class="rv" tabindex="0" aria-label="Review of the land record">
+                <b class="small">Checks</b>
+                @for (c of rv.checks; track c.id) {
+                  <div class="rchk"><span class="check-mark" aria-hidden="true" [class.ok]="c.ok" [class.bad]="!c.ok && c.level === 'error'">{{ c.ok ? '✓' : c.level === 'error' ? '✕' : '!' }}</span><span class="small"><span class="sr-only">{{ c.ok ? 'Passed: ' : c.level === 'error' ? 'Failed: ' : 'Warning: ' }}</span>{{ c.message }}</span></div>
+                }
+                @if (rv.overrides.length) {
+                  <b class="small">Entered by hand</b>
+                  @for (o of rv.overrides; track o.what) { <span class="small">{{ o.what }}{{ o.by ? ' (' + o.by + ')' : '' }}: {{ o.reason || 'no reason given' }}</span> }
+                }
+                <b class="small">{{ rv.currentVersion ? 'Changes since version ' + rv.currentVersion.versionNumber : 'What this version contains' }}</b>
+                <app-record-diff [diff]="rv.diff" />
+              </div>
+            } @else if (!error()) { <div class="small muted">Loading the record…</div> }
+            @if (latest().length) {
+              <div class="latest" role="group" aria-label="Latest in the discussion">
+                <div class="row" style="justify-content:space-between"><b class="small">Latest in the discussion</b>@if (earlier()) { <span class="small muted">{{ earlier() }} earlier</span> }</div>
+                @for (e of latest(); track e.key) {
+                  <span class="small"><b>{{ e.byName }}</b>{{ e.what ? ' ' + e.what : '' }} <span class="muted">· {{ fmt(e.at) }}</span>@if (e.text) { <br><span style="white-space:pre-wrap">{{ e.text }}</span> }</span>
+                }
+              </div>
+            }
+            <button type="button" class="go" (click)="openRecord(d.input.record.id, true)"><span>Review on the record page: documents, chain of title, details</span><app-icon name="arrowRight" [size]="17" /></button>
+          }
+          @if (isFinding(d)) { <div class="small muted" style="margin:0 0 10px">The finding stays open until a newer reviewed version resolves it, or the auditor closes it. Acknowledge it to show you have seen it.</div> }
+          <div class="field"><label for="cm">Comment {{ isRecord(d) ? '(needed to return it, optional to approve · kept in the Discussion)' : outcome() === 'rejected' ? '(required to reject)' : '(optional)' }}</label>
+            <textarea id="cm" class="input" rows="3" [value]="comment()" (input)="comment.set($any($event.target).value)"></textarea></div>
+          @if (error()) { <div class="err" role="alert">{{ error() }}</div> }
+          <div class="dialog-actions">
+            @if (d.input.document) { <button type="button" class="btn btn-ghost" style="margin-right:auto" (click)="openDoc(d.input.document!.id)"><app-icon name="file" [size]="15" />Open document</button> }
+            <button type="button" class="btn btn-secondary" [style.margin-right]="isRecord(d) ? 'auto' : null" (click)="close()">Later</button>
+            @if (d.outcomes?.includes('rejected')) { <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="decide('rejected')">{{ isRecord(d) ? 'Return to records officer' : 'Reject' }}</button> }
+            @if (d.outcomes?.includes('approved')) { <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="decide('approved')">Approve</button> }
+            @if (d.outcomes?.includes('acknowledged')) { <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="decide('acknowledged')">Acknowledge</button> }
+          </div>
+        </form>
+      </div>
+    }
+  `,
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styles: [
+    `
+    .wrap { position: relative; }
+    .bell { position: relative; }
+    .count { position: absolute; top: 3px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px; background: var(--color-accent); color: #fff; font-size: 10.5px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--color-surface); }
+    .count.overdue { background: var(--nam-red); }
+    .menu { position: absolute; right: 0; top: calc(100% + 6px); width: min(400px, calc(100vw - 24px)); max-height: 70vh; overflow-y: auto; background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 60; }
+    .mh { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 16px; border-bottom: 1px solid var(--color-divider); }
+    .item { width: 100%; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 11px 16px; border: 0; border-bottom: 1px solid var(--color-divider); background: transparent; text-align: left; cursor: pointer; }
+    .item:hover { background: var(--color-accent-100); }
+    .item .t { font-weight: 600; font-size: 13.5px; }
+    .kv { margin: 4px 0 12px; }
+    .strike { text-decoration: line-through; color: var(--color-neutral-600); }
+    .err { padding: 10px 12px; border-radius: 8px; background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-bd); font-size: 13.5px; }
+    textarea.input { min-height: 72px; resize: vertical; font: inherit; }
+    .rv { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; padding: 12px; border: 1px solid var(--color-divider); border-radius: 10px; max-height: 42vh; overflow-y: auto; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .rchk { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; }
+    /* the land record review is taller than a small screen: the dialog scrolls, so its buttons can always be reached */
+    .dialog { max-height: calc(100vh - 32px); overflow-y: auto; }
+    .latest { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; padding: 12px; border: 1px solid var(--color-divider); border-radius: 10px; }
+    .go { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 46px; margin: 0 0 12px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--color-accent-100); color: var(--color-accent-700); font: inherit; font-weight: 600; font-size: 14px; text-align: left; cursor: pointer; }
+    .go:hover { background: var(--color-accent-200, var(--color-accent-100)); text-decoration: underline; }
+    .check-mark.bad { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-bd); }
+  `,
+  ],
+})
+export class InboxComponent {
+  tasks = inject(TasksService);
+  private toast = inject(ToastService);
+  private router = inject(Router);
+  private records = inject(RecordsApi);
+  open = signal(false);
+  recordReview = signal<Review | null>(null);
+  /** The version's discussion (decisions and comments), oldest first. */
+  discussion = signal<DiscussionEvent[]>([]);
+  latest = computed(() => this.discussion().slice(-2));
+  earlier = computed(() => Math.max(0, this.discussion().length - 2));
+  detail = signal<TaskDetail | null>(null);
+  comment = signal('');
+  outcome = signal<string | null>(null);
+  busy = signal(false);
+  error = signal('');
+  count = computed(() => this.tasks.tasks().length);
+  overdue = computed(() => this.tasks.tasks().some(t => t.overdue));
+
+  fmt = fmtTime;
+  label(t: TaskItem) {
+    return this.isFinding(t)
+      ? 'Audit finding'
+      : t.document
+        ? t.document.edrmsNo
+        : t.definitionKey === 'land-record-review'
+          ? 'Land record'
+          : 'Task';
+  }
+  isRecord(t: TaskItem) {
+    return t.definitionKey === 'land-record-review';
+  }
+  isFinding(t: TaskItem) {
+    return t.definitionKey === 'audit-finding';
+  }
+
+  async review(t: TaskItem) {
+    this.open.set(false);
+    try {
+      const d = await this.tasks.get(t.id);
+      this.recordReview.set(null);
+      this.discussion.set([]);
+      this.detail.set(d);
+      this.comment.set('');
+      this.outcome.set(null);
+      this.error.set('');
+      if (this.isRecord(d) && d.input.record?.id) {
+        this.records
+          .review(d.input.record.id)
+          .then(r => {
+            if (this.detail()?.id === d.id) this.recordReview.set(r);
+          })
+          .catch(
+            e =>
+              this.detail()?.id === d.id &&
+              this.error.set(
+                'Could not load the record: ' +
+                  (e instanceof ApiError ? e.message : String(e)),
+              ),
+          );
+        this.loadDiscussion(d);
+      }
+    } catch (e) {
+      this.toast.show(
+        'danger',
+        'Could not open the task',
+        e instanceof ApiError ? e.message : String(e),
+      );
+      this.tasks.refresh();
+    }
+  }
+
+  async decide(outcome: 'approved' | 'rejected' | 'acknowledged') {
+    const d = this.detail()!;
+    this.outcome.set(outcome);
+    if (outcome === 'rejected' && !this.comment().trim()) {
+      this.error.set(
+        this.isRecord(d)
+          ? 'Say what the records officer should fix.'
+          : 'Say why you reject the change.',
+      );
+      return;
+    }
+    this.busy.set(true);
+    this.error.set('');
+    try {
+      const inst = await this.tasks.complete(
+        d.id,
+        outcome,
+        this.comment().trim() || undefined,
+      );
+      const rec = d.input.record;
+      if (outcome === 'acknowledged') {
+        this.toast.show(
+          'info',
+          'Finding acknowledged',
+          'It stays open until it is resolved or closed.',
+        );
+      } else if (inst.status === 'error') {
+        this.toast.show(
+          'warn',
+          'Approved, but the change could not be applied',
+          inst.errorMessage || 'See the process for details.',
+          9000,
+        );
+      } else if (rec) {
+        this.toast.show(
+          outcome === 'approved' ? 'success' : 'info',
+          outcome === 'approved'
+            ? `${rec.label} approved: version ${rec.versionNumber} is now current`
+            : `${rec.label} returned to the records officer`,
+          rec.recordNo,
+        );
+      } else {
+        this.toast.show(
+          outcome === 'approved' ? 'success' : 'info',
+          outcome === 'approved'
+            ? 'Change approved and applied'
+            : 'Change rejected',
+          d.input.document?.edrmsNo,
+        );
+      }
+      this.detail.set(null);
+    } catch (e) {
+      this.error.set(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  /** The latest of the version's discussion; without it the dialog works as before. */
+  private async loadDiscussion(d: TaskDetail) {
+    const rec = d.input.record;
+    try {
+      const [versions, comments] = await Promise.all([
+        this.records.versions(rec.id),
+        this.records.comments(rec.id),
+      ]);
+      if (this.detail()?.id !== d.id) return;
+      this.discussion.set(
+        discussionEvents(versions, comments.items).filter(
+          e => e.versionNumber === rec.versionNumber,
+        ),
+      );
+    } catch {
+      /* not shown */
+    }
+  }
+
+  openRecord(id: string, review = false) {
+    this.detail.set(null);
+    this.router.navigate(['/link'], {
+      queryParams: review ? {record: id, tab: 'review'} : {record: id},
+    });
+  }
+  openDoc(id: string) {
+    this.detail.set(null);
+    this.router.navigate(['/documents'], {queryParams: {id}});
+  }
+  close() {
+    this.detail.set(null);
+  }
+
+  @HostListener('document:click', ['$event'])
+  outside(e: Event) {
+    if (this.open() && !(e.target as HTMLElement).closest('app-inbox')) {
+      this.open.set(false);
+    }
+  }
+}

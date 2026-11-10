@@ -8,6 +8,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:report": "node scripts/lint-report.mjs",
+    "test:lint-guard": "node --test scripts/lint-guard.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

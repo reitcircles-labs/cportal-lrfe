@@ -1,13 +1,14 @@
 import {AppError} from '@lrfe/common';
+import {recordClientAt, recordServiceLabel} from './record-service.js';
 
 /** The list filters of the Audit screen (README.md section 5). */
 export const LIST_FILTERS = ['changed', 'attention', 'all'];
 
-/** How many land records are read from land-records per request while filtering. */
+/** How many records are read from the record service per request while filtering. */
 const READ_PAGE = 200;
 
 /**
- * The land records list of the Audit screen (API-661). Auditors check a sample, so the list offers
+ * The records list of the Audit screen (API-661). Auditors check a sample, so the list offers
  * the population to pick from, not a to-do list:
  *
  *   changed     records with a version committed since their last audit sign-off
@@ -21,7 +22,7 @@ const READ_PAGE = 200;
  * The full check runs when a record is opened (`GET /audit/records/:id/check`).
  *
  * `sources`: { records({ q, status, limit, offset }), versions(recordId) → committed versions with
- * their data } from land-records.
+ * their data } from the record service.
  */
 export class AuditListService {
   constructor({repo, proofs, sources}) {
@@ -56,7 +57,7 @@ export class AuditListService {
     return {items, total: matching.length, counts};
   }
 
-  /** Every land record with a committed version, matching `q`, newest change first. */
+  /** Every record with a committed version, matching `q`, newest change first. */
   async allRecords(q) {
     const out = [];
     for (let offset = 0; ; offset += READ_PAGE) {
@@ -194,16 +195,17 @@ export class AuditListService {
   }
 }
 
-/** The leaf keys of the document versions a land record version pins. */
+/** The leaf keys of the document versions a record version pins. */
 function pinKeys(version) {
   return (version.data?.documents || []).map(
     d => `document-version:${d.edrmsDocumentId}:${d.version}`,
   );
 }
 
-/** land-records over HTTP with the audit service's token. */
+/** The record service over HTTP with the audit service's token. */
 export function createListSources({
   recordsUrl,
+  recordsLabel = recordServiceLabel(),
   serviceToken,
   fetchImpl = globalThis.fetch,
   timeoutMs = 30_000,
@@ -218,7 +220,7 @@ export function createListSources({
     } catch (err) {
       throw new AppError(
         503,
-        `The land records service cannot be reached: ${err.message}`,
+        `The ${recordsLabel} service cannot be reached: ${err.message}`,
       );
     }
     const text = await res.text();
@@ -231,33 +233,29 @@ export function createListSources({
     if (res.status >= 400 || !json) {
       throw new AppError(
         502,
-        `Reading from the land records service failed (${res.status}): ${json?.message || 'no detail'}`,
+        `Reading from the ${recordsLabel} service failed (${res.status}): ${json?.message || 'no detail'}`,
       );
     }
     return json;
   };
+  const records = recordClientAt(recordsUrl, read);
   return {
     records({q, status, limit, offset}) {
-      const params = new URLSearchParams({
+      return records.list({
         status,
         limit: String(limit),
         offset: String(offset),
+        q,
       });
-      if (q) {
-        params.set('q', q);
-      }
-      return read(`${recordsUrl}/records?${params}`);
     },
     /** Every committed version with its data (the list leaves the data out). */
     async versions(recordId) {
-      const listed = await read(`${recordsUrl}/records/${recordId}/versions`);
+      const listed = await records.versions(recordId);
       const committed = listed.filter(v =>
         ['committed', 'superseded'].includes(v.state),
       );
       return Promise.all(
-        committed.map(v =>
-          read(`${recordsUrl}/records/${recordId}/versions/${v.versionNumber}`),
-        ),
+        committed.map(v => records.version(recordId, v.versionNumber)),
       );
     },
   };

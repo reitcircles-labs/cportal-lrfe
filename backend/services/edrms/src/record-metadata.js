@@ -1,4 +1,4 @@
-import {BadRequestError} from '@lrfe/common';
+import {BadRequestError, domain} from '@lrfe/common';
 
 /**
  * ISO 23081-aligned record metadata, ported from cportal-be/services/edrms/record-metadata.js.
@@ -7,7 +7,8 @@ import {BadRequestError} from '@lrfe/common';
  * agents, relationships, retention/disposition — plus record context and access rights.
  *
  * Validation and self-description live together in FIELD_DEFINITIONS so they cannot drift.
- * Unknown keys are rejected on purpose: land-specific values belong in the document's `fields`.
+ * Unknown keys are rejected on purpose: product-specific values belong in the document's `fields`.
+ * The examples in some descriptions come from the product's domain pack (CB-3).
  */
 
 const nonEmpty = v => typeof v === 'string' && v.length > 0;
@@ -33,22 +34,20 @@ const FIELD_DEFINITIONS = {
   businessFunction: {
     category: 'business',
     type: 'string',
-    description:
-      'Business function that created the record (e.g. "Deeds registration").',
+    description: 'Business function that created the record',
     validate: nonEmpty,
   },
   businessActivity: {
     category: 'business',
     type: 'string',
-    description:
-      'Activity within that function (e.g. "Registration of transfer").',
+    description: 'Activity within that function',
     validate: nonEmpty,
   },
   businessProcess: {
     category: 'business',
     type: 'string',
-    description:
-      'Process that produced this record (e.g. "Back-scanning programme, phase 1").',
+    description: 'Process that produced this record',
+    example: '"Back-scanning programme, phase 1"',
     validate: nonEmpty,
   },
   mandate: {
@@ -77,8 +76,7 @@ const FIELD_DEFINITIONS = {
       targetDocumentID: 'string',
       description: 'string?',
     },
-    description:
-      'Links to other records (e.g. citesPriorTitle, supports, supersedes).',
+    description: 'Links to other records',
     validate: v =>
       Array.isArray(v) &&
       v.every(r => r && nonEmpty(r.type) && nonEmpty(r.targetDocumentID)),
@@ -140,11 +138,27 @@ export function validateRecordMetadata(recordMetadata) {
   return recordMetadata;
 }
 
-/** JSON-safe description of every field (validators stripped, deep-cloned so callers can't mutate definitions). */
-export function describeRecordMetadataFields() {
+/**
+ * JSON-safe description of every field (validators stripped, deep-cloned so callers can't mutate
+ * definitions). A description without its own full stop ends with its example, the product's
+ * (`wording.edrms.metadataExamples` of the domain pack) or this file's, when there is one.
+ * @param {import('@lrfe/domain-pack').DomainPack=} pack
+ * @return {object}
+ */
+export function describeRecordMetadataFields(pack = domain) {
+  const examples = pack.wording.edrms.metadataExamples ?? {};
   const out = {};
-  for (const [key, {validate, ...rest}] of Object.entries(FIELD_DEFINITIONS)) {
-    out[key] = {...rest, required: false};
+  for (const [key, def] of Object.entries(FIELD_DEFINITIONS)) {
+    const shown = examples[key] ?? def.example;
+    const described = {};
+    for (const [name, value] of Object.entries(def)) {
+      if (name === 'description' && !value.endsWith('.')) {
+        described.description = `${value}${shown ? ` (e.g. ${shown})` : ''}.`;
+      } else if (name !== 'validate' && name !== 'example') {
+        described[name] = value;
+      }
+    }
+    out[key] = {...described, required: false};
   }
   return structuredClone(out);
 }

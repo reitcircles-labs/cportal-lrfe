@@ -192,7 +192,7 @@ screen or endpoint is tested without editing the tests (`support/catalogue.ts`):
 |---|---|
 | Roles, their permissions and home screens | `backend/services/identity/src/catalogue.js` |
 | Users | `DEMO_USERS` in `backend/services/identity/src/seed.js` |
-| Screens: path, permission, title | `angular-app/src/app/app.routes.ts` (read as text; an unreadable route fails the run) |
+| Screens: path, permission, title | `angular-app/projects/land-registry/src/app/app.routes.ts` (read as text; an unreadable route fails the run) |
 | Endpoints and their permission rules | `backend/services/gateway/docs/openapi.yaml`, generated from the route guards |
 
 Because the API matrix reads the generated docs, its first test runs `npm run docs:check` and fails

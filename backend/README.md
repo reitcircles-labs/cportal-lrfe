@@ -25,7 +25,15 @@ backend/
     └── search/             :3508  document search: follows intake's and edrms' document events (API-797)
 packages/storage/                  @lrfe/storage — S3 / local / memory blob stores, signed file links
 packages/search-index/             @lrfe/search-index — the search index: fields, analysers from the country pack, alias, queries
+packages/record-contract/          @lrfe/record-contract — the calls a product's record service answers, their client and contract test (CB-4)
+packages/domain-pack/              @lrfe/domain-pack — what a domain pack holds, and its check (CB-3)
+domains/land/                      @lrfe/domain-land — the land registry's pack: documents, roles, workflows, record kind, wording
+domains/shipping/                  @lrfe/domain-shipping — the shipping pack, empty for now
 ```
+
+`land-records` and `domains/*` are product code; everything else here is shared by every product.
+`LRFE_DOMAIN` (`land` when not set) chooses the pack of an install. Layout, the record contract,
+the fixed names and how to add a product: [`../docs/architecture/products.md`](../docs/architecture/products.md).
 
 Stored files are to be encrypted with keys protected by OpenBao. Settings per service
 (`EDRMS_ENCRYPTION` / `INTAKE_ENCRYPTION` = `off` (default) | `bao` | `fake`; with `bao`: `BAO_ADDR`,
@@ -260,9 +268,11 @@ miEnd, end; conditions in JsonLogic). Domain services keep their own data; bpm d
 does what, in which order**, and calls the owning service (via connectors, with a bpm service
 token) when a step is due.
 
-Process definitions are JSON files in `services/bpm/src/definitions/`, deployed at boot.
-Unchanged files are skipped; a changed file becomes a new version, and running instances keep
-the version they started on.
+Process definitions are deployed at boot: the platform's JSON files in
+`services/bpm/src/definitions/` and the product's from the domain pack (`workflows.definitions`,
+e.g. `domains/land/src/workflows/land-record-review.js`). The pack also says who acknowledges the
+audit workflows (`workflows.auditAcknowledgers`). Unchanged definitions are skipped; a changed
+one becomes a new version, and running instances keep the version they started on.
 
 | Method & path | Who | Purpose |
 |---|---|---|

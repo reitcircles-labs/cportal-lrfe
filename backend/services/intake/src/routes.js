@@ -1,5 +1,5 @@
-import {actorOf, BadRequestError, NotFoundError} from '@lrfe/common';
-import {DOC_TYPES} from './doc-types.js';
+import {actorOf, BadRequestError, domain, NotFoundError} from '@lrfe/common';
+import {docTypesOf} from './doc-types.js';
 import {isCleared} from './intake.service.js';
 
 const READ = ['capture.view', 'verify.view'];
@@ -45,8 +45,10 @@ export async function intakeRoutes(
 ) {
   const readGuard = {onRequest: app.requireAnyPerm(...READ)};
 
+  // the product's document types: the service's domain pack (CB-3)
+  const pack = service.pack ?? domain;
   app.get('/catalogue', {onRequest: app.authenticate}, async () => ({
-    docTypes: DOC_TYPES.map(({id, label, refField, fields}) => ({
+    docTypes: docTypesOf(pack).map(({id, label, refField, fields}) => ({
       id,
       label,
       refField,

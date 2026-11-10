@@ -1,11 +1,11 @@
 import {Readable} from 'node:stream';
-import {createEventBus, createServiceTokenSigner} from '@lrfe/common';
+import {createEventBus, createServiceTokenSigner, domain} from '@lrfe/common';
 import {createEncryptingStore, createMemoryStore} from '@lrfe/storage';
 import {IntakeService} from '../src/intake.service.js';
 import {createMemoryRepo} from '../src/repo/memory.js';
 import {createEdrmsClient} from '../src/edrms-client.js';
 import {createChecker} from '../src/extraction/checks.js';
-import {createMockProvider, DEMO_ANSWER} from '../src/extraction/providers.js';
+import {createMockProvider} from '../src/extraction/providers.js';
 import {ExtractionWorker} from '../src/worker.js';
 import {buildApp} from '../src/app.js';
 // The real edrms service, in-process
@@ -52,6 +52,8 @@ export const users = {
 };
 /** The actor (id and name) a service call is made as. */
 export const actor = u => ({id: u.id, name: u.name});
+/** The domain pack's demo model answer (a deed of transfer). */
+export const DEMO_ANSWER = domain.documents.demo.answer;
 /** The demo model answer, with `patch` applied. */
 export const answer = (patch = {}) => ({
   ...structuredClone(DEMO_ANSWER),
@@ -121,7 +123,8 @@ export const injectFetch =
 /**
  * Intake + worker + a real in-process edrms. `respond` scripts the model's answer per call
  * (default: the demo deed); `escalation` optionally scripts a second model; `jev` an optional
- * cross-check judge (e.g. createFakeJev); `keyring` / `edrmsKeyring` encrypt intake's / edrms's stored files.
+ * cross-check judge (e.g. createFakeJev); `keyring` / `edrmsKeyring` encrypt intake's / edrms's stored files;
+ * `pack` is the domain pack of both services (default: the install's, land).
  */
 export async function makeIntake({
   respond,
@@ -131,6 +134,7 @@ export async function makeIntake({
   jevConfig = null,
   keyring = null,
   edrmsKeyring = null,
+  pack = domain,
 } = {}) {
   const clock = makeClock();
   const edrmsPlainStore = createMemoryStore();
@@ -141,6 +145,7 @@ export async function makeIntake({
       : edrmsPlainStore,
     events: createEventBus({driver: 'memory', source: 'edrms'}),
     clock,
+    pack,
   });
   const edrmsApp = await buildEdrms({service: edrmsService, jwtSecret: SECRET});
   await edrmsApp.ready();
@@ -158,8 +163,9 @@ export async function makeIntake({
   const events = createEventBus({driver: 'memory', source: 'intake'});
   const published = [];
   events.subscribe('*', e => published.push(e));
-  const checker = createChecker({edrms});
+  const checker = createChecker({edrms, pack});
   const service = new IntakeService({
+    pack,
     repo,
     store,
     events,

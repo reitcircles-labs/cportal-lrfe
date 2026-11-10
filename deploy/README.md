@@ -86,6 +86,7 @@ Docker, in the folder the bundle is unpacked in.
    | `LRFE_REGISTRY_CODE` | the deeds office's code (in batch and document numbers) |
    | `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE`, `LRFE_ORG_PARENT`, `LRFE_ORG_PLACE` | the organisation running the portal (see below) |
    | `LRFE_OFFICES` | the offices created on the empty database, e.g. `KGL=Land Titles Office · Kigali;HYE=Land Titles Office · Huye` |
+   | `LRFE_DOMAIN` | the product of the install: `land` (the default, when not set) or `shipping` (see below) |
 
    **The organisation** is shown in the screens (name and subtitle in the side bar, the parent
    body on the sign-in page, name and place on the dashboard), the invitation emails, the
@@ -95,6 +96,16 @@ Docker, in the folder the bundle is unpacked in.
    container reads them on every start (`docker compose up -d` after a change; users reload the
    page). These are display texts, readable by anyone who opens the portal: never a secret. A
    change does not rename the entry already in users' authenticator apps.
+
+   **The product** (`LRFE_DOMAIN`) chooses the domain pack every service reads its product's
+   document types, roles, workflows, record kind and texts from (`backend/domains/<name>`,
+   `docs/architecture/products.md` in the source repository). Not set means `land`, the land
+   registry, so an existing `.env` needs no change. `shipping` is an empty pack for now: the
+   services start, with no document types, product roles or workflows. Choose it when installing;
+   never change it on an install that holds data. The web container also writes it into
+   `/config.json` (`domain`). A pack that is missing or broken stops each service at start, with
+   the reason in `docker compose logs <service>`. The `web` image holds the land registry's app;
+   the shipping app has no image yet.
 
    **The offices** (`CODE=Name` pairs, separated by `;`, codes of 2 to 5 capital letters) are
    created only once, on an empty database; empty means none, and the administrator adds them under
