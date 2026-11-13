@@ -107,6 +107,22 @@ describe('createEventBus', () => {
     expect(typed[0].id).to.be.a('string');
   });
 
+  it('events carry the actor without its organisation until the trail records it (CB-20)', async () => {
+    const bus = createEventBus({driver: 'memory', source: 'identity'});
+    const seen = [];
+    bus.subscribe('*', e => seen.push(e));
+    await bus.publish(
+      'identity.user.invited',
+      {},
+      {actor: {id: 'a1', name: 'Admin', org: 'o1', perms: ['x']}},
+    );
+    expect(seen[0].actor).to.deep.equal({
+      id: 'a1',
+      name: 'Admin',
+      perms: ['x'],
+    });
+  });
+
   it('a failing subscriber does not break publish', async () => {
     const bus = createEventBus({
       driver: 'memory',

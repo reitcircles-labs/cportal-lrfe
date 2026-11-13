@@ -1,5 +1,6 @@
+import {actorOf} from '@lrfe/common';
+
 const uuid = {type: 'string', format: 'uuid'};
-const actorOf = req => ({id: req.user.sub, name: req.user.name});
 
 /** The extracts HTTP routes: issuing, listing, downloading again and revoking ownership extracts (staff). */
 export async function extractsRoutes(app, {service}) {

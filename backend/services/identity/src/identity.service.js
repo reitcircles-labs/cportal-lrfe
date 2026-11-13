@@ -366,6 +366,8 @@ export class IdentityService {
         roles: [...user.roles],
         perms,
         sid,
+        // the caller's organisation, for every service (CB-20); read with organisationOf
+        org: user.organisationId ?? null,
       },
       me: {
         user: this.publicUser(user, ctx),

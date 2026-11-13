@@ -14,7 +14,9 @@ export const ACCESS_TOKEN_TYPE = 'access';
  *
  * Tokens are issued by the identity service; every service verifies them itself with the
  * shared JWT_SECRET, so permission checks never depend on the browser or the gateway.
- * `request.user` is the token payload: { sub, name, email, roles, perms, sid, typ }.
+ * `request.user` is the token payload: { sub, name, email, roles, perms, sid, org, typ }; `org`
+ * is the user's organisation id (CB-20), absent from tokens issued before it and from service
+ * tokens.
  *
  * `onDenied(request, perm)` is called (best effort, never throws) when a permission check
  * fails, so the caller can write the denial to its access log or publish an event.
@@ -143,9 +145,21 @@ export function createServiceTokenSigner({secret, service, ttlSeconds = 300}) {
   };
 }
 
-/** The acting user for logs and events, from a verified request. */
+/**
+ * The caller's organisation id, from a verified request; null for a service, an anonymous call or
+ * a token issued before the claim existed (it still works until it expires).
+ */
+export function organisationOf(request) {
+  return request.user?.org ?? null;
+}
+
+/** The acting user for logs and events, from a verified request, with their organisation. */
 export function actorOf(request) {
   return request.user
-    ? {id: request.user.sub, name: request.user.name}
-    : {id: null, name: 'System'};
+    ? {
+        id: request.user.sub,
+        name: request.user.name,
+        org: organisationOf(request),
+      }
+    : {id: null, name: 'System', org: null};
 }

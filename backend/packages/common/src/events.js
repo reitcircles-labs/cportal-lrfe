@@ -52,7 +52,7 @@ export function createEventBus({
       type,
       source,
       time: new Date().toISOString(),
-      actor: actor || {id: null, name: 'System'},
+      actor: actor ? withoutOrganisation(actor) : {id: null, name: 'System'},
       data,
     };
   }
@@ -528,4 +528,14 @@ function connectNats({url, source, logger, deliver, stream}) {
       if (nc && !nc.isClosed()) await nc.drain();
     },
   };
+}
+
+/**
+ * The actor as events carry it, without the organisation `actorOf` adds (CB-20): the audit trail
+ * hashes the actor of each event, so the organisation enters it only when the trail records it
+ * deliberately (CB-21). Every other field is kept as given.
+ */
+function withoutOrganisation(actor) {
+  const {org, ...rest} = actor;
+  return rest;
 }

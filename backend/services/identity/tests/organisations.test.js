@@ -602,3 +602,30 @@ describe('organisations (CB-19)', () => {
     );
   });
 });
+
+describe('the session carries the organisation (CB-20)', () => {
+  it('the access token names the organisation after sign-in, and refresh issues the current one', async () => {
+    const {service, repo} = await makeService();
+    const scan = await repo.getUserByEmail(SCAN);
+    const session = await service.login({email: SCAN, password: PASSWORD});
+    expect(session.claims.org).to.be.a('string').and.equal(scan.organisationId);
+
+    const bank = await service.createOrganisation(
+      {code: 'BNK', name: 'First Bank'},
+      {id: null, name: 'System'},
+    );
+    await repo.updateUser(scan.id, {organisationId: bank.id});
+    const next = await service.refresh(session.refreshToken);
+    expect(next.claims.org).to.equal(bank.id);
+  });
+
+  it('HTTP: a token issued before the claim (no organisation) is still accepted', async () => {
+    const {app, login, auth} = await makeApp();
+    const scan = await login(SCAN);
+    const {iat, exp, org, ...old} = app.jwt.decode(scan.token);
+    expect(org).to.be.a('string');
+    const before = app.jwt.sign(old, {expiresIn: exp - iat});
+    const res = await app.inject({url: '/auth/me', headers: auth(before)});
+    expect(res.statusCode).to.equal(200);
+  });
+});

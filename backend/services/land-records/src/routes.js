@@ -1,4 +1,5 @@
 import {
+  actorOf,
   BadRequestError,
   ForbiddenError,
   UnauthorizedError,
@@ -16,7 +17,6 @@ const idParams = (extra = {}) => ({
 const versionParam = {n: {type: 'integer', minimum: 1}};
 const revision = {type: 'integer', minimum: 1};
 const uuid = {type: 'string', format: 'uuid'};
-const actorOf = req => ({id: req.user.sub, name: req.user.name});
 /** Whether the user may read intake's documents, so a search may show those still in intake (API-803). */
 const readsIntake = req =>
   ['capture.view', 'verify.view'].some(p => (req.user.perms ?? []).includes(p));

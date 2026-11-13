@@ -4,6 +4,8 @@ import {
   authPlugin,
   signServiceToken,
   createServiceTokenSigner,
+  actorOf,
+  organisationOf,
 } from '../src/index.js';
 
 const SECRET = 'test-secret-test-secret-test-secret';
@@ -13,6 +15,10 @@ async function buildApp(onDenied) {
   await app.register(authPlugin, {secret: SECRET, onDenied});
   app.get('/me', {onRequest: app.authenticate}, async req => ({
     sub: req.user.sub,
+  }));
+  app.get('/who', {onRequest: app.authenticate}, async req => ({
+    org: organisationOf(req),
+    actor: actorOf(req),
   }));
   app.get(
     '/link',
@@ -197,5 +203,48 @@ describe('authPlugin', () => {
       headers: {authorization: `Bearer ${token(app)}`},
     });
     expect(res.statusCode).to.equal(403);
+  });
+
+  it('organisationOf and actorOf carry the organisation claim (CB-20)', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      url: '/who',
+      headers: {authorization: `Bearer ${token(app, {org: 'o1'})}`},
+    });
+    expect(res.statusCode).to.equal(200);
+    expect(res.json()).to.deep.equal({
+      org: 'o1',
+      actor: {id: 'u1', name: 'Tester', org: 'o1'},
+    });
+  });
+
+  it('a token issued before the organisation claim still works: no organisation', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      url: '/who',
+      headers: {authorization: `Bearer ${token(app)}`},
+    });
+    expect(res.statusCode).to.equal(200);
+    expect(res.json()).to.deep.equal({
+      org: null,
+      actor: {id: 'u1', name: 'Tester', org: null},
+    });
+  });
+
+  it('without a user (a system call), the actor is the system and has no organisation', () => {
+    expect(organisationOf({})).to.equal(null);
+    expect(actorOf({})).to.deep.equal({id: null, name: 'System', org: null});
+  });
+
+  it('a service token carries no organisation', async () => {
+    const app = await buildApp();
+    const decoded = app.jwt.decode(signServiceToken(app, 'intake'));
+    expect(decoded).to.not.have.property('org');
+    expect(organisationOf({user: decoded})).to.equal(null);
+    const signed = createServiceTokenSigner({
+      secret: SECRET,
+      service: 'intake',
+    })();
+    expect(app.jwt.decode(signed)).to.not.have.property('org');
   });
 });
