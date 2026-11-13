@@ -22,7 +22,7 @@ export const ENDPOINTS = {
       tag: 'Trail',
       summary: 'Trail entries, oldest first',
       description:
-        "`{ total, subjects, entries }`. Each entry has `seq`, `eventId`, `type`, `source`, `time`, `actor`, `subjects`, `data`, `prevHash`, `contentHash` and `hash`. `subject` is `record:<id>`, `document:<id>`, `edrmsNo:<number>`, `intake:<id>`, `process:<id>` or `user:<id>`. A land record or document also brings in the steps of what it is made of: its documents' capture, filing and amendments, and its review processes. Other records' steps are left out; `subjects` lists what was included. `type` is an event type, or a prefix ending in a dot (`intake.`). `from` and `to` are dates on the event's time (`to` is exclusive).",
+        "`{ total, subjects, entries }`. Each entry has `seq`, `eventId`, `type`, `source`, `time`, `actor`, `subjects`, `data`, `prevHash`, `contentHash` and `hash`. `subject` is `record:<id>`, `document:<id>`, `edrmsNo:<number>`, `intake:<id>`, `process:<id>` or `user:<id>`. A land record or document also brings in the steps of what it is made of: its documents' capture, filing and amendments, and its review processes. Other records' steps are left out; `subjects` lists what was included. `type` is an event type, or a prefix ending in a dot (`intake.`). `from` and `to` are dates on the event's time (`to` is exclusive). `org` keeps the entries of an actor acting for that organisation (its `actor.org`, recorded since organisations; earlier entries and system events have none).",
     },
     'GET /audit/trail/actors': {
       tag: 'Trail',

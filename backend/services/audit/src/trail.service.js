@@ -85,11 +85,13 @@ export class TrailService {
   /**
    * Trail entries, oldest first. `subject` (`record:<id>`, `document:<id>`, `user:<id>` …): for a
    * record or a document also the steps of what it is made of — its documents' capture,
-   * filing, amendments and review processes — but not those of other records.
+   * filing, amendments and review processes — but not those of other records. `org`: only what
+   * was done for that organisation (the actor's `org`, recorded since CB-21).
    */
-  async list({subject, type, from, to, limit = 100, offset = 0} = {}) {
+  async list({subject, type, from, to, org, limit = 100, offset = 0} = {}) {
     const filter = {
       type: type || undefined,
+      org: org || undefined,
       from: iso(from, 'from'),
       to: iso(to, 'to'),
     };

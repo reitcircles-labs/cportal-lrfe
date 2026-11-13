@@ -27,7 +27,7 @@ import {currentTransaction} from './db.js';
  * moment. Without an outbox, events behave as before: published as they happen, and delivered in
  * this service only while NATS is unreachable.
  *
- * Envelope: { id, type, source, time, actor: {id, name}, data }
+ * Envelope: { id, type, source, time, actor: {id, name, org?}, data }
  */
 export function createEventBus({
   driver = 'log',
@@ -52,7 +52,7 @@ export function createEventBus({
       type,
       source,
       time: new Date().toISOString(),
-      actor: actor ? withoutOrganisation(actor) : {id: null, name: 'System'},
+      actor: actor ? eventActor(actor) : {id: null, name: 'System'},
       data,
     };
   }
@@ -531,11 +531,16 @@ function connectNats({url, source, logger, deliver, stream}) {
 }
 
 /**
- * The actor as events carry it, without the organisation `actorOf` adds (CB-20): the audit trail
- * hashes the actor of each event, so the organisation enters it only when the trail records it
- * deliberately (CB-21). Every other field is kept as given.
+ * The actor as events carry it (CB-21): with its organisation when it has one, so the audit trail
+ * hashes and anchors who acted for which organisation. Without one (a service, a token issued
+ * before the claim existed, a user outside any organisation) the `org` key is left out, so the
+ * actor has the shape it had before organisations and hashes the same. Every other field is kept
+ * as given.
  */
-function withoutOrganisation(actor) {
+function eventActor(actor) {
+  if (actor.org !== null && actor.org !== undefined) {
+    return {...actor};
+  }
   const {org, ...rest} = actor;
   return rest;
 }
