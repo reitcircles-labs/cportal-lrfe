@@ -72,7 +72,7 @@ export interface Policies {
   fourEyes: boolean;
 }
 export type AccessKind =
-  'role' | 'user' | 'policy' | 'denied' | 'session' | 'office';
+  'role' | 'user' | 'policy' | 'denied' | 'session' | 'office' | 'organisation';
 export interface AccessEvent {
   time: string;
   actor: string;

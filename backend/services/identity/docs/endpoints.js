@@ -15,6 +15,8 @@ export const ENDPOINTS = {
     Policies: 'Security policies and segregation-of-duties rules.',
     Offices:
       'Office locations (registry offices and external bodies). Users other than system administrators belong to one. Offices are never deleted.',
+    Organisations:
+      'The organisations users and offices belong to; an install starts with one, the default organisation. Organisations are never deleted.',
     Service: 'Health and metadata.',
   },
   routes: {
@@ -90,7 +92,7 @@ export const ENDPOINTS = {
       status: 201,
       summary: 'Invite a user',
       description:
-        'Body `{ name, email, roles, officeId }`: an active office (required unless the roles include System administrator). Creates the user as Invited and emails them the activation link (valid 3 days). Returns `{ user, email: { sent, to, reason? }, inviteUrl? }`: ' +
+        "Body `{ name, email, roles, officeId, organisationId }`: an active office (required unless the roles include System administrator); an optional active organisation (by default the office's, else the inviter's, else the default organisation). Creates the user as Invited and emails them the activation link (valid 3 days). Returns `{ user, email: { sent, to, reason? }, inviteUrl? }`: " +
         'the user is created even when the email fails, and `reason` says why. `inviteUrl` is only returned when IDENTITY_EXPOSE_INVITE_LINKS=true (dev).',
     },
     'PUT /users/{id}/roles': {
@@ -139,7 +141,7 @@ export const ENDPOINTS = {
       status: 201,
       summary: 'Add an office',
       description:
-        '`code` 2 to 5 capital letters, unique and permanent (it will appear in batch and document numbers); `name`; `type` registry | external; optional `address`, `contact`.',
+        '`code` 2 to 5 capital letters, unique and permanent (it will appear in batch and document numbers); `name`; `type` registry | external; optional `address`, `contact`, `organisationId` (an active organisation; by default the default organisation).',
     },
     'PUT /offices/{id}': {
       tag: 'Offices',
@@ -157,6 +159,35 @@ export const ENDPOINTS = {
       tag: 'Offices',
       summary: 'Reactivate an office',
       description: 'Users can be invited into it again.',
+    },
+    'GET /organisations': {
+      tag: 'Organisations',
+      summary: 'All organisations',
+      description:
+        '`{ organisations }` with `offices`: how many offices belong to each, and `users`: how many of its users are not suspended.',
+    },
+    'POST /organisations': {
+      tag: 'Organisations',
+      status: 201,
+      summary: 'Add an organisation',
+      description:
+        '`code` 2 to 5 capital letters, unique and permanent; `name`.',
+    },
+    'PATCH /organisations/{id}': {
+      tag: 'Organisations',
+      summary: 'Rename an organisation',
+      description: '`{ name }`. The code cannot change.',
+    },
+    'POST /organisations/{id}/suspend': {
+      tag: 'Organisations',
+      summary: 'Suspend an organisation',
+      description:
+        'Its users cannot sign in (as if suspended) and their sessions end; their accounts are not changed. Nothing new can be added to it. Refused when no active administrator would remain. Optional `{ reason }`.',
+    },
+    'POST /organisations/{id}/reactivate': {
+      tag: 'Organisations',
+      summary: 'Reactivate an organisation',
+      description: 'Its users can sign in again.',
     },
     'GET /access-log': {
       tag: 'Users',

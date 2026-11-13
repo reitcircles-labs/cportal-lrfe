@@ -9,6 +9,7 @@ import {
   ACCESS_KINDS,
   OFFICE_CODE_PATTERN,
   OFFICE_TYPES,
+  ORGANISATION_CODE_PATTERN,
   ROLE_IDS,
 } from './catalogue.js';
 
@@ -33,6 +34,8 @@ const roleList = {
 };
 /** An office id, or null for "no office" (allowed only for administrators; the service decides). */
 const officeRef = {type: ['string', 'null'], format: 'uuid'};
+/** An organisation id; left out, the service picks the default (CB-19). */
+const organisationRef = str({format: 'uuid'});
 const officeFields = {
   name: str({minLength: 1, maxLength: 200}),
   type: str({enum: OFFICE_TYPES}),
@@ -167,6 +170,7 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
           name: str({minLength: 1, maxLength: 200}),
           email: str({format: 'email', maxLength: 254}),
           officeId: officeRef,
+          organisationId: organisationRef,
           roles: roleList,
         },
         ['name', 'email', 'roles'],
@@ -213,7 +217,11 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     {
       ...offices,
       schema: body(
-        {code: str({pattern: OFFICE_CODE_PATTERN}), ...officeFields},
+        {
+          code: str({pattern: OFFICE_CODE_PATTERN}),
+          ...officeFields,
+          organisationId: organisationRef,
+        },
         ['code', 'name'],
       ),
     },
@@ -251,6 +259,75 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     {...offices, schema: idParam},
     async req =>
       service.setOfficeStatus(
+        req.params.id,
+        'Active',
+        reasonOf(req),
+        actorOf(req),
+      ),
+  );
+
+  // Organisations (CB-19): listed for whoever invites users or manages offices or organisations;
+  // changed only with admin.organisations.
+  app.get(
+    '/organisations',
+    {
+      onRequest: app.requireAnyPerm(
+        'admin.users',
+        'admin.offices',
+        'admin.organisations',
+      ),
+    },
+    async () => ({organisations: await service.listOrganisations()}),
+  );
+  const organisations = {onRequest: app.requirePerm('admin.organisations')};
+  const organisationName = str({minLength: 1, maxLength: 200});
+  app.post(
+    '/organisations',
+    {
+      ...organisations,
+      schema: body({
+        code: str({pattern: ORGANISATION_CODE_PATTERN}),
+        name: organisationName,
+      }),
+    },
+    async (req, reply) =>
+      reply
+        .status(201)
+        .send(await service.createOrganisation(req.body, actorOf(req))),
+  );
+  app.patch(
+    '/organisations/:id',
+    {
+      ...organisations,
+      schema: {
+        ...idParam,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          minProperties: 1,
+          properties: {name: organisationName},
+        },
+      },
+    },
+    async req =>
+      service.updateOrganisation(req.params.id, req.body, actorOf(req)),
+  );
+  app.post(
+    '/organisations/:id/suspend',
+    {...organisations, schema: idParam},
+    async req =>
+      service.setOrganisationStatus(
+        req.params.id,
+        'Suspended',
+        reasonOf(req),
+        actorOf(req),
+      ),
+  );
+  app.post(
+    '/organisations/:id/reactivate',
+    {...organisations, schema: idParam},
+    async req =>
+      service.setOrganisationStatus(
         req.params.id,
         'Active',
         reasonOf(req),

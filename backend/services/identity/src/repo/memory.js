@@ -14,6 +14,7 @@ export function createMemoryRepo() {
   const sessions = new Map();
   const events = [];
   const offices = new Map();
+  const organisations = new Map();
   const settings = new Map();
   let policies = null;
   let eventSeq = 0;
@@ -39,6 +40,7 @@ export function createMemoryRepo() {
         id: randomUUID(),
         office: '',
         officeId: null,
+        organisationId: null,
         status: 'Invited',
         roles: [],
         passwordHash: null,
@@ -88,6 +90,7 @@ export function createMemoryRepo() {
         type: 'registry',
         address: '',
         contact: '',
+        organisationId: null,
         status: 'Active',
         createdAt: now,
         updatedAt: now,
@@ -102,6 +105,57 @@ export function createMemoryRepo() {
       const {code, ...rest} = clone(patch);
       Object.assign(office, rest, {updatedAt: new Date()});
       return clone(office);
+    },
+
+    // organisations (never deleted; the code never changes)
+    async listOrganisations() {
+      return [...organisations.values()]
+        .sort((a, b) => a.code.localeCompare(b.code))
+        .map(clone);
+    },
+    async getOrganisation(id) {
+      return clone(organisations.get(id)) ?? null;
+    },
+    async getOrganisationByCode(code) {
+      return (
+        clone([...organisations.values()].find(o => o.code === code)) ?? null
+      );
+    },
+    async createOrganisation(data) {
+      const now = new Date();
+      const organisation = {
+        id: randomUUID(),
+        status: 'Active',
+        createdAt: now,
+        updatedAt: now,
+        ...clone(data),
+      };
+      organisations.set(organisation.id, organisation);
+      return clone(organisation);
+    },
+    async updateOrganisation(id, patch) {
+      const organisation = organisations.get(id);
+      if (!organisation) return null;
+      const {code, ...rest} = clone(patch);
+      Object.assign(organisation, rest, {updatedAt: new Date()});
+      return clone(organisation);
+    },
+    /** Put every office and user without an organisation into this one → { offices, users } counts. */
+    async assignOrganisation(organisationId) {
+      const counts = {offices: 0, users: 0};
+      for (const office of offices.values()) {
+        if (!office.organisationId) {
+          office.organisationId = organisationId;
+          counts.offices++;
+        }
+      }
+      for (const user of users.values()) {
+        if (!user.organisationId) {
+          user.organisationId = organisationId;
+          counts.users++;
+        }
+      }
+      return counts;
     },
 
     // roles (fixed set; only perms change after seeding)

@@ -21,6 +21,7 @@ import {
   permLabel,
   OFFICE_TYPES,
   OFFICE_CODE_PATTERN,
+  ORGANISATION_CODE_PATTERN,
   NATIONAL_ROLES,
 } from './catalogue.js';
 import {
@@ -31,6 +32,7 @@ import {
   safeEqual,
 } from './crypto.js';
 import {createMailer, invitationEmail} from './mailer.js';
+import {DEFAULT_ORGANISATION_KEY} from './seed.js';
 import {generateSecret, otpauthUrl, verifyTotp} from './totp.js';
 
 const SYSTEM = {id: null, name: 'System'};
@@ -95,14 +97,21 @@ export class IdentityService {
   // ---------------------------------------------------------------- helpers
 
   async context() {
-    const [roles, sod, policies, offices] = await Promise.all([
+    const [roles, sod, policies, offices, organisations] = await Promise.all([
       this.repo.listRoles(),
       this.repo.listSod(),
       this.repo.getPolicies(),
       this.repo.listOffices(),
+      this.repo.listOrganisations(),
     ]);
     roles.sort((a, b) => ROLE_IDS.indexOf(a.id) - ROLE_IDS.indexOf(b.id));
-    return {roles, sod, policies: policies ?? DEFAULT_POLICIES, offices};
+    return {
+      roles,
+      sod,
+      policies: policies ?? DEFAULT_POLICIES,
+      offices,
+      organisations,
+    };
   }
 
   /** Enabled duty rules that `afterPerms` breaks and `beforePerms` did not. */
@@ -117,10 +126,13 @@ export class IdentityService {
       .join(', ');
   }
 
-  publicUser(user, {roles, sod, offices = []}) {
+  publicUser(user, {roles, sod, offices = [], organisations = []}) {
     const perms = effectivePerms(user.roles, roles);
     const office = user.officeId
       ? offices.find(o => o.id === user.officeId)
+      : null;
+    const organisation = user.organisationId
+      ? organisations.find(o => o.id === user.organisationId)
       : null;
     return {
       id: user.id,
@@ -131,6 +143,9 @@ export class IdentityService {
       office: office?.name ?? '',
       officeId: office?.id ?? null,
       officeCode: office?.code ?? null,
+      // the organisation's current name (CB-19); '' only before the seed has given the user one
+      organisation: organisation?.name ?? '',
+      organisationId: organisation?.id ?? null,
       status: user.status,
       mfa: !!user.mfaEnrolled,
       lastActive: user.lastActiveAt ?? null,
@@ -165,6 +180,15 @@ export class IdentityService {
     return user;
   }
 
+  /** The user's organisation when it is suspended (its users cannot sign in), otherwise null. */
+  async suspendedOrganisationOf(user) {
+    if (!user.organisationId) {
+      return null;
+    }
+    const organisation = await this.repo.getOrganisation(user.organisationId);
+    return organisation?.status === 'Suspended' ? organisation : null;
+  }
+
   validateRoleIds(roleIds) {
     if (!Array.isArray(roleIds) || roleIds.length === 0) {
       throw new BadRequestError('At least one role is required');
@@ -176,11 +200,18 @@ export class IdentityService {
     return [...new Set(roleIds)];
   }
 
-  /** Refuse any change after which no active user could manage the permission matrix. */
-  assertAdminRemains(users, roles) {
+  /**
+   * Refuse any change after which no active user could manage the permission matrix. A user of a
+   * suspended organisation cannot sign in, so does not count.
+   */
+  assertAdminRemains(users, roles, organisations = []) {
+    const suspended = new Set(
+      organisations.filter(o => o.status === 'Suspended').map(o => o.id),
+    );
     const ok = users.some(
       u =>
         u.status === 'Active' &&
+        !suspended.has(u.organisationId) &&
         effectivePerms(u.roles, roles).includes('admin.roles'),
     );
     if (!ok) {
@@ -228,6 +259,19 @@ export class IdentityService {
         'This account is suspended. Contact a system administrator.',
       );
     }
+    // a suspended organisation blocks its users exactly like a suspended account (CB-19)
+    const organisation = await this.suspendedOrganisationOf(user);
+    if (organisation) {
+      await this.log(
+        'denied',
+        'Sign-in blocked',
+        user.name,
+        `Organisation ${organisation.name} suspended`,
+      );
+      throw new ForbiddenError(
+        'This account is suspended. Contact a system administrator.',
+      );
+    }
     const {policies} = await this.context();
     if (user.mfaEnrolled) return {next: 'mfa', userId: user.id};
     if (policies.mfa) {
@@ -249,7 +293,11 @@ export class IdentityService {
   /** Step 2 of sign-in: verify a TOTP code (and complete enrolment if this is the first one). */
   async verifyMfa({userId, code, ip}) {
     const user = await this.repo.getUser(userId);
-    if (!user || user.status !== 'Active') {
+    if (
+      !user ||
+      user.status !== 'Active' ||
+      (await this.suspendedOrganisationOf(user))
+    ) {
       throw new UnauthorizedError('Sign-in expired, start again');
     }
     const enrolling = !user.mfaEnrolled;
@@ -362,7 +410,14 @@ export class IdentityService {
       }
       throw expired();
     }
-    if (!user || user.status !== 'Active') {
+    const organisation = ctx.organisations.find(
+      o => o.id === user?.organisationId,
+    );
+    if (
+      !user ||
+      user.status !== 'Active' ||
+      organisation?.status === 'Suspended'
+    ) {
       await this.repo.updateSession(sid, {revokedAt: now});
       throw expired();
     }
@@ -457,6 +512,7 @@ export class IdentityService {
       type: o.type,
       address: o.address,
       contact: o.contact,
+      organisationId: o.organisationId ?? null,
       status: o.status,
       createdAt: o.createdAt ?? null,
       users: users.filter(u => u.officeId === o.id && u.status !== 'Suspended')
@@ -517,7 +573,8 @@ export class IdentityService {
     return out;
   }
 
-  async createOffice({code, ...rest}, actor) {
+  /** A new office belongs to the given organisation, or to the default one (CB-19). */
+  async createOffice({code, organisationId, ...rest}, actor) {
     const cleanCode = String(code || '')
       .trim()
       .toUpperCase();
@@ -530,9 +587,13 @@ export class IdentityService {
         `An office with code ${cleanCode} already exists`,
       );
     }
+    const organisation = await this.organisationToJoin(
+      organisationId || (await this.defaultOrganisationId()),
+    );
     const office = await this.repo.createOffice({
       code: cleanCode,
       ...fields,
+      organisationId: organisation?.id ?? null,
       status: 'Active',
     });
     await this.log(
@@ -600,6 +661,16 @@ export class IdentityService {
   async setUserOffice(id, officeId, actor) {
     const user = await this.requireUser(id);
     const office = await this.officeForUser(officeId || null, user.roles);
+    // a move never changes the user's organisation: the office must belong to it
+    if (
+      office?.organisationId &&
+      user.organisationId &&
+      office.organisationId !== user.organisationId
+    ) {
+      throw new BadRequestError(
+        `${office.name} belongs to another organisation than ${user.name}'s`,
+      );
+    }
     if ((user.officeId ?? null) === (office?.id ?? null)) {
       return this.publicUser(user, await this.context());
     }
@@ -619,6 +690,184 @@ export class IdentityService {
     return this.publicUser(updated, await this.context());
   }
 
+  // ---------------------------------------------------------------- organisations
+
+  /** Organisations with the number of their offices, and of their users who are not suspended. */
+  async listOrganisations() {
+    const [organisations, offices, users] = await Promise.all([
+      this.repo.listOrganisations(),
+      this.repo.listOffices(),
+      this.repo.listUsers(),
+    ]);
+    return organisations.map(o => this.publicOrganisation(o, offices, users));
+  }
+
+  publicOrganisation(o, offices = [], users = []) {
+    return {
+      id: o.id,
+      code: o.code,
+      name: o.name,
+      status: o.status,
+      createdAt: o.createdAt ?? null,
+      offices: offices.filter(x => x.organisationId === o.id).length,
+      users: users.filter(
+        u => u.organisationId === o.id && u.status !== 'Suspended',
+      ).length,
+    };
+  }
+
+  /** The organisation as listed, with its counts. */
+  async organisationWithCounts(o) {
+    const [offices, users] = await Promise.all([
+      this.repo.listOffices(),
+      this.repo.listUsers(),
+    ]);
+    return this.publicOrganisation(o, offices, users);
+  }
+
+  async requireOrganisation(id) {
+    const organisation = await this.repo.getOrganisation(id);
+    if (!organisation) throw new NotFoundError('Organisation not found');
+    return organisation;
+  }
+
+  /** The id of the default organisation (made by the seed), or null before the seed has run. */
+  async defaultOrganisationId() {
+    return (await this.repo.getSetting(DEFAULT_ORGANISATION_KEY)) ?? null;
+  }
+
+  /** The organisation of a signed-in actor; null for the system or an actor without one. */
+  async organisationIdOf(actor) {
+    if (!actor?.id) {
+      return null;
+    }
+    return (await this.repo.getUser(actor.id))?.organisationId ?? null;
+  }
+
+  /**
+   * The organisation a new user or office joins: it must exist and be active. → organisation |
+   * null (no id: only before the seed has made the default organisation)
+   */
+  async organisationToJoin(id) {
+    if (!id) {
+      return null;
+    }
+    const organisation = await this.repo.getOrganisation(id);
+    if (!organisation) {
+      throw new BadRequestError('That organisation does not exist');
+    }
+    if (organisation.status !== 'Active') {
+      throw new ConflictError(
+        `${organisation.name} is suspended: nothing can be added to it`,
+      );
+    }
+    return organisation;
+  }
+
+  organisationName(name) {
+    if (!String(name || '').trim()) {
+      throw new BadRequestError('Name is required');
+    }
+    return String(name).trim();
+  }
+
+  async createOrganisation({code, name}, actor) {
+    const cleanCode = String(code || '')
+      .trim()
+      .toUpperCase();
+    if (!new RegExp(ORGANISATION_CODE_PATTERN).test(cleanCode)) {
+      throw new BadRequestError('The code must be 2 to 5 letters, e.g. ABC');
+    }
+    const cleanName = this.organisationName(name);
+    if (await this.repo.getOrganisationByCode(cleanCode)) {
+      throw new ConflictError(
+        `An organisation with code ${cleanCode} already exists`,
+      );
+    }
+    const organisation = await this.repo.createOrganisation({
+      code: cleanCode,
+      name: cleanName,
+      status: 'Active',
+    });
+    await this.log(
+      'organisation',
+      'Organisation added',
+      `${organisation.code} · ${organisation.name}`,
+      '',
+      actor,
+    );
+    return this.publicOrganisation(organisation);
+  }
+
+  /** The name can change; the code cannot. */
+  async updateOrganisation(id, {name}, actor) {
+    const organisation = await this.requireOrganisation(id);
+    if (name === undefined) {
+      return this.organisationWithCounts(organisation);
+    }
+    const cleanName = this.organisationName(name);
+    if (cleanName === organisation.name) {
+      return this.organisationWithCounts(organisation);
+    }
+    const updated = await this.repo.updateOrganisation(id, {name: cleanName});
+    await this.log(
+      'organisation',
+      'Organisation updated',
+      `${organisation.code} · ${updated.name}`,
+      `name: ${organisation.name} → ${updated.name}`,
+      actor,
+    );
+    return this.organisationWithCounts(updated);
+  }
+
+  /**
+   * Suspending stops every user of the organisation from signing in, like a suspended account, and
+   * ends their sessions; their accounts are unchanged, so reactivating lets them in again.
+   */
+  async setOrganisationStatus(id, status, reason, actor) {
+    if (!['Active', 'Suspended'].includes(status)) {
+      throw new BadRequestError('Status must be Active or Suspended');
+    }
+    const organisation = await this.requireOrganisation(id);
+    if (organisation.status === status) {
+      return this.organisationWithCounts(organisation);
+    }
+    const [users, ctx] = await Promise.all([
+      this.repo.listUsers(),
+      this.context(),
+    ]);
+    if (status === 'Suspended') {
+      this.assertAdminRemains(
+        users,
+        ctx.roles,
+        ctx.organisations.map(o => (o.id === id ? {...o, status} : o)),
+      );
+    }
+    const updated = await this.repo.updateOrganisation(id, {status});
+    if (status === 'Suspended') {
+      for (const user of users.filter(u => u.organisationId === id)) {
+        await this.repo.revokeUserSessions(user.id, this.clock());
+        await this.announceRevoked({
+          userId: user.id,
+          reason: 'organisation suspended',
+        });
+      }
+    }
+    await this.log(
+      'organisation',
+      status === 'Suspended'
+        ? 'Organisation suspended'
+        : 'Organisation reactivated',
+      `${organisation.code} · ${organisation.name}`,
+      reason ||
+        (status === 'Suspended'
+          ? 'Its users cannot sign in'
+          : 'Its users can sign in again'),
+      actor,
+    );
+    return this.organisationWithCounts(updated);
+  }
+
   // ---------------------------------------------------------------- users
 
   async listUsers() {
@@ -635,7 +884,11 @@ export class IdentityService {
     return `${this.config.inviteUrlBase}?token=${encodeURIComponent(token)}`;
   }
 
-  async invite({name, email, officeId = null, roles}, actor) {
+  /**
+   * Invite a user into an office (or none, for administrators) and an organisation: the one given,
+   * else the office's, else the inviter's, else the default organisation (CB-19).
+   */
+  async invite({name, email, officeId = null, organisationId, roles}, actor) {
     const cleanEmail = normEmail(email);
     const roleIds = this.validateRoleIds(roles);
     if (!String(name || '').trim()) {
@@ -645,6 +898,21 @@ export class IdentityService {
       throw new ConflictError('A user with this email already exists');
     }
     const office = await this.officeForUser(officeId, roleIds);
+    const organisation = await this.organisationToJoin(
+      organisationId ||
+        office?.organisationId ||
+        (await this.organisationIdOf(actor)) ||
+        (await this.defaultOrganisationId()),
+    );
+    if (
+      office?.organisationId &&
+      organisation &&
+      office.organisationId !== organisation.id
+    ) {
+      throw new BadRequestError(
+        `${office.name} belongs to another organisation than ${organisation.name}`,
+      );
+    }
     const token = randomToken();
     const expiresAt = new Date(
       this.clock().getTime() + this.config.inviteTtlHours * 3_600_000,
@@ -653,6 +921,7 @@ export class IdentityService {
       name: name.trim(),
       email: cleanEmail,
       officeId: office?.id ?? null,
+      organisationId: organisation?.id ?? null,
       roles: roleIds,
       status: 'Invited',
       inviteHash: sha256(token),
@@ -835,6 +1104,7 @@ export class IdentityService {
     this.assertAdminRemains(
       users.map(u => (u.id === id ? {...u, roles: roleIds} : u)),
       ctx.roles,
+      ctx.organisations,
     );
     const added = roleIds
       .filter(r => !user.roles.includes(r))
@@ -875,6 +1145,7 @@ export class IdentityService {
       this.assertAdminRemains(
         users.map(u => (u.id === id ? {...u, status} : u)),
         ctx.roles,
+        ctx.organisations,
       );
       const updated = await this.repo.updateUser(id, {status: 'Suspended'});
       await this.repo.revokeUserSessions(id, this.clock());
@@ -955,7 +1226,7 @@ export class IdentityService {
     const next = ctx.roles.map(r =>
       matrix[r.id] ? {...r, perms: normalizePerms(matrix[r.id])} : r,
     );
-    this.assertAdminRemains(users, next);
+    this.assertAdminRemains(users, next, ctx.organisations);
 
     let changes = 0;
     for (const role of next) {

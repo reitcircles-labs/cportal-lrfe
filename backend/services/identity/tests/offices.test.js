@@ -249,7 +249,7 @@ describe('offices', () => {
     expect(
       roles.filter(r => r.perms.includes('extract.issue')).map(r => r.id),
     ).to.deep.equal(['rec']);
-    expect(await repo.getSetting('catalogue.version')).to.equal(4);
+    expect(await repo.getSetting('catalogue.version')).to.equal(5);
   });
 
   it('grants the new permission once to existing roles, and respects its later removal', async () => {

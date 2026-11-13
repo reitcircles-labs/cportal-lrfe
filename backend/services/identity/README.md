@@ -29,7 +29,7 @@ Settings come from `services/identity/.env` (copy `backend/.env_example`):
 | `IDENTITY_INVITE_URL_BASE` | start of the link in invitation emails: the address users open the app at, e.g. `https://lr.example.com/#/invite` |
 | `IDENTITY_EXPOSE_INVITE_LINKS` | dev only: also show the invitation link to the admin (needed while email is not set up) |
 | `MAIL_TRANSPORT`, `MAIL_FROM`, `SMTP_*` | invitation email, see [Email](#email-invitations) |
-| `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | the organisation, as "name · subtitle" in invitation emails and as the authenticator app's entry; set but empty = left out; not set = "Deeds Registry · Republic of Namibia" (`orgFromEnv` in `@lrfe/common`) |
+| `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | the organisation, as "name · subtitle" in invitation emails and as the authenticator app's entry; set but empty = left out; not set = "Deeds Registry · Republic of Namibia" (`orgFromEnv` in `@lrfe/common`). `LRFE_ORG_NAME` also names the default organisation when it is created, see [Organisations](#organisations) |
 | `IDENTITY_OFFICES` | the offices created on an empty database: `CODE=Name;CODE=Name`; set but empty = none; not set = the domain pack's (land: Namibia's two). The containers pass `LRFE_OFFICES` |
 
 ## First sign-in
@@ -67,6 +67,26 @@ Rehoboth, and `REH` Deeds Registry · Rehoboth, for Rehoboth town, constituency 
 farmland. Rehoboth's address is left blank to fill in. Once any office exists, nothing is added
 again. (The Registration of Deeds in Rehoboth Act 1976 was repealed by the Deeds Registries Act 2015,
 in force since April 2021; confirm with the Registrar whether the Rehoboth office remains separate.)
+
+## Organisations
+
+Every user and every office belongs to an organisation. An install starts with one, the **default
+organisation**; a product with outside parties (carriers, banks) adds more. Administrators with the
+permission "Manage organisations" add, rename, suspend and reactivate them through the API
+(`/organisations`); organisations are never deleted and their code never changes.
+
+- **Default organisation.** At every start, identity creates it when the database has none, named
+  after `LRFE_ORG_NAME` (not set: "Deeds Registry") with a code made of the name's initials (e.g.
+  `DR`), and records its id in the setting `organisations.default`. Every office and user without an
+  organisation is put into it, so an existing install is upgraded with its data kept. It is never
+  renamed afterwards from the setting.
+- **New users and offices.** An invitation may name an organisation; otherwise the user joins the
+  office's organisation, else the inviter's, else the default one. A new office joins the default
+  organisation unless one is given. A suspended organisation takes neither.
+- **Suspended** organisations: their users cannot sign in (the same refusal as a suspended account)
+  and their open sessions end; the users' own accounts are not changed, so reactivating the
+  organisation lets them in again. The organisation of the last active administrators cannot be
+  suspended.
 
 ## Roles and permissions from the domain pack
 

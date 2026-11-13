@@ -33,6 +33,16 @@ describe('identity Postgres models', () => {
       {code: 'KMP', name: 'Keetmanshoop sub-registry'},
       {id: admin.id, name: admin.name},
     );
+    await service.createOrganisation(
+      {code: 'BNK', name: 'A bank'},
+      {id: admin.id, name: admin.name},
+    );
+    for (const o of await repo.listOffices()) {
+      expect(attrs(models.Office)).to.include.members(Object.keys(o));
+    }
+    for (const o of await repo.listOrganisations()) {
+      expect(attrs(models.Organisation)).to.include.members(Object.keys(o));
+    }
 
     // users: `roles` lives in user_role, everything else must be a column
     for (const u of await repo.listUsers()) {

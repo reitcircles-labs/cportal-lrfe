@@ -1,7 +1,15 @@
-import {CATALOGUE, DEFAULT_POLICIES, normalizePerms} from './catalogue.js';
+import {orgFromEnv} from '@lrfe/common';
+import {
+  CATALOGUE,
+  DEFAULT_POLICIES,
+  normalizePerms,
+  organisationCodeOf,
+} from './catalogue.js';
 import {hashPassword} from './crypto.js';
 
 const CATALOGUE_KEY = 'catalogue.version';
+/** The setting that holds the id of the default organisation (CB-19). */
+export const DEFAULT_ORGANISATION_KEY = 'organisations.default';
 
 /** The demo users of this install's domain pack (fictitious), created with a demo password. */
 export const DEMO_USERS = CATALOGUE.demoUsers;
@@ -16,10 +24,22 @@ export const DEMO_USERS = CATALOGUE.demoUsers;
  *   offices:      [{ code, name, type, address, contact }] created only if no office exists yet
  *                 (DEFAULT_OFFICES at start-up); once any office exists, never touched again
  *   catalogue:    the catalogue to seed (catalogueOf(pack)), this install's by default
+ *   organisationName: the default organisation's name when it is created (CB-19): the site's
+ *                 organisation name (LRFE_ORG_NAME) by default; never renamed afterwards
+ *
+ * Every office and user without an organisation is put into the default organisation, which is
+ * created first when the database has none (an empty database, or one from before organisations).
  */
 export async function seedIdentity(
   repo,
-  {admin, demoPassword, offices, catalogue = CATALOGUE, log = () => {}} = {},
+  {
+    admin,
+    demoPassword,
+    offices,
+    catalogue = CATALOGUE,
+    organisationName = orgFromEnv().name,
+    log = () => {},
+  } = {},
 ) {
   const roles = await repo.listRoles();
   for (const role of catalogue.roles) {
@@ -61,6 +81,12 @@ export async function seedIdentity(
   if (missingSod.length) await repo.saveSod(missingSod);
   if (!(await repo.getPolicies())) await repo.savePolicies(DEFAULT_POLICIES);
 
+  const organisationId = await ensureDefaultOrganisation(
+    repo,
+    organisationName,
+    log,
+  );
+
   if (offices?.length && (await repo.listOffices()).length === 0) {
     for (const o of offices) await repo.createOffice({...o, status: 'Active'});
     log(`offices created: ${offices.map(o => o.code).join(', ')}`);
@@ -89,4 +115,39 @@ export async function seedIdentity(
       log(`demo user ${u.email} created`);
     }
   }
+
+  const assigned = await repo.assignOrganisation(organisationId);
+  if (assigned.offices || assigned.users) {
+    log(
+      `default organisation: ${assigned.offices} office(s) and ${assigned.users} user(s) added`,
+    );
+  }
+}
+
+/**
+ * The id of the default organisation, created when the database has none. Idempotent.
+ * @param {!Object} repo
+ * @param {string} name the name to give it when it is created
+ * @param {function(string)} log
+ * @return {!Promise<string>}
+ */
+async function ensureDefaultOrganisation(repo, name, log) {
+  const id = await repo.getSetting(DEFAULT_ORGANISATION_KEY);
+  if (id && (await repo.getOrganisation(id))) {
+    return id;
+  }
+  // Organisations without a recorded default only if the setting was lost: keep the first one.
+  let [organisation] = await repo.listOrganisations();
+  if (!organisation) {
+    organisation = await repo.createOrganisation({
+      code: organisationCodeOf(name),
+      name,
+      status: 'Active',
+    });
+    log(
+      `default organisation ${organisation.code} · ${organisation.name} created`,
+    );
+  }
+  await repo.setSetting(DEFAULT_ORGANISATION_KEY, organisation.id);
+  return organisation.id;
 }

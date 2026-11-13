@@ -25,6 +25,8 @@ tags:
     description: >-
       Office locations (registry offices and external bodies). Users other than system administrators belong to one. Offices are never
       deleted.
+  - name: identity · Organisations
+    description: The organisations users and offices belong to; an install starts with one, the default organisation. Organisations are never deleted.
   - name: identity · Policies
     description: Security policies and segregation-of-duties rules.
   - name: edrms · Service
@@ -95,6 +97,7 @@ paths:
               - denied
               - session
               - office
+              - organisation
         - name: limit
           in: query
           required: false
@@ -4224,7 +4227,7 @@ paths:
       summary: Add an office
       description: >-
         `code` 2 to 5 capital letters, unique and permanent (it will appear in batch and document numbers); `name`; `type` registry |
-        external; optional `address`, `contact`.
+        external; optional `address`, `contact`, `organisationId` (an active organisation; by default the default organisation).
 
 
         **Access:** Signed-in user with permission `admin.offices`.
@@ -4258,6 +4261,9 @@ paths:
                 contact:
                   type: string
                   maxLength: 200
+                organisationId:
+                  type: string
+                  format: uuid
       responses:
         "201":
           description: OK
@@ -4469,6 +4475,268 @@ paths:
       x-access:
         allOf:
           - admin.offices
+  /api/organisations:
+    get:
+      tags:
+        - identity · Organisations
+      summary: All organisations
+      description: |-
+        `{ organisations }` with `offices`: how many offices belong to each, and `users`: how many of its users are not suspended.
+
+        **Access:** Signed-in user with any of `admin.users`, `admin.offices`, `admin.organisations`.
+      operationId: identity_getOrganisations
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - admin.users
+          - admin.offices
+          - admin.organisations
+    post:
+      tags:
+        - identity · Organisations
+      summary: Add an organisation
+      description: |-
+        `code` 2 to 5 capital letters, unique and permanent; `name`.
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: identity_postOrganisations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - code
+                - name
+              properties:
+                code:
+                  type: string
+                  pattern: ^[A-Z]{2,5}$
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+  /api/organisations/{id}:
+    patch:
+      tags:
+        - identity · Organisations
+      summary: Rename an organisation
+      description: |-
+        `{ name }`. The code cannot change.
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: identity_patchOrganisationsId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+  /api/organisations/{id}/reactivate:
+    post:
+      tags:
+        - identity · Organisations
+      summary: Reactivate an organisation
+      description: |-
+        Its users can sign in again.
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: identity_postOrganisationsIdReactivate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+  /api/organisations/{id}/suspend:
+    post:
+      tags:
+        - identity · Organisations
+      summary: Suspend an organisation
+      description: >-
+        Its users cannot sign in (as if suspended) and their sessions end; their accounts are not changed. Nothing new can be added to it.
+        Refused when no active administrator would remain. Optional `{ reason }`.
+
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: identity_postOrganisationsIdSuspend
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
   /api/policies:
     get:
       tags:
@@ -7168,10 +7436,11 @@ paths:
         - identity · Users
       summary: Invite a user
       description: >-
-        Body `{ name, email, roles, officeId }`: an active office (required unless the roles include System administrator). Creates the user
-        as Invited and emails them the activation link (valid 3 days). Returns `{ user, email: { sent, to, reason? }, inviteUrl? }`: the
-        user is created even when the email fails, and `reason` says why. `inviteUrl` is only returned when
-        IDENTITY_EXPOSE_INVITE_LINKS=true (dev).
+        Body `{ name, email, roles, officeId, organisationId }`: an active office (required unless the roles include System administrator);
+        an optional active organisation (by default the office's, else the inviter's, else the default organisation). Creates the user as
+        Invited and emails them the activation link (valid 3 days). Returns `{ user, email: { sent, to, reason? }, inviteUrl? }`: the user
+        is created even when the email fails, and `reason` says why. `inviteUrl` is only returned when IDENTITY_EXPOSE_INVITE_LINKS=true
+        (dev).
 
 
         **Access:** Signed-in user with permission `admin.users`.
@@ -7200,6 +7469,9 @@ paths:
                   type:
                     - string
                     - "null"
+                  format: uuid
+                organisationId:
+                  type: string
                   format: uuid
                 roles:
                   type: array
