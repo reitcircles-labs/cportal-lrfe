@@ -153,6 +153,14 @@ export class IdentityService {
     };
   }
 
+  /**
+   * The user acting for themselves (accepting an invitation, enrolling MFA, signing in or out), with
+   * their organisation for the trail.
+   */
+  selfActor(user) {
+    return {id: user.id, name: user.name, org: user.organisationId ?? null};
+  }
+
   async log(kind, action, target, detail, actor = SYSTEM) {
     const entry = {
       time: this.clock(),
@@ -319,10 +327,13 @@ export class IdentityService {
         mfaEnrolled: true,
         pendingMfaSecret: null,
       });
-      await this.log('user', 'MFA enrolled', user.name, 'Authenticator app', {
-        id: user.id,
-        name: user.name,
-      });
+      await this.log(
+        'user',
+        'MFA enrolled',
+        user.name,
+        'Authenticator app',
+        this.selfActor(user),
+      );
     }
     return this.startSession(current, {ip, method: 'MFA'});
   }
@@ -346,7 +357,7 @@ export class IdentityService {
       'Signed in',
       user.name,
       `as ${this.roleLabels(user.roles, ctx.roles)} · ${method}`,
-      {id: user.id, name: user.name},
+      this.selfActor(user),
     );
     return {
       refreshToken: `${sid}.${secret}`,
@@ -449,7 +460,7 @@ export class IdentityService {
         'Signed out',
         user.name,
         '',
-        actor || {id: user.id, name: user.name},
+        actor || this.selfActor(user),
       );
     }
   }
@@ -1086,10 +1097,13 @@ export class IdentityService {
       inviteHash: null,
       inviteExpiresAt: null,
     });
-    await this.log('user', 'Invitation accepted', user.name, user.email, {
-      id: user.id,
-      name: user.name,
-    });
+    await this.log(
+      'user',
+      'Invitation accepted',
+      user.name,
+      user.email,
+      this.selfActor(user),
+    );
     return {email: user.email};
   }
 

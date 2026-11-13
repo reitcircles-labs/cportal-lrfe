@@ -292,6 +292,13 @@ From a version without the `LRFE_ORG_*` settings: the portal shows the first sit
 until they are set; copy them and `LRFE_OFFICES` from the new `.env.example` into `.env` to change
 them (existing offices are not changed).
 
+**Upgrading to organisations (CB-18).** The data is kept. On the first start, identity creates one
+default organisation, named from `LRFE_ORG_NAME`, and puts every existing office and user into it.
+The same first start builds an audit index (`trail_entry_actor_org`) that reads the whole audit
+trail, so it takes longer on a large trail (audit takes no new events until it is built; start
+other audit replicas only after the first one is up). Sign-in sessions from
+before keep working until they expire.
+
 From a version that kept the AI's page text in the database (before API-798): intake moves it
 into encrypted files beside the scans by itself when it starts (while OpenBao is sealed it tries
 again every minute; its log says "page text moved into encrypted files"). Documents filed before

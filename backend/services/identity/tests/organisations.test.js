@@ -413,6 +413,30 @@ describe('organisations (CB-19)', () => {
     );
   });
 
+  it('accepting an invitation reaches the audit trail with the organisation', async () => {
+    const {service, actor, published} = await setup();
+    const bank = await service.createOrganisation(
+      {code: 'BNK', name: 'First Bank'},
+      actor,
+    );
+    const {user, inviteUrl} = await service.invite(
+      {name: 'A', email: 'a@x.test', organisationId: bank.id, roles: ['adm']},
+      actor,
+    );
+    const token = new URL(inviteUrl.replace('#/', '')).searchParams.get(
+      'token',
+    );
+    await service.acceptInvite({token, password: 'a long enough passphrase'});
+    const accepted = published.filter(
+      e => e.data.action === 'Invitation accepted',
+    );
+    expect(accepted.at(-1).actor).to.deep.equal({
+      id: user.id,
+      name: 'A',
+      org: bank.id,
+    });
+  });
+
   it('moving a user to another office keeps them in their organisation', async () => {
     const {service, actor} = await setup();
     const bank = await service.createOrganisation(
@@ -454,6 +478,15 @@ describe('organisations (CB-19)', () => {
     await repo.updateUser(scan.id, {organisationId: bank.id});
     const session = await service.login({email: SCAN, password: PASSWORD});
     expect(session.next).to.equal('done');
+    // the sign-in reaches the audit trail with the user's organisation
+    const signedIn = published.filter(
+      e => e.type === 'identity.session' && e.data.action === 'Signed in',
+    );
+    expect(signedIn.at(-1).actor).to.deep.equal({
+      id: scan.id,
+      name: scan.name,
+      org: bank.id,
+    });
 
     const suspended = await service.setOrganisationStatus(
       bank.id,

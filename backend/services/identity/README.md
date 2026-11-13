@@ -87,6 +87,10 @@ permission "Manage organisations" add, rename, suspend and reactivate them throu
   and their open sessions end; the users' own accounts are not changed, so reactivating the
   organisation lets them in again. The organisation of the last active administrators cannot be
   suspended.
+- **In the token (CB-20).** The access token carries the claim `org`, the user's organisation id;
+  a refresh takes it again from the current user. Services read it with `organisationOf(request)`
+  or `actorOf(request)` from `@lrfe/common`. Service tokens and tokens issued before CB-20 have no
+  `org` and keep working until they expire.
 
 ## Roles and permissions from the domain pack
 
