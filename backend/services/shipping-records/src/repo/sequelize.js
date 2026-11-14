@@ -197,35 +197,48 @@ export function createSequelizeRepo(sequelize) {
      * A page of the B/Ls an organisation is party to (CB-42), newest first: before issue those it
      * owns; after it those of which it is the carrier, the holder or the consignee, or that its
      * chain of title moved from or to it. Each with its title (null before issue) and whether the
-     * chain names the organisation.
-     * @param {{organisationId: string, limit?: number, offset?: number}} query
+     * chain names the organisation. With `number`, only those whose number (`recordNo`) is that
+     * one, whatever its case (CB-47).
+     * @param {{
+     *   organisationId: string,
+     *   limit?: number,
+     *   offset?: number,
+     *   number?: string,
+     * }} query
      * @return {!Promise<{
      *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
      *   total: number,
      * }>}
      */
-    async listPartyRecords({organisationId, limit = 50, offset = 0}) {
+    async listPartyRecords({organisationId, limit = 50, offset = 0, number}) {
       const from = `
         FROM "${SCHEMA}"."bill_of_lading" r
         LEFT JOIN "${SCHEMA}"."bl_title" t ON t."recordId" = r."id"`;
       const inChain = `EXISTS (
         SELECT 1 FROM "${SCHEMA}"."bl_title_entry" e
         WHERE e."recordId" = r."id" AND (e."from" = :org OR e."to" = :org))`;
+      // with a number, only the B/Ls of that number (CB-47), whatever its case
+      let numbered = '';
+      if (number !== undefined) {
+        numbered = 'AND lower(r."recordNo") = lower(:number)';
+      }
       const where = `
-        WHERE (t."recordId" IS NULL AND r."organisationId" = :org)
+        WHERE ((t."recordId" IS NULL AND r."organisationId" = :org)
           OR t."carrier" = :org OR t."holder" = :org OR t."consignee" = :org
-          OR ${inChain}`;
+          OR ${inChain})
+          ${numbered}`;
+      const replacements = {org: organisationId, number: number ?? null};
       const rows = await sequelize.query(
         `SELECT r."id", ${inChain} AS "inChain" ${from} ${where}
          ORDER BY r."createdAt" DESC, r."id" ASC LIMIT :limit OFFSET :offset`,
         {
-          replacements: {org: organisationId, limit, offset},
+          replacements: {...replacements, limit, offset},
           type: QueryTypes.SELECT,
         },
       );
       const [{total}] = await sequelize.query(
         `SELECT COUNT(*)::int AS "total" ${from} ${where}`,
-        {replacements: {org: organisationId}, type: QueryTypes.SELECT},
+        {replacements, type: QueryTypes.SELECT},
       );
       const ids = rows.map(row => row.id);
       const records = await models.Record.findAll({where: {id: ids}});

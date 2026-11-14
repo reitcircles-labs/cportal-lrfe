@@ -11,6 +11,7 @@ import {AuthService, toApiError} from '@lrfe/platform';
 
 import {BlApi} from './bl.api';
 import {mayDraft} from './bl-actions';
+import {BlLookupComponent} from './bl-lookup.component';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
 import {
   kindLabel,
@@ -40,11 +41,12 @@ interface Row {
 /**
  * The home of the shipping app (CB-42): the B/Ls the user's organisation is party to, as carrier,
  * holder, past holder or consignee, its drafts among them, newest first; each opens its page.
- * Who drafts B/Ls starts a new one from here (CB-44).
+ * Who drafts B/Ls starts a new one from here (CB-44). "Check a B/L by number" finds one of them by
+ * its number and opens it (CB-47, bl-lookup.component.ts).
  */
 @Component({
   selector: 'app-bl-list',
-  imports: [RouterLink],
+  imports: [RouterLink, BlLookupComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -57,6 +59,7 @@ interface Row {
           <a class="btn btn-primary" routerLink="/bls/new">New B/L</a>
         }
       </header>
+      <app-bl-lookup />
       <section class="panel">
         @if (error(); as e) {
           <div class="note danger" role="alert" style="margin:16px">{{ e }}</div>

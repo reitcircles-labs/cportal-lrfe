@@ -22,6 +22,7 @@ import {
 } from '@lrfe/platform';
 
 import {BlApi} from './bl.api';
+import {BlCheckComponent} from './bl-check.component';
 import {approvalOf, issueCommands, maySubmit, versionNote} from './bl-actions';
 import {
   endorseConfirmation,
@@ -77,10 +78,12 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
  * B/L to the carrier, which then holds it, and the carrier releases the goods: the B/L is
  * accomplished, with no holder and nothing more to do. Both are confirmed first; a note in the
  * B/L box says where it stands, read out as it changes.
+ * Once issued, "Check this B/L" (CB-47, bl-check.component.ts) checks the chain of title in the
+ * browser, says whether its latest step is on the blockchain and gives the proof to check offline.
  */
 @Component({
   selector: 'app-bl-detail',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, BlCheckComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -208,6 +211,10 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             </table>
           </div>
         </section>
+        <!-- CB-47: the chain checked, the proof on the blockchain and its file, once issued -->
+        @if (v.title !== null) {
+          <app-bl-check [recordId]="v.recordId" [recordNo]="v.record.recordNo" [latestSeq]="chain().length" [names]="v.organisationNames" />
+        }
       } @else {
         <p class="muted" role="status">Loading…</p>
       }

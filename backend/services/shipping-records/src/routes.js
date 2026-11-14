@@ -17,6 +17,8 @@ import {OFFERED_COMMANDS} from './title.service.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuid = {type: 'string', format: 'uuid'};
 const versionParam = {n: {type: 'integer', minimum: 1}};
+/** The longest B/L number a lookup takes (CB-47); a transport document reference has 20 at most. */
+const MAX_NUMBER_LENGTH = 100;
 
 /**
  * The path parameters of a record route.
@@ -455,7 +457,8 @@ export async function recordsRoutes(app, {service}) {
 
   // the B/Ls the session's organisation is party to (CB-42): its drafts, and the B/Ls of which it
   // is the carrier, the holder, a past holder or the consignee, each with its title and the
-  // organisation's roles; the organisation is the session's, never one named in the request
+  // organisation's roles; the organisation is the session's, never one named in the request.
+  // `number` finds a B/L by its number among them (CB-47: "Check a B/L by number")
   app.get(
     '/records/title',
     {
@@ -467,6 +470,7 @@ export async function recordsRoutes(app, {service}) {
           properties: {
             limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
             offset: OFFSET_SCHEMA,
+            number: {type: 'string', maxLength: MAX_NUMBER_LENGTH},
           },
         },
       },

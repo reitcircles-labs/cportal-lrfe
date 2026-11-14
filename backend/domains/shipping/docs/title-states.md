@@ -178,6 +178,7 @@ found" before any refusal that would tell the B/L's state.
 | `reference-taken` | 409 | the carrier already has a B/L with a child's reference | The carrier already has a B/L with the reference … |
 | `own-draft` | 403 | `POST /records/:id/versions/:n/approve` (CB-44, before issue) by a person who created, changed or submitted that version: four eyes | You drafted this version, so a second person must approve it (four-eyes) |
 | `proof-unavailable` | 503 | `GET /records/:id/title/proof` while the proof on the blockchain cannot be read | The proof on the blockchain cannot be read now: try again later. |
+| `no-number` | 400 | `GET /records/title?number=` with a blank number (CB-47, "Check a B/L by number") | Give the number of the B/L to look for |
 
 An invalid document (`amend`, `split`) is refused 400 with every problem in `details.problems`,
 as when a B/L is drafted.

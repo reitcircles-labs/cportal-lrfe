@@ -1,8 +1,10 @@
 import {Injectable, inject} from '@angular/core';
 import {ApiService} from '@lrfe/platform';
 import type {DraftRequest} from './bl-draft';
+import type {Jwks, TitleProof} from './bl-check';
 import {endorseRequest} from './bl-endorse';
 import type {
+  BlListItem,
   BlPage,
   BlRecord,
   BlTitleView,
@@ -13,7 +15,8 @@ import type {
  * The calls of the shipping record service the B/L screens make (gateway prefix /api/records).
  * The organisation is always the session's: no call names one. Drafting, submitting, approving
  * and issuing a B/L since CB-44; endorsing it to a named organisation since CB-45; surrendering
- * it and releasing its goods since CB-46.
+ * it and releasing its goods since CB-46; finding one by its number, its proof file and the
+ * platform's keys since CB-47.
  */
 @Injectable({providedIn: 'root'})
 export class BlApi {
@@ -26,6 +29,38 @@ export class BlApi {
    */
   list(page: {limit: number; offset: number}): Promise<BlPage> {
     return this.api.get<BlPage>('/records/title', page);
+  }
+
+  /**
+   * The B/Ls of a number among those the user's organisation is party to (CB-47): none for a
+   * number nobody uses and for another organisation's B/L alike; two carriers may use the same.
+   * @param number the B/L number, as typed without the spaces around it
+   * @return the B/Ls found
+   */
+  async findByNumber(number: string): Promise<BlListItem[]> {
+    const page = await this.api.get<BlPage>('/records/title', {number});
+    return page.items;
+  }
+
+  /**
+   * One B/L's proof file (`lrfe-title-proof/1`, CB-47): its chain of title, the platform's keys
+   * and the proof of the latest step on the blockchain; 503 while that proof cannot be read.
+   * @param id the B/L's id
+   * @return the proof file
+   */
+  proof(id: string): Promise<TitleProof> {
+    return this.api.get<TitleProof>(
+      `/records/${encodeURIComponent(id)}/title/proof`,
+    );
+  }
+
+  /**
+   * The platform's public keys of the chain of title, as it publishes them (CB-47): their
+   * fingerprint pins them in the offline check.
+   * @return the key set
+   */
+  titleKeys(): Promise<Jwks> {
+    return this.api.get<Jwks>('/records/title/keys');
   }
 
   /**

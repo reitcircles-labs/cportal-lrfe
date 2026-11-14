@@ -203,14 +203,20 @@ export function createMemoryRepo() {
      * A page of the B/Ls an organisation is party to (CB-42), newest first: before issue those it
      * owns; after it those of which it is the carrier, the holder or the consignee, or that its
      * chain of title moved from or to it. Each with its title (null before issue) and whether the
-     * chain names the organisation.
-     * @param {{organisationId: string, limit?: number, offset?: number}} query
+     * chain names the organisation. With `number`, only those whose number (`recordNo`) is that
+     * one, whatever its case (CB-47).
+     * @param {{
+     *   organisationId: string,
+     *   limit?: number,
+     *   offset?: number,
+     *   number?: string,
+     * }} query
      * @return {!Promise<{
      *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
      *   total: number,
      * }>}
      */
-    async listPartyRecords({organisationId, limit = 50, offset = 0}) {
+    async listPartyRecords({organisationId, limit = 50, offset = 0, number}) {
       const all = [];
       for (const record of records.values()) {
         const title = titles.get(record.id) ?? null;
@@ -224,7 +230,10 @@ export function createMemoryRepo() {
           const parties = [title.carrier, title.holder, title.consignee];
           party = parties.includes(organisationId) || inChain;
         }
-        if (party) {
+        const numbered =
+          number === undefined ||
+          record.recordNo.toLowerCase() === number.toLowerCase();
+        if (party && numbered) {
           all.push({record, title, inChain});
         }
       }

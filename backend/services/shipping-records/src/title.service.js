@@ -316,6 +316,25 @@ function recordOf(record) {
 }
 
 /**
+ * The B/L number a lookup asks for (CB-47), without the spaces around it; undefined when none is
+ * asked for. 400 for a blank one.
+ * @param {(string|undefined)} number as typed
+ * @return {(string|undefined)}
+ */
+function numberOf(number) {
+  if (number === undefined) {
+    return undefined;
+  }
+  const trimmed = number.trim();
+  if (trimmed === '') {
+    throw new BadRequestError('Give the number of the B/L to look for', {
+      code: 'no-number',
+    });
+  }
+  return trimmed;
+}
+
+/**
  * The organisations a stored title names (CB-42): carrier, holder, consignee, and the holder an
  * amended B/L goes back to; none before issue.
  * @param {?object} stored
@@ -1243,16 +1262,19 @@ export class TitleService {
    * with `read` (before issue the ones it owns, after it those of which it is the carrier, the
    * holder, a past holder or the consignee), each with its title (null before issue) and the
    * organisation's roles on it, and the names of the organisations the items name
-   * (`organisationNames`). Never another organisation's B/L.
+   * (`organisationNames`). Never another organisation's B/L. With `number`, only the B/Ls of that
+   * number (CB-47): the whole transport document reference, whatever its case and the spaces
+   * around it; another organisation's B/L of that number is never found, so the answer is the
+   * same as for a number nobody uses. A blank number is refused (400).
    * @param {{org?: string}} actor
-   * @param {{limit?: number, offset?: number}} [page]
+   * @param {{limit?: number, offset?: number, number?: string}} [page]
    * @return {!Promise<{
    *   items: !Array<object>,
    *   total: number,
    *   organisationNames: !Object<string, string>,
    * }>}
    */
-  async listForParty(actor, {limit = 50, offset = 0} = {}) {
+  async listForParty(actor, {limit = 50, offset = 0, number} = {}) {
     const organisation = actor?.org;
     if (typeof organisation !== 'string' || organisation === '') {
       throw new ForbiddenError(
@@ -1264,6 +1286,7 @@ export class TitleService {
       organisationId: organisation,
       limit,
       offset,
+      number: numberOf(number),
     });
     const items = page.items.map(({record, title, inChain}) => ({
       ...summaryOf(record),

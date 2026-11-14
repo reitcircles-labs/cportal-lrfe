@@ -148,7 +148,11 @@ ones it would read with `GET /records/:id/title` (before issue the B/Ls it owns,
 them; after issue those of which it is the carrier, the current holder, a past holder or the
 consignee). It is the home list of the shipping app. The organisation is the session's; another
 named in the query is ignored, and a user of no organisation gets 403. Paged with `limit` (1 to
-200, 50 by default) and `offset`, as `GET /records`: `{items, total}`. Each item has the fields of
+200, 50 by default) and `offset`, as `GET /records`: `{items, total}`. With `number` (CB-47, the
+home's "Check a B/L by number"), only the B/Ls of that number among them: the whole transport
+document reference, whatever its case and the spaces around it (two carriers may use the same
+one). Another organisation's B/L of that number is never found, so the answer is the same as for a
+number nobody uses; a blank number is 400. Each item has the fields of
 `GET /records`, `title` (its kind, state, carrier, holder, endorsement and consignee; null before
 issue) and `roles`: the organisation's roles on the B/L, `carrier`, `holder`, `consignee`, or
 `past-holder` for an organisation the chain of title moved it from or to that has no other role
@@ -251,7 +255,7 @@ Users need a token with an organisation; a user of no organisation gets 403.
 | `GET /records`, `GET /records/:id`, `GET /records/:id/versions`, `GET /records/:id/versions/:n` | `bl.read` (own organisation); the audit service (all), extracts (a record, a version) | the record contract's reading calls |
 | `POST /records/lookup`, `GET /records/seals`, `GET /records/:id/verify` | the audit service | labels and committed versions (a B/L pins no documents: `documents` and `pinnedBy` are empty), the seals in pages, the seal chain recomputed |
 | `GET /records/title/keys` | anyone, no token | the platform's public keys of the chain of title, every key version (a JWK set), for checking a chain offline; through the gateway `/api/records/title/keys` |
-| `GET /records/title` | `bl.read` (own organisation) | the B/Ls the session's organisation is party to (CB-42, below), paged with `limit` and `offset` |
+| `GET /records/title` | `bl.read` (own organisation) | the B/Ls the session's organisation is party to (CB-42, below), paged with `limit` and `offset`; `number` finds one by its number (CB-47) |
 | `GET /records/:id/title` | `bl.read`, of the carrier, a current or past holder or the consignee (before issue: the owner) | the title, the commands the caller may run now and the chain of title; 404 "B/L not found" for anyone else |
 | `POST /records/:id/title/:command` | `bl.issue` (issue, void, release, deliver, amend, split) or `bl.endorse` (endorse, transfer, surrender, surrender-for-amendment, switch-to-paper), of an organisation that sees the B/L | runs a title command (above); 404 for an organisation that does not see the B/L, before any other refusal; a refusal records nothing |
 | `GET /records/:id/title/proof` | `bl.read`, of the carrier, a current or past holder or the consignee | the B/L's title proof (`lrfe-title-proof/1`), `?seq=` for an older entry; 404 "B/L not found" for anyone else and before issue, 503 while the proof on the blockchain cannot be read |
