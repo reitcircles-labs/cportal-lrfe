@@ -39,6 +39,7 @@ Every agent keeps a progress log `~/lrfe-data/<ticket>/<agent>.log` and gives it
    screen needs a design the user has agreed (a design artifact or ticket) before it is built.
 2. **Test first (TDD):** the tests are written from "Done when" and the design and fail (red) before
    the code is written, then pass (green); for core parts a separate `test-writer` agent writes them.
+   The ticket's "Test cases" comment lists them and shows their status (red → green) as the build goes.
    Build only the agreed scope: no extra endpoints, screens or settings ("don't manufacture
    requirements"). Optional ideas: one line at most.
 3. Verify: unit tests, lint and format (`npm run -s lint`, `npm run -s format:check` at the root),
