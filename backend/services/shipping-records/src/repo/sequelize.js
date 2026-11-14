@@ -11,6 +11,15 @@ function plain(row) {
   return row ? row.get({plain: true}) : null;
 }
 
+/**
+ * A chain entry as the repository answers it: its time as an ISO string, as it was hashed.
+ * @param {object} row
+ * @return {object}
+ */
+function entryOf(row) {
+  return {...row, at: new Date(row.at).toISOString()};
+}
+
 /** The 409 for a reference the organisation already holds (unique per organisation: models.js). */
 const DUPLICATE_BL =
   'Your organisation already has a B/L with this carrier code and transport document reference';
@@ -69,6 +78,10 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "bl_version_seal_order" ON "${SCHEMA}"."bl_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`,
       );
+      // a split child's title proof finds its parent's split entry by its hash (CB-35)
+      await sequelize.query(
+        `CREATE INDEX IF NOT EXISTS "bl_title_entry_hash" ON "${SCHEMA}"."bl_title_entry" ("entryHash")`,
+      );
     },
 
     /**
@@ -92,6 +105,22 @@ export function createSequelizeRepo(sequelize) {
      */
     async getRecord(id) {
       return plain(await models.Record.findByPk(id));
+    },
+    /**
+     * A record read in the caller's transaction with its row locked until the transaction ends
+     * (CB-34: a commit or a submission waits for an issue in progress).
+     * @param {string} id
+     * @return {!Promise<?object>}
+     */
+    async lockRecord(id) {
+      return inTransaction(sequelize, async transaction =>
+        plain(
+          await models.Record.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+          }),
+        ),
+      );
     },
     /**
      * The record of an organisation with a carrier code and reference.
@@ -245,6 +274,77 @@ export function createSequelizeRepo(sequelize) {
           version: await versionRow(recordId, versionNumber, {transaction}),
         };
       });
+    },
+
+    /**
+     * The title of a B/L (CB-31), or null before it is issued.
+     * @param {string} recordId
+     * @return {!Promise<?object>}
+     */
+    async getTitle(recordId) {
+      return plain(await models.Title.findByPk(recordId));
+    },
+    /**
+     * A B/L's first title; null when it has one already (the table's primary key: one title per
+     * B/L, also against a concurrent issue).
+     * @param {object} title the title with its `recordId`
+     * @return {!Promise<?object>}
+     */
+    async createTitle(title) {
+      try {
+        return plain(await models.Title.create(title));
+      } catch (err) {
+        if (err instanceof UniqueConstraintError) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    /**
+     * Changes a B/L's title, only while it is still at the revision the caller read (else null).
+     * A concurrent change waits for the other's transaction, then finds the revision moved on.
+     * @param {string} recordId
+     * @param {object} patch
+     * @param {number} expectedRevision
+     * @return {!Promise<?object>}
+     */
+    async updateTitle(recordId, patch, expectedRevision) {
+      const [n] = await models.Title.update(patch, {
+        where: {recordId, revision: expectedRevision},
+      });
+      return n ? plain(await models.Title.findByPk(recordId)) : null;
+    },
+
+    /**
+     * A B/L's chain of title (CB-32), in order of seq; none before it is issued.
+     * @param {string} recordId
+     * @return {!Promise<!Array<object>>}
+     */
+    async listTitleEntries(recordId) {
+      const rows = await models.TitleEntry.findAll({
+        where: {recordId},
+        order: [['seq', 'ASC']],
+      });
+      return rows.map(row => entryOf(plain(row)));
+    },
+    /**
+     * The chain-of-title entry with this entryHash, of any B/L (CB-35: a split child's first
+     * entry links to its parent's split entry by its hash), or null.
+     * @param {string} entryHash
+     * @return {!Promise<?object>}
+     */
+    async findTitleEntryByHash(entryHash) {
+      const row = plain(await models.TitleEntry.findOne({where: {entryHash}}));
+      return row ? entryOf(row) : null;
+    },
+    /**
+     * Adds an entry to a B/L's chain of title, in the caller's transaction; a second entry with
+     * the same seq is refused by the primary key.
+     * @param {object} entry
+     * @return {!Promise<object>}
+     */
+    async appendTitleEntry(entry) {
+      return entryOf(plain(await models.TitleEntry.create(entry)));
     },
 
     /**

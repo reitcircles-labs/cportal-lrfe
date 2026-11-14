@@ -14,6 +14,11 @@
 #   - an AppRole per service (1 h tokens), whose role ID and secret ID go into that service's
 #     own volume, readable only by the service (the node user, uid 1000).
 # The same steps as backend/scripts/bao.js (in the source repository) for a development machine.
+#
+#   docker compose run --rm openbao-setup-shipping      (setup.sh shipping; the shipping product only)
+#
+# prepares only the title signing key bl-title (ecdsa-p256, the platform's signature on the chain of
+# title of B/Ls) and the login of shipping-records, after the steps above have been run once.
 set -eu
 
 # where the services' volumes are mounted (deploy/docker-compose.yml)
@@ -63,6 +68,14 @@ prepare() {
     chmod 400 "$dir/role-id" "$dir/secret-id"
     echo "  $service: key $key, login ready"
 }
+
+# the shipping product (CB-36): only the title signer, never on a land install
+if [ "${1:-}" = shipping ]; then
+    prepare shipping-records bl-title ecdsa-p256 'path "transit/sign/bl-title" { capabilities = ["update"] }
+path "transit/keys/bl-title" { capabilities = ["read"] }'
+    echo "OpenBao is ready for the title signer. Set TITLE_SIGNER=bao in .env, then: docker compose up -d"
+    exit 0
+fi
 
 prepare edrms edrms-files aes256-gcm96 'path "transit/datakey/plaintext/edrms-files" { capabilities = ["update"] }
 path "transit/decrypt/edrms-files" { capabilities = ["update"] }'

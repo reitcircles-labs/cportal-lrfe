@@ -1220,6 +1220,62 @@ paths:
         allOf:
           - admin.organisations
       x-gateway-path: /api/organisations/{id}
+  /organisations/{id}/standing:
+    get:
+      tags:
+        - Organisations
+      summary: Whether an organisation is registered and active (the product's record service only)
+      description: >-
+        For the service token of the domain pack's record service (land-records, or shipping-records on a shipping install): `{ id, status
+        }`, `status` `Active` or `Suspended`, nothing else about the organisation. A B/L goes only to an active organisation (CB-34). 404
+        for an organisation that does not exist, 400 for an id that is not one.
+
+
+        **Access:** Service token only, from: `land-records`. Browsers cannot call this.
+      operationId: getOrganisationsIdStanding
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - land-records
+      x-gateway-path: /api/organisations/{id}/standing
   /organisations/{id}/suspend:
     post:
       tags:

@@ -17,3 +17,4 @@ export {
   formatsFromSettings,
 } from './formats/index.js';
 export {DCSA_STATUSES} from './formats/dcsa-3.0.js';
+export {cargoOf, splitCargoProblems} from './cargo.js';

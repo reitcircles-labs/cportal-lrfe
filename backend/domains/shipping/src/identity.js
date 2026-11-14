@@ -1,7 +1,7 @@
 /**
- * The shipping product's `identity` section: the B/L permissions (CB-27), the role that drafts
- * B/Ls, and the demo data (CB-28). The permission and role ids are stored in databases and tokens:
- * they never change.
+ * The shipping product's `identity` section: the B/L permissions (CB-27; issuing and endorsing,
+ * CB-34), the role that drafts and moves B/Ls, and the demo data (CB-28). The permission and role
+ * ids are stored in databases and tokens: they never change.
  * @type {import('@lrfe/domain-pack').DomainPack['identity']}
  */
 export const identity = {
@@ -20,15 +20,27 @@ export const identity = {
       label: 'Draft bills of lading',
       desc: 'Create, change and submit draft B/Ls of your organisation',
     },
+    {
+      id: 'bl.issue',
+      group: 'Bills of lading',
+      label: 'Issue bills of lading',
+      desc: "As the carrier: issue your organisation's B/Ls, void, release and deliver them",
+    },
+    {
+      id: 'bl.endorse',
+      group: 'Bills of lading',
+      label: 'Endorse bills of lading',
+      desc: 'As the holder: endorse, transfer, surrender or switch to paper the B/Ls your organisation holds',
+    },
   ],
 
   roles: [
     {
       id: 'bld',
       label: 'B/L documentation',
-      desc: 'Drafts the B/Ls of the organisation and submits them for review.',
+      desc: 'Drafts the B/Ls of the organisation, submits them for review, issues them and moves the ones it holds.',
       home: '/',
-      perms: ['bl.read', 'bl.draft'],
+      perms: ['bl.read', 'bl.draft', 'bl.issue', 'bl.endorse'],
     },
   ],
 

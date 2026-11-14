@@ -6,30 +6,20 @@
  * proof verifies, on the platform and with the offline verifier. Everything goes through the
  * gateway. The users are the shipping pack's demo users, signed in here (no land catalogue).
  */
-import {createHmac} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {expect, test, type APIRequestContext} from '@playwright/test';
-import {identity} from '../../backend/domains/shipping/src/identity.js';
-import {codeFor} from '../support/auth';
 import {
-  DEMO_PASSWORD,
-  GATEWAY_URL,
-  JWT_SECRET,
-  REPO_DIR,
-} from '../stack/config.mjs';
+  demoEmails,
+  serviceToken,
+  signIn,
+  type SignedIn,
+} from '../support/shipping';
+import {GATEWAY_URL, REPO_DIR} from '../stack/config.mjs';
 
 /** The B/L format every call here uses. */
 const FORMAT = 'dcsa-3.0';
-
-/** A signed-in demo user: who they are and the header with their access token. */
-interface SignedIn {
-  id: string;
-  name: string;
-  organisationId: string;
-  headers: Record<string, string>;
-}
 
 /** A trail entry, as far as these tests read it. */
 interface TrailEntry {
@@ -55,73 +45,6 @@ function dcsaExample(file = 'td-regular.json'): Record<string, unknown> {
     file,
   );
   return JSON.parse(readFileSync(path, 'utf8'));
-}
-
-/**
- * A service token as the services sign it (HS256 with the shared secret), as page-text.spec.ts
- * makes one.
- * @param service the service's name
- * @return the token
- */
-function serviceToken(service: string): string {
-  const b64 = (o: object) =>
-    Buffer.from(JSON.stringify(o)).toString('base64url');
-  const now = Math.floor(Date.now() / 1000);
-  const header = b64({alg: 'HS256', typ: 'JWT'});
-  const claims = b64({typ: 'service', sub: service, iat: now, exp: now + 300});
-  const data = `${header}.${claims}`;
-  const signature = createHmac('sha256', JWT_SECRET)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
-
-/**
- * Signs a demo user in through the API on a fresh stack: password, then the authenticator, which
- * the default policy makes them enrol on their first sign-in.
- * @param api the request context, on the gateway
- * @param email the user's email
- * @return the signed-in user
- */
-async function signIn(
-  api: APIRequestContext,
-  email: string,
-): Promise<SignedIn> {
-  const login = await api.post('/api/auth/login', {
-    data: {email, password: DEMO_PASSWORD},
-  });
-  expect(login.status(), `sign-in of ${email}: ${await login.text()}`).toBe(
-    200,
-  );
-  const first = await login.json();
-  expect(
-    first.next,
-    `${email} enrols the authenticator on a fresh stack (restart the stack if reused)`,
-  ).toBe('mfa-enroll');
-  const mfa = await api.post('/api/auth/mfa', {
-    data: {challenge: first.challenge, code: codeFor(first.secret)},
-  });
-  expect(mfa.status(), `authenticator of ${email}: ${await mfa.text()}`).toBe(
-    200,
-  );
-  const {accessToken, me} = await mfa.json();
-  return {
-    id: me.user.id,
-    name: me.user.name,
-    organisationId: me.user.organisationId,
-    headers: {authorization: `Bearer ${accessToken}`},
-  };
-}
-
-/**
- * The email of the shipping pack's demo users with a role, in the pack's order.
- * @param role the role id
- * @return their emails
- */
-function demoEmails(role: string): string[] {
-  return identity.demoUsers
-    .filter(u => u.roles.includes(role))
-    .map(u => u.email);
 }
 
 test.describe.configure({mode: 'serial'});

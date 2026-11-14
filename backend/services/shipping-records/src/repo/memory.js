@@ -88,13 +88,16 @@ function canUpdate(version, {expectedState, expectedRevision}) {
 /**
  * In-memory shipping-records repository (tests, RECORDS_STORE=memory). Behaviour must match
  * ./sequelize.js: one record per organisation, carrier code and reference, one version per number,
- * state and revision checks on version updates, and commits that change the version and the record
- * in one step.
+ * state and revision checks on version updates, commits that change the version and the record
+ * in one step, and one title per B/L changed only at the revision read.
  * @return {!Object<string, function(...*): !Promise<*>>}
  */
 export function createMemoryRepo() {
   const records = new Map();
   const versions = [];
+  const titles = new Map();
+  /** @type {!Map<string, !Array<object>>} each B/L's chain of title, in order of seq */
+  const entries = new Map();
 
   /**
    * The stored version itself (not a copy), or undefined.
@@ -139,6 +142,15 @@ export function createMemoryRepo() {
      * @return {!Promise<?object>}
      */
     async getRecord(id) {
+      return clone(records.get(id)) ?? null;
+    },
+    /**
+     * A record, read as ./sequelize.js's reads it locked in a transaction; the memory store
+     * (development and tests) has no locks.
+     * @param {string} id
+     * @return {!Promise<?object>}
+     */
+    async lockRecord(id) {
       return clone(records.get(id)) ?? null;
     },
     /**
@@ -267,6 +279,83 @@ export function createMemoryRepo() {
       Object.assign(version, clone(versionPatch), {state: 'committed'});
       Object.assign(records.get(recordId), clone(recordPatch));
       return {record: clone(records.get(recordId)), version: clone(version)};
+    },
+
+    /**
+     * The title of a B/L (CB-31), or null before it is issued.
+     * @param {string} recordId
+     * @return {!Promise<?object>}
+     */
+    async getTitle(recordId) {
+      return clone(titles.get(recordId)) ?? null;
+    },
+    /**
+     * A B/L's first title; null when it has one already (one title per B/L, as the primary key
+     * of ./sequelize.js's table makes it).
+     * @param {object} title the title with its `recordId`
+     * @return {!Promise<?object>}
+     */
+    async createTitle(title) {
+      if (titles.has(title.recordId)) {
+        return null;
+      }
+      titles.set(title.recordId, clone(title));
+      return clone(title);
+    },
+    /**
+     * Changes a B/L's title, only while it is still at the revision the caller read (else null).
+     * @param {string} recordId
+     * @param {object} patch
+     * @param {number} expectedRevision
+     * @return {!Promise<?object>}
+     */
+    async updateTitle(recordId, patch, expectedRevision) {
+      const title = titles.get(recordId);
+      if (!title || title.revision !== expectedRevision) {
+        return null;
+      }
+      Object.assign(title, clone(patch));
+      return clone(title);
+    },
+
+    /**
+     * A B/L's chain of title (CB-32), in order of seq; none before it is issued.
+     * @param {string} recordId
+     * @return {!Promise<!Array<object>>}
+     */
+    async listTitleEntries(recordId) {
+      return clone(entries.get(recordId) ?? []);
+    },
+    /**
+     * The chain-of-title entry with this entryHash, of any B/L (CB-35: a split child's first
+     * entry links to its parent's split entry by its hash), or null.
+     * @param {string} entryHash
+     * @return {!Promise<?object>}
+     */
+    async findTitleEntryByHash(entryHash) {
+      for (const chain of entries.values()) {
+        const found = chain.find(entry => entry.entryHash === entryHash);
+        if (found) {
+          return clone(found);
+        }
+      }
+      return null;
+    },
+    /**
+     * Adds an entry to a B/L's chain of title; a second entry with the same seq is refused, as
+     * ./sequelize.js's primary key does.
+     * @param {object} entry
+     * @return {!Promise<object>}
+     */
+    async appendTitleEntry(entry) {
+      const chain = entries.get(entry.recordId) ?? [];
+      if (chain.some(stored => stored.seq === entry.seq)) {
+        throw new ConflictError('This chain of title entry exists already');
+      }
+      chain.push(clone(entry));
+      chain.sort((a, b) => a.seq - b.seq);
+      entries.set(entry.recordId, chain);
+      return clone(entry);
     },
 
     /**

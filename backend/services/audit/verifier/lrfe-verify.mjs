@@ -13,6 +13,11 @@
  *   node lrfe-verify.mjs extract.pdf --address … --seal …  an ownership extract: the proof attached inside
  *                                                         it against the blockchain, and the registry's seal
  *                                                         against its published certificate fingerprint
+ *   node lrfe-verify.mjs title-proof.json --address … --title-key …
+ *                                                         a B/L's title proof (lrfe-title-proof/1): its chain
+ *                                                         of title, every signature against the platform's
+ *                                                         key set (pinned by its fingerprint), and its last
+ *                                                         entry's trail-entry proof as above
  *
  * One file, Node 18 or later, nothing to install. It checks that:
  *   1. the leaf is the item's seal (a land record or document version) or the trail checkpoint;
@@ -34,7 +39,12 @@
  *   root = SHA-256(0x02 || size as 8 bytes big-endian || peaks, largest first)
  *   trail: contentHash = SHA-256(canonical JSON of the entry), hash = SHA-256(prevHash || contentHash)
  */
-import {X509Certificate, createHash, verify as cryptoVerify} from 'node:crypto';
+import {
+  X509Certificate,
+  createHash,
+  createPublicKey,
+  verify as cryptoVerify,
+} from 'node:crypto';
 import {lstatSync, readdirSync, readFileSync, statSync} from 'node:fs';
 import {join, relative} from 'node:path';
 import {inflateRawSync, inflateSync} from 'node:zlib';
@@ -1885,6 +1895,437 @@ export function extractVerdict(result) {
     : `NOT VALID: ${reason}.`;
 }
 
+// ------------------------------------------------------------------ title proofs (CB-33)
+
+/** The format of a B/L's title proof bundle (shipping records, GET /records/:id/title/proof). */
+export const TITLE_PROOF_FORMAT = 'lrfe-title-proof/1';
+
+/** The JWS type of a chain-of-title entry's signature. */
+const TITLE_ENTRY_TYP = 'lrfe-title-entry';
+
+/** The one signature algorithm of chain-of-title entries: ECDSA P-256 with SHA-256. */
+const TITLE_ALGORITHM = 'ES256';
+
+/**
+ * The state of a B/L's title after each command (backend/domains/shipping/docs/title-states.md):
+ * a chain entry names its command, not the state it led to. `issue-from-split` is the first entry
+ * of a B/L made by a split (CB-35). The verifier imports nothing of the platform, so it keeps its
+ * own copy; a test compares it with the title engine's table.
+ */
+export const TITLE_STATE_AFTER = new Map([
+  ['issue', 'issued'],
+  ['issue-from-split', 'with-holder'],
+  ['void', 'void'],
+  ['endorse', 'with-holder'],
+  ['transfer', 'with-holder'],
+  ['surrender', 'surrendered'],
+  ['release', 'accomplished'],
+  ['deliver', 'delivered'],
+  ['surrender-for-amendment', 'amendment-requested'],
+  ['amend', 'with-holder'],
+  ['split', 'split'],
+  ['switch-to-paper', 'switched-to-paper'],
+]);
+
+/**
+ * Whether a value is a plain object (not null, not an array).
+ * @param {*} value
+ * @return {boolean}
+ */
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * What a chain entry's hash and signature are over: the entry without entryHash and signature.
+ * @param {!Object} entry
+ * @return {!Object}
+ */
+function titleEntryContent(entry) {
+  const content = {...entry};
+  delete content.entryHash;
+  delete content.signature;
+  return content;
+}
+
+/**
+ * The fingerprint of the platform's key set, as --title-key pins it: SHA-256 of the canonical
+ * JSON of the key set, hex.
+ * @param {*} jwks
+ * @return {string}
+ */
+export function titleKeyFingerprint(jwks) {
+  return sha256(canonicalJson(jwks)).toString('hex');
+}
+
+/**
+ * Whether a chain entry's signature is the platform's: a compact JWS, ES256, typ
+ * lrfe-title-entry, made with the key the entry names (its kid, found in the key set), over
+ * exactly the entry's content. Never throws.
+ * @param {!Object} entry
+ * @param {*} jwks the key set of the bundle
+ * @return {boolean}
+ */
+function titleEntrySigned(entry, jwks) {
+  try {
+    const parts =
+      typeof entry.signature === 'string' ? entry.signature.split('.') : [];
+    if (parts.length !== 3) {
+      return false;
+    }
+    const [header, payload, signature] = parts;
+    const head = JSON.parse(Buffer.from(header, 'base64url').toString('utf8'));
+    if (
+      !isObject(head) ||
+      head.alg !== TITLE_ALGORITHM ||
+      head.typ !== TITLE_ENTRY_TYP ||
+      head.kid !== entry.kid
+    ) {
+      return false;
+    }
+    const keys = Array.isArray(jwks?.keys) ? jwks.keys : [];
+    const jwk = keys.find(k => isObject(k) && k.kid === head.kid);
+    if (!jwk || jwk.kty !== 'EC' || jwk.crv !== 'P-256') {
+      return false;
+    }
+    const publicKey = createPublicKey({
+      key: {kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y},
+      format: 'jwk',
+    });
+    const bytes = Buffer.from(signature, 'base64url');
+    const verified =
+      bytes.length === 64 &&
+      cryptoVerify(
+        'sha256',
+        Buffer.from(`${header}.${payload}`),
+        {key: publicKey, dsaEncoding: 'ieee-p1363'},
+        bytes,
+      );
+    if (!verified) {
+      return false;
+    }
+    const signed = JSON.parse(
+      Buffer.from(payload, 'base64url').toString('utf8'),
+    );
+    return canonicalJson(signed) === canonicalJson(titleEntryContent(entry));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The detail of the "chain of title" check.
+ * @param {!Array<*>} entries The bundle's entries.
+ * @param {!Array<number>} broken The seqs of the entries not linked or not as signed.
+ * @return {string}
+ */
+function chainDetail(entries, broken) {
+  if (entries.length === 0) {
+    return 'the bundle holds no entry';
+  }
+  if (broken.length === 0) {
+    return `${entries.length} entries, each linked to the one before and as it was signed`;
+  }
+  return `entries ${broken.join(', ')} are not linked or not as they were signed`;
+}
+
+/**
+ * Checks a B/L's chain of title as the bundle gives it: each entry's seq is its place (1..n), its
+ * previousHash the entryHash of the one before (for the first: `startPrevious`, null for a B/L of
+ * its own, the parent's split entry's hash for a B/L made by a split), its entryHash the hash of
+ * its content, and it belongs to the bundle's B/L. The seqs of the entries that fail.
+ * @param {!Array<*>} entries
+ * @param {*} recordId
+ * @param {?string} [startPrevious]
+ * @return {!Array<*>}
+ */
+function brokenTitleLinks(entries, recordId, startPrevious = null) {
+  const broken = [];
+  let previous = startPrevious;
+  for (const [index, entry] of entries.entries()) {
+    if (!isObject(entry)) {
+      broken.push(index + 1);
+      previous = undefined;
+      continue;
+    }
+    const content = titleEntryContent(entry);
+    const linked =
+      entry.seq === index + 1 &&
+      entry.previousHash === previous &&
+      entry.recordId === recordId;
+    const intact =
+      entry.entryHash === sha256(canonicalJson(content)).toString('hex');
+    if (!linked || !intact) {
+      broken.push(entry.seq ?? index + 1);
+    }
+    previous = entry.entryHash;
+  }
+  return broken;
+}
+
+/** How many parents deep the verifier follows a split of a split. */
+const MAX_SPLIT_DEPTH = 50;
+
+/**
+ * Why the chain of the B/L a bundle's B/L was split from does not vouch for its first entry, or
+ * null when it does (CB-35): the parent's chain is linked and intact, all of the parent B/L (and,
+ * when it was split from another, its own parent checks the same way), every entry signed with
+ * the bundle's keys, ending with a `split` entry whose entryHash is the first entry's previousHash,
+ * and that first entry is an `issue-from-split`.
+ * @param {*} parent the bundle's `parent`: {recordId, recordNo, entries, parent?}
+ * @param {*} first the first entry of the B/L split from it
+ * @param {*} jwks the bundle's key set
+ * @param {number} depth how many more parents may follow
+ * @return {?string}
+ */
+function parentProblem(parent, first, jwks, depth) {
+  if (depth <= 0) {
+    return 'too many splits of splits to follow';
+  }
+  const entries =
+    isObject(parent) && Array.isArray(parent.entries) ? parent.entries : [];
+  if (entries.length === 0) {
+    return 'the bundle holds no chain of the B/L it was split from';
+  }
+  const label = `B/L ${parent.recordNo ?? parent.recordId}`;
+  let startPrevious = null;
+  if (parent.parent !== undefined) {
+    const above = parentProblem(parent.parent, entries[0], jwks, depth - 1);
+    if (above !== null) {
+      return above;
+    }
+    startPrevious = parent.parent.entries.at(-1).entryHash;
+  }
+  const broken = brokenTitleLinks(entries, parent.recordId, startPrevious);
+  if (broken.length > 0) {
+    return `the chain of ${label}: ${chainDetail(entries, broken)}`;
+  }
+  const unsigned = entries.filter(entry => !titleEntrySigned(entry, jwks));
+  if (unsigned.length > 0) {
+    return `the chain of ${label} has entries not signed with a key of the bundle's key set`;
+  }
+  const split = entries.at(-1);
+  if (split.command !== 'split') {
+    return `the chain of ${label} does not end with its split`;
+  }
+  if (!isObject(first) || first.command !== 'issue-from-split') {
+    return `the first entry is not the issue of a B/L split from ${label}`;
+  }
+  if (first.previousHash !== split.entryHash) {
+    return `the first entry does not follow the split of ${label}`;
+  }
+  return null;
+}
+
+/**
+ * Whether the trail entry inside the anchor's proof is the event of this chain entry: a trail
+ * entry of type records.title.<command>, about the bundle's B/L, holding exactly this entry.
+ * @param {*} anchor the trail-entry proof (lrfe-audit-proof/1)
+ * @param {!Object} entry the bundle's last entry
+ * @param {!Object} bundle
+ * @return {boolean}
+ */
+function anchorsEntry(anchor, entry, bundle) {
+  const trailEntry = anchor?.trail?.entry;
+  const data = trailEntry?.data;
+  if (anchor?.item?.kind !== 'trail-entry' || !isObject(data)) {
+    return false;
+  }
+  return (
+    trailEntry.type === `records.title.${entry.command}` &&
+    data.recordId === bundle.recordId &&
+    data.recordNo === bundle.recordNo &&
+    data.seq === entry.seq &&
+    isObject(data.entry) &&
+    canonicalJson(data.entry) === canonicalJson(entry)
+  );
+}
+
+/**
+ * The title after the bundle's last entry: the B/L, the entry's seq, the holder it led to and the
+ * state; null when there is no entry to read.
+ * @param {!Object} bundle
+ * @return {?{recordId: *, recordNo: *, seq: *, holder: ?string, state: ?string}}
+ */
+function titleAfter(bundle) {
+  const last = Array.isArray(bundle.entries) ? bundle.entries.at(-1) : null;
+  if (!isObject(last)) {
+    return null;
+  }
+  return {
+    recordId: bundle.recordId ?? null,
+    recordNo: bundle.recordNo ?? null,
+    seq: last.seq ?? null,
+    holder: last.to ?? null,
+    state: TITLE_STATE_AFTER.get(last.command) ?? null,
+  };
+}
+
+/**
+ * Checks a B/L's title proof bundle (lrfe-title-proof/1, CB-33) offline:
+ *   split from       only for a B/L made by a split (the bundle's `parent`, CB-35): the parent's
+ *                    chain is linked, intact, of the parent B/L and signed with the bundle's keys,
+ *                    and ends with the `split` entry the first entry (`issue-from-split`) follows
+ *   chain of title   the entries are linked (seq 1..n, each previousHash the entryHash before; the
+ *                    first's null, or the parent's split entry's hash) and
+ *                    intact (each entryHash the hash of its content), all of the bundle's B/L
+ *   signatures       every entry is signed by the platform with a key of the bundle's key set
+ *   title key        with `titleKey`: that key set is the one whose fingerprint the platform
+ *                    publishes (SHA-256 of its canonical JSON, hex; colons and case ignored)
+ *   anchored entry   the bundle's last entry is the one inside the anchor's trail-entry proof
+ *   …                and that proof checks as verifyProof checks it (the trail to its checkpoint,
+ *                    the path to the root, the root on the chain, paid by the anchoring wallet)
+ * A bundle made before the anchoring (`anchor: {pending: true}`) fails only `anchored`: the
+ * chain is checked, not yet vouched for by the blockchain.
+ * Returns {valid, checks, notes, title, anchoring}; never throws for a bad bundle, throws
+ * Unreachable when the chain cannot be read.
+ * @param {*} bundle
+ * @param {{source?: string, key?: string, address?: string, titleKey?: string,
+ *     fetchImpl?: function(string, !Object): !Promise<!Response>}} [options]
+ * @return {!Promise<{valid: boolean, checks: !Array<{name: string, ok: boolean, detail: string}>,
+ *     notes: !Array<string>, title: ?Object, anchoring: (?Object|undefined)}>}
+ */
+export async function verifyTitleProof(
+  bundle,
+  {source = 'koios', key, address, titleKey, fetchImpl = globalThis.fetch} = {},
+) {
+  const checks = [];
+  const check = (name, ok, detail) => {
+    checks.push({name, ok: Boolean(ok), detail});
+  };
+  const verdict = (extra = {}) => ({
+    valid: checks.every(c => c.ok),
+    checks,
+    notes: [],
+    title: isObject(bundle) ? titleAfter(bundle) : null,
+    ...extra,
+  });
+  if (!isObject(bundle) || bundle.format !== TITLE_PROOF_FORMAT) {
+    check(
+      'title proof format',
+      false,
+      `not a title proof (format ${JSON.stringify(bundle?.format)})`,
+    );
+    return verdict();
+  }
+  const entries = Array.isArray(bundle.entries) ? bundle.entries : [];
+  // a B/L made by a split (CB-35): its chain starts from its parent's split entry
+  let startPrevious = null;
+  if (bundle.parent !== undefined) {
+    const problem = parentProblem(
+      bundle.parent,
+      entries[0],
+      bundle.jwks,
+      MAX_SPLIT_DEPTH,
+    );
+    check(
+      'split from',
+      problem === null,
+      problem ??
+        `split from B/L ${bundle.parent.recordNo}: its chain of title is linked, signed and ends with the split this chain starts from`,
+    );
+    if (problem === null) {
+      startPrevious = bundle.parent.entries.at(-1).entryHash;
+    }
+  }
+  const broken = brokenTitleLinks(entries, bundle.recordId, startPrevious);
+  check(
+    'chain of title',
+    entries.length > 0 && broken.length === 0,
+    chainDetail(entries, broken),
+  );
+  const unsigned = entries
+    .map((entry, index) =>
+      isObject(entry) && titleEntrySigned(entry, bundle.jwks)
+        ? null
+        : index + 1,
+    )
+    .filter(seq => seq !== null);
+  check(
+    'signatures',
+    entries.length > 0 && unsigned.length === 0,
+    unsigned.length === 0
+      ? `every entry is signed with a key of the bundle's key set`
+      : `entries ${unsigned.join(', ')} are not signed with a key of the bundle's key set`,
+  );
+  if (titleKey !== undefined) {
+    const fingerprint = titleKeyFingerprint(bundle.jwks);
+    check(
+      'title key',
+      fingerprint === fingerprintOf(titleKey),
+      `the bundle's key set has fingerprint ${fingerprint}`,
+    );
+  }
+  const anchor = bundle.anchor;
+  if (!isObject(anchor) || anchor.pending === true) {
+    check(
+      'anchored',
+      false,
+      'not anchored yet: the entry waits for the next anchoring; fetch the title proof again later',
+    );
+    return verdict();
+  }
+  const last = entries.at(-1);
+  check(
+    'anchored entry',
+    isObject(last) && anchorsEntry(anchor, last, bundle),
+    isObject(last)
+      ? `the anchored trail entry holds entry ${last.seq} (${last.command})`
+      : 'there is no entry to compare',
+  );
+  const proven = await verifyProof(anchor, {source, key, address, fetchImpl});
+  checks.push(...proven.checks);
+  return verdict({notes: proven.notes ?? [], anchoring: proven.anchoring});
+}
+
+/**
+ * Checks a title proof file on the command line: the checks, the title and the verdict (exit 0
+ * valid, 1 not valid, 2 the chain unreachable).
+ * @param {!Object} bundle
+ * @param {{source: string, key: (string|undefined), address: (string|undefined),
+ *     titleKey: (string|undefined), json: boolean}} options
+ * @return {!Promise<number>}
+ */
+async function checkTitleProof(bundle, {source, key, address, titleKey, json}) {
+  let result;
+  try {
+    result = await verifyTitleProof(bundle, {source, key, address, titleKey});
+  } catch (err) {
+    if (!(err instanceof Unreachable)) {
+      throw err;
+    }
+    process.stderr.write(`Could not check against the chain: ${err.message}\n`);
+    return 2;
+  }
+  if (json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return result.valid ? 0 : 1;
+  }
+  for (const c of result.checks) {
+    process.stdout.write(`${c.ok ? 'ok  ' : 'FAIL'}  ${c.name}: ${c.detail}\n`);
+  }
+  for (const n of result.notes) {
+    process.stdout.write(`note  ${n}\n`);
+  }
+  if (titleKey === undefined) {
+    process.stdout.write(
+      "note  Compare the platform's key set with the fingerprint it publishes, or pass it with --title-key.\n",
+    );
+  }
+  const title = result.title;
+  if (title) {
+    process.stdout.write(
+      `\nB/L ${title.recordNo}, entry ${title.seq}: holder ${title.holder ?? 'none'}, state ${title.state ?? 'unknown'}\n`,
+    );
+  }
+  process.stdout.write(
+    result.valid
+      ? '\nVALID: the chain of title is as the platform signed it, and its last entry was on the audit trail anchored on Cardano in that transaction.\n'
+      : '\nNOT VALID.\n',
+  );
+  return result.valid ? 0 : 1;
+}
+
 // ------------------------------------------------------------------ command line
 
 async function main(argv) {
@@ -1902,10 +2343,11 @@ async function main(argv) {
   const keyFile = flag('--key-file');
   const address = flag('--address');
   const seal = flag('--seal');
+  const titleKey = flag('--title-key');
   const file = args[0];
   if (!file || file === '--help' || file === '-h') {
     process.stdout.write(
-      'usage: node lrfe-verify.mjs <proof.json | evidence pack .zip or folder | extract .pdf> [--address <anchoring wallet>] [--seal <seal fingerprint>, for an extract] [--source koios|blockfrost] [--key-file <file>] [--json]\n',
+      'usage: node lrfe-verify.mjs <proof.json | title-proof.json | evidence pack .zip or folder | extract .pdf> [--address <anchoring wallet>] [--seal <seal fingerprint>, for an extract] [--title-key <key set fingerprint>, for a title proof] [--source koios|blockfrost] [--key-file <file>] [--json]\n',
     );
     return file ? 0 : 2;
   }
@@ -1931,6 +2373,9 @@ async function main(argv) {
   } catch (err) {
     process.stderr.write(`Cannot read the proof ${file}: ${err.message}\n`);
     return 2;
+  }
+  if (proof?.format === TITLE_PROOF_FORMAT) {
+    return checkTitleProof(proof, {source, key, address, titleKey, json});
   }
   // a proof may be the verify call's answer, which holds the proof
   if (proof?.proof?.format) proof = proof.proof;

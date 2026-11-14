@@ -18,10 +18,44 @@ export const DCSA_STATUSES = Object.freeze([
 ]);
 
 /**
+ * Lays the endorsee over a copy of a document being written out (CB-37): a party object becomes
+ * `documentParties.endorsee`, null leaves any stored endorsee out.
+ *
+ * @param {object} document the copy being written out, changed in place
+ * @param {?object} endorsee a DCSA Endorsee party, or null
+ * @throws {Error} when a party is given for a B/L not to order (DCSA allows an endorsee only on
+ *     a B/L to order) or one that names a consignee (DCSA allows a consignee or an endorsee, not
+ *     both)
+ */
+function overlayEndorsee(document, endorsee) {
+  if (endorsee === null) {
+    if (document.documentParties) {
+      delete document.documentParties.endorsee;
+    }
+    return;
+  }
+  if (document.isToOrder !== true) {
+    throw new Error(
+      'DCSA 3.0 writes an endorsee only on a B/L to order (isToOrder true)',
+    );
+  }
+  if (document.documentParties?.consignee) {
+    throw new Error(
+      'DCSA 3.0 writes a consignee or an endorsee, not both: this B/L names a consignee',
+    );
+  }
+  document.documentParties = {
+    ...document.documentParties,
+    endorsee: structuredClone(endorsee),
+  };
+}
+
+/**
  * The converter between DCSA eBL 3.0's TransportDocument and the internal model (CB-26). The
  * internal model keeps DCSA's names (docs/dcsa-field-map.md), so the conversion only moves the
- * two fields the model keeps apart: the status (the title engine's) and the feedbacks (API
- * messages, dropped). Works for every 3.0.x release.
+ * fields the model keeps apart: the status (the title engine's), the feedbacks (API messages,
+ * dropped) and, when writing out, the endorsee (the chain of title's, CB-37). Works for every
+ * 3.0.x release.
  * @type {import('./index.js').BillOfLadingFormat}
  */
 export const dcsa30 = Object.freeze({
@@ -49,13 +83,20 @@ export const dcsa30 = Object.freeze({
   },
 
   /**
-   * A B/L of the model as a DCSA transport document, with the status the platform holds for it.
+   * A B/L of the model as a DCSA transport document, with the status the platform holds for it
+   * and, for a B/L to order, the endorsee its chain of title gives (CB-37). The endorsee is never
+   * stored in the document (Jira CB-37 comment 11579): it is laid over the copy written out.
    *
    * @param {{schemaVersion: string, document: object}} billOfLading
-   * @param {{status: string}} options the DCSA status to write (DCSA requires one)
+   * @param {{status: string, endorsee: (?object|undefined)}} options the DCSA status to write
+   *     (DCSA requires one) and the endorsee: absent, the document as stored; null, no endorsee
+   *     (blank endorsed, or not endorsed yet); a DCSA Endorsee party, written as
+   *     `documentParties.endorsee`
    * @return {object} a DCSA TransportDocument
+   * @throws {Error} on another schema version, a status DCSA does not have, or an endorsee on a
+   *     B/L not to order or one that names a consignee
    */
-  fromModel(billOfLading, {status}) {
+  fromModel(billOfLading, {status, endorsee}) {
     if (billOfLading.schemaVersion !== SCHEMA_VERSION) {
       throw new Error(
         `DCSA 3.0 writes B/Ls of ${SCHEMA_VERSION}, not ${billOfLading.schemaVersion}`,
@@ -64,9 +105,10 @@ export const dcsa30 = Object.freeze({
     if (!DCSA_STATUSES.includes(status)) {
       throw new Error(`Not a DCSA 3.0 status: ${status}`);
     }
-    return {
-      transportDocumentStatus: status,
-      ...structuredClone(billOfLading.document),
-    };
+    const document = structuredClone(billOfLading.document);
+    if (endorsee !== undefined) {
+      overlayEndorsee(document, endorsee);
+    }
+    return {transportDocumentStatus: status, ...document};
   },
 });

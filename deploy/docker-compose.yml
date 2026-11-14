@@ -72,8 +72,9 @@ x-healthcheck: &healthcheck
   retries: 6
   start_period: 30s
 
-# edrms, intake, audit and extracts: their OpenBao login (role ID and secret ID), written by the openbao-setup
-# service into the service's own volume. Without OpenBao the files are not there and nothing is read.
+# edrms, intake, audit, extracts and shipping-records: their OpenBao login (role ID and secret ID),
+# written by the openbao-setup service (openbao-setup-shipping for shipping-records) into the
+# service's own volume. Without OpenBao the files are not there and nothing is read.
 x-bao-command: &bao-command
   ["sh", "-c", "if [ -r /run/lrfe/bao/role-id ]; then BAO_ROLE_ID=$$(cat /run/lrfe/bao/role-id); export BAO_ROLE_ID; fi; exec node src/index.js"]
 
@@ -285,13 +286,29 @@ services:
     <<: *backend
     profiles: ["shipping"]
     working_dir: /app/services/shipping-records
-    command: ["node", "src/index.js"]
+    command: *bao-command
     environment:
       <<: *env
       PORT: "3509"
       RECORDS_STORE: postgres
       # the B/L formats that are on, comma-separated (backend/domains/shipping/docs/formats.md)
       LRFE_BL_FORMATS: ${LRFE_BL_FORMATS:-dcsa-3.0}
+      # the B/L title modules that are on, comma-separated; empty = all (backend/domains/shipping/docs/title-states.md)
+      LRFE_BL_MODULES: ${LRFE_BL_MODULES:-}
+      # the audit service, which gives the proof of a chain-of-title entry on the blockchain (CB-33)
+      AUDIT_URL: http://audit:3506
+      # identity, which says whether an organisation a B/L goes to is registered and active (CB-34)
+      IDENTITY_URL: http://identity:3501
+      # the platform key that signs the chain of title (CB-36): bao = the transit key bl-title in
+      # OpenBao, its login prepared by openbao-setup-shipping (README.md, part D, step 7); empty (the
+      # default) = none: title commands are refused (503), drafting and reading work
+      TITLE_SIGNER: ${TITLE_SIGNER:-}
+      TITLE_SIGNING_KEY: bl-title
+      BAO_ADDR: http://openbao:8200
+      BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
+    volumes:
+      - bao-shipping-records:/run/lrfe/bao:ro
+    networks: [default, bao]
     healthcheck: *healthcheck
     depends_on:
       db-setup: { condition: service_completed_successfully }
@@ -516,6 +533,22 @@ services:
       - bao-search-dir:/approle/search-dir
     networks: [bao]
 
+  # The shipping product only (CB-36), run once after openbao-setup (and again at any time):
+  #   docker compose run --rm openbao-setup-shipping
+  # Creates the title signing key (bl-title), its policy and the login of shipping-records, in its
+  # own volume. A land install never runs it, so its OpenBao and volumes stay as they are.
+  openbao-setup-shipping:
+    profiles: ["bao-setup-shipping"]
+    image: openbao/openbao:2.7.1
+    user: "0"
+    entrypoint: ["sh", "/setup/setup.sh", "shipping"]
+    environment:
+      BAO_ADDR: http://openbao:8200
+    volumes:
+      - ./openbao/setup.sh:/setup/setup.sh:ro
+      - bao-shipping-records:/approle/shipping-records
+    networks: [bao]
+
   # ---- the search engine's encrypted directory (API-799, README.md part H) ----
   # scripts/search_dir.py runs this to get the directory's key from OpenBao (create, unlock);
   # it prints the key to the script's pipe and writes nothing. Never run by hand.
@@ -649,7 +682,8 @@ services:
 networks:
   default:
   # OpenBao's network: only OpenBao, its setup and the services that use it (edrms, intake, audit,
-  # extracts, and search-dir-key for the search engine's directory)
+  # extracts, shipping-records with the profile shipping, and search-dir-key for the search
+  # engine's directory)
   # reach it; no way out of the machine (internal)
   bao:
     internal: true
@@ -670,6 +704,8 @@ volumes:
   bao-audit:
   bao-extracts:
   bao-search-dir:
+  # the shipping product's: the login of shipping-records (CB-36)
+  bao-shipping-records:
   # the search engine's configuration and certificates, and each service's login to it
   search-config:
   search-login-search:

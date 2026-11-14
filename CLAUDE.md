@@ -32,12 +32,15 @@ services 3501–3509, `npm run dev`); product code in `backend/domains/{land,shi
 Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in `.claude/agents/`:
 `reviewer` (the review gate), `e2e-runner`, `ui-evidence-checker`, `jira-reporter`, `demo-release`,
 `scale-tester`, `pr-opener` (push and PR, then the checks), `notifier` (emails the user when work waits on their decision),
-`builder` (builds a ticket from its agreed design), `log-cleaner` (removes finished runs' logs; also every 3 h by cron).
+`builder` (builds a ticket from its agreed design, test first), `test-writer` (writes a core ticket's tests before its code), `log-cleaner` (removes finished runs' logs; also every 3 h by cron).
 Every agent keeps a progress log `~/lrfe-data/<ticket>/<agent>.log` and gives its `tail -f` first: nothing runs without one.
 
 1. Read the ticket and its "Agreed design"/"Done when"; move it to In Progress (transition 11). A new
    screen needs a design the user has agreed (a design artifact or ticket) before it is built.
-2. Build only the agreed scope: no extra endpoints, screens or settings ("don't manufacture
+2. **Test first (TDD):** the tests are written from "Done when" and the design and fail (red) before
+   the code is written, then pass (green); for core parts a separate `test-writer` agent writes them.
+   The ticket's "Test cases" comment lists them and shows their status (red → green) as the build goes.
+   Build only the agreed scope: no extra endpoints, screens or settings ("don't manufacture
    requirements"). Optional ideas: one line at most.
 3. Verify: unit tests, lint and format (`npm run -s lint`, `npm run -s format:check` at the root),
    `cd backend && npm run docs:check`, the e2e suite in memory and on PostgreSQL (`docs/ai-workflow/e2e.md`).

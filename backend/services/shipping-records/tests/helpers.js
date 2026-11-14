@@ -7,9 +7,11 @@ import {
   inTransaction,
 } from '@lrfe/common';
 import {formatsFromSettings} from '@lrfe/domain-shipping/bill-of-lading';
+import {modulesFromSettings} from '@lrfe/domain-shipping/title';
 
 import {buildApp} from '../src/app.js';
 import {ShippingRecordsService} from '../src/records.service.js';
+import {TitleService} from '../src/title.service.js';
 import {createMemoryRepo} from '../src/repo/memory.js';
 import {SCHEMA} from '../src/repo/models.js';
 import {createSequelizeRepo} from '../src/repo/sequelize.js';
@@ -103,7 +105,7 @@ async function openPostgres() {
   const repo = createSequelizeRepo(sequelize);
   await repo.sync();
   await sequelize.query(
-    `TRUNCATE "${SCHEMA}"."bl_version", "${SCHEMA}"."bill_of_lading"`,
+    `TRUNCATE "${SCHEMA}"."bl_title", "${SCHEMA}"."bl_version", "${SCHEMA}"."bill_of_lading" CASCADE`,
   );
   return {
     repo,
@@ -114,13 +116,48 @@ async function openPostgres() {
 }
 
 /**
+ * Identity as the title service's client sees it, answering every organisation registered and
+ * active: for the tests of the engine's service (CB-31..33), whose organisations are not
+ * registered anywhere. The registration check itself is tested in title-api.test.js (CB-34).
+ * @type {{standingOf: function(string): !Promise<string>}}
+ */
+export const ACTIVE_ORGANISATIONS = Object.freeze({
+  /**
+   * Every organisation is active.
+   * @return {!Promise<string>}
+   */
+  async standingOf() {
+    return 'active';
+  },
+});
+
+/**
  * The service behind its HTTP app on a store: `as(user)` gives that user's auth header,
- * `published` every event.
+ * `published` every event. With a `signer`, the title service (CB-31) signing its chain entries
+ * with it (CB-32) is on the app too; `audit` is its client of the audit service, which gives the
+ * trail-entry proof of an entry's event (CB-33); `organisations` its client of identity, which
+ * says whether an organisation is registered and active (CB-34); `modules` the title modules on
+ * (all by default, as `modulesFromSettings` reads them; CB-35 turns some off).
  * @param {{open: function(): Promise<object>}} store
- * @param {{formats?: ReadonlyArray<object>}} [options]
+ * @param {{
+ *   formats?: ReadonlyArray<object>,
+ *   signer?: object,
+ *   audit?: object,
+ *   organisations?: object,
+ *   modules?: ReadonlyArray<string>,
+ * }} [options]
  * @return {Promise<object>}
  */
-export async function makeHttp(store, {formats} = {}) {
+export async function makeHttp(
+  store,
+  {
+    formats,
+    signer,
+    audit,
+    organisations = ACTIVE_ORGANISATIONS,
+    modules = modulesFromSettings({}),
+  } = {},
+) {
   const {repo, atomic, close, sequelize} = await store.open();
   const bus = createEventBus({driver: 'memory', source: 'shipping-records'});
   const events = atomic ? {...bus, atomic} : bus;
@@ -132,7 +169,19 @@ export async function makeHttp(store, {formats} = {}) {
     formats: formats ?? formatsFromSettings({}),
     clock: makeClock(),
   });
-  const app = await buildApp({service, jwtSecret: SECRET});
+  let titles = null;
+  if (signer) {
+    titles = new TitleService({
+      repo,
+      events,
+      modules,
+      clock: makeClock(),
+      signer,
+      audit,
+      organisations,
+    });
+  }
+  const app = await buildApp({service, titles, jwtSecret: SECRET});
   await app.ready();
   /**
    * A user's auth header.
@@ -145,6 +194,7 @@ export async function makeHttp(store, {formats} = {}) {
   return {
     app,
     service,
+    titles,
     repo,
     sequelize,
     published,
