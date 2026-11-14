@@ -31,7 +31,9 @@ services 3501–3509, `npm run dev`); product code in `backend/domains/{land,shi
 
 Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in `.claude/agents/`:
 `reviewer` (the review gate), `e2e-runner`, `ui-evidence-checker`, `jira-reporter`, `demo-release`,
-`scale-tester`, `pr-opener` (push and PR, then the checks), `notifier` (emails the user when work waits on their decision).
+`scale-tester`, `pr-opener` (push and PR, then the checks), `notifier` (emails the user when work waits on their decision),
+`builder` (builds a ticket from its agreed design), `log-cleaner` (removes finished runs' logs; also every 3 h by cron).
+Every agent keeps a progress log `~/lrfe-data/<ticket>/<agent>.log` and gives its `tail -f` first: nothing runs without one.
 
 1. Read the ticket and its "Agreed design"/"Done when"; move it to In Progress (transition 11). A new
    screen needs a design the user has agreed (a design artifact or ticket) before it is built.
