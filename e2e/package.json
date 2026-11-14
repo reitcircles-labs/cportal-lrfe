@@ -10,6 +10,7 @@
     "report": "playwright show-report",
     "install-browser": "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu22.04-x64 playwright install chromium",
     "evidence": "node stack/evidence.mjs",
+    "test:stack": "node --test stack/*.test.mjs",
     "test:postgres": "E2E_DB=postgres playwright test",
     "test:docker": "E2E_DOCKER=1 playwright test",
     "test:shipping": "E2E_DOMAIN=shipping playwright test -c playwright.shipping.config.ts"

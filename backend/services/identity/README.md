@@ -93,8 +93,9 @@ permission "Manage organisations" add, rename, suspend and reactivate them throu
   `org` and keep working until they expire.
 - **Standing, for the record service (CB-34).** `GET /organisations/:id/standing` answers the
   domain pack's record service only (its service token: `land-records`, or `shipping-records` on a
-  shipping install) with `{id, status}` and nothing else; 404 for an organisation that does not
-  exist. The shipping record service asks it before a B/L goes to an organisation.
+  shipping install) with `{id, status, name}` and nothing else; 404 for an organisation that does
+  not exist. The shipping record service asks it before a B/L goes to an organisation, and for the
+  names of the organisations a B/L names, which its parties see (CB-42).
 
 ## Roles and permissions from the domain pack
 

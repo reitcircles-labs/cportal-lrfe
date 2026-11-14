@@ -13,7 +13,8 @@ import {makeApp} from './helpers.js';
  * active, so that a B/L only goes to such an organisation:
  *
  *   GET /organisations/:id/standing   service token of the pack's record service only
- *     200 {id, status}   status 'Active' or 'Suspended'; nothing else about the organisation
+ *     200 {id, status, name}   status 'Active' or 'Suspended', and its name (CB-42: the parties
+ *                        of a B/L see each other's names); nothing else about the organisation
  *     404                no such organisation ("Organisation not found")
  *     400                not an organisation id
  *     401 for a person's token, 403 for another service
@@ -63,20 +64,28 @@ async function setup() {
 }
 
 describe("an organisation's standing, for the record service (CB-34)", () => {
-  it('answers an active organisation: its id and status, nothing more', async () => {
+  it('answers an active organisation: its id, status and name, nothing more (changed: CB-42 adds the name)', async () => {
     const {bank, standing, asService, app} = await setup();
     // the land pack's record service in these tests (the default pack)
     const res = await standing(bank.id, asService('land-records'));
     expect(res.statusCode, res.body).to.equal(200);
-    expect(res.json()).to.deep.equal({id: bank.id, status: 'Active'});
+    expect(res.json()).to.deep.equal({
+      id: bank.id,
+      status: 'Active',
+      name: 'First Bank',
+    });
     await app.close();
   });
 
-  it('answers a suspended organisation as Suspended', async () => {
+  it('answers a suspended organisation as Suspended, with its name (changed: CB-42 adds the name)', async () => {
     const {buyer, standing, asService, app} = await setup();
     const res = await standing(buyer.id, asService('land-records'));
     expect(res.statusCode, res.body).to.equal(200);
-    expect(res.json()).to.deep.equal({id: buyer.id, status: 'Suspended'});
+    expect(res.json()).to.deep.equal({
+      id: buyer.id,
+      status: 'Suspended',
+      name: 'Buyer Trading',
+    });
     await app.close();
   });
 

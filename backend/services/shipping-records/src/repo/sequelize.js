@@ -1,4 +1,4 @@
-import {Op, UniqueConstraintError} from 'sequelize';
+import {Op, QueryTypes, UniqueConstraintError} from 'sequelize';
 import {ConflictError, inTransaction} from '@lrfe/common';
 import {defineModels, SCHEMA} from './models.js';
 
@@ -78,6 +78,17 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "bl_version_seal_order" ON "${SCHEMA}"."bl_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`,
       );
+      // the list of a party's B/Ls finds them by their parties (CB-42)
+      for (const column of ['carrier', 'holder', 'consignee']) {
+        await sequelize.query(
+          `CREATE INDEX IF NOT EXISTS "bl_title_${column}" ON "${SCHEMA}"."bl_title" ("${column}")`,
+        );
+      }
+      for (const column of ['from', 'to']) {
+        await sequelize.query(
+          `CREATE INDEX IF NOT EXISTS "bl_title_entry_${column}" ON "${SCHEMA}"."bl_title_entry" ("${column}")`,
+        );
+      }
       // a split child's title proof finds its parent's split entry by its hash (CB-35)
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "bl_title_entry_hash" ON "${SCHEMA}"."bl_title_entry" ("entryHash")`,
@@ -181,6 +192,52 @@ export function createSequelizeRepo(sequelize) {
         offset,
       });
       return {items: rows.map(plain), total: count};
+    },
+    /**
+     * A page of the B/Ls an organisation is party to (CB-42), newest first: before issue those it
+     * owns; after it those of which it is the carrier, the holder or the consignee, or that its
+     * chain of title moved from or to it. Each with its title (null before issue) and whether the
+     * chain names the organisation.
+     * @param {{organisationId: string, limit?: number, offset?: number}} query
+     * @return {!Promise<{
+     *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
+     *   total: number,
+     * }>}
+     */
+    async listPartyRecords({organisationId, limit = 50, offset = 0}) {
+      const from = `
+        FROM "${SCHEMA}"."bill_of_lading" r
+        LEFT JOIN "${SCHEMA}"."bl_title" t ON t."recordId" = r."id"`;
+      const inChain = `EXISTS (
+        SELECT 1 FROM "${SCHEMA}"."bl_title_entry" e
+        WHERE e."recordId" = r."id" AND (e."from" = :org OR e."to" = :org))`;
+      const where = `
+        WHERE (t."recordId" IS NULL AND r."organisationId" = :org)
+          OR t."carrier" = :org OR t."holder" = :org OR t."consignee" = :org
+          OR ${inChain}`;
+      const rows = await sequelize.query(
+        `SELECT r."id", ${inChain} AS "inChain" ${from} ${where}
+         ORDER BY r."createdAt" DESC, r."id" ASC LIMIT :limit OFFSET :offset`,
+        {
+          replacements: {org: organisationId, limit, offset},
+          type: QueryTypes.SELECT,
+        },
+      );
+      const [{total}] = await sequelize.query(
+        `SELECT COUNT(*)::int AS "total" ${from} ${where}`,
+        {replacements: {org: organisationId}, type: QueryTypes.SELECT},
+      );
+      const ids = rows.map(row => row.id);
+      const records = await models.Record.findAll({where: {id: ids}});
+      const titles = await models.Title.findAll({where: {recordId: ids}});
+      const recordById = new Map(records.map(row => [row.id, plain(row)]));
+      const titleById = new Map(titles.map(row => [row.recordId, plain(row)]));
+      const items = rows.map(row => ({
+        record: recordById.get(row.id),
+        title: titleById.get(row.id) ?? null,
+        inChain: row.inChain,
+      }));
+      return {items, total};
     },
     /**
      * @param {string} id

@@ -752,7 +752,12 @@ export class IdentityService {
    */
   async organisationStanding(id) {
     const organisation = await this.requireOrganisation(id);
-    return {id: organisation.id, status: organisation.status};
+    // the name too (CB-42): the parties of a B/L see each other's names
+    return {
+      id: organisation.id,
+      status: organisation.status,
+      name: organisation.name,
+    };
   }
 
   /** The id of the default organisation (made by the seed), or null before the seed has run. */

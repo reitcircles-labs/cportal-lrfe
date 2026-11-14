@@ -200,6 +200,45 @@ export function createMemoryRepo() {
       };
     },
     /**
+     * A page of the B/Ls an organisation is party to (CB-42), newest first: before issue those it
+     * owns; after it those of which it is the carrier, the holder or the consignee, or that its
+     * chain of title moved from or to it. Each with its title (null before issue) and whether the
+     * chain names the organisation.
+     * @param {{organisationId: string, limit?: number, offset?: number}} query
+     * @return {!Promise<{
+     *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
+     *   total: number,
+     * }>}
+     */
+    async listPartyRecords({organisationId, limit = 50, offset = 0}) {
+      const all = [];
+      for (const record of records.values()) {
+        const title = titles.get(record.id) ?? null;
+        const inChain = (entries.get(record.id) ?? []).some(
+          entry => entry.from === organisationId || entry.to === organisationId,
+        );
+        let party;
+        if (title === null) {
+          party = record.organisationId === organisationId;
+        } else {
+          const parties = [title.carrier, title.holder, title.consignee];
+          party = parties.includes(organisationId) || inChain;
+        }
+        if (party) {
+          all.push({record, title, inChain});
+        }
+      }
+      all.sort(
+        (a, b) =>
+          compare(b.record.createdAt.getTime(), a.record.createdAt.getTime()) ||
+          compare(a.record.id, b.record.id),
+      );
+      return {
+        items: all.slice(offset, offset + limit).map(clone),
+        total: all.length,
+      };
+    },
+    /**
      * @param {string} id
      * @param {object} patch
      * @return {!Promise<?object>} the record, or null when there is none

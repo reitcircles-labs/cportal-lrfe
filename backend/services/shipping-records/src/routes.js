@@ -408,6 +408,30 @@ export async function recordsRoutes(app, {service}) {
 
   // ------------------------------------------------ the title (CB-34)
 
+  // the B/Ls the session's organisation is party to (CB-42): its drafts, and the B/Ls of which it
+  // is the carrier, the holder, a past holder or the consignee, each with its title and the
+  // organisation's roles; the organisation is the session's, never one named in the request
+  app.get(
+    '/records/title',
+    {
+      onRequest: canRead,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
+            offset: OFFSET_SCHEMA,
+          },
+        },
+      },
+    },
+    async req => {
+      ownerOf(req);
+      return titlesOf(app).listForParty(actorOf(req), req.query);
+    },
+  );
+
   // a B/L's title, the commands the caller may run on it now and its chain of title, for the
   // carrier, the current and past holders and the consignee
   app.get(

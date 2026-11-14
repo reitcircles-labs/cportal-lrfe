@@ -8,7 +8,7 @@
  * user in again. The shipping run has one worker, so the file is never written twice at once.
  */
 import {createHmac} from 'node:crypto';
-import {expect, type APIRequestContext} from '@playwright/test';
+import {expect, type APIRequestContext, type Page} from '@playwright/test';
 import {appPath, invitationEmail, officeCode, unique} from './admin';
 import {codeFor, readSecrets, saveSecrets} from './auth';
 import {identity} from '../../backend/domains/shipping/src/identity.js';
@@ -33,7 +33,7 @@ export function demoEmails(role: string): string[] {
 }
 
 /** The password of the users the specs invite. */
-const INVITED_PASSWORD = 'e2e shipping user password 2026';
+export const INVITED_PASSWORD = 'e2e shipping user password 2026';
 
 /** A signed-in user: who they are and the header with their access token. */
 export interface SignedIn {
@@ -178,4 +178,26 @@ export async function organisationWithClerk(
     name: organisation.name,
     clerk,
   };
+}
+
+/**
+ * Signs a user in to the shipping app in the browser (CB-42): the platform's sign-in screen, then
+ * the authenticator, whose secret their first sign-in through the API kept.
+ * @param page the page, on the shipping app
+ * @param email the user's email
+ * @param password the user's password
+ */
+export async function signInOnScreen(
+  page: Page,
+  email: string,
+  password: string,
+): Promise<void> {
+  const secret = readSecrets()[email];
+  expect(secret, `the authenticator secret of ${email}`).toBeTruthy();
+  await page.goto('/#/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', {name: 'Sign in', exact: true}).click();
+  await page.getByLabel('6-digit code').fill(codeFor(secret));
+  await page.getByRole('button', {name: 'Verify and sign in'}).click();
 }

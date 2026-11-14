@@ -22,6 +22,7 @@ import {
 } from '@lrfe/domain-shipping/title';
 
 import {TITLE_ENTRY_TYP, entryHashOf} from './chain.js';
+import {summaryOf} from './records.service.js';
 import {
   checkedDocument,
   committedEventOf,
@@ -243,9 +244,108 @@ function canSee(record, stored, chain, organisation) {
   if (parties.includes(organisation)) {
     return true;
   }
+  return inChainOf(chain, organisation);
+}
+
+/**
+ * The roles of an organisation on a B/L it sees (CB-42): `carrier` (before issue, the record's
+ * owner), `holder`, `consignee`, and `past-holder` for an organisation the chain of title moved
+ * the B/L from or to that has no other role now. The carrier holding a surrendered B/L is carrier
+ * and holder; it is never its own past holder.
+ * @param {{organisationId: string}} record
+ * @param {?object} stored the stored title, null before issue
+ * @param {boolean} inChain whether the chain of title names the organisation as `from` or `to`
+ * @param {string} organisation
+ * @return {!Array<string>}
+ */
+function rolesOf(record, stored, inChain, organisation) {
+  if (stored === null) {
+    if (record.organisationId === organisation) {
+      return ['carrier'];
+    }
+    return [];
+  }
+  const roles = [];
+  if (stored.carrier === organisation) {
+    roles.push('carrier');
+  }
+  if (stored.holder === organisation) {
+    roles.push('holder');
+  }
+  if (stored.consignee === organisation) {
+    roles.push('consignee');
+  }
+  if (roles.length === 0 && inChain) {
+    roles.push('past-holder');
+  }
+  return roles;
+}
+
+/**
+ * Whether a chain of title names an organisation as a holder before or after a step.
+ * @param {!Array<{from: ?string, to: ?string}>} chain
+ * @param {(string|undefined)} organisation
+ * @return {boolean}
+ */
+function inChainOf(chain, organisation) {
   return chain.some(
     entry => entry.from === organisation || entry.to === organisation,
   );
+}
+
+/**
+ * What a title answer says of the B/L's record (CB-42): its reference and where its drafting is,
+ * for the parties that cannot read the record itself.
+ * @param {object} record a stored record
+ * @return {{
+ *   recordNo: string,
+ *   carrierCode: string,
+ *   label: string,
+ *   status: string,
+ *   draftState: ?string,
+ * }}
+ */
+function recordOf(record) {
+  return {
+    recordNo: record.recordNo,
+    carrierCode: record.carrierCode,
+    label: record.label,
+    status: record.status,
+    draftState: record.draftState ?? null,
+  };
+}
+
+/**
+ * The organisations a stored title names (CB-42): carrier, holder, consignee, and the holder an
+ * amended B/L goes back to; none before issue.
+ * @param {?object} stored
+ * @return {!Array<?string>}
+ */
+function partiesOf(stored) {
+  if (stored === null) {
+    return [];
+  }
+  return [stored.carrier, stored.holder, stored.consignee, stored.returnTo];
+}
+
+/**
+ * A stored title as the list of a party's B/Ls gives it (CB-42), or null before issue.
+ * @param {?object} stored
+ * @return {?object}
+ */
+function titleSummaryOf(stored) {
+  if (stored === null) {
+    return null;
+  }
+  return {
+    kind: stored.kind,
+    state: stored.state,
+    carrier: stored.carrier,
+    holder: stored.holder ?? null,
+    endorsement: stored.endorsement,
+    consignee: stored.consignee ?? null,
+    updatedAt: stored.updatedAt,
+  };
 }
 
 /**
@@ -316,7 +416,10 @@ export class TitleService {
    *   clock?: function(): Date,
    *   signer: ?object,
    *   audit?: ?{entryProof: function(string): !Promise<object>},
-   *   organisations: {standingOf: function(string): !Promise<string>},
+   *   organisations: {
+   *     standingOf: function(string): !Promise<string>,
+   *     nameOf?: function(string): !Promise<?string>,
+   *   },
    *   formats?: !ReadonlyArray<object>,
    * }} options `modules`: the title modules on in this install (modulesFromSettings); `formats`:
    *     the B/L formats on (formatsFromSettings), which an amendment's and a split's documents
@@ -585,8 +688,8 @@ export class TitleService {
       await this.publishEntry(record, appended, actor);
     });
     // the write succeeded at the revision read, so the chain read with it was the whole chain
-    const after = withChain ? [...chain, appended] : null;
-    return this.viewOf(record, saved, actor, after);
+    const after = [...chain, appended];
+    return this.viewOf(record, saved, actor, after, {withChain});
   }
 
   /**
@@ -831,8 +934,8 @@ export class TitleService {
         await this.issueChild(child, result.children[i], firsts[i], actor, now);
       }
     });
-    const after = withChain ? [...chain, appended] : null;
-    const view = await this.viewOf(record, saved, actor, after);
+    const after = [...chain, appended];
+    const view = await this.viewOf(record, saved, actor, after, {withChain});
     view.children = children.map(child => ({
       recordId: child.record.id,
       recordNo: child.record.recordNo,
@@ -1076,29 +1179,37 @@ export class TitleService {
    */
   async read(recordId, actor, {withChain = false} = {}) {
     const {record, stored, chain} = await this.requireVisible(recordId, actor);
-    return this.viewOf(record, stored, actor, withChain ? chain : null);
+    return this.viewOf(record, stored, actor, chain, {withChain});
   }
 
   /**
-   * A title as `read` answers it: `title` null before issue, `allowedCommands` for the caller
-   * (before issue: `issue` when the B/L can be issued now; only the commands the API offers),
-   * and `chain`, the chain of title, when given.
+   * A title as `read` answers it: `record`, the B/L's reference and drafting state (CB-42),
+   * `title` null before issue, `allowedCommands` for the caller (before issue: `issue` when the
+   * B/L can be issued now; only the commands the API offers), `roles`, the caller's
+   * organisation's roles on the B/L (CB-42), `chain`, the chain of title, when asked for, and
+   * `organisationNames`, the names of the organisations the title and its chain name (CB-42).
    * @param {object} record
    * @param {?object} stored
    * @param {{org?: string}} actor
-   * @param {?Array<object>} [chain] the chain of title to answer with, null for none
+   * @param {!Array<object>} chain the B/L's whole chain of title
+   * @param {{withChain?: boolean}} [options] `withChain`: the answer carries the chain
    * @return {!Promise<{
    *   recordId: string,
+   *   record: !Object,
    *   title: ?object,
    *   allowedCommands: !Array<string>,
+   *   roles: !Array<string>,
    *   chain: (!Array<object>|undefined),
+   *   organisationNames: !Object<string, string>,
    * }>}
    */
-  async viewOf(record, stored, actor, chain = null) {
+  async viewOf(record, stored, actor, chain, {withChain = false} = {}) {
     const view = {
       recordId: record.id,
+      record: recordOf(record),
       title: null,
       allowedCommands: [],
+      roles: rolesOf(record, stored, inChainOf(chain, actor?.org), actor?.org),
     };
     if (stored === null) {
       view.allowedCommands = await this.issueAllowed(record, actor);
@@ -1116,10 +1227,83 @@ export class TitleService {
       });
       view.allowedCommands = allowed.filter(name => OFFERED_COMMANDS.has(name));
     }
-    if (chain !== null) {
+    if (withChain) {
       view.chain = chain;
     }
+    const named = [record.organisationId, ...partiesOf(stored)];
+    for (const entry of chain) {
+      named.push(entry.from, entry.to, entry.actor?.org);
+    }
+    view.organisationNames = await this.namesOf(named);
     return view;
+  }
+
+  /**
+   * A page of the B/Ls the caller's organisation is party to (CB-42), newest first: those it sees
+   * with `read` (before issue the ones it owns, after it those of which it is the carrier, the
+   * holder, a past holder or the consignee), each with its title (null before issue) and the
+   * organisation's roles on it, and the names of the organisations the items name
+   * (`organisationNames`). Never another organisation's B/L.
+   * @param {{org?: string}} actor
+   * @param {{limit?: number, offset?: number}} [page]
+   * @return {!Promise<{
+   *   items: !Array<object>,
+   *   total: number,
+   *   organisationNames: !Object<string, string>,
+   * }>}
+   */
+  async listForParty(actor, {limit = 50, offset = 0} = {}) {
+    const organisation = actor?.org;
+    if (typeof organisation !== 'string' || organisation === '') {
+      throw new ForbiddenError(
+        'Your account belongs to no organisation, so it has no B/Ls',
+        {code: 'no-organisation'},
+      );
+    }
+    const page = await this.repo.listPartyRecords({
+      organisationId: organisation,
+      limit,
+      offset,
+    });
+    const items = page.items.map(({record, title, inChain}) => ({
+      ...summaryOf(record),
+      title: titleSummaryOf(title),
+      roles: rolesOf(record, title, inChain, organisation),
+    }));
+    const named = [];
+    for (const {record, title} of page.items) {
+      named.push(record.organisationId, ...partiesOf(title));
+    }
+    const organisationNames = await this.namesOf(named);
+    return {items, total: page.total, organisationNames};
+  }
+
+  /**
+   * The names of organisations (CB-42), `{id: name}`, each asked of identity once. An
+   * organisation identity gives no name for, or every one while identity cannot answer, is left
+   * out: the screens then show its id, and a list or a title never fails for a name.
+   * @param {!Array<?string>} ids the organisations, repeated or null ones ignored
+   * @return {!Promise<!Object<string, string>>}
+   */
+  async namesOf(ids) {
+    const names = new Map();
+    if (typeof this.organisations.nameOf !== 'function') {
+      return {};
+    }
+    const unique = new Set(ids.filter(id => typeof id === 'string' && id));
+    await Promise.all(
+      [...unique].map(async id => {
+        try {
+          const name = await this.organisations.nameOf(id);
+          if (typeof name === 'string' && name !== '') {
+            names.set(id, name);
+          }
+        } catch {
+          // identity cannot answer now: the organisation is shown by its id
+        }
+      }),
+    );
+    return Object.fromEntries(names);
   }
 
   /**

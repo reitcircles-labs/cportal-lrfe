@@ -27,11 +27,11 @@ function isVisible(record, organisationId) {
 }
 
 /**
- * A record as the list answers it.
+ * A record as the list answers it (and the list of a party's B/Ls, title.service.js).
  * @param {object} r a stored record
  * @return {object}
  */
-function summaryOf(r) {
+export function summaryOf(r) {
   return {
     id: r.id,
     recordNo: r.recordNo,

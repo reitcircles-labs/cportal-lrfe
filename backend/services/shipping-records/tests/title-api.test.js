@@ -435,8 +435,18 @@ for (const store of stores()) {
         expect(res.statusCode, res.body).to.equal(200);
         expect(res.json()).to.deep.equal({
           recordId: id,
+          // the reference and the caller's roles (CB-42)
+          record: {
+            recordNo: 'CB34-READ-BEFORE',
+            carrierCode: 'MSC',
+            label: 'B/L CB34-READ-BEFORE (MSC)',
+            status: 'committed',
+            draftState: null,
+          },
           title: null,
           allowedCommands: ['issue'],
+          roles: ['carrier'],
+          organisationNames: {},
           chain: [],
         });
       });
