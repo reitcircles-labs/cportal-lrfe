@@ -56,6 +56,7 @@ Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in
   approver owns the record (details: `docs/ai-workflow/product.md`).
 - **Code:** Google TypeScript Style Guide (JS backend: the rules that apply), readable by a person: named
   exports, JSDoc, braces, no dense one-liners. Match the comment density of the surrounding code.
+  Always enforced: the `reviewer` agent treats any breach of the guide as blocking (its checklist).
 
 ## The demo install and the blockchain node: never harm them
 
