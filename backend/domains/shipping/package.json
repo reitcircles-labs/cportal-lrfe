@@ -1,7 +1,7 @@
 {
   "name": "@lrfe/domain-shipping",
   "version": "0.1.0",
-  "description": "The shipping domain pack: the bill-of-lading model (CB-23); wording, roles and workflows to come",
+  "description": "The shipping domain pack: the bill-of-lading model (CB-23), the B/L permissions, role and demo data, and the record kind naming shipping-records (CB-28); wording and workflows to come",
   "private": true,
   "type": "module",
   "exports": {

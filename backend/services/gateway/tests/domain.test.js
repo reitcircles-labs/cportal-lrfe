@@ -30,8 +30,9 @@ describe('the gateway routes from the domain pack (CB-4)', () => {
     });
   });
 
-  it('starts without a record service and has no /api/records route with the shipping pack', async () => {
-    const routes = routesOf(recordServiceOf(await loadDomainPack('shipping')));
+  it('starts without a record service and has no /api/records route with a pack without one', async () => {
+    const shipping = await loadDomainPack('shipping');
+    const routes = routesOf(recordServiceOf({...shipping, recordKind: null}));
     expect(routes.map(r => r.prefix)).not.to.include('/api/records');
     const app = await buildApp({
       upstreams: upstreamsWithoutRecords('http://127.0.0.1:9'),
@@ -41,6 +42,15 @@ describe('the gateway routes from the domain pack (CB-4)', () => {
     const res = await app.inject({url: '/api/records'});
     expect(res.statusCode).to.equal(404);
     await app.close();
+  });
+
+  it('routes /api/records to shipping-records with the shipping pack (CB-28)', async () => {
+    const routes = routesOf(recordServiceOf(await loadDomainPack('shipping')));
+    expect(routes.find(r => r.prefix === '/api/records')).to.deep.equal({
+      prefix: '/api/records',
+      service: 'shipping-records',
+      rewritePrefix: '/records',
+    });
   });
 
   it('builds its routing table with LRFE_DOMAIN=shipping', async () => {
@@ -56,6 +66,7 @@ describe('the gateway routes from the domain pack (CB-4)', () => {
     );
     const services = JSON.parse(stdout.trim().split('\n').pop());
     expect(services).not.to.include('land-records');
+    expect(services).to.include('shipping-records');
     expect(services).to.include('audit');
   });
 });

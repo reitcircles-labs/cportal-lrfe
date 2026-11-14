@@ -7,7 +7,7 @@ These rules apply to every ticket; the details are in `docs/ai-workflow/`, read 
 **Layout** (details and how to add a product: `docs/architecture/products.md`): web apps in
 `angular-app/projects/{land-registry,shipping}` on the library `platform` (`npm start`: 4200,
 `npm run start:shipping`: 4201); shared `backend/packages` and `backend/services` (gateway 3500,
-services 3501–3508, `npm run dev`); product code in `backend/domains/{land,shipping}` and
+services 3501–3509, `npm run dev`); product code in `backend/domains/{land,shipping}` and
 `land-records`. `LRFE_DOMAIN` (default `land`) picks the pack. Shared code never imports product code (lint guard).
 
 ## Git and branches

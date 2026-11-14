@@ -1,6 +1,11 @@
 import {expect} from 'chai';
 
-import {DEFAULT_DOMAIN, domain, loadDomainPack} from '../src/index.js';
+import {
+  DEFAULT_DOMAIN,
+  domain,
+  loadDomainPack,
+  recordServiceOf,
+} from '../src/index.js';
 
 describe('the domain pack (CB-3)', () => {
   it('is the land pack when LRFE_DOMAIN is not set', () => {
@@ -10,10 +15,14 @@ describe('the domain pack (CB-3)', () => {
     }
   });
 
-  it('loads the empty shipping pack', async () => {
+  it('loads the shipping pack, whose record service is shipping-records (CB-28)', async () => {
     const shipping = await loadDomainPack('shipping');
     expect(shipping.name).to.equal('shipping');
-    expect(shipping.recordKind).to.equal(null);
+    expect(recordServiceOf(shipping)).to.deep.equal({
+      name: 'shipping-records',
+      label: 'shipping records',
+      url: process.env.SHIPPING_RECORDS_URL ?? 'http://localhost:3509',
+    });
   });
 
   it('fails early on a pack that does not exist or a name that is not one', async () => {

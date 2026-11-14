@@ -5,10 +5,13 @@ organisation, versioned, submitted for review, committed by a second person and 
 answers the record contract (CB-4, [`@lrfe/record-contract`](../../packages/record-contract/README.md))
 for the shared services (audit, extracts, bpm), like `land-records` does for land.
 
-The service runs on port 3509, with its own PostgreSQL schema `shipping_records`. Not in this
-service yet: the title, the holder and transfers (L3), and the issue and endorse flows (L4). The
-gateway does not route to it yet, and the shipping pack does not name it as its record service
-(CB-28).
+The service runs on port 3509, with its own PostgreSQL schema `shipping_records`. The shipping
+pack names it as its record service (`recordKind`, CB-28), so with `LRFE_DOMAIN=shipping` the
+gateway routes `/api/records` to it (`SHIPPING_RECORDS_URL`), and audit, bpm and extracts call it
+there. In the compose file it runs with the profile `shipping`; the shipping e2e run
+(`npm run test:shipping` in `e2e/`) takes a B/L through it, the gateway and the audit service. Not
+in this service yet: the title, the holder and transfers (L3), and the issue and endorse flows
+(L4).
 
 ## A B/L record
 

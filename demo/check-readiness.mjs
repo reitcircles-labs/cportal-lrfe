@@ -73,7 +73,7 @@ const DEMO_USERS = [
 
 /** The containers that use the data volumes; OpenBao and the blockchain node are not among them. */
 const APP_SERVICES =
-  'web gateway identity edrms bpm intake land-records audit extracts db-setup nats postgres';
+  'web gateway identity edrms bpm intake land-records shipping-records audit extracts db-setup nats postgres';
 
 const OK = 'ok';
 const WARN = 'warn';
@@ -184,6 +184,17 @@ const profilesOf = env =>
     .map(s => s.trim())
     .filter(Boolean);
 
+/**
+ * Whether the install is of the shipping product: then its B/L record service (profile shipping)
+ * must run, and answers /api/records. A land install has neither.
+ * @param {!Object<string, string>} env the install's settings
+ * @param {!Array<string>} profiles its compose profiles
+ * @return {boolean}
+ */
+function isShipping(env, profiles) {
+  return env.LRFE_DOMAIN === 'shipping' || profiles.includes('shipping');
+}
+
 // ------------------------------------------------------------------------------------------ checks
 
 /** The services that run once on every start and exit, with what they have done. */
@@ -217,6 +228,9 @@ function checkContainers(env) {
   if (profiles.includes('bao')) expected.push('openbao');
   if (profiles.includes('blockchain')) expected.push('cardano');
   if (profiles.includes('docs')) expected.push('docs');
+  if (isShipping(env, profiles)) {
+    expected.push('shipping-records');
+  }
   if (profiles.includes('search')) {
     expected.push(
       'search-dir-check',
@@ -323,7 +337,10 @@ async function checkApps(env) {
     ['edrms', '/api/documents'],
     ['bpm', '/api/tasks'],
     ['intake', '/api/intake/batches'],
-    ['land-records', '/api/records'],
+    [
+      isShipping(env, profilesOf(env)) ? 'shipping-records' : 'land-records',
+      '/api/records',
+    ],
     ['audit', '/api/audit/anchoring/wallet'],
     ['extracts', '/api/extracts'],
   ];

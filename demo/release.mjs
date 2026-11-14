@@ -47,7 +47,10 @@ const REHEARSAL_DIR = join(homedir(), '.lrfe-rehearsal');
 const REHEARSAL_PORT = '8716';
 /** Containers that must never be stopped, recreated or reconfigured by a release. */
 const GUARDED = ['openbao', 'cardano'];
-/** The containers that use the data volumes, as in the readiness check's fresh start. */
+/**
+ * The containers that use the data volumes, as in the readiness check's fresh start; shipping-records
+ * only runs with the profile shipping (removing it where it does not run does nothing).
+ */
 const APP_SERVICES = [
   'web',
   'gateway',
@@ -56,6 +59,7 @@ const APP_SERVICES = [
   'bpm',
   'intake',
   'land-records',
+  'shipping-records',
   'audit',
   'extracts',
   'db-setup',

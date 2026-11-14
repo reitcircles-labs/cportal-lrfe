@@ -8,7 +8,8 @@ import {
 } from '@lrfe/common';
 import {PUBLIC_RATE_LIMIT, buildApp} from './app.js';
 
-// the product's record service (CB-4): land-records at RECORDS_URL for land, none for shipping
+// the product's record service (CB-4): land-records at RECORDS_URL for land, shipping-records at
+// SHIPPING_RECORDS_URL for shipping (CB-28)
 const recordService = recordServiceOf(domain);
 const recordUpstream = recordService
   ? {[recordService.name]: recordService.url}

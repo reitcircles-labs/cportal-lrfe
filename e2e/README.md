@@ -19,6 +19,7 @@ Then:
 ```bash
 npm test                    # starts the stack, runs every test, stops the stack (about two minutes)
 npm run test:postgres       # the same on PostgreSQL instead of memory (see "On PostgreSQL")
+npm run test:shipping       # the shipping product's backend, API only (see "The shipping run")
 npm run report              # opens the HTML report of the last run
 npx playwright test tests/sign-in.spec.ts       # one file
 npx playwright test -g "rev \(a.mwandingi\)"    # tests whose title matches
@@ -148,6 +149,14 @@ by default on every system.
 `.github/workflows/tests.yml` runs the backend unit tests, the API docs check and this suite on
 every pull request and push to main; nightly (01:00 UTC) and on demand it also runs the suite on
 PostgreSQL. A failed run keeps the HTML report and the screenshots, videos and traces as artifacts.
+
+## The shipping run
+
+`npm run test:shipping` (CB-28; `E2E_DB=postgres` for PostgreSQL) starts the stack with
+`E2E_DOMAIN=shipping`: every service gets `LRFE_DOMAIN=shipping`, and shipping-records runs on the
+API port + 13 instead of land-records. No web app is started. `playwright.shipping.config.ts` runs
+the specs in `tests-shipping/` through the gateway, one worker; they sign the shipping pack's demo
+users in themselves. A land run (`npm test`) is unchanged.
 
 ## What the stack is
 
