@@ -181,6 +181,20 @@ export class ProofService {
     );
   }
 
+  /**
+   * The proof of the trail entry an event made (CB-33), the same as the trail-entry proof by its
+   * seq; 404 while the event is not on the trail.
+   * @param {string} eventId
+   * @return {!Promise<object>}
+   */
+  async entryProofByEvent(eventId) {
+    const [entry] = await this.repo.entriesByEventIds([eventId]);
+    if (!entry) {
+      throw new NotFoundError('There is no trail entry for this event');
+    }
+    return this.entryProof({kind: 'trail-entry', seq: entry.seq});
+  }
+
   async assemble(item, p, anchor, trail) {
     const status = !anchor
       ? 'waiting'

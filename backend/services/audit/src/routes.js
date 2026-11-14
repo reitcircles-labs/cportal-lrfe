@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import {
+  BadRequestError,
   domain,
   OFFSET_SCHEMA,
   organisationOf,
@@ -198,6 +199,44 @@ export async function auditRoutes(
       },
     },
     async req => proofs.recordProof(req.body.recordId, req.body.version),
+  );
+
+  // the proof of a trail entry by the id of its event (CB-33): the record service of the pack only,
+  // for the proof of a chain-of-title entry it published (shipping records' title proof)
+  app.post(
+    '/audit/anchoring/entry-proof',
+    {
+      onRequest: app.requireService(
+        ...(recordService ? [recordService.name] : []),
+      ),
+      // refused before the schema, which would read a number as its digits and drop other fields:
+      // the body is the event id, as text, and nothing else
+      preValidation: async req => {
+        const body = req.body;
+        const onlyEventId =
+          body !== null &&
+          typeof body === 'object' &&
+          Object.keys(body).length === 1 &&
+          Object.hasOwn(body, 'eventId') &&
+          typeof body.eventId === 'string';
+        if (!onlyEventId) {
+          throw new BadRequestError(
+            'Give the event id (eventId) as text, and nothing else',
+          );
+        }
+      },
+      schema: {
+        body: {
+          type: 'object',
+          required: ['eventId'],
+          additionalProperties: false,
+          properties: {
+            eventId: {type: 'string', minLength: 1, maxLength: 100},
+          },
+        },
+      },
+    },
+    async req => proofs.entryProofByEvent(req.body.eventId),
   );
 
   // ------------------------------------------------ anchorings (API-671): every signed-in user

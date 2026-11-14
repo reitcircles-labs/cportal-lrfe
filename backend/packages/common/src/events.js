@@ -27,7 +27,9 @@ import {currentTransaction} from './db.js';
  * moment. Without an outbox, events behave as before: published as they happen, and delivered in
  * this service only while NATS is unreachable.
  *
- * Envelope: { id, type, source, time, actor: {id, name, org?}, data }
+ * Envelope: { id, type, source, time, actor: {id, name, org?}, data }. The id is new for each
+ * event, unless the publisher gives one (`publish(…, { id })`, a uuid): a service that must find
+ * its event again later, e.g. on the audit trail (CB-33), names it itself.
  */
 export function createEventBus({
   driver = 'log',
@@ -46,9 +48,9 @@ export function createEventBus({
   const consumers = [];
   const live = new WeakSet(); // broadcast-only events delivered in this process (memory, log)
 
-  function envelope(type, data, actor) {
+  function envelope(type, data, actor, id) {
     return {
-      id: randomUUID(),
+      id: id ?? randomUUID(),
       type,
       source,
       time: new Date().toISOString(),
@@ -89,8 +91,8 @@ export function createEventBus({
   return {
     driver,
     outbox,
-    async publish(type, data = {}, {actor, durable: keep = true} = {}) {
-      const event = envelope(type, data, actor);
+    async publish(type, data = {}, {actor, durable: keep = true, id} = {}) {
+      const event = envelope(type, data, actor, id);
       if (!keep) live.add(event);
       if (driver === 'memory') await deliver(event);
       else if (driver === 'log') {

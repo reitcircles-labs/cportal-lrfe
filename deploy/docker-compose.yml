@@ -294,6 +294,8 @@ services:
       LRFE_BL_FORMATS: ${LRFE_BL_FORMATS:-dcsa-3.0}
       # the B/L title modules that are on, comma-separated; empty = all (backend/domains/shipping/docs/title-states.md)
       LRFE_BL_MODULES: ${LRFE_BL_MODULES:-}
+      # the audit service, which gives the proof of a chain-of-title entry on the blockchain (CB-33)
+      AUDIT_URL: http://audit:3506
     healthcheck: *healthcheck
     depends_on:
       db-setup: { condition: service_completed_successfully }

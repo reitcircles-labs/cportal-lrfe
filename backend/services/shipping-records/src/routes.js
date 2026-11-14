@@ -302,6 +302,32 @@ export async function recordsRoutes(app, {service}) {
     return app.titles.keys();
   });
 
+  // a B/L's title proof (lrfe-title-proof/1, CB-33): its chain of title, the platform's keys and
+  // the proof of the last entry (or entry `seq`) on the blockchain, for the parties who see the
+  // title: the carrier, the current holder, the consignee
+  app.get(
+    '/records/:id/title/proof',
+    {
+      onRequest: canRead,
+      schema: {
+        ...idParams(),
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {seq: {type: 'integer', minimum: 1}},
+        },
+      },
+    },
+    async req => {
+      if (!app.titles) {
+        throw new AppError(503, 'The chain of title is not available');
+      }
+      return app.titles.proof(req.params.id, actorOf(req), {
+        seq: req.query.seq,
+      });
+    },
+  );
+
   // every committed version's seal, oldest first, for the audit service's backfill
   app.get(
     '/records/seals',

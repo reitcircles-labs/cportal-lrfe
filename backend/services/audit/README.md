@@ -431,6 +431,13 @@ An ownership extract's PDF (extracts service, API-691) has the proof of its vers
 `{ proof, explorerUrl }`, the proof as `GET /audit/proofs/record-version/:id` gives it and the
 evidence pack holds it (`proofs/record-v<n>.json`).
 
+A B/L's title proof (shipping, CB-33) holds the trail-entry proof of its last chain-of-title entry:
+`POST /audit/anchoring/entry-proof { eventId }`, for the token of the pack's record service only
+(shipping-records; land-records on a land install), answers the trail-entry proof of the entry the
+event made, as `GET /audit/proofs/trail-entry/:seq` gives it (`waiting` before the anchoring); 404
+while the event is not on the trail. The entries' events (`records.title.<command>`) are ordinary
+trail entries of the B/L (`record:<id>`): no leaf type of their own.
+
 **The offline verifier** (`verifier/lrfe-verify.mjs`) checks a proof file with no access to the
 portal: one file, Node 18 or later, nothing to install. It recomputes the leaf (for a trail entry,
 the entry's hashes and the chain to the checkpoint), the path to the root, and reads the
@@ -489,6 +496,19 @@ public check (the QR code) can. For banks and conveyancers: the user guide
 [Checking an ownership extract](../../../angular-app/docs/user-guide/checking-an-ownership-extract.md).
 Tested in `tests/extract-verify.test.js`, with PDFs made by the extracts service's own builder and
 test seal.
+
+**A B/L's title proof** (shipping, CB-33): `node lrfe-verify.mjs title-proof.json --address
+<published wallet> --title-key <published key set fingerprint>`, the file as
+`GET /api/records/:id/title/proof` gives it (`lrfe-title-proof/1`). It checks the chain of title
+(each entry linked to the one before and intact), every entry's signature (ES256) against the
+bundle's key set, with `--title-key` that this key set is the platform's (SHA-256 hex of its
+canonical JSON; colons and capitals accepted), that the bundle's last entry is exactly the one in
+the anchor's trail entry, and that trail-entry proof as a proof file is checked. It prints the
+holder and the state after that entry. A bundle made before the anchoring (`anchor: {pending:
+true}`) is NOT VALID with only `anchored` failing: the chain is checked, not yet on the
+blockchain. In code: `verifyTitleProof(bundle, {address, titleKey})`. The bundle and the entries:
+[chain of title](../../domains/shipping/docs/chain-of-title.md#the-title-proof-cb-33). Tested in
+`tests/title-proof-verify.test.js`.
 
 **The anchoring status next to each version.** land-records' History (`GET /records/:id/history`)
 and edrms' documents (`GET /documents/:id`, for users) show each version's status: `waiting` for the

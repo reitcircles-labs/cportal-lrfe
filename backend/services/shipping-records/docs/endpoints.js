@@ -74,6 +74,13 @@ export const ENDPOINTS = {
       description:
         'The B/L as the list has it, with `current` and `draft` (each a version with its data, or null) and `draftDiff` (always null). 404 for a B/L of another organisation.',
     },
+    'GET /records/{id}/title/proof': {
+      tag: 'Records',
+      summary:
+        "A B/L's title proof: its chain of title, signed, with the last entry's proof on the blockchain",
+      description:
+        "`seq` (optional, from 1): the proof of that entry instead of the last. `{ format: 'lrfe-title-proof/1', recordId, recordNo, entries, jwks, anchor, latest, latestSeq }`: the chain-of-title entries up to the one proven (never the document), the platform's public keys (as `GET /records/title/keys`), and `anchor`, the audit service's trail-entry proof of that entry's event (`lrfe-audit-proof/1`) once it is anchored, `{ pending: true }` before. `latest`: whether the entry is the B/L's last; `latestSeq`: the last. Checked offline with the audit verifier (`lrfe-verify.mjs title-proof.json --title-key …`). For the carrier, the current holder and the consignee; 404 \"B/L not found\" for any other organisation and before issue, 404 for a `seq` beyond the chain, 503 while the proof on the blockchain cannot be read.",
+    },
     'GET /records/{id}/versions': {
       tag: 'Records',
       summary:

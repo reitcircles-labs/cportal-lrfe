@@ -118,12 +118,13 @@ async function openPostgres() {
 /**
  * The service behind its HTTP app on a store: `as(user)` gives that user's auth header,
  * `published` every event. With a `signer`, the title service (CB-31) signing its chain entries
- * with it (CB-32) is on the app too.
+ * with it (CB-32) is on the app too; `audit` is its client of the audit service, which gives the
+ * trail-entry proof of an entry's event (CB-33).
  * @param {{open: function(): Promise<object>}} store
- * @param {{formats?: ReadonlyArray<object>, signer?: object}} [options]
+ * @param {{formats?: ReadonlyArray<object>, signer?: object, audit?: object}} [options]
  * @return {Promise<object>}
  */
-export async function makeHttp(store, {formats, signer} = {}) {
+export async function makeHttp(store, {formats, signer, audit} = {}) {
   const {repo, atomic, close, sequelize} = await store.open();
   const bus = createEventBus({driver: 'memory', source: 'shipping-records'});
   const events = atomic ? {...bus, atomic} : bus;
@@ -143,6 +144,7 @@ export async function makeHttp(store, {formats, signer} = {}) {
       modules: modulesFromSettings({}),
       clock: makeClock(),
       signer,
+      audit,
     });
   }
   const app = await buildApp({service, titles, jwtSecret: SECRET});

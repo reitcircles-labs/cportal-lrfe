@@ -4,6 +4,7 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  sha256Hex,
   signJws,
 } from '@lrfe/common';
 import {billOfLadingHash} from '@lrfe/domain-shipping/bill-of-lading';
@@ -72,6 +73,50 @@ function notSetUp() {
     'Title commands are not available yet: the platform signature is not set up. Tell the administrator.',
     {code: 'not-set-up'},
   );
+}
+
+/** The format of a title proof bundle (docs/chain-of-title.md of the shipping pack). */
+export const TITLE_PROOF_FORMAT = 'lrfe-title-proof/1';
+
+/** The type of the event a chain entry is published as, before its command. */
+const TITLE_EVENT_PREFIX = 'records.title.';
+
+/**
+ * The id of the event a chain entry is published as: a uuid made from the B/L and the entry's seq
+ * (SHA-256, RFC 9562 version 8), so the service finds the entry's event on the audit trail again
+ * without storing it, and a replayed event is the same event.
+ * @param {string} recordId
+ * @param {number} seq
+ * @return {string}
+ */
+export function titleEventIdOf(recordId, seq) {
+  const hex = sha256Hex(`${TITLE_EVENT_PREFIX}${recordId}:${seq}`);
+  // RFC 9562 variant: the top two bits of the 17th hex digit are 10.
+  const variantBits = parseInt(hex[16], 16) & 0x3;
+  const variant = (variantBits | 0x8).toString(16);
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `8${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join('-');
+}
+
+/**
+ * The 503 while the proof on the blockchain cannot be read (the audit service down or failing):
+ * never answered as "pending", which would not be true. Shown to users, so no service named.
+ * @param {!Error} cause
+ * @return {!AppError}
+ */
+function proofUnavailable(cause) {
+  const error = new AppError(
+    503,
+    'The proof on the blockchain cannot be read now: try again later.',
+    {code: 'proof-unavailable'},
+  );
+  error.cause = cause;
+  return error;
 }
 
 /**
@@ -144,16 +189,27 @@ export class TitleService {
    *   modules: !ReadonlyArray<string>,
    *   clock?: function(): Date,
    *   signer: ?object,
+   *   audit?: ?{entryProof: function(string): !Promise<object>},
    * }} options `modules`: the title modules on in this install (modulesFromSettings); `signer`:
    *     the platform signer of the chain entries (signerFromEnv of @lrfe/common), null when there
-   *     is none (title commands are then refused with 503)
+   *     is none (title commands are then refused with 503); `audit`: the client of the audit
+   *     service giving the trail-entry proof of an event (./audit-client.js), null when there is
+   *     none (title proofs are then refused with 503)
    */
-  constructor({repo, events, modules, clock = () => new Date(), signer}) {
+  constructor({
+    repo,
+    events,
+    modules,
+    clock = () => new Date(),
+    signer,
+    audit = null,
+  }) {
     this.repo = repo;
     this.events = events;
     this.modules = modules;
     this.clock = clock;
     this.signer = signer ?? null;
+    this.audit = audit;
   }
 
   /**
@@ -249,7 +305,8 @@ export class TitleService {
    * is still the one read; a command that lost the race gets 409 "This B/L changed meanwhile".
    * Each applied command adds one signed entry to the B/L's chain of title (CB-32), signed before
    * anything is written (a failed signature changes nothing) and stored in the same transaction
-   * as the title.
+   * as the title, with its event `records.title.<command>` (CB-33): nothing is published for a
+   * refusal, a lost race or a failed transaction.
    * @param {string} recordId
    * @param {{name: string}} command the command and its arguments
    * @param {{id: string, name?: string, org?: string}} actor the person, with their organisation
@@ -306,10 +363,95 @@ export class TitleService {
       if (!saved) {
         throw changedMeanwhile();
       }
-      await this.repo.appendTitleEntry(entry);
-      // CB-33: its event `records.title.<command>` is published here, in this transaction.
+      const appended = await this.repo.appendTitleEntry(entry);
+      await this.publishEntry(record, appended, actor);
     });
     return this.viewOf(record, saved, actor);
+  }
+
+  /**
+   * Publishes a chain entry as its event `records.title.<command>` (docs/chain-of-title.md of the
+   * shipping pack): the record's id and number, the seq and the full signed entry, never the
+   * document. The audit service puts it on the B/L's trail and anchors it with the trail.
+   * @param {{id: string, recordNo: string}} record
+   * @param {!Object} entry the stored entry
+   * @param {{id: string, name?: string, org?: string}} actor
+   * @return {!Promise<void>}
+   */
+  async publishEntry(record, entry, actor) {
+    await this.events?.publish(
+      `${TITLE_EVENT_PREFIX}${entry.command}`,
+      {recordId: record.id, recordNo: record.recordNo, seq: entry.seq, entry},
+      {
+        actor: {id: actor.id, name: actor.name, org: actor.org},
+        id: titleEventIdOf(record.id, entry.seq),
+      },
+    );
+  }
+
+  /**
+   * A B/L's title proof bundle, `lrfe-title-proof/1` (docs/chain-of-title.md of the shipping
+   * pack): its chain of title up to entry `seq` (by default the last), the platform's public keys,
+   * and the audit's trail-entry proof of that entry's event once anchored (`{pending: true}`
+   * before, and while the event is not on the trail yet). `latest` says whether the entry is the
+   * B/L's last; `latestSeq` names the last. 404 for a B/L the caller does not see or not issued
+   * yet, and for a seq beyond the chain; 503 while the audit service cannot answer.
+   * @param {string} recordId
+   * @param {{org?: string}} actor
+   * @param {{seq?: number}} [options]
+   * @return {!Promise<object>}
+   */
+  async proof(recordId, actor, {seq} = {}) {
+    const {record, stored} = await this.requireVisible(recordId, actor);
+    if (stored === null) {
+      throw notFound();
+    }
+    if (this.signer === null || this.audit === null) {
+      throw notSetUp();
+    }
+    const chain = await this.repo.listTitleEntries(recordId);
+    const latestSeq = chain.length;
+    const selected = seq ?? latestSeq;
+    if (selected > latestSeq) {
+      throw new NotFoundError(
+        `This B/L's chain of title has no entry ${selected}`,
+      );
+    }
+    const jwks = await this.keys();
+    const anchor = await this.anchorOf(titleEventIdOf(recordId, selected));
+    return {
+      format: TITLE_PROOF_FORMAT,
+      recordId,
+      recordNo: record.recordNo,
+      entries: chain.slice(0, selected),
+      jwks,
+      anchor,
+      latest: selected === latestSeq,
+      latestSeq,
+    };
+  }
+
+  /**
+   * The audit's trail-entry proof of an entry's event once anchored, `{pending: true}` while it
+   * waits for the next anchoring or is not on the trail yet; 503 when the audit service cannot
+   * answer.
+   * @param {string} eventId
+   * @return {!Promise<object>}
+   */
+  async anchorOf(eventId) {
+    let proof;
+    try {
+      proof = await this.audit.entryProof(eventId);
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 404) {
+        return {pending: true};
+      }
+      throw proofUnavailable(error);
+    }
+    if (proof?.status === 'waiting') {
+      return {pending: true};
+    }
+    return proof;
   }
 
   /**

@@ -64,6 +64,13 @@ export const ENDPOINTS = {
       description:
         "Body `{ recordId, version }`. `{ proof, explorerUrl }`: the proof as `GET /audit/proofs/record-version/:id` gives it and the evidence pack holds it (`proofs/record-v<n>.json`), and the transaction's page on a public blockchain explorer (null while waiting). 404 when the version is not in the tree.",
     },
+    'POST /audit/anchoring/entry-proof': {
+      tag: 'Proofs',
+      summary:
+        "The proof of the trail entry an event made (the product's record service)",
+      description:
+        "Body `{ eventId }`, nothing else. The trail-entry proof as `GET /audit/proofs/trail-entry/:seq` gives it, for the entry the event made (`status` `waiting` before the anchoring). The shipping records service puts it in a B/L's title proof (`lrfe-title-proof/1`). Only the record service of the install's product (shipping-records, or land-records on a land install). 404 while the event is not on the trail.",
+    },
     'GET /audit/records': {
       tag: 'Sign-off',
       summary: 'The land records list of the Audit screen',

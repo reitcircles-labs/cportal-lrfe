@@ -141,6 +141,18 @@ describe('createEventBus', () => {
     seen.forEach(e => expect(e.actor).to.not.have.property('org'));
   });
 
+  it('publishes with the id a service gives, else a new one (CB-33)', async () => {
+    const bus = createEventBus({driver: 'memory', source: 's'});
+    const seen = [];
+    bus.subscribe('*', e => seen.push(e));
+    const id = '6f1c2a3b-4d5e-8f60-8a1b-2c3d4e5f6a7b';
+    const given = await bus.publish('x', {}, {id});
+    await bus.publish('x');
+    expect(given.id).to.equal(id);
+    expect(seen[0].id).to.equal(id);
+    expect(seen[1].id).to.be.a('string').and.not.equal(id);
+  });
+
   it('a failing subscriber does not break publish', async () => {
     const bus = createEventBus({
       driver: 'memory',

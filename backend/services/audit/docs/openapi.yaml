@@ -554,6 +554,64 @@ paths:
         services:
           - extracts
       x-gateway-path: /api/audit/anchoring/proof
+  /audit/anchoring/entry-proof:
+    post:
+      tags:
+        - Proofs
+      summary: The proof of the trail entry an event made (the product's record service)
+      description: >-
+        Body `{ eventId }`, nothing else. The trail-entry proof as `GET /audit/proofs/trail-entry/:seq` gives it, for the entry the event
+        made (`status` `waiting` before the anchoring). The shipping records service puts it in a B/L's title proof (`lrfe-title-proof/1`).
+        Only the record service of the install's product (shipping-records, or land-records on a land install). 404 while the event is not
+        on the trail.
+
+
+        **Access:** Service token only, from: `land-records`. Browsers cannot call this.
+      operationId: postAuditAnchoringEntryProof
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - eventId
+              additionalProperties: false
+              properties:
+                eventId:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - land-records
+      x-gateway-path: /api/audit/anchoring/entry-proof
   /audit/anchors:
     get:
       tags:
