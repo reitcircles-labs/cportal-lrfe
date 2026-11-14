@@ -292,8 +292,9 @@ export async function audited() {
     jwtSecret: SECRET,
   });
   await auditApp.ready();
+  // `org` only for a person given an organisation (CB-21); the others sign in as before it
   const as = u => ({
-    authorization: `Bearer ${auditApp.jwt.sign({typ: 'access', sub: u.id, name: u.name, perms: u.perms, roles: u.roles})}`,
+    authorization: `Bearer ${auditApp.jwt.sign({typ: 'access', sub: u.id, name: u.name, perms: u.perms, roles: u.roles, ...(u.org ? {org: u.org} : {})})}`,
   });
   const api = async (u, method, url, payload) => {
     const res = await auditApp.inject({method, url, headers: as(u), payload});

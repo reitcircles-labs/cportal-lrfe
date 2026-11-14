@@ -107,6 +107,40 @@ describe('createEventBus', () => {
     expect(typed[0].id).to.be.a('string');
   });
 
+  it('events carry the actor with its organisation (CB-21)', async () => {
+    const bus = createEventBus({driver: 'memory', source: 'identity'});
+    const seen = [];
+    bus.subscribe('*', e => seen.push(e));
+    await bus.publish(
+      'identity.user.invited',
+      {},
+      {actor: {id: 'a1', name: 'Admin', org: 'o1', perms: ['x']}},
+    );
+    expect(seen[0].actor).to.deep.equal({
+      id: 'a1',
+      name: 'Admin',
+      org: 'o1',
+      perms: ['x'],
+    });
+  });
+
+  it('an actor without an organisation keeps the shape it had before organisations (CB-21)', async () => {
+    const bus = createEventBus({driver: 'memory', source: 'identity'});
+    const seen = [];
+    bus.subscribe('*', e => seen.push(e));
+    await bus.publish('x', {}, {actor: {id: 'a1', name: 'Admin', org: null}});
+    await bus.publish('x', {}, {actor: {id: null, name: 'System', org: null}});
+    await bus.publish('x', {}, {actor: {id: 'a2', name: 'Old token'}});
+    await bus.publish('x');
+    expect(seen.map(e => e.actor)).to.deep.equal([
+      {id: 'a1', name: 'Admin'},
+      {id: null, name: 'System'},
+      {id: 'a2', name: 'Old token'},
+      {id: null, name: 'System'},
+    ]);
+    seen.forEach(e => expect(e.actor).to.not.have.property('org'));
+  });
+
   it('a failing subscriber does not break publish', async () => {
     const bus = createEventBus({
       driver: 'memory',

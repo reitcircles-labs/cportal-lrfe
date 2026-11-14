@@ -61,7 +61,7 @@ describe('the catalogue from the domain pack (CB-3)', () => {
       'sod3',
       'sod4',
     ]);
-    expect(catalogue.version).to.equal(4);
+    expect(catalogue.version).to.equal(5);
   });
 
   it("refuses a pack whose entries clash with the platform's or name unknown ones", () => {

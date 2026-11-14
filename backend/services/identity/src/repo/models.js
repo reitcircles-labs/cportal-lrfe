@@ -25,6 +25,8 @@ export function defineModels(sequelize) {
       office: {type: DataTypes.STRING, allowNull: false, defaultValue: ''},
       // the office the user belongs to; null only for national roles (administrators)
       officeId: {type: DataTypes.UUID},
+      // the organisation the user belongs to (CB-19); set for every user once the seed has run
+      organisationId: {type: DataTypes.UUID},
       status: {
         type: DataTypes.ENUM('Active', 'Suspended', 'Invited'),
         allowNull: false,
@@ -138,6 +140,8 @@ export function defineModels(sequelize) {
       },
       address: {type: DataTypes.TEXT, allowNull: false, defaultValue: ''},
       contact: {type: DataTypes.STRING, allowNull: false, defaultValue: ''},
+      // the organisation the office belongs to (CB-19); set for every office once the seed has run
+      organisationId: {type: DataTypes.UUID},
       status: {
         type: DataTypes.ENUM('Active', 'Suspended'),
         allowNull: false,
@@ -147,5 +151,38 @@ export function defineModels(sequelize) {
     opts(),
   );
 
-  return {User, Role, UserRole, SodRule, Setting, Session, AccessEvent, Office};
+  /**
+   * An organisation users and offices belong to (CB-19). Never deleted: suspended instead, which
+   * stops its users from signing in.
+   */
+  const Organisation = sequelize.define(
+    'organisation',
+    {
+      id: {
+        type: DataTypes.UUID,
+        primaryKey: true,
+        defaultValue: DataTypes.UUIDV4,
+      },
+      code: {type: DataTypes.STRING(5), allowNull: false, unique: true},
+      name: {type: DataTypes.STRING, allowNull: false},
+      status: {
+        type: DataTypes.ENUM('Active', 'Suspended'),
+        allowNull: false,
+        defaultValue: 'Active',
+      },
+    },
+    opts(),
+  );
+
+  return {
+    User,
+    Role,
+    UserRole,
+    SodRule,
+    Setting,
+    Session,
+    AccessEvent,
+    Office,
+    Organisation,
+  };
 }

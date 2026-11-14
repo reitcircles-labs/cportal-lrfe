@@ -145,4 +145,10 @@ export const PERMS: readonly Perm[] = [
     label: 'Manage offices',
     desc: 'Add, rename and suspend office locations',
   },
+  {
+    id: 'admin.organisations',
+    group: 'Administration',
+    label: 'Manage organisations',
+    desc: 'Add, rename and suspend organisations',
+  },
 ];

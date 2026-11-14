@@ -1,5 +1,10 @@
 import {readFile} from 'node:fs/promises';
-import {domain, OFFSET_SCHEMA, recordServiceOf} from '@lrfe/common';
+import {
+  domain,
+  OFFSET_SCHEMA,
+  organisationOf,
+  recordServiceOf,
+} from '@lrfe/common';
 import {proofKinds} from './proof.service.js';
 import {CLOSE_OUTCOMES} from './signoff.service.js';
 import {LIST_FILTERS} from './audit-list.service.js';
@@ -27,7 +32,7 @@ export async function auditRoutes(
   // the product's record service, as the domain pack names it (CB-4); none for a product without records
   const recordService = recordServiceOf(proofs?.pack ?? domain);
 
-  // trail entries: of a record (with its documents' steps), a document, a user, a process
+  // trail entries: of a record (with its documents' steps), a document, a user, a process, an organisation
   app.get(
     '/audit/trail',
     {
@@ -41,6 +46,8 @@ export async function auditRoutes(
             type: {type: 'string', maxLength: 100},
             from: {type: 'string', maxLength: 40},
             to: {type: 'string', maxLength: 40},
+            // the organisation the actor acted for (CB-21)
+            org: {type: 'string', minLength: 1, maxLength: 64},
             limit: {type: 'integer', minimum: 1, maximum: 500, default: 100},
             offset: OFFSET_SCHEMA,
           },
@@ -399,9 +406,11 @@ export async function auditRoutes(
 
   // ------------------------------------------------ sign-off and findings (README.md section 5)
   const canSignOff = app.requirePerm('audit.signoff');
+  // with the organisation (CB-21), so sign-offs and findings record it like other events
   const actorOf = req => ({
     id: req.user.sub,
     name: req.user.name,
+    org: organisationOf(req),
     perms: req.user.perms || [],
   });
   const uuid = {type: 'string', format: 'uuid'};

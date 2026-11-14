@@ -152,6 +152,21 @@ submitted version. land-records runs it in `services/land-records/tests/contract
 process over `app.inject`. Details in
 [`backend/packages/record-contract/README.md`](../../backend/packages/record-contract/README.md).
 
+## Organisations (CB-18)
+
+Every office and every user belongs to an **organisation**, kept by identity (its README,
+"Organisations"). A land install has one, the default organisation; a product with outside parties
+(carriers, banks) adds more.
+
+- **Reading the caller's organisation.** A product or shared service takes it from the verified
+  token with `organisationOf(request)` from `@lrfe/common` (null for a service, an anonymous call or
+  a token issued before CB-20), or from `actorOf(request)`, which returns `{id, name, org}`. Never
+  read it from the request body or a query parameter.
+- **Audit.** Events carry the actor with its `org` when it has one, so the audit trail hashes and
+  anchors who acted for which organisation (CB-21; audit README §1).
+- **Default organisation.** Identity creates it at start when there is none, named from
+  `LRFE_ORG_NAME`, and keeps its id in the setting `organisations.default`.
+
 ## Fixed names: never renamed
 
 Existing installs and the evidence they have already published depend on these names and formats.

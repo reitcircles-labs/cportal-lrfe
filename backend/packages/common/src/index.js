@@ -30,6 +30,7 @@ export {setUpDatabase, waitForDatabase} from './db-setup.js';
 export {
   authPlugin,
   actorOf,
+  organisationOf,
   describeGuard,
   signServiceToken,
   createServiceTokenSigner,

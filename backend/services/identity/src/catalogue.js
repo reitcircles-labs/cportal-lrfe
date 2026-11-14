@@ -110,6 +110,13 @@ const PLATFORM_PERMS = [
     desc: 'Add, rename and suspend office locations',
     since: 2,
   },
+  {
+    id: 'admin.organisations',
+    group: 'Administration',
+    label: 'Manage organisations',
+    desc: 'Add, rename and suspend the organisations users and offices belong to',
+    since: 5,
+  },
 ];
 
 /**
@@ -130,6 +137,7 @@ const PLATFORM_ROLES = [
       'admin.roles',
       'admin.policies',
       'admin.offices',
+      'admin.organisations',
     ],
   },
 ];
@@ -158,7 +166,7 @@ const PLATFORM_SOD_RULES = [
  * hold it by default, once, and never touches it again (an administrator may have removed it
  * since). The version is the highest of this one and every `since` of the pack.
  */
-const PLATFORM_CATALOGUE_VERSION = 4;
+const PLATFORM_CATALOGUE_VERSION = 5;
 
 export const ACCESS_KINDS = [
   'role',
@@ -167,11 +175,37 @@ export const ACCESS_KINDS = [
   'denied',
   'session',
   'office',
+  'organisation',
 ];
 
 /** Offices: locations users belong to. A code is fixed once created (it will appear in numbers). */
 export const OFFICE_TYPES = ['registry', 'external'];
 export const OFFICE_CODE_PATTERN = '^[A-Z]{2,5}$';
+/**
+ * Organisations: who users and offices belong to (CB-19). An install starts with one, the default
+ * organisation; a product with outside parties (carriers, banks) adds more. Codes follow the
+ * office pattern and are fixed once created.
+ */
+export const ORGANISATION_CODE_PATTERN = OFFICE_CODE_PATTERN;
+
+/**
+ * A code for the default organisation, from its name: the initials of its words (at most five),
+ * e.g. "Deeds Registry" → "DR"; "ORG" when the name gives fewer than two letters.
+ * @param {string} name
+ * @return {string}
+ */
+export function organisationCodeOf(name) {
+  const initials = String(name || '')
+    .normalize('NFD')
+    .replace(/[^A-Za-z\s]/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word[0].toUpperCase())
+    .join('')
+    .slice(0, 5);
+  return initials.length >= 2 ? initials : 'ORG';
+}
+
 /** Roles whose holders may have no office ("national"); everyone else is invited into one. */
 export const NATIONAL_ROLES = ['adm'];
 

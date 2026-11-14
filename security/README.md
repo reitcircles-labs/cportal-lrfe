@@ -27,6 +27,9 @@ key is needed.
 reports as the artefact `pentest-reports` for 14 days, but does not fail on them. It fails only when
 the install or a scanner did not work. To make a high finding fail the job, set
 `PENTEST_BLOCKING: '1'` in the job (or pass `--blocking`), once the false positives are sorted out.
+When the job fails but the same scan passes on a computer (below), re-run the job before changing
+any code: the cause is then usually the runner (an image download or build), and `run.log` in the
+artefact says which step stopped.
 
 ## Running it on a computer
 

@@ -1,5 +1,5 @@
 import {strict as assert} from 'node:assert';
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {createEventBus} from '@lrfe/common';
 import {TrailService} from '../src/trail.service.js';
 import {createMemoryRepo} from '../src/repo/memory.js';
@@ -596,6 +596,186 @@ describe('searching the trail by user (API-673)', () => {
         })
       ).statusCode,
       403,
+    );
+    await app.close();
+  });
+});
+
+describe('the organisation in the trail (CB-21)', () => {
+  const sha256 = s => createHash('sha256').update(s).digest('hex');
+  const ministry = {id: 'u2', name: 'Aina Mwandingi', org: 'org-ministry'};
+  const council = {id: 'u5', name: 'Petrus Hamutenya', org: 'org-council'};
+
+  /** Events through the real event bus, so the envelope shapes the actor as in production. */
+  async function publishedTrail() {
+    const ctx = makeTrail();
+    const bus = createEventBus({driver: 'memory', source: 'land-records'});
+    const pending = [];
+    bus.subscribe('*', e => pending.push(ctx.trail.record(e)));
+    const publish = async (type, data, actor) => {
+      await bus.publish(type, data, actor === undefined ? {} : {actor});
+      await Promise.all(pending.splice(0));
+    };
+    return {...ctx, publish};
+  }
+
+  it('an entry written before organisations hashes exactly as it always did', () => {
+    const old = {
+      seq: 1,
+      eventId: 'e-old',
+      type: 'records.record.created',
+      source: 'land-records',
+      time: '2026-10-01T08:00:00.000Z',
+      actor: {id: 'u7', name: 'Josef Gawaseb'},
+      subjects: ['record:r1', 'user:u7'],
+      data: {recordId: 'r1'},
+    };
+    // the canonical JSON written out by hand: the hashing itself has not changed
+    assert.equal(
+      contentHash(old),
+      sha256(
+        '{"actor":{"id":"u7","name":"Josef Gawaseb"},"data":{"recordId":"r1"},"eventId":"e-old",' +
+          '"seq":1,"source":"land-records","subjects":["record:r1","user:u7"],' +
+          '"time":"2026-10-01T08:00:00.000Z","type":"records.record.created"}',
+      ),
+    );
+  });
+
+  it('a new event is stored and hashed with the organisation the actor acted for', async () => {
+    const {repo, trail, publish} = await publishedTrail();
+    await publish('records.record.created', {recordId: 'r1'}, ministry);
+    const [entry] = repo.entries;
+    assert.deepEqual(entry.actor, ministry);
+    assert.equal(entry.contentHash, contentHash(entry));
+    // the organisation is part of the hashed content: without it the entry no longer verifies
+    assert.notEqual(
+      contentHash({...entry, actor: {id: ministry.id, name: ministry.name}}),
+      entry.contentHash,
+    );
+    const [listed] = (await trail.list()).entries;
+    assert.deepEqual(listed.actor, ministry);
+  });
+
+  it('actors without an organisation, and system events, are recorded as before', async () => {
+    const {repo, trail, publish} = await publishedTrail();
+    await publish(
+      'records.record.created',
+      {recordId: 'r1'},
+      {
+        id: 'u7',
+        name: 'Josef Gawaseb',
+        org: null,
+      },
+    );
+    await publish(
+      'records.record.created',
+      {recordId: 'r2'},
+      {
+        id: 'u7',
+        name: 'Josef Gawaseb',
+      },
+    );
+    await publish('bpm.timer.fired', {processId: 'p1'});
+    await trail.checkGap({
+      consumerGap: async () => ({from: 3, to: 4}),
+      publish: async () => {},
+    });
+    assert.deepEqual(
+      repo.entries.map(e => e.actor),
+      [
+        {id: 'u7', name: 'Josef Gawaseb'},
+        {id: 'u7', name: 'Josef Gawaseb'},
+        {id: null, name: 'System'},
+        {id: null, name: 'System'},
+      ],
+    );
+    repo.entries.forEach(e => assert.ok(!('org' in e.actor)));
+    assert.equal((await trail.verify()).intact, true);
+  });
+
+  it('a chain of entries before and after organisations verifies; changing an organisation breaks it', async () => {
+    const {repo, trail, publish} = await publishedTrail();
+    await publish(
+      'records.record.created',
+      {recordId: 'r1'},
+      {
+        id: 'u7',
+        name: 'Josef Gawaseb',
+      },
+    );
+    await publish('records.draft.changed', {recordId: 'r1'}, ministry);
+    await publish('bpm.timer.fired', {processId: 'p1'});
+    await publish('records.draft.changed', {recordId: 'r1'}, council);
+    assert.deepEqual(await trail.verify(), {
+      intact: true,
+      entries: 4,
+      head: {seq: 4, hash: repo.entries[3].hash, time: repo.entries[3].time},
+    });
+    repo.entries[1].actor.org = 'org-council';
+    assert.deepEqual(await trail.verify(), {
+      intact: false,
+      entries: 1,
+      brokenAt: 2,
+      problem: 'changed',
+    });
+    repo.entries[1].actor.org = 'org-ministry';
+    delete repo.entries[3].actor.org;
+    assert.equal((await trail.verify()).brokenAt, 4);
+  });
+
+  it('the trail can be filtered by organisation, with the other filters, over HTTP with audit.view', async () => {
+    const {trail, publish} = await publishedTrail();
+    await publish(
+      'records.record.created',
+      {recordId: 'r1'},
+      {
+        id: 'u7',
+        name: 'Josef Gawaseb',
+      },
+    );
+    await publish('records.draft.changed', {recordId: 'r1'}, ministry);
+    await publish('records.record.created', {recordId: 'r2'}, council);
+    await publish('records.draft.changed', {recordId: 'r2'}, ministry);
+    await publish('bpm.timer.fired', {processId: 'p1'});
+    const typesOf = async q =>
+      (await trail.list(q)).entries.map(e => `${e.type} ${e.data.recordId}`);
+    assert.deepEqual(await typesOf({org: 'org-ministry'}), [
+      'records.draft.changed r1',
+      'records.draft.changed r2',
+    ]);
+    assert.deepEqual(
+      await typesOf({org: 'org-ministry', subject: 'record:r2'}),
+      ['records.draft.changed r2'],
+    );
+    assert.deepEqual(await typesOf({org: 'org-council', type: 'records.'}), [
+      'records.record.created r2',
+    ]);
+    assert.deepEqual(await typesOf({org: 'org-none'}), []);
+    assert.equal((await trail.list({})).total, 5);
+
+    const app = await buildApp({service: trail, jwtSecret: SECRET});
+    await app.ready();
+    const as = perms => ({
+      authorization: `Bearer ${app.jwt.sign({typ: 'access', sub: 'u3', name: 'Auditor', perms})}`,
+    });
+    const get = (url, perms = ['audit.view']) =>
+      app.inject({url, headers: as(perms)});
+    const res = await get('/audit/trail?org=org-ministry');
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().total, 2);
+    assert.ok(res.json().entries.every(e => e.actor.org === 'org-ministry'));
+    assert.equal(
+      (await get('/audit/trail?org=org-ministry', ['record.view'])).statusCode,
+      403,
+    );
+    assert.equal(
+      (await app.inject({url: '/audit/trail?org=org-ministry'})).statusCode,
+      401,
+    );
+    assert.equal((await get('/audit/trail?org=')).statusCode, 400);
+    assert.equal(
+      (await get(`/audit/trail?org=${'x'.repeat(65)}`)).statusCode,
+      400,
     );
     await app.close();
   });

@@ -42,6 +42,11 @@ export function routesOf(recordService) {
       rewritePrefix: '/access-log',
     },
     {prefix: '/api/offices', service: 'identity', rewritePrefix: '/offices'},
+    {
+      prefix: '/api/organisations',
+      service: 'identity',
+      rewritePrefix: '/organisations',
+    },
     {prefix: '/api/documents', service: 'edrms', rewritePrefix: '/documents'},
     {
       prefix: '/api/document-content',

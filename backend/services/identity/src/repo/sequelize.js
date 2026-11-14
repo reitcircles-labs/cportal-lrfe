@@ -3,12 +3,22 @@ import {inTransaction} from '@lrfe/common';
 import {defineModels, SCHEMA} from './models.js';
 
 const POLICIES_KEY = 'security.policies';
-const OFFICE_FIELDS = ['code', 'name', 'type', 'address', 'contact', 'status'];
+const OFFICE_FIELDS = [
+  'code',
+  'name',
+  'type',
+  'address',
+  'contact',
+  'organisationId',
+  'status',
+];
+const ORGANISATION_FIELDS = ['code', 'name', 'status'];
 const USER_FIELDS = [
   'name',
   'email',
   'office',
   'officeId',
+  'organisationId',
   'status',
   'passwordHash',
   'mfaEnrolled',
@@ -56,12 +66,23 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.sync();
       const q = sequelize.getQueryInterface();
       const user = {tableName: 'user', schema: SCHEMA};
-      if (!(await q.describeTable(user)).officeId) {
+      const office = {tableName: 'office', schema: SCHEMA};
+      const userColumns = await q.describeTable(user);
+      if (!userColumns.officeId) {
         await q.addColumn(user, 'officeId', {type: DataTypes.UUID});
       }
-      await sequelize.query(
-        `ALTER TYPE "${SCHEMA}"."enum_access_event_kind" ADD VALUE IF NOT EXISTS 'office'`,
-      );
+      // CB-19: the organisation of each user and office (filled in by the seed)
+      if (!userColumns.organisationId) {
+        await q.addColumn(user, 'organisationId', {type: DataTypes.UUID});
+      }
+      if (!(await q.describeTable(office)).organisationId) {
+        await q.addColumn(office, 'organisationId', {type: DataTypes.UUID});
+      }
+      for (const kind of ['office', 'organisation']) {
+        await sequelize.query(
+          `ALTER TYPE "${SCHEMA}"."enum_access_event_kind" ADD VALUE IF NOT EXISTS '${kind}'`,
+        );
+      }
     },
 
     async getSetting(key) {
@@ -99,6 +120,52 @@ export function createSequelizeRepo(sequelize) {
         ),
       );
       return row.get({plain: true});
+    },
+
+    async listOrganisations() {
+      return (await m.Organisation.findAll({order: [['code', 'ASC']]})).map(r =>
+        r.get({plain: true}),
+      );
+    },
+    async getOrganisation(id) {
+      return (await m.Organisation.findByPk(id))?.get({plain: true}) ?? null;
+    },
+    async getOrganisationByCode(code) {
+      return (
+        (await m.Organisation.findOne({where: {code}}))?.get({plain: true}) ??
+        null
+      );
+    },
+    async createOrganisation(data) {
+      return (await m.Organisation.create(pick(data, ORGANISATION_FIELDS))).get(
+        {plain: true},
+      );
+    },
+    async updateOrganisation(id, patch) {
+      const row = await m.Organisation.findByPk(id);
+      if (!row) return null;
+      await row.update(
+        pick(
+          patch,
+          ORGANISATION_FIELDS.filter(f => f !== 'code'),
+        ),
+      );
+      return row.get({plain: true});
+    },
+    /** Put every office and user without an organisation into this one → { offices, users } counts. */
+    async assignOrganisation(organisationId) {
+      return inTransaction(sequelize, async transaction => {
+        const where = {organisationId: null};
+        const [offices] = await m.Office.update(
+          {organisationId},
+          {where, transaction},
+        );
+        const [users] = await m.User.update(
+          {organisationId},
+          {where, transaction},
+        );
+        return {offices, users};
+      });
     },
 
     async listUsers() {

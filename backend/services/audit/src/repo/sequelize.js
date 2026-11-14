@@ -89,7 +89,7 @@ export function createSequelizeRepo(sequelize) {
     },
   });
 
-  function where({subjects, type, from, to, exceptRecord}) {
+  function where({subjects, type, from, to, org, exceptRecord}) {
     const and = [];
     if (subjects) {
       and.push(
@@ -103,6 +103,9 @@ export function createSequelizeRepo(sequelize) {
     }
     if (from) and.push({time: {[Op.gte]: from}});
     if (to) and.push({time: {[Op.lt]: to}});
+    if (org) {
+      and.push(sequelize.literal(`"actor"->>'org' = ${sequelize.escape(org)}`));
+    }
     if (exceptRecord) {
       and.push(
         sequelize.literal(`NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text("subjects") s
@@ -172,6 +175,11 @@ export function createSequelizeRepo(sequelize) {
                 ("recordId", "toVersion") WHERE "kind" = 'checkpoint'`);
       await sequelize.query(`CREATE UNIQUE INDEX IF NOT EXISTS "signoff_checkpoint_from_once" ON "${SCHEMA}"."signoff"
                 ("recordId", "fromVersion") WHERE "kind" = 'checkpoint'`);
+      // the trail by organisation (CB-21): holds only entries recorded with one. Built once, on the
+      // first start after the upgrade; that build reads the whole trail, so it takes longer on a
+      // large one (audit is not consuming events yet at that point)
+      await sequelize.query(`CREATE INDEX IF NOT EXISTS "trail_entry_actor_org" ON "${SCHEMA}"."trail_entry"
+                (("actor"->>'org'), "seq") WHERE "actor"->>'org' IS NOT NULL`);
     },
 
     async append(eventId, build) {

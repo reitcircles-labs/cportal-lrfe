@@ -15,6 +15,7 @@ const KIND: Record<AccessKind, [string, string]> = {
   denied: ['Denied', 'tag-danger'],
   session: ['Session', 'tag-neutral'],
   office: ['Office', 'tag-info'],
+  organisation: ['Organisation', 'tag-info'],
 };
 
 /** Administration, Access log tab: role, user, office, policy and sign-in events. */

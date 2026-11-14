@@ -21,10 +21,13 @@ export function makeClock(start = Date.parse('2026-09-28T08:00:00Z')) {
 /**
  * Service over a seeded in-memory repo. Demo users all share PASSWORD. MFA policy off unless `mfa`.
  * `clock` defaults to a controllable fake one; pass `() => new Date()` where tokens' real issue
- * times must line up with the service's clock (revocations).
+ * times must line up with the service's clock (revocations). `repo`: another store (PostgreSQL).
  */
-export async function makeService({mfa = false, clock = makeClock()} = {}) {
-  const repo = createMemoryRepo();
+export async function makeService({
+  mfa = false,
+  clock = makeClock(),
+  repo = createMemoryRepo(),
+} = {}) {
   await seedIdentity(repo, {demoPassword: PASSWORD});
   await repo.savePolicies({
     mfa,

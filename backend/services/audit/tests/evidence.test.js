@@ -7,6 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {
   readPack,
   verifyPack,
+  verifyProof,
   recordSeal,
   documentSeal,
 } from '../verifier/lrfe-verify.mjs';
@@ -811,6 +812,107 @@ describe('evidence pack (API-660)', () => {
         ),
       ),
     );
+  });
+
+  it('a trail mixing entries with and without an organisation (CB-21): pack, proofs and the offline verifier all pass', async () => {
+    const a = await audited();
+    await a.anchor();
+    // the auditor now signs in with an organisation: their finding, sign-off and export record it
+    const audOrg = {...people.aud, org: 'org-ministry'};
+    const f = (
+      await a.api(audOrg, 'POST', '/audit/findings', {
+        recordId: a.record.id,
+        version: 1,
+        description: 'Owner ID number hard to read on T 1502/1996',
+      })
+    ).json();
+    assert.equal(
+      (
+        await a.api(audOrg, 'POST', `/audit/findings/${f.id}/close`, {
+          outcome: 'mistake',
+          answer: 'Readable on the original in the vault',
+        })
+      ).statusCode,
+      200,
+    );
+    assert.equal(
+      (
+        await a.api(audOrg, 'POST', '/audit/signoffs', {
+          recordId: a.record.id,
+          comment: 'Deeds, diagram and owners reconcile',
+        })
+      ).statusCode,
+      201,
+    );
+    await a.anchor();
+    const withOrg = a.repo.entries.filter(e => 'org' in e.actor);
+    assert.deepEqual(
+      withOrg.map(({type, actor: {id, name, org}}) => [type, id, name, org]),
+      [
+        'audit.finding.raised',
+        'audit.finding.closed',
+        'audit.signoff.recorded',
+      ].map(type => [type, 'u3', 'Martha Nakale', 'org-ministry']),
+    );
+    const before = a.repo.entries.find(
+      e => e.type === 'records.record.committed',
+    );
+    assert.ok(!('org' in before.actor));
+    assert.equal((await a.trail.verify()).intact, true);
+
+    // the portal's check and the offline verifier, for an entry of each kind
+    const address = await a.cardano.address();
+    for (const e of [before, withOrg.at(-1)]) {
+      const v = await a.proofs.verify('trail-entry', String(e.seq));
+      assert.equal(v.valid, true, JSON.stringify(v.checks));
+      assert.deepEqual(v.proof.trail.entry.actor, e.actor);
+      const offline = await verifyProof(structuredClone(v.proof), {
+        address,
+        fetchImpl: publicSource(a.driver),
+      });
+      assert.equal(offline.valid, true, JSON.stringify(offline.checks));
+    }
+
+    // the trail of the organisation, over HTTP
+    const listed = (
+      await a.api(audOrg, 'GET', '/audit/trail?org=org-ministry')
+    ).json();
+    assert.deepEqual(
+      listed.entries.map(e => e.seq),
+      withOrg.map(e => e.seq),
+    );
+
+    // the evidence pack, exported by the auditor with an organisation
+    const files = filesOf(await download(a, audOrg));
+    const entries = JSON.parse(files.get('trail/entries.json'));
+    assert.ok(entries.some(e => e.actor.org === 'org-ministry'));
+    assert.ok(entries.some(e => !('org' in e.actor)));
+    const r = await verifyPack(files, {
+      address,
+      fetchImpl: publicSource(a.driver),
+    });
+    assert.equal(r.valid, true, JSON.stringify(r.checks.filter(c => !c.ok)));
+    const exported = a.repo.entries.at(-1);
+    assert.equal(exported.type, 'audit.evidence.exported');
+    assert.equal(exported.actor.org, 'org-ministry');
+
+    // the organisation is hashed: a pack whose entry lost it, or names another, fails
+    const signoff = entries.find(e => e.type === 'audit.signoff.recorded');
+    for (const change of [
+      e => delete e.actor.org,
+      e => (e.actor.org = 'org-council'),
+    ]) {
+      const forged = remanifest(
+        tamper(
+          files,
+          'trail/entries.json',
+          editJson(list => change(list.find(e => e.seq === signoff.seq))),
+        ),
+      );
+      const bad = await verifyPack(forged, {fetchImpl: publicSource(a.driver)});
+      assert.equal(bad.valid, false);
+      assert.ok(failed(bad).includes('trail entries'), failed(bad).join(', '));
+    }
   });
 
   it('only auditors who may export; a record with no committed version has nothing to export', async () => {

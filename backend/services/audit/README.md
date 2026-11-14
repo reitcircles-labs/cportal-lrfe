@@ -56,7 +56,9 @@ tree's order is then the order in which the audit service learned of each seal, 
 depend on.
 
 **Entry** (table `audit.trail_entry`): `seq` (gap-free, 1, 2, 3 …), `eventId` (unique), `type`,
-`source` (service), `time` (the event's, as text exactly as published), `actor` (id, name),
+`source` (service), `time` (the event's, as text exactly as published), `actor` (id, name, and
+`org`, the organisation the actor acted for, only when it has one: CB-21; entries without it, all
+those recorded before, hash and verify as before),
 `subjects` (what it is about, read from the event: `record:<id>`, `document:<id>`, `edrmsNo:<no>`,
 `intake:<id>`, `process:<id>`, `user:<id>`; `src/subjects.js`), the event's `data`, `prevHash`,
 `contentHash`, `hash`, and `recordedAt` (when the audit service wrote it; not hashed).
@@ -85,6 +87,8 @@ steps. `subject=document:<id>` works the same way and shows every record that us
 `subject=user:<id>` returns what the user did, and the events that name them by id (an invitation,
 a version they submitted). Administrators' changes to a user (suspended, roles changed) name the
 user only by name in identity's events today, so they appear under the administrator.
+`org=<id>` (CB-21) keeps only the entries recorded for that organisation; entries without `org`
+never match it.
 
 The order is the order the consumer receives events in (JetStream stream
 order), which is the order they were published, not exactly the order of the database commits in
@@ -686,7 +690,7 @@ the chain showing it.
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /audit/trail?subject=&type=&from=&to=` | `audit.view` | trail entries |
+| `GET /audit/trail?subject=&type=&from=&to=&org=` | `audit.view` | trail entries |
 | `GET /audit/trail/verify` | `audit.view` | recompute the trail's chain |
 | `GET /audit/proofs/{kind}/{id}?version=` | `audit.view` | the proof of an item |
 | `POST /audit/verify` | `audit.view` | verify an item against the chain |

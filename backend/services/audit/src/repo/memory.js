@@ -51,13 +51,14 @@ export function createMemoryRepo() {
   };
 
   const copy = e => structuredClone(e);
-  const matches = (e, {subjects, type, from, to, exceptRecord}) =>
+  const matches = (e, {subjects, type, from, to, org, exceptRecord}) =>
     (!subjects || e.subjects.some(s => subjects.includes(s))) &&
     (!type ||
       e.type === type ||
       (type.endsWith('.') && e.type.startsWith(type))) &&
     (!from || e.time >= from) &&
     (!to || e.time < to) &&
+    (!org || e.actor?.org === org) &&
     (!exceptRecord ||
       !e.subjects.some(s => s.startsWith('record:') && s !== exceptRecord));
 
