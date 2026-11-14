@@ -33,7 +33,8 @@ Nothing runs without a log the user can follow. First of all:
   the design names. One clear test per behaviour, named so a reader sees what it proves.
 - **Where:** the package's `tests/` folder, in its existing style (mocha and chai in the backend;
   Playwright in `e2e/`), with helpers next to the existing ones.
-- **Prove red:** run the new tests. They must fail (or not load) because the code does not exist
+- **Prove red:** run only the new unit tests (never the e2e suite: it runs at the end of the
+  ticket, once the code is done). They must fail (or not load) because the code does not exist
   yet, not because the tests are broken. Log `RED: <n> tests, <n> failing (<why>)`, and fix any
   test that fails for a wrong reason (a typo, a wrong import of existing code).
 - **Style:** the Google TypeScript Style Guide (JS rules for the backend), as for all code.

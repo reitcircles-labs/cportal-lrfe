@@ -37,6 +37,8 @@ The tests come before the code, and the log proves it.
    must fail (or not load) for the expected reason, with counts, e.g.
    `RED: 23 new tests, 23 failing (module not found)`. When the brief says the tests were written
    by the `test-writer` agent, run those instead and log their red result.
+   The red run is **only the newly written unit tests** (e.g. `npx mocha tests/<new>.test.js`),
+   never the e2e suite: e2e runs only at the end of the ticket (`e2e-runner`), once the code is done.
 2. **Green.** Then write the code in small steps, running the tests after each, until all pass;
    log each run's totals. Add a test first for anything new the code needs to handle.
 3. **Never move the goalposts.** After the red run a test changes only when the test itself is
