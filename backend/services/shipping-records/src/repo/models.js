@@ -7,7 +7,7 @@ export const SCHEMA = 'shipping_records';
  * Sequelize models for the `shipping_records` schema (README.md). Every attribute gets its own
  * definition object (Sequelize writes the column name into it).
  * @param {import('sequelize').Sequelize} sequelize
- * @return {{Record: object, Version: object, Title: object}}
+ * @return {{Record: object, Version: object, Title: object, TitleEntry: object}}
  */
 export function defineModels(sequelize) {
   /**
@@ -139,5 +139,40 @@ export function defineModels(sequelize) {
     tableOptions(),
   );
 
-  return {Record, Version, Title};
+  // The chain of title of a B/L (CB-32, docs/chain-of-title.md of the shipping pack): one entry
+  // per command applied to its title, written in the same transaction as the title. Entries are
+  // never changed: each holds the hash of the one before and the platform's signature (JWS).
+  // Its primary key (recordId, seq) refuses a second entry with the same number.
+  const TitleEntry = sequelize.define(
+    'bl_title_entry',
+    {
+      recordId: {
+        type: DataTypes.UUID,
+        primaryKey: true,
+        references: {model: Record, key: 'id'},
+      },
+      // 1, 2, ... per B/L
+      seq: {type: DataTypes.INTEGER, primaryKey: true},
+      command: {type: DataTypes.STRING, allowNull: false},
+      // the person who ran the command: {id, name, org}
+      actor: {type: DataTypes.JSONB, allowNull: false},
+      // the holder before and after the command (organisation ids)
+      from: text(),
+      to: text(),
+      endorsement: {type: DataTypes.STRING, allowNull: false},
+      // the billOfLadingHash of the issued version
+      documentHash: {type: DataTypes.STRING(64), allowNull: false},
+      at: {type: DataTypes.DATE, allowNull: false},
+      // the entryHash of the entry before; null for a B/L's first entry
+      previousHash: {type: DataTypes.STRING(64)},
+      // SHA-256 of the canonical JSON of the entry without entryHash and signature
+      entryHash: {type: DataTypes.STRING(64), allowNull: false},
+      // the platform's key that signed it, and its compact JWS over the same content
+      kid: {type: DataTypes.STRING, allowNull: false},
+      signature: {type: DataTypes.TEXT, allowNull: false},
+    },
+    tableOptions(),
+  );
+
+  return {Record, Version, Title, TitleEntry};
 }

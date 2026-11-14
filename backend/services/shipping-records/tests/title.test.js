@@ -1,4 +1,4 @@
-import {createEventBus} from '@lrfe/common';
+import {createEventBus, createLocalSigner} from '@lrfe/common';
 import {
   billOfLadingHash,
   formatsFromSettings,
@@ -87,7 +87,9 @@ async function makeServices(store, {modules = modulesFromSettings({})} = {}) {
     formats: formatsFromSettings({}),
     clock,
   });
-  const titles = new TitleService({repo, events, modules, clock});
+  // CB-32: every applied command adds a signed chain entry, so the title service needs a signer
+  const signer = await createLocalSigner();
+  const titles = new TitleService({repo, events, modules, clock, signer});
   return {
     repo,
     events,
@@ -95,6 +97,7 @@ async function makeServices(store, {modules = modulesFromSettings({})} = {}) {
     sequelize,
     records,
     titles,
+    signer,
     close: async () => {
       await close?.();
     },
@@ -179,6 +182,7 @@ function racingTitles(ctx) {
     events: ctx.events,
     modules: modulesFromSettings({}),
     clock: ctx.clock,
+    signer: ctx.signer,
   });
 }
 

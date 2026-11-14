@@ -9,6 +9,7 @@ import {
   envInt,
   envOneOf,
   healthCheck,
+  signerFromEnv,
   startService,
 } from '@lrfe/common';
 import {formatsFromSettings} from '@lrfe/domain-shipping/bill-of-lading';
@@ -58,7 +59,10 @@ const events = createEventBus({
   outbox,
 });
 const service = new ShippingRecordsService({repo, events, formats});
-const titles = new TitleService({repo, events, modules});
+// the platform signer of the chain of title (TITLE_SIGNER, README.md "Settings"): none in
+// production without the key store, and title commands are then refused (503)
+const signer = await signerFromEnv(process.env);
+const titles = new TitleService({repo, events, modules, signer});
 
 const app = await buildApp({
   service,

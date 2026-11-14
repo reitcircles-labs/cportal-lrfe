@@ -4,6 +4,7 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  signJws,
 } from '@lrfe/common';
 import {billOfLadingHash} from '@lrfe/domain-shipping/bill-of-lading';
 import {
@@ -12,6 +13,8 @@ import {
   applyTitleCommand,
   kindOf,
 } from '@lrfe/domain-shipping/title';
+
+import {TITLE_ENTRY_TYP, entryHashOf} from './chain.js';
 
 /** The refusals answered 403: the organisation may not run the command. */
 const FORBIDDEN_REFUSALS = new Set([
@@ -56,6 +59,19 @@ function changedMeanwhile() {
   return new ConflictError('This B/L changed meanwhile: read it again', {
     code: 'changed-meanwhile',
   });
+}
+
+/**
+ * The 503 while the platform cannot sign chain entries (production without a signing key): title
+ * commands are refused, never run unsigned. Shown to users, so no settings named.
+ * @return {!AppError}
+ */
+function notSetUp() {
+  return new AppError(
+    503,
+    'Title commands are not available yet: the platform signature is not set up. Tell the administrator.',
+    {code: 'not-set-up'},
+  );
 }
 
 /**
@@ -110,7 +126,7 @@ function canSee(record, stored, organisation) {
   if (stored === null) {
     return record.organisationId === organisation;
   }
-  // CB-32: past holders see it too, once the chain of title records who they are.
+  // CB-34: past holders see it too, from the chain of title.
   const parties = [stored.carrier, stored.holder, stored.consignee];
   return parties.includes(organisation);
 }
@@ -127,13 +143,17 @@ export class TitleService {
    *   events: ?object,
    *   modules: !ReadonlyArray<string>,
    *   clock?: function(): Date,
-   * }} options `modules`: the title modules on in this install (modulesFromSettings)
+   *   signer: ?object,
+   * }} options `modules`: the title modules on in this install (modulesFromSettings); `signer`:
+   *     the platform signer of the chain entries (signerFromEnv of @lrfe/common), null when there
+   *     is none (title commands are then refused with 503)
    */
-  constructor({repo, events, modules, clock = () => new Date()}) {
+  constructor({repo, events, modules, clock = () => new Date(), signer}) {
     this.repo = repo;
     this.events = events;
     this.modules = modules;
     this.clock = clock;
+    this.signer = signer ?? null;
   }
 
   /**
@@ -227,6 +247,9 @@ export class TitleService {
    * Runs a command on a B/L's title (README.md "The title"): `{name, ...arguments}`, e.g.
    * `{name: 'endorse', to: 'org-b', inBlank: false}`. The new title is written only if the title
    * is still the one read; a command that lost the race gets 409 "This B/L changed meanwhile".
+   * Each applied command adds one signed entry to the B/L's chain of title (CB-32), signed before
+   * anything is written (a failed signature changes nothing) and stored in the same transaction
+   * as the title.
    * @param {string} recordId
    * @param {{name: string}} command the command and its arguments
    * @param {{id: string, name?: string, org?: string}} actor the person, with their organisation
@@ -234,6 +257,9 @@ export class TitleService {
    */
   async apply(recordId, command, actor) {
     const {record, stored} = await this.requireVisible(recordId, actor);
+    if (this.signer === null) {
+      throw notSetUp();
+    }
     let engineCommand = command ?? {};
     let issued = null;
     if (stored === null && engineCommand.name === 'issue') {
@@ -248,6 +274,15 @@ export class TitleService {
       });
     }
     const now = this.clock();
+    const entry = await this.signedEntry({
+      recordId,
+      stored,
+      command: engineCommand.name,
+      actor,
+      title: result.title,
+      documentHash: issued?.documentHash ?? stored?.documentHash,
+      at: now,
+    });
     let saved;
     // the title, its chain entry and its event are committed together
     await this.atomic(async () => {
@@ -271,10 +306,72 @@ export class TitleService {
       if (!saved) {
         throw changedMeanwhile();
       }
-      // CB-32: the chain-of-title entry of this command is added here, in this transaction.
+      await this.repo.appendTitleEntry(entry);
       // CB-33: its event `records.title.<command>` is published here, in this transaction.
     });
     return this.viewOf(record, saved, actor);
+  }
+
+  /**
+   * The chain-of-title entry of a command about to be applied (docs/chain-of-title.md of the
+   * shipping pack): the next seq, linked to the B/L's last entry, hashed and signed. The title's
+   * revision counts its entries, so a chain that moved on since the title was read is the race
+   * `apply` loses anyway: 409.
+   * @param {{
+   *   recordId: string,
+   *   stored: ?object,
+   *   command: string,
+   *   actor: {id: string, name?: string, org?: string},
+   *   title: !Object,
+   *   documentHash: string,
+   *   at: !Date,
+   * }} change the stored title before the command (null before issue) and the engine's after it
+   * @return {!Promise<object>} the entry, with its entryHash and signature
+   */
+  async signedEntry({
+    recordId,
+    stored,
+    command,
+    actor,
+    title,
+    documentHash,
+    at,
+  }) {
+    const chain = await this.repo.listTitleEntries(recordId);
+    const revision = stored?.revision ?? 0;
+    if (chain.length !== revision) {
+      throw changedMeanwhile();
+    }
+    const content = {
+      recordId,
+      seq: revision + 1,
+      command,
+      actor: {id: actor.id, name: actor.name ?? null, org: actor.org ?? null},
+      from: stored?.holder ?? null,
+      to: title.holder ?? null,
+      endorsement: title.endorsement,
+      documentHash,
+      at: at.toISOString(),
+      previousHash: chain.at(-1)?.entryHash ?? null,
+      kid: await this.signer.currentKid(),
+    };
+    const signature = await signJws(content, this.signer, {
+      typ: TITLE_ENTRY_TYP,
+      kid: content.kid,
+    });
+    return {...content, entryHash: entryHashOf(content), signature};
+  }
+
+  /**
+   * The platform's public keys of the chain entries' signatures (a JWK set of every key
+   * version), for anyone to verify a chain with; 503 while there is no signer.
+   * @return {!Promise<{keys: !Array<!Object>}>}
+   */
+  async keys() {
+    if (this.signer === null) {
+      throw notSetUp();
+    }
+    return this.signer.jwks();
   }
 
   /**

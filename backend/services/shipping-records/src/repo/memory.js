@@ -96,6 +96,8 @@ export function createMemoryRepo() {
   const records = new Map();
   const versions = [];
   const titles = new Map();
+  /** @type {!Map<string, !Array<object>>} each B/L's chain of title, in order of seq */
+  const entries = new Map();
 
   /**
    * The stored version itself (not a copy), or undefined.
@@ -305,6 +307,31 @@ export function createMemoryRepo() {
       }
       Object.assign(title, clone(patch));
       return clone(title);
+    },
+
+    /**
+     * A B/L's chain of title (CB-32), in order of seq; none before it is issued.
+     * @param {string} recordId
+     * @return {!Promise<!Array<object>>}
+     */
+    async listTitleEntries(recordId) {
+      return clone(entries.get(recordId) ?? []);
+    },
+    /**
+     * Adds an entry to a B/L's chain of title; a second entry with the same seq is refused, as
+     * ./sequelize.js's primary key does.
+     * @param {object} entry
+     * @return {!Promise<object>}
+     */
+    async appendTitleEntry(entry) {
+      const chain = entries.get(entry.recordId) ?? [];
+      if (chain.some(stored => stored.seq === entry.seq)) {
+        throw new ConflictError('This chain of title entry exists already');
+      }
+      chain.push(clone(entry));
+      chain.sort((a, b) => a.seq - b.seq);
+      entries.set(entry.recordId, chain);
+      return clone(entry);
     },
 
     /**

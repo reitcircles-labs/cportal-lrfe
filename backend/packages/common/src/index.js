@@ -50,3 +50,10 @@ export {
   recordServiceOf,
   DEFAULT_DOMAIN,
 } from './domain.js';
+export {
+  signJws,
+  verifyJws,
+  createLocalSigner,
+  createTransitSigner,
+  signerFromEnv,
+} from './jws.js';

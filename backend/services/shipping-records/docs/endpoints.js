@@ -54,6 +54,13 @@ export const ENDPOINTS = {
       description:
         'Body `{ recordIds?, versions?: [{ recordId, versionNumber }], pinning? }`. `{ records: [{ id, recordNo, label }], versions: [{ recordId, versionNumber, documents: [] }], pinnedBy: [] }`: the committed versions asked for; a B/L version pins no documents, so `documents` and `pinnedBy` are empty.',
     },
+    'GET /records/title/keys': {
+      tag: 'Records',
+      summary: 'The public keys of the chain of title (no sign-in)',
+      description:
+        "`{ keys: [{ kty: 'EC', crv: 'P-256', x, y, kid, alg: 'ES256', use: 'sig' }] }`: a JWK set of every version of the platform's signing key, to check the signature of each chain-of-title entry (its `kid` picks the key), also offline. 503 while the platform signature is not set up.",
+      auth: 'public',
+    },
     'GET /records/seals': {
       tag: 'Records',
       summary:

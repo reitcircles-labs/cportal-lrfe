@@ -1,5 +1,6 @@
 import {
   actorOf,
+  AppError,
   BadRequestError,
   ForbiddenError,
   OFFSET_SCHEMA,
@@ -289,6 +290,17 @@ export async function recordsRoutes(app, {service}) {
     },
     async req => service.lookup(req.body),
   );
+
+  // ------------------------------------------------ the chain of title (public)
+
+  // the platform's public keys of the chain-of-title signatures, every key version: anyone may
+  // check a chain with them, offline (CB-32)
+  app.get('/records/title/keys', async () => {
+    if (!app.titles) {
+      throw new AppError(503, 'The chain of title is not available');
+    }
+    return app.titles.keys();
+  });
 
   // every committed version's seal, oldest first, for the audit service's backfill
   app.get(

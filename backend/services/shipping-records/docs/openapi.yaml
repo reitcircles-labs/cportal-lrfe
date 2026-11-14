@@ -552,6 +552,26 @@ paths:
       x-access:
         services:
           - audit
+  /records/title/keys:
+    get:
+      tags:
+        - Records
+      summary: The public keys of the chain of title (no sign-in)
+      description: >-
+        `{ keys: [{ kty: 'EC', crv: 'P-256', x, y, kid, alg: 'ES256', use: 'sig' }] }`: a JWK set of every version of the platform's signing
+        key, to check the signature of each chain-of-title entry (its `kid` picks the key), also offline. 503 while the platform signature
+        is not set up.
+
+
+        **Access:** Public: no token needed.
+      operationId: getRecordsTitleKeys
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
   /records/seals:
     get:
       tags:

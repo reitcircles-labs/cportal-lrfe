@@ -11,6 +11,15 @@ function plain(row) {
   return row ? row.get({plain: true}) : null;
 }
 
+/**
+ * A chain entry as the repository answers it: its time as an ISO string, as it was hashed.
+ * @param {object} row
+ * @return {object}
+ */
+function entryOf(row) {
+  return {...row, at: new Date(row.at).toISOString()};
+}
+
 /** The 409 for a reference the organisation already holds (unique per organisation: models.js). */
 const DUPLICATE_BL =
   'Your organisation already has a B/L with this carrier code and transport document reference';
@@ -284,6 +293,28 @@ export function createSequelizeRepo(sequelize) {
         where: {recordId, revision: expectedRevision},
       });
       return n ? plain(await models.Title.findByPk(recordId)) : null;
+    },
+
+    /**
+     * A B/L's chain of title (CB-32), in order of seq; none before it is issued.
+     * @param {string} recordId
+     * @return {!Promise<!Array<object>>}
+     */
+    async listTitleEntries(recordId) {
+      const rows = await models.TitleEntry.findAll({
+        where: {recordId},
+        order: [['seq', 'ASC']],
+      });
+      return rows.map(row => entryOf(plain(row)));
+    },
+    /**
+     * Adds an entry to a B/L's chain of title, in the caller's transaction; a second entry with
+     * the same seq is refused by the primary key.
+     * @param {object} entry
+     * @return {!Promise<object>}
+     */
+    async appendTitleEntry(entry) {
+      return entryOf(plain(await models.TitleEntry.create(entry)));
     },
 
     /**

@@ -57,11 +57,26 @@ command, actor)` with the modules on in the install:
   the organisation may not run the command (`not-carrier`, `not-holder`, `no-organisation`), 400 for
   a wrong command or argument, 409 for the rest (the module is off, the kind, the state).
 - **Who sees a title:** before issue the record's owner; after it the carrier, the current holder
-  and the consignee (past holders with the chain of title, CB-32). Anyone else gets 404 "B/L not
+  and the consignee (past holders come with CB-34). Anyone else gets 404 "B/L not
   found", as for the record.
 
 `TitleService.read(recordId, actor)` answers the title (null before issue) with the commands the
 caller may run now. Split waits for CB-35, which creates the new B/Ls.
+
+### The chain of title (CB-32)
+
+Every applied command adds one entry to the B/L's **chain of title** (table `bl_title_entry`, one
+row per `recordId` and `seq`, the pair its primary key): who ran it, the holder before and after,
+the endorsement, the document hash and the time, the hash of the entry before (`previousHash`), its
+own hash (`entryHash`) and the platform's signature (a compact JWS, ES256, with the key's `kid`).
+The entry is signed before anything is written, and stored in the same transaction as the title:
+a command whose signature cannot be made, or whose entry cannot be stored, changes nothing. The
+entry fields, the hash, the signature and how they map to DCSA PINT's transfer chain:
+[chain of title](../../domains/shipping/docs/chain-of-title.md).
+
+`verifyTitleChain(entries, jwks)` (`src/chain.js`) checks a chain offline, entry by entry
+(linked, intact, signed), with the platform's public keys from `GET /records/title/keys`. Without
+a signer (production without `TITLE_SIGNER`), title commands are refused with 503.
 
 ## Settings
 
@@ -75,6 +90,9 @@ caller may run now. Split waits for CB-35, which creates the new B/Ls.
 | `EVENT_BUS_DRIVER` | `log` | `log`, `memory` or `nats` (`NATS_URL`); with PostgreSQL, events go through the outbox in the same transaction as the change |
 | `LRFE_BL_FORMATS` | `dcsa-3.0` | the B/L formats that are on, comma-separated; an unknown name stops the start ([formats](../../domains/shipping/docs/formats.md)) |
 | `LRFE_BL_MODULES` | all | the title modules that are on, comma-separated (`waybill`, always on, `negotiable`, `blank-endorsement`, `amendment`, `split`); an unknown name or a module without the one it needs stops the start ([title modules](../../domains/shipping/docs/title-states.md#modules-cb-38)) |
+| `TITLE_SIGNER` | not set | the platform key that signs the chain of title: `bao`, the key in OpenBao's transit engine (below); not set, an in-process key made at start outside production (development, tests, e2e: its entries do not verify after a restart) and **none in production**, where title commands are then refused (503); any other value stops the start |
+| `TITLE_SIGNING_KEY` | | with `TITLE_SIGNER=bao`: the transit key's name, type `ecdsa-p256`; the `kid` of a signature is `<key>:v<version>`, and after a rotation the older versions keep verifying |
+| `BAO_ADDR`, `BAO_ROLE_ID`, `BAO_SECRET_ID_FILE` | | with `TITLE_SIGNER=bao`: OpenBao's address and the service's AppRole (its role ID, and the file holding its secret ID); the AppRole needs `transit/sign/<key>` and read on `transit/keys/<key>`. Wiring OpenBao for shipping-records in `deploy/` is CB-36 |
 | `LOG_LEVEL` | `info` | the log level |
 
 Run it alone with `npm run dev:shipping-records` in `backend/`, or with the others:
@@ -91,6 +109,7 @@ Users need a token with an organisation; a user of no organisation gets 403.
 | `POST /records/:id/versions/:n/submit` | `bl.draft` | the draft goes in review, with the caller as submitter |
 | `GET /records`, `GET /records/:id`, `GET /records/:id/versions`, `GET /records/:id/versions/:n` | `bl.read` (own organisation); the audit service (all), extracts (a record, a version) | the record contract's reading calls |
 | `POST /records/lookup`, `GET /records/seals`, `GET /records/:id/verify` | the audit service | labels and committed versions (a B/L pins no documents: `documents` and `pinnedBy` are empty), the seals in pages, the seal chain recomputed |
+| `GET /records/title/keys` | anyone, no token | the platform's public keys of the chain of title, every key version (a JWK set), for checking a chain offline; through the gateway `/api/records/title/keys` |
 | `POST /records/:id/versions/:n/commit`, `.../reject` | bpm | the review decision, `{by: {id, name}, comment}`: commit refuses the submitter (403, four-eyes, always on) and answers a retry by the same person the same; reject needs a comment |
 
 The generated API description is [`docs/openapi.yaml`](docs/openapi.yaml) (`npm run docs` in
