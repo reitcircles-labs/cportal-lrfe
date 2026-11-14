@@ -1,6 +1,7 @@
 import {Injectable, inject} from '@angular/core';
 import {ApiService} from '@lrfe/platform';
 import type {DraftRequest} from './bl-draft';
+import {endorseRequest} from './bl-endorse';
 import type {
   BlPage,
   BlRecord,
@@ -11,7 +12,7 @@ import type {
 /**
  * The calls of the shipping record service the B/L screens make (gateway prefix /api/records).
  * The organisation is always the session's: no call names one. Drafting, submitting, approving
- * and issuing a B/L since CB-44.
+ * and issuing a B/L since CB-44; endorsing it to a named organisation since CB-45.
  */
 @Injectable({providedIn: 'root'})
 export class BlApi {
@@ -48,7 +49,8 @@ export class BlApi {
   }
 
   /**
-   * The organisations registered and active, whom a new B/L may name (CB-44).
+   * The organisations registered and active, whom a new B/L may name (CB-44) and its holder may
+   * endorse it to (CB-45).
    * @return the organisations
    */
   async organisations(): Promise<PartyOrganisation[]> {
@@ -100,6 +102,20 @@ export class BlApi {
   command(id: string, command: string): Promise<BlTitleView> {
     return this.api.post<BlTitleView>(
       `/records/${encodeURIComponent(id)}/title/${encodeURIComponent(command)}`,
+    );
+  }
+
+  /**
+   * Endorses a B/L the user's organisation holds to a named organisation, which becomes its
+   * holder at once (CB-45).
+   * @param id the B/L's id
+   * @param to the id of the organisation picked
+   * @return the title view after it
+   */
+  endorse(id: string, to: string): Promise<BlTitleView> {
+    return this.api.post<BlTitleView>(
+      `/records/${encodeURIComponent(id)}/title/endorse`,
+      endorseRequest(to),
     );
   }
 }

@@ -38,9 +38,10 @@ export const ENDPOINTS = {
     },
     'GET /records/organisations': {
       tag: 'Records',
-      summary: 'The organisations a new B/L may name',
+      summary:
+        'The organisations a new B/L may name, or its holder endorse it to',
       description:
-        '`{ items: [{ id, code, name }] }`: the organisations registered and active on the platform, as identity lists them (CB-44), for the shipper and consignee of a new B/L (`partyOrganisations`). Needs `bl.draft`; 403 for a user of no organisation; 503 (`details.code` `organisations-unavailable`) while identity cannot answer.',
+        '`{ items: [{ id, code, name }] }`: the organisations registered and active on the platform, as identity lists them (CB-44), only those three fields of each: for the shipper and consignee of a new B/L (`partyOrganisations`) and for the organisation its holder endorses it to (`to`, CB-45). Needs `bl.draft` or `bl.endorse`; 403 for a user of no organisation; 503 (`details.code` `organisations-unavailable`) while identity cannot answer.',
     },
     'POST /records/{id}/versions/{n}/commit': {
       tag: 'Records',

@@ -1,18 +1,34 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
   computed,
   effect,
   inject,
   input,
   signal,
+  untracked,
+  viewChild,
 } from '@angular/core';
 import {DatePipe} from '@angular/common';
 import {RouterLink} from '@angular/router';
-import {AuthService, ToastService, toApiError} from '@lrfe/platform';
+import {
+  AuthService,
+  ConfirmService,
+  ToastService,
+  toApiError,
+} from '@lrfe/platform';
 
 import {BlApi} from './bl.api';
 import {approvalOf, issueCommands, maySubmit, versionNote} from './bl-actions';
+import {
+  endorseConfirmation,
+  endorseStatus,
+  endorseeChoices,
+  mayEndorse,
+} from './bl-endorse';
 import {
   carrierOf,
   chainRows,
@@ -26,7 +42,7 @@ import {
   toneTagClass,
 } from './bl-format';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
-import type {BlRecord, BlTitleView} from './bl.model';
+import type {BlRecord, BlTitleView, PartyOrganisation} from './bl.model';
 import {LatestRequest} from './latest';
 import {injectViewer} from './viewer';
 
@@ -48,6 +64,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
  * allowedCommands; the other commands come with CB-45..46. Before issue the carrier also sees, in
  * the "Approval" panel, the version being approved and then issued: the organisations it is linked
  * to by name, with a warning where the document names a party otherwise (review of CB-44).
+ * The holder endorses the B/L to a named organisation (CB-45, from the CB-12 design): "Endorse
+ * to…" opens the "Endorse" panel, where it picks a registered organisation (not its own, not the
+ * holder) and confirms; that organisation becomes the holder at once and the chain gains the step.
  */
 @Component({
   selector: 'app-bl-detail',
@@ -75,6 +94,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             @for (c of commands(); track c.name) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="run(c.name)">{{ c.label }}</button>
             }
+            @if (canEndorse() && !endorsing()) {
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse()" #endorseOpen>Endorse to…</button>
+            }
           </section>
         </header>
         @if (actionError(); as e) {
@@ -82,6 +104,35 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
         }
         @if (commands().length > 0) {
           <p class="note info" role="note">Issuing signs the B/L for your organisation and cannot be undone: the shipper becomes its first holder.</p>
+        }
+        @if (canEndorse() && endorsing()) {
+          <section class="panel" aria-label="Endorse" #endorsePanel>
+            <div class="panel-head"><h2 tabindex="-1">Endorse to a named organisation</h2></div>
+            <div class="panel-body stack" style="gap:12px">
+              @if (endorseeError(); as e) {
+                <div class="note danger" role="alert">{{ e }}</div>
+              } @else if (endorsees(); as list) {
+                @if (list.length > 0) {
+                  <div class="field" role="radiogroup" aria-labelledby="bl-endorsee-label" aria-describedby="bl-endorsee-hint">
+                    <span id="bl-endorsee-label" class="label">Endorse to</span>
+                    @for (o of list; track o.id) {
+                      <label class="choice">
+                        <input type="radio" name="bl-endorsee" [value]="o.id" [checked]="o.id === endorsee()" (change)="pickEndorsee(o.id)" />
+                        {{ o.name }}
+                      </label>
+                    }
+                    <span id="bl-endorsee-hint" class="small muted">Organisations registered on the platform.</span>
+                  </div>
+                }
+              }
+              <!-- present from the start, filled as the panel changes, so that it is read out -->
+              <p [class]="endorseStatusClass()" role="status" aria-live="polite" style="margin:0">{{ endorseStatusText() }}</p>
+              <div class="row" style="gap:8px">
+                <button type="button" class="btn btn-primary" [disabled]="busy() || endorsee() === ''" (click)="endorse()">Endorse</button>
+                <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="cancelEndorse()">Cancel</button>
+              </div>
+            </div>
+          </section>
         }
         @if (shown()) {
           <section class="panel" aria-label="Approval">
@@ -157,6 +208,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
     .actions { gap: 8px; }
     .note.info { background: var(--color-neutral-100, #f4f6f8); border: 1px solid var(--color-divider); }
     .note:not(.danger):not(.info) { border: 1px solid var(--color-divider); }
+    .field { display: grid; gap: 6px; max-width: 520px; }
+    .field .label { font-weight: 600; font-size: 13px; }
+    .choice { display: flex; gap: 8px; align-items: center; cursor: pointer; }
     .warn { display: block; margin-top: 2px; font-size: 13px; color: var(--danger-fg); }
   `,
   ],
@@ -168,8 +222,17 @@ export class BlDetailComponent {
   private readonly bls = inject(BlApi);
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
+  private readonly confirm = inject(ConfirmService);
   private readonly viewer = injectViewer();
   private readonly latest = new LatestRequest();
+  /** The latest listing of the organisations to endorse to (CB-45 review). */
+  private readonly latestEndorsees = new LatestRequest();
+  private readonly injector = inject(Injector);
+  /** The "Endorse to…" button and the "Endorse" panel, to move the focus (CB-45 review). */
+  private readonly endorseOpen =
+    viewChild<ElementRef<HTMLButtonElement>>('endorseOpen');
+  private readonly endorsePanel =
+    viewChild<ElementRef<HTMLElement>>('endorsePanel');
 
   protected readonly view = signal<BlTitleView | null>(null);
   /** The B/L's record with its open draft, before issue and for its own organisation only. */
@@ -177,6 +240,15 @@ export class BlDetailComponent {
   protected readonly error = signal<string | null>(null);
   protected readonly actionError = signal<string | null>(null);
   protected readonly busy = signal(false);
+
+  /** Whether the "Endorse" panel is open (CB-45). */
+  protected readonly endorsing = signal(false);
+  /** The organisations the holder may endorse to; null while they load. */
+  protected readonly endorsees = signal<PartyOrganisation[] | null>(null);
+  /** Why the organisations cannot be listed, null when they can. */
+  protected readonly endorseeError = signal<string | null>(null);
+  /** The id of the organisation picked, '' for none. */
+  protected readonly endorsee = signal('');
 
   /** The organisations' names by id, for the parties the version is linked to. */
   private readonly names = signal<Record<string, string>>({});
@@ -215,6 +287,30 @@ export class BlDetailComponent {
   protected readonly canSubmit = computed(() =>
     maySubmit(this.draft(), this.auth.perms()),
   );
+  protected readonly canEndorse = computed(() =>
+    mayEndorse(this.view()?.allowedCommands ?? []),
+  );
+  /** The name of the organisation picked, '' for none. */
+  protected readonly endorseeName = computed(() => {
+    const picked = this.endorsees()?.find(o => o.id === this.endorsee());
+    return picked?.name ?? '';
+  });
+  protected readonly confirmation = computed(() =>
+    endorseConfirmation(this.endorseeName()),
+  );
+  /** What the panel announces: loading, nobody to pick, or what happens. */
+  protected readonly endorseStatusText = computed(() => {
+    if (this.endorseeError() !== null) {
+      return '';
+    }
+    return endorseStatus(this.endorsees(), this.endorseeName());
+  });
+  protected readonly endorseStatusClass = computed(() => {
+    if (this.endorseeName() !== '') {
+      return 'status note info';
+    }
+    return 'status muted';
+  });
   protected readonly commands = computed(() =>
     issueCommands(this.view()?.allowedCommands ?? []).map(name => ({
       name,
@@ -304,7 +400,12 @@ export class BlDetailComponent {
 
   constructor() {
     effect(() => {
-      void this.load(this.id());
+      const id = this.id();
+      // only the id is followed: load() reads the view, and following it would load the B/L
+      // again after every load, without end (found by the CB-45 refusal test)
+      untracked(() => {
+        void this.load(id);
+      });
     });
   }
 
@@ -348,23 +449,140 @@ export class BlDetailComponent {
   }
 
   /**
+   * Opens the "Endorse" panel and lists the organisations the holder may pick.
+   * @return when they are listed, or why they cannot be
+   */
+  protected async openEndorse(): Promise<void> {
+    this.endorsing.set(true);
+    this.endorsee.set('');
+    this.actionError.set(null);
+    await this.loadEndorsees();
+    this.focusAfterRender(() => {
+      const panel = this.endorsePanel()?.nativeElement;
+      const first = panel?.querySelector<HTMLElement>('input[type=radio]');
+      const heading = panel?.querySelector<HTMLElement>('h2');
+      (first ?? heading)?.focus();
+    });
+  }
+
+  /**
+   * Lists the organisations the holder may pick, leaving out its own and the current holder;
+   * the one picked stays picked while it is still listed. Only the latest listing is shown.
+   * @return when they are listed, or why they cannot be
+   */
+  private async loadEndorsees(): Promise<void> {
+    const request = this.latestEndorsees.begin();
+    this.endorsees.set(null);
+    this.endorseeError.set(null);
+    try {
+      const organisations = await this.bls.organisations();
+      if (!this.latestEndorsees.isCurrent(request)) {
+        return;
+      }
+      const choices = endorseeChoices(organisations, {
+        self: this.viewer().organisationId,
+        holder: this.view()?.title?.holder ?? null,
+      });
+      this.endorsees.set(choices);
+      if (!choices.some(o => o.id === this.endorsee())) {
+        this.endorsee.set('');
+      }
+    } catch (e) {
+      if (this.latestEndorsees.isCurrent(request)) {
+        this.endorseeError.set(toApiError(e).message);
+      }
+    }
+  }
+
+  /**
+   * Runs a focus move once the page has drawn its latest change.
+   * @param move the move
+   */
+  private focusAfterRender(move: () => void): void {
+    afterNextRender(move, {injector: this.injector});
+  }
+
+  /**
+   * Keeps the organisation picked.
+   * @param id its id, '' for none
+   */
+  protected pickEndorsee(id: string): void {
+    this.endorsee.set(id);
+  }
+
+  /** Closes the "Endorse" panel without endorsing, the focus back on "Endorse to…". */
+  protected cancelEndorse(): void {
+    this.closeEndorse();
+    this.focusAfterRender(() => {
+      this.endorseOpen()?.nativeElement.focus();
+    });
+  }
+
+  /** Closes the "Endorse" panel. */
+  private closeEndorse(): void {
+    this.endorsing.set(false);
+    this.endorsee.set('');
+    // an answer still on its way is no longer shown
+    this.latestEndorsees.begin();
+  }
+
+  /**
+   * Endorses the B/L to the organisation picked, once the user confirms what happens; the panel
+   * closes when it is done. A refusal is shown, and the B/L is read again (someone may have
+   * endorsed it first): the panel stays, its list read again, only while the user may still
+   * endorse it.
+   * @return when the page shows the B/L again
+   */
+  protected async endorse(): Promise<void> {
+    const to = this.endorsee();
+    const name = this.endorseeName();
+    if (to === '') {
+      return;
+    }
+    const label = this.view()?.record.label ?? 'this B/L';
+    const confirmed = await this.confirm.ask({
+      title: `Endorse ${label} to ${name}?`,
+      body: this.confirmation(),
+      confirmLabel: 'Endorse',
+    });
+    if (!confirmed) {
+      return;
+    }
+    const done = await this.act(`B/L endorsed to ${name}`, () =>
+      this.bls.endorse(this.id(), to),
+    );
+    if (done) {
+      this.closeEndorse();
+      return;
+    }
+    await this.load(this.id());
+    if (this.canEndorse()) {
+      await this.loadEndorsees();
+    } else {
+      this.closeEndorse();
+    }
+  }
+
+  /**
    * Runs an action, then shows the B/L as it is now; a refusal is shown on the page.
    * @param done what the toast says once it is done
    * @param action the call
-   * @return when the page shows the B/L again
+   * @return whether the action was done
    */
   private async act(
     done: string,
     action: () => Promise<unknown>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.busy.set(true);
     this.actionError.set(null);
     try {
       await action();
       this.toast.show('success', done, this.view()?.record.label ?? '');
       await this.load(this.id());
+      return true;
     } catch (e) {
       this.actionError.set(toApiError(e).message);
+      return false;
     } finally {
       this.busy.set(false);
     }
@@ -399,6 +617,7 @@ export class BlDetailComponent {
     if (this.view()?.recordId !== id) {
       this.view.set(null);
       this.record.set(null);
+      this.closeEndorse();
     }
     try {
       const view = await this.bls.title(id);

@@ -354,12 +354,20 @@ export async function recordsRoutes(app, {service}) {
   );
 
   // the organisations registered and active on the platform, whom a new B/L may name as its
-  // shipper or consignee (CB-44)
-  app.get('/records/organisations', {onRequest: canDraft}, async req => {
-    // only a user of an organisation drafts B/Ls: 403 for one of none
-    ownerOf(req);
-    return {items: await titlesOf(app).activeOrganisations()};
-  });
+  // shipper or consignee (CB-44) and whom its holder may endorse it to (CB-45: trade staff have
+  // bl.endorse, not bl.draft); only the id, code and name of each
+  app.get(
+    '/records/organisations',
+    {onRequest: app.requireAnyPerm('bl.draft', 'bl.endorse')},
+    async req => {
+      // only a user of an organisation drafts or endorses B/Ls: 403 for one of none
+      ownerOf(req);
+      const organisations = await titlesOf(app).activeOrganisations();
+      return {
+        items: organisations.map(({id, code, name}) => ({id, code, name})),
+      };
+    },
+  );
 
   // ------------------------------------------------ review decisions (bpm)
 

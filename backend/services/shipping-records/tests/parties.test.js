@@ -11,9 +11,9 @@ import {makeHttp, stores} from './helpers.js';
  *
  *   identity client activeOrganisations() → [{id, code, name}]; rejects 503 when identity
  *     cannot be reached, 502 for any other answer than 200
- *   GET /records/organisations   bl.draft, a user of an organisation
+ *   GET /records/organisations   bl.draft or bl.endorse (CB-45), a user of an organisation
  *     200 {items: [{id, code, name}]}   as identity answers them
- *     403 without bl.draft or without an organisation, 401 without a token
+ *     403 without bl.draft or bl.endorse, or without an organisation, 401 without a token
  *     503 while identity cannot answer
  */
 
@@ -161,7 +161,7 @@ describe('GET /records/organisations: whom a new B/L may name (CB-44)', () => {
         expect(res.json()).to.deep.equal({items: ACTIVE});
       });
 
-      it('403 without bl.draft or without an organisation, 401 without a token', async () => {
+      it('403 without bl.draft or bl.endorse, or without an organisation, 401 without a token', async () => {
         const reader = {...clerk, id: 'u-reader', perms: ['bl.read']};
         expect((await list(reader)).statusCode).to.equal(403);
         const noOrg = {id: 'u-none', name: 'Nobody', perms: ['bl.draft']};

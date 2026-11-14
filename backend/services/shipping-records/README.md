@@ -51,10 +51,12 @@ one wins. The B/L is then issued with the title API (`issue`, below). In the shi
 second `bld` user approves what the first drafted. The staff of shippers, banks and buyers get
 `blt` (`bl.read`, `bl.endorse`).
 
-`GET /records/organisations` (`bl.draft`) lists the organisations registered and active on the
-platform, `{items: [{id, code, name}]}`, as identity gives them (`GET /organisations/active`, asked
-with this service's token): whom a new B/L may name as its shipper or consignee
-(`partyOrganisations`); 503 `organisations-unavailable` while identity cannot answer.
+`GET /records/organisations` (`bl.draft` or `bl.endorse`) lists the organisations registered and
+active on the platform, `{items: [{id, code, name}]}` (only those three fields), as identity gives
+them (`GET /organisations/active`, asked with this service's token): whom a new B/L may name as its
+shipper or consignee (`partyOrganisations`), and whom its holder may endorse it to (`to`, CB-45:
+trade staff have `bl.endorse` but not `bl.draft`); 503 `organisations-unavailable` while identity
+cannot answer.
 
 ## The title (the holder ledger)
 
@@ -254,7 +256,7 @@ Users need a token with an organisation; a user of no organisation gets 403.
 | `POST /records/:id/title/:command` | `bl.issue` (issue, void, release, deliver, amend, split) or `bl.endorse` (endorse, transfer, surrender, surrender-for-amendment, switch-to-paper), of an organisation that sees the B/L | runs a title command (above); 404 for an organisation that does not see the B/L, before any other refusal; a refusal records nothing |
 | `GET /records/:id/title/proof` | `bl.read`, of the carrier, a current or past holder or the consignee | the B/L's title proof (`lrfe-title-proof/1`), `?seq=` for an older entry; 404 "B/L not found" for anyone else and before issue, 503 while the proof on the blockchain cannot be read |
 | `POST /records/:id/versions/:n/approve` | `bl.issue` (own organisation), never one of the version's drafters (CB-44) | approves the version in review, `{comment?}`: committed as by `commit`; 403 `own-draft` for a drafter |
-| `GET /records/organisations` | `bl.draft` | the organisations registered and active, which a new B/L may name (CB-44) |
+| `GET /records/organisations` | `bl.draft` or `bl.endorse` | the organisations registered and active (id, code, name), which a new B/L may name (CB-44) and its holder may endorse it to (CB-45) |
 | `POST /records/:id/versions/:n/commit`, `.../reject` | bpm | the review decision, `{by: {id, name}, comment}`: commit refuses the submitter (403, four-eyes, always on) and answers a retry by the same person the same; reject needs a comment |
 
 The generated API description is [`docs/openapi.yaml`](docs/openapi.yaml) (`npm run docs` in
