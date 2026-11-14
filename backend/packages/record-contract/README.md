@@ -1,8 +1,8 @@
 # @lrfe/record-contract
 
 The record contract (CB-4): the calls a product's record service answers for the shared services
-(audit, extracts, bpm), written once. `land-records` answers it today; the bill-of-lading service
-will answer the same calls. The calls, their answers and errors are described in
+(audit, extracts, bpm), written once. `land-records` and `shipping-records` (bills of lading)
+answer it. The calls, their answers and errors are described in
 [`docs/architecture/products.md`](../../../docs/architecture/products.md#the-record-contract-cb-4).
 
 ## What it exports
@@ -16,6 +16,11 @@ will answer the same calls. The calls, their answers and errors are described in
 - **`pathOf(path, params, query)`**: fills `:id` and `:n` and adds the query.
 - **`@lrfe/record-contract/contract-suite`**: `describeRecordContract({name, client, fixture})`,
   the contract test (below). A separate export path, so that a service never loads test code.
+- **`@lrfe/record-contract/seal`**: `sealOf(record, version)` and `verifyChain(record, committed)`,
+  the seal of a committed version and the recomputation of a record's chain (CB-27). Every record
+  service seals with this one formula, because the offline verifier
+  (`services/audit/verifier/lrfe-verify.mjs`, `recordSeal`) repeats it for every product. It uses
+  `canonicalJson` and `sha256Hex` of `@lrfe/common`.
 
 The address of the record service and its name come from the domain pack
 (`recordServiceOf(domain)` in `@lrfe/common`), not from this package.
@@ -45,9 +50,13 @@ describeRecordContract({
   toReject, by}`: a record with a committed version and a document of it, an id no record has,
   two versions submitted for review (`{recordId, versionNumber}`), and the person who decides
   (not their submitter). The suite commits the first and rejects the second.
+- `documentId: null` for a product whose versions pin no documents (bills of lading): lookup is
+  then checked for its shape only (its keys, the record named, the version listed with
+  `documents` a list of `{id, version}`, `pinnedBy` a list).
 
-land-records runs it in process over `app.inject`:
-[`services/land-records/tests/contract.test.js`](../../services/land-records/tests/contract.test.js).
+Each service runs it in process over `app.inject`:
+[`services/land-records/tests/contract.test.js`](../../services/land-records/tests/contract.test.js),
+[`services/shipping-records/tests/contract.test.js`](../../services/shipping-records/tests/contract.test.js).
 
 ## Tests
 

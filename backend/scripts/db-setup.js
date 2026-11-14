@@ -25,6 +25,8 @@ import {createSequelizeRepo as intake} from '../services/intake/src/repo/sequeli
 import {SCHEMA as INTAKE} from '../services/intake/src/repo/models.js';
 import {createSequelizeRepo as landRecords} from '../services/land-records/src/repo/sequelize.js';
 import {SCHEMA as RECORDS} from '../services/land-records/src/repo/models.js';
+import {createSequelizeRepo as shippingRecords} from '../services/shipping-records/src/repo/sequelize.js';
+import {SCHEMA as SHIPPING_RECORDS} from '../services/shipping-records/src/repo/models.js';
 
 const SERVICES = [
   {name: 'identity', schema: IDENTITY, createRepo: identity},
@@ -32,6 +34,11 @@ const SERVICES = [
   {name: 'bpm', schema: BPM, createRepo: bpm},
   {name: 'intake', schema: INTAKE, createRepo: intake},
   {name: 'land-records', schema: RECORDS, createRepo: landRecords},
+  {
+    name: 'shipping-records',
+    schema: SHIPPING_RECORDS,
+    createRepo: shippingRecords,
+  },
   {name: 'audit', schema: AUDIT, createRepo: audit},
   {name: 'extracts', schema: EXTRACTS, createRepo: extracts},
 ];

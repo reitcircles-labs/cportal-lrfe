@@ -5,7 +5,8 @@
  *   npm run dev                      NATS, all seven services, and the API docs on http://localhost:3510
  *   npm run dev -- identity intake   only these (add `nats` for the event bus, `docs` for the API docs,
  *                                    `bao` for OpenBao, `cardano` for the Cardano node; each is added
- *                                    anyway when one of them needs it)
+ *                                    anyway when one of them needs it; `shipping-records` for the
+ *                                    bills of lading, never started by default)
  *
  * NATS (scripts/nats.js, port 4222) is the event bus between the services. When it is part of the
  * run, the services use it (EVENT_BUS_DRIVER=nats, NATS_URL), whatever their .env says; set
@@ -62,6 +63,11 @@ const PROCESSES = {
     cwd: join(ROOT, 'services', 'land-records'),
     args: ['--watch', 'src/index.js'],
   },
+  // the bills of lading (shipping); started only when named
+  'shipping-records': {
+    cwd: join(ROOT, 'services', 'shipping-records'),
+    args: ['--watch', 'src/index.js'],
+  },
   audit: {
     cwd: join(ROOT, 'services', 'audit'),
     args: ['--watch', 'src/index.js'],
@@ -82,7 +88,7 @@ const PROCESSES = {
   docs: {cwd: ROOT, args: ['scripts/docs-server.js'], optional: true},
 };
 const SERVICES = Object.keys(PROCESSES);
-const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 34, 95, 96, 91, 90];
+const COLORS = [31, 92, 37, 36, 33, 35, 32, 94, 93, 34, 95, 96, 91, 90];
 
 const wanted = process.argv.slice(2);
 const unknown = wanted.filter(s => !SERVICES.includes(s));
@@ -126,8 +132,9 @@ function cardanoUsers(selected) {
     );
   });
 }
-// Everything but OpenBao and the Cardano node by default; each when named, or when a selected service needs it
-const ON_DEMAND = ['bao', 'cardano'];
+// Everything but OpenBao, the Cardano node and the shipping service by default; each when named, or
+// (OpenBao, the Cardano node) when a selected service needs it
+const ON_DEMAND = ['bao', 'cardano', 'shipping-records'];
 const selected = wanted.length
   ? SERVICES.filter(s => wanted.includes(s))
   : SERVICES.filter(s => !ON_DEMAND.includes(s));

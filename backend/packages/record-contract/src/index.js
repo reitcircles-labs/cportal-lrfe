@@ -1,8 +1,7 @@
 /**
  * The record contract (CB-4): the calls a product's record service answers for the shared
- * services, written once. `land-records` answers it today; the bill-of-lading service will answer
- * the same calls. Every call needs a service token. docs/architecture/products.md describes the
- * answers.
+ * services, written once. `land-records` and `shipping-records` (bills of lading) answer it.
+ * Every call needs a service token. docs/architecture/products.md describes the answers.
  *
  * The client builds the method and path of each call and leaves the sending to the caller's own
  * transport, so that each service keeps its timeouts and error texts.

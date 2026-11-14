@@ -14,19 +14,21 @@ const run = promisify(execFile);
 const SERVICE_DIR = fileURLToPath(new URL('..', import.meta.url));
 
 describe('the catalogue from the domain pack (CB-3)', () => {
-  it('has only the platform roles and permissions with the shipping pack', async () => {
+  it("has the platform roles and the shipping pack's B/L permissions", async () => {
     const catalogue = catalogueOf(await loadDomainPack('shipping'));
     expect(catalogue.roleIds).to.deep.equal(['adm']);
     expect(catalogue.groups).to.deep.equal([
       'General',
       'Capture',
       'Verification',
+      'Bills of lading',
       'Audit',
       'Administration',
     ]);
     expect(catalogue.permIds.some(p => p.startsWith('record.'))).to.equal(
       false,
     );
+    expect(catalogue.permIds).to.include.members(['bl.read', 'bl.draft']);
     expect(catalogue.sodRules.map(r => r.id)).to.deep.equal(['sod1', 'sod4']);
     expect(catalogue.offices).to.deep.equal([]);
     expect(catalogue.demoUsers).to.deep.equal([]);
@@ -163,7 +165,14 @@ describe('the catalogue from the domain pack (CB-3)', () => {
       {cwd: SERVICE_DIR, env: {...process.env, LRFE_DOMAIN: 'shipping'}},
     );
     expect(JSON.parse(stdout.trim().split('\n').pop())).to.deep.equal({
-      groups: ['General', 'Capture', 'Verification', 'Audit', 'Administration'],
+      groups: [
+        'General',
+        'Capture',
+        'Verification',
+        'Bills of lading',
+        'Audit',
+        'Administration',
+      ],
       roles: ['adm'],
       users: 0,
       // no record service in the pack: no service may read the effective policies (CB-4)

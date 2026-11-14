@@ -21,6 +21,7 @@
     "dev:bpm": "npm run dev -w @lrfe/bpm",
     "dev:intake": "npm run dev -w @lrfe/intake",
     "dev:land-records": "npm run dev -w @lrfe/land-records",
+    "dev:shipping-records": "npm run dev -w @lrfe/shipping-records",
     "dev:audit": "npm run dev -w @lrfe/audit",
     "dev:extracts": "npm run dev -w @lrfe/extracts",
     "dev:search": "npm run dev -w @lrfe/search",

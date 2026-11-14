@@ -1,8 +1,8 @@
 /**
  * The contract test (CB-4): a mocha suite that checks a record service answers every call of
  * the record contract (RECORD_CALLS) with the documented shape. It checks shapes, never a
- * product's values, so every record service runs the same suite: land-records today, the
- * bill-of-lading service next (each in its own tests/contract.test.js).
+ * product's values, so every record service runs the same suite: land-records and
+ * shipping-records (each in its own tests/contract.test.js).
  *
  * Imported from `@lrfe/record-contract/contract-suite`, apart from the client, so that a service
  * never loads test code. It needs mocha's globals (`describe`, `it`, `before`).
@@ -15,7 +15,8 @@ import assert from 'node:assert/strict';
  * @typedef {object} ContractFixture
  * @property {string} recordId a record with at least one committed version
  * @property {number} versionNumber a committed version of that record
- * @property {string} documentId a document that committed version is made of
+ * @property {?string} documentId a document that committed version is made of; null for a
+ *     product whose versions pin no documents (the lookup is then checked for its shape only)
  * @property {string} unknownId an id no record has (in the service's id format)
  * @property {{recordId: string, versionNumber: number}} toCommit a version submitted for review
  * @property {{recordId: string, versionNumber: number}} toReject another version submitted for review
@@ -100,12 +101,13 @@ export function describeRecordContract({name, client: clientOf, fixture}) {
     });
 
     it('lookup: record labels, the documents of versions and the versions pinning documents', async () => {
+      const pinning = given.documentId === null ? [] : [given.documentId];
       const answer = await client.lookup({
         recordIds: [given.recordId],
         versions: [
           {recordId: given.recordId, versionNumber: given.versionNumber},
         ],
-        pinning: [given.documentId],
+        pinning,
       });
       assert.deepEqual(Object.keys(answer).sort(), [
         'pinnedBy',
@@ -122,10 +124,17 @@ export function describeRecordContract({name, client: clientOf, fixture}) {
           v.versionNumber === given.versionNumber,
       );
       assert.ok(made, 'the version asked for has its documents');
-      assert.ok(made.documents.some(d => d.id === given.documentId));
+      assert.ok(Array.isArray(made.documents), 'documents is a list');
       for (const d of made.documents) {
+        assert.equal(typeof d.id, 'string');
         assert.equal(typeof d.version, 'number');
       }
+      assert.ok(Array.isArray(answer.pinnedBy), 'pinnedBy is a list');
+      if (given.documentId === null) {
+        // a product whose versions pin no documents: the shape only
+        return;
+      }
+      assert.ok(made.documents.some(d => d.id === given.documentId));
       const pin = answer.pinnedBy.find(p => p.documentId === given.documentId);
       assert.ok(pin, 'the document is pinned by the committed version');
       assert.equal(pin.recordId, given.recordId);

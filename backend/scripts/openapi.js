@@ -27,6 +27,7 @@ const SERVICES = [
   'bpm',
   'intake',
   'land-records',
+  'shipping-records',
   'audit',
   'extracts',
   'search',
