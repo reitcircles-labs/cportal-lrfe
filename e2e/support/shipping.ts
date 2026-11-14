@@ -115,6 +115,26 @@ export async function signIn(
 }
 
 /**
+ * Accepts the invitation emailed to a user, with the password of invited users (INVITED_PASSWORD),
+ * as the link in the email does (CB-43: also for users invited on the screens).
+ * @param api the request context, on the gateway
+ * @param email the invited user's email
+ */
+export async function acceptInvitation(
+  api: APIRequestContext,
+  email: string,
+): Promise<void> {
+  const token = new URL(
+    appPath((await invitationEmail(email)).link).replace('/#/', '/'),
+    'http://x',
+  ).searchParams.get('token');
+  const accepted = await api.post('/api/invitations/accept', {
+    data: {token, password: INVITED_PASSWORD},
+  });
+  expect(accepted.status(), await accepted.text()).toBe(200);
+}
+
+/**
  * A new organisation with one office and one user of the given role, invited, activated and
  * signed in, all through the API as the administrator.
  * @param api the request context, on the gateway
@@ -161,14 +181,7 @@ export async function organisationWithClerk(
     },
   });
   expect(invited.status(), await invited.text()).toBe(201);
-  const token = new URL(
-    appPath((await invitationEmail(email)).link).replace('/#/', '/'),
-    'http://x',
-  ).searchParams.get('token');
-  const accepted = await api.post('/api/invitations/accept', {
-    data: {token, password: INVITED_PASSWORD},
-  });
-  expect(accepted.status(), await accepted.text()).toBe(200);
+  await acceptInvitation(api, email);
 
   const clerk = await signIn(api, email, INVITED_PASSWORD);
   expect(clerk.organisationId).toBe(organisation.id);

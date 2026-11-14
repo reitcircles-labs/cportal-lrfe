@@ -82,7 +82,10 @@ permission "Manage organisations" add, rename, suspend and reactivate them throu
   renamed afterwards from the setting.
 - **New users and offices.** An invitation may name an organisation; otherwise the user joins the
   office's organisation, else the inviter's, else the default one. A new office joins the default
-  organisation unless one is given. A suspended organisation takes neither.
+  organisation unless one is given. A suspended organisation takes neither. The shipping app's
+  onboarding screens (CB-43) invite a person into the organisation's first active office, and
+  first add one (the organisation's name, type external) when it has none, with the organisation's
+  code, or, when another office has it, the first free code of the same letters (`NML` → `NMLA`).
 - **Suspended** organisations: their users cannot sign in (the same refusal as a suspended account)
   and their open sessions end; the users' own accounts are not changed, so reactivating the
   organisation lets them in again. The organisation of the last active administrators cannot be

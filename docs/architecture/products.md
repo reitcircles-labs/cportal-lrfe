@@ -14,7 +14,7 @@ and CB-5 (the lint guard and this guide).
 | --- | --- | --- |
 | `angular-app/projects/platform` | the web library `@lrfe/platform`: sign-in, API client, roles and permissions, site settings, toasts and dialogs, proofs and blockchain checks, the theme | shared |
 | `angular-app/projects/land-registry` | the land registry web app | land |
-| `angular-app/projects/shipping` | the shipping web app: the shared sign-in and an empty home page so far | shipping |
+| `angular-app/projects/shipping` | the shipping web app: the shared sign-in, the B/Ls of the user's organisation and a B/L's page (CB-42), and, for the platform administrator, the organisations and their staff (CB-43: add an organisation, invite people with the pack's roles; it needs "Manage organisations", "Manage users" and "Manage offices", anyone else is refused, and an administrator who reads no B/Ls lands there) | shipping |
 | `backend/packages/common` | `@lrfe/common`: settings, events, auth, database, app start; loads the domain pack | shared |
 | `backend/packages/domain-pack` | `@lrfe/domain-pack`: what a pack holds, and its check (`checkDomainPack`) | shared |
 | `backend/packages/record-contract` | `@lrfe/record-contract`: the calls a record service answers, their client and the contract test | shared |
