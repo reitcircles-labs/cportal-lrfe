@@ -30,6 +30,11 @@ Check, in this order:
 1. **Correctness:** logic errors, edge cases, error handling, races, security (secrets printed or
    stored, injection, personal data in public answers or logs), data that could be lost.
 2. **"Done when"** of the ticket, from the brief: is each point met, and shown by a test?
+   **Test first:** the builder's log (`~/lrfe-data/<ticket>/build.log`) shows a RED run of the new
+   tests before the production code, then green runs; every "Done when" point and every rule of the
+   design has a test; no test was weakened, skipped or deleted after the red run without a logged
+   reason that holds (compare the tests with the design, and `git diff` of test files against the
+   red version when the log names it). A missing red run or a weakened test is BLOCKING.
 3. **Scope:** nothing beyond the ticket (no extra endpoints, screens, settings).
 4. **Product rules:** no backend tool or vendor names in UI text (Jev, TypeSafe, Gemini, Cardano,
    OpenBao: say "blockchain", "automatic check"); nothing country-specific hard-coded; rare-event

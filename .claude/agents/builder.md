@@ -27,6 +27,23 @@ The user follows every build as it happens. So, first of all:
 5. When you finish, the last lines of `build.log` are the summary: files changed, test totals,
    anything not done or doubtful.
 
+## Test first (TDD): always
+
+The tests come before the code, and the log proves it.
+
+1. **Red.** Before writing any production code, write the test cases from the ticket's "Done when"
+   and the agreed design: every point of "Done when", every rule and refusal of the design, the
+   edge cases (names from outside, races, empty and wrong input). Run them and log the result: they
+   must fail (or not load) for the expected reason, with counts, e.g.
+   `RED: 23 new tests, 23 failing (module not found)`. When the brief says the tests were written
+   by the `test-writer` agent, run those instead and log their red result.
+2. **Green.** Then write the code in small steps, running the tests after each, until all pass;
+   log each run's totals. Add a test first for anything new the code needs to handle.
+3. **Never move the goalposts.** After the red run a test changes only when the test itself is
+   wrong (it contradicts the design or the ticket): log the test, what was wrong and why, before
+   changing it. Never weaken, skip or delete a test to make the code pass; if the design cannot be
+   met, stop and say so in your report.
+
 ## How you build
 
 - Build exactly the design in the brief: no extra endpoints, screens or settings. A point the
