@@ -134,6 +134,24 @@ export function allStreams(pdfDoc) {
 }
 
 /**
+ * The CMS container in a signature's /Contents gap, without its zero padding. The container's
+ * own DER length says where it ends: stripping trailing zero bytes instead would also cut a
+ * container that ends in 0x00, which a signature does by chance.
+ * @param {string} hex The gap's hex digits.
+ * @return {!Buffer} The container's DER.
+ */
+export function cmsDerOf(hex) {
+  const padded = Buffer.from(hex, 'hex');
+  const parsed = asn1js.fromBER(new Uint8Array(padded).buffer);
+  if (parsed.offset === -1) {
+    throw new Error(
+      `no DER container in the signature gap: ${parsed.result.error}`,
+    );
+  }
+  return padded.subarray(0, parsed.offset);
+}
+
+/**
  * The PDF's signature checked, as a PDF reader checks it: the bytes its /ByteRange covers (the
  * whole file but the signature), their digest in the signed attributes, and the signature over the
  * signed attributes with the public key of the certificate in the CMS (node:crypto, and pkijs as a
@@ -150,7 +168,7 @@ export async function checkSignature(bytes) {
     pdf.subarray(after, after + rest),
   ]);
   const hex = pdf.subarray(start + length + 1, after - 1).toString('latin1');
-  const der = Buffer.from(hex.replace(/(00)+$/, ''), 'hex');
+  const der = cmsDerOf(hex);
   const asn1 = asn1js.fromBER(new Uint8Array(der).buffer);
   const contentInfo = new pkijs.ContentInfo({schema: asn1.result});
   const signedData = new pkijs.SignedData({schema: contentInfo.content});
