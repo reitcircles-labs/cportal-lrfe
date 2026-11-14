@@ -105,7 +105,7 @@ label, needs and commands.
 - `modulesFromSettings(source = process.env)` reads the setting. An unknown name, an empty name in
   the list, or a module without the one it needs (e.g. `blank-endorsement` without `negotiable`,
   `split` without `amendment`) stops the start with a message naming it and the known modules.
-  The shipping record service reads it at start from CB-31 on, when it runs the engine.
+  The shipping record service reads it at start and runs the engine with it.
 
 ## Refusals
 

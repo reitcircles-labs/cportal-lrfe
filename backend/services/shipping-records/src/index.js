@@ -12,14 +12,19 @@ import {
   startService,
 } from '@lrfe/common';
 import {formatsFromSettings} from '@lrfe/domain-shipping/bill-of-lading';
+import {modulesFromSettings} from '@lrfe/domain-shipping/title';
 import {buildApp} from './app.js';
 import {ShippingRecordsService} from './records.service.js';
+import {TitleService} from './title.service.js';
 import {createMemoryRepo} from './repo/memory.js';
 import {createSequelizeRepo} from './repo/sequelize.js';
 import {SCHEMA} from './repo/models.js';
 
 // the B/L formats on in this install (LRFE_BL_FORMATS): an unknown name stops the start here
 const formats = formatsFromSettings(process.env);
+// the B/L title modules on in this install (LRFE_BL_MODULES): an unknown name or a module without
+// the one it needs stops the start here
+const modules = modulesFromSettings(process.env);
 
 const checks = [];
 let repo;
@@ -53,9 +58,11 @@ const events = createEventBus({
   outbox,
 });
 const service = new ShippingRecordsService({repo, events, formats});
+const titles = new TitleService({repo, events, modules});
 
 const app = await buildApp({
   service,
+  titles,
   jwtSecret: env('JWT_SECRET'),
   revocations: createRevocationList({events}),
   logger: {level: env('LOG_LEVEL', 'info')},

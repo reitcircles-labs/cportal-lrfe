@@ -105,9 +105,9 @@ Docker, in the folder the bundle is unpacked in.
    service, `shipping-records`, which runs only with the compose profile `shipping`. A shipping
    install therefore sets both, `LRFE_DOMAIN=shipping` and `shipping` in `COMPOSE_PROFILES` (e.g.
    `COMPOSE_PROFILES=postgres,bao,shipping`); a land install sets neither and never starts it.
-   `LRFE_BL_FORMATS` (default `dcsa-3.0`) lists the B/L formats it accepts. The gateway, audit,
-   bpm and extracts reach it at `SHIPPING_RECORDS_URL`, set in the compose file
-   (`http://shipping-records:3509`). Choose the product when installing; never change it on an
+   `LRFE_BL_FORMATS` (default `dcsa-3.0`) lists the B/L formats it accepts, `LRFE_BL_MODULES`
+   (default: all) the B/L title modules on. The gateway, audit, bpm and extracts reach it at
+   `SHIPPING_RECORDS_URL`, set in the compose file (`http://shipping-records:3509`). Choose the product when installing; never change it on an
    install that holds data. The web container also writes it into `/config.json` (`domain`). A
    pack that is missing or broken stops each service at start, with the reason in
    `docker compose logs <service>`. The `web` image holds the land registry's app; the shipping

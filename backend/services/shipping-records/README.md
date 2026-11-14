@@ -9,9 +9,9 @@ The service runs on port 3509, with its own PostgreSQL schema `shipping_records`
 pack names it as its record service (`recordKind`, CB-28), so with `LRFE_DOMAIN=shipping` the
 gateway routes `/api/records` to it (`SHIPPING_RECORDS_URL`), and audit, bpm and extracts call it
 there. In the compose file it runs with the profile `shipping`; the shipping e2e run
-(`npm run test:shipping` in `e2e/`) takes a B/L through it, the gateway and the audit service. Not
-in this service yet: the title, the holder and transfers (L3), and the issue and endorse flows
-(L4).
+(`npm run test:shipping` in `e2e/`) takes a B/L through it, the gateway and the audit service. The
+title of an issued B/L and its holder (L3, the holder ledger) are kept here too; their routes, the
+chain of title and its events are still to come (CB-32 to CB-34).
 
 ## A B/L record
 
@@ -35,6 +35,34 @@ Each change of a version adds one to its `revision`. A change or a submission ma
 someone else changed or submitted since it was read is refused (409, reload and try again): the last
 writer never silently wins, and a submitted version is always the one its event names.
 
+## The title (the holder ledger)
+
+An issued B/L has one **title** (table `bl_title`, CB-31): its kind (`negotiable`, `straight` or
+`waybill`), state, carrier, holder, endorsement, consignee, the organisation it goes back to after
+an amendment (`returnTo`), the committed version issued with its `documentHash`, and a `revision`.
+The record's id is the table's primary key, so the database itself refuses a second title of the
+same B/L.
+
+The title changes only through the state machine of `@lrfe/domain-shipping/title`
+([title states](../../domains/shipping/docs/title-states.md)), run by `TitleService.apply(recordId,
+command, actor)` with the modules on in the install:
+
+- **issue** needs a committed version and no new version in review; it is run by the B/L's owner
+  organisation, which becomes the carrier. The kind comes from the document, the shipper (first
+  holder of a negotiable B/L, required) and the consignee from `partyOrganisations`.
+- **Every command** writes the new title only if its revision is still the one read, in one
+  transaction: of two commands at the same moment, exactly one wins, and the other gets 409 "This
+  B/L changed meanwhile: read it again" (`details.code` `changed-meanwhile`).
+- **A refusal** changes nothing and gives the engine's reason, its code in `details.code`: 403 when
+  the organisation may not run the command (`not-carrier`, `not-holder`, `no-organisation`), 400 for
+  a wrong command or argument, 409 for the rest (the module is off, the kind, the state).
+- **Who sees a title:** before issue the record's owner; after it the carrier, the current holder
+  and the consignee (past holders with the chain of title, CB-32). Anyone else gets 404 "B/L not
+  found", as for the record.
+
+`TitleService.read(recordId, actor)` answers the title (null before issue) with the commands the
+caller may run now. Split waits for CB-35, which creates the new B/Ls.
+
 ## Settings
 
 | Setting | Default | What |
@@ -46,7 +74,7 @@ writer never silently wins, and a submitted version is always the one its event 
 | `JWT_SECRET` | | the secret shared by every service, to check users' and services' tokens |
 | `EVENT_BUS_DRIVER` | `log` | `log`, `memory` or `nats` (`NATS_URL`); with PostgreSQL, events go through the outbox in the same transaction as the change |
 | `LRFE_BL_FORMATS` | `dcsa-3.0` | the B/L formats that are on, comma-separated; an unknown name stops the start ([formats](../../domains/shipping/docs/formats.md)) |
-| `LRFE_BL_MODULES` | all | coming with the title engine (CB-31): the title modules that are on, comma-separated (`waybill`, always on, `negotiable`, `blank-endorsement`, `amendment`, `split`); an unknown name or a module without the one it needs stops the start ([title modules](../../domains/shipping/docs/title-states.md#modules-cb-38)) |
+| `LRFE_BL_MODULES` | all | the title modules that are on, comma-separated (`waybill`, always on, `negotiable`, `blank-endorsement`, `amendment`, `split`); an unknown name or a module without the one it needs stops the start ([title modules](../../domains/shipping/docs/title-states.md#modules-cb-38)) |
 | `LOG_LEVEL` | `info` | the log level |
 
 Run it alone with `npm run dev:shipping-records` in `backend/`, or with the others:

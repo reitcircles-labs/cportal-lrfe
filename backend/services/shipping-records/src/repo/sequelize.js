@@ -248,6 +248,45 @@ export function createSequelizeRepo(sequelize) {
     },
 
     /**
+     * The title of a B/L (CB-31), or null before it is issued.
+     * @param {string} recordId
+     * @return {!Promise<?object>}
+     */
+    async getTitle(recordId) {
+      return plain(await models.Title.findByPk(recordId));
+    },
+    /**
+     * A B/L's first title; null when it has one already (the table's primary key: one title per
+     * B/L, also against a concurrent issue).
+     * @param {object} title the title with its `recordId`
+     * @return {!Promise<?object>}
+     */
+    async createTitle(title) {
+      try {
+        return plain(await models.Title.create(title));
+      } catch (err) {
+        if (err instanceof UniqueConstraintError) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    /**
+     * Changes a B/L's title, only while it is still at the revision the caller read (else null).
+     * A concurrent change waits for the other's transaction, then finds the revision moved on.
+     * @param {string} recordId
+     * @param {object} patch
+     * @param {number} expectedRevision
+     * @return {!Promise<?object>}
+     */
+    async updateTitle(recordId, patch, expectedRevision) {
+      const [n] = await models.Title.update(patch, {
+        where: {recordId, revision: expectedRevision},
+      });
+      return n ? plain(await models.Title.findByPk(recordId)) : null;
+    },
+
+    /**
      * Every committed version's seal, oldest first, after the cursor `after`.
      * @param {{after?: ?{at: string, id: string, version: number}, limit?: number}} [page]
      * @return {!Promise<!Array<{recordId: string, version: number, seal: string, at: Date}>>}

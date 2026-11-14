@@ -292,6 +292,8 @@ services:
       RECORDS_STORE: postgres
       # the B/L formats that are on, comma-separated (backend/domains/shipping/docs/formats.md)
       LRFE_BL_FORMATS: ${LRFE_BL_FORMATS:-dcsa-3.0}
+      # the B/L title modules that are on, comma-separated; empty = all (backend/domains/shipping/docs/title-states.md)
+      LRFE_BL_MODULES: ${LRFE_BL_MODULES:-}
     healthcheck: *healthcheck
     depends_on:
       db-setup: { condition: service_completed_successfully }

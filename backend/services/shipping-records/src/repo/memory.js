@@ -88,13 +88,14 @@ function canUpdate(version, {expectedState, expectedRevision}) {
 /**
  * In-memory shipping-records repository (tests, RECORDS_STORE=memory). Behaviour must match
  * ./sequelize.js: one record per organisation, carrier code and reference, one version per number,
- * state and revision checks on version updates, and commits that change the version and the record
- * in one step.
+ * state and revision checks on version updates, commits that change the version and the record
+ * in one step, and one title per B/L changed only at the revision read.
  * @return {!Object<string, function(...*): !Promise<*>>}
  */
 export function createMemoryRepo() {
   const records = new Map();
   const versions = [];
+  const titles = new Map();
 
   /**
    * The stored version itself (not a copy), or undefined.
@@ -267,6 +268,43 @@ export function createMemoryRepo() {
       Object.assign(version, clone(versionPatch), {state: 'committed'});
       Object.assign(records.get(recordId), clone(recordPatch));
       return {record: clone(records.get(recordId)), version: clone(version)};
+    },
+
+    /**
+     * The title of a B/L (CB-31), or null before it is issued.
+     * @param {string} recordId
+     * @return {!Promise<?object>}
+     */
+    async getTitle(recordId) {
+      return clone(titles.get(recordId)) ?? null;
+    },
+    /**
+     * A B/L's first title; null when it has one already (one title per B/L, as the primary key
+     * of ./sequelize.js's table makes it).
+     * @param {object} title the title with its `recordId`
+     * @return {!Promise<?object>}
+     */
+    async createTitle(title) {
+      if (titles.has(title.recordId)) {
+        return null;
+      }
+      titles.set(title.recordId, clone(title));
+      return clone(title);
+    },
+    /**
+     * Changes a B/L's title, only while it is still at the revision the caller read (else null).
+     * @param {string} recordId
+     * @param {object} patch
+     * @param {number} expectedRevision
+     * @return {!Promise<?object>}
+     */
+    async updateTitle(recordId, patch, expectedRevision) {
+      const title = titles.get(recordId);
+      if (!title || title.revision !== expectedRevision) {
+        return null;
+      }
+      Object.assign(title, clone(patch));
+      return clone(title);
     },
 
     /**
