@@ -41,7 +41,7 @@ with another key without its hash changing.
 - signature: ECDSA P-256 with SHA-256, as r and s (64 bytes), base64url.
 
 The key is the platform's: in production a key that never leaves the key store (an
-`ecdsa-p256` transit key, `kid` = `<key name>:v<version>`); in development and tests an in-process
+`ecdsa-p256` transit key, `bl-title` in `deploy/`, `kid` = `<key name>:v<version>`); in development and tests an in-process
 key. After a key rotation, new entries are signed with the new version and older entries keep
 their `kid`; the public keys of every version are published at `GET /api/records/title/keys`
 (a JWK set, no sign-in).
@@ -112,7 +112,8 @@ event's id is a uuid made from the B/L and the seq (SHA-256 of
 - **title key** (with `--title-key`): the `jwks` is the platform's: its fingerprint, SHA-256 hex of
   its canonical JSON, is the one the platform publishes (colons and case ignored). The key set
   grows with each key rotation, so its fingerprint changes too: check a bundle against the
-  fingerprint published for its period. Publishing the fingerprint with an install is CB-36;
+  fingerprint published for its period. How an install publishes it: `deploy/README.md`, part D,
+  step 7 (CB-36);
 - **anchored entry**: the bundle's last entry is exactly the entry inside the anchor's trail entry
   (type `records.title.<command>`, the same B/L and seq);
 - the anchor's **trail-entry proof** checks as any proof does: the trail to its checkpoint, the

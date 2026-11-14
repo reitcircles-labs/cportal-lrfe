@@ -106,7 +106,11 @@ Docker, in the folder the bundle is unpacked in.
    install therefore sets both, `LRFE_DOMAIN=shipping` and `shipping` in `COMPOSE_PROFILES` (e.g.
    `COMPOSE_PROFILES=postgres,bao,shipping`); a land install sets neither and never starts it.
    `LRFE_BL_FORMATS` (default `dcsa-3.0`) lists the B/L formats it accepts, `LRFE_BL_MODULES`
-   (default: all) the B/L title modules on. The gateway, audit, bpm and extracts reach it at
+   (default: all) the B/L title modules on (`waybill`, always on, `negotiable`,
+   `blank-endorsement`, `amendment`, `split`), and `TITLE_SIGNER` the platform key that signs each
+   B/L's chain of title: `bao`, OpenBao's key `bl-title`, set once it is prepared (part D, step 7);
+   not set (the default), title commands are refused and drafting and reading B/Ls work. shipping-records reaches audit (`AUDIT_URL`)
+   and identity (`IDENTITY_URL`) at the addresses set in the compose file. The gateway, audit, bpm and extracts reach it at
    `SHIPPING_RECORDS_URL`, set in the compose file (`http://shipping-records:3509`). Choose the product when installing; never change it on an
    install that holds data. The web container also writes it into `/config.json` (`domain`). A
    pack that is missing or broken stops each service at start, with the reason in
@@ -245,8 +249,34 @@ its container.
    `docker compose up -d`. Until then no extract can be issued (staff are told the seal is not set
    up); a certificate for another key is refused before anything is signed.
 
+7. **The title signer (shipping installs only).** `docker compose run --rm openbao-setup-shipping`
+   (after step 4, with a token allowed to configure OpenBao) creates the key `bl-title` (ECDSA
+   P-256, never exportable), its policy and the login of shipping-records, in its own volume
+   (`bao-shipping-records`). shipping-records signs every entry of a B/L's chain of title with it,
+   inside OpenBao; the signature's `kid` is `bl-title:v<version>`. Then set `TITLE_SIGNER=bao` in
+   `.env` and run `docker compose up -d`. Until then title commands are refused (staff are told the
+   platform signature is not set up) and everything else works. A land install never runs it: its
+   OpenBao, volumes and services stay as they are.
+
+   **Publish the title key set's fingerprint** with the install, beside the anchoring wallet's
+   address: whoever checks a title proof offline pins the platform's keys with it
+   (`lrfe-verify.mjs title-proof.json --address … --title-key <fingerprint>`). It is the SHA-256
+   of the canonical JSON of `GET /api/records/title/keys`; with the verifier
+   (`services/audit/verifier/lrfe-verify.mjs` of the source repository, Node.js 22):
+
+   ```bash
+   curl -s https://<portal address>/api/records/title/keys -o title-keys.json
+   node --input-type=module -e "import {readFileSync} from 'node:fs'; import {titleKeyFingerprint} from './lrfe-verify.mjs'; console.log(titleKeyFingerprint(JSON.parse(readFileSync('title-keys.json', 'utf8'))))"
+   ```
+
+   The key set holds every version of the key, so the fingerprint **changes at each key rotation**
+   (`bao write -f transit/keys/bl-title/rotate`, with a token): publish the new one, dated, and
+   keep the old ones listed, since a proof is checked against the fingerprint of its period. With
+   several shipping-records replicas, a rotation shows on every replica's key set within 5 minutes
+   (each keeps the key set that long): wait 5 minutes before reading the new fingerprint.
+
 **How it is protected, and what to know.** OpenBao has no port on the host: it is on a network of
-its own that only edrms, intake, audit, extracts and the setup reach, and it speaks plain HTTP there. Each
+its own that only edrms, intake, audit, extracts, shipping-records and the setup reach, and it speaks plain HTTP there. Each
 service logs in with its own AppRole, whose secret ID lies in that service's own volume, readable
 only by the service; a secret ID does not expire. To replace one (for example after a suspected
 leak), delete it and run the setup again: `docker compose run --rm --entrypoint rm openbao-setup
@@ -297,6 +327,14 @@ folder, unless the release notes say a version changed stored data.
 From a version without the `LRFE_ORG_*` settings: the portal shows the first site's texts
 until they are set; copy them and `LRFE_OFFICES` from the new `.env.example` into `.env` to change
 them (existing offices are not changed).
+
+**Upgrading a shipping install to the title engine (CB-29).** The upgrade itself needs no
+setting: without `TITLE_SIGNER` title commands are refused and the rest works. To turn them on,
+prepare OpenBao for the title signer (part D, step 7), set `TITLE_SIGNER=bao`, then `docker compose
+up -d`. If services are upgraded one by one,
+upgrade **audit before shipping-records**: an older audit has no route for the proof of a
+chain-of-title entry, and a title proof then says "pending" until audit is upgraded. A land install
+needs nothing: the title engine and its key are the shipping product's only.
 
 **Upgrading to organisations (CB-18).** The data is kept. On the first start, identity creates one
 default organisation, named from `LRFE_ORG_NAME`, and puts every existing office and user into it.

@@ -156,6 +156,23 @@ the B/L's last. Anyone holding it checks it offline with the audit service's ver
 is asked of the audit service (`POST /audit/anchoring/entry-proof`, `AUDIT_URL`); while it cannot
 be reached the route answers 503, never "pending".
 
+### The platform's keys in production (CB-36)
+
+- **The fingerprint.** Whoever checks a title proof offline pins the platform's key set with
+  `--title-key <fingerprint>`: SHA-256 hex of the canonical JSON of `GET /records/title/keys`
+  (`titleKeyFingerprint` of the verifier). Publish it with the install, beside the anchoring
+  wallet's address; the command that prints it is in `deploy/README.md`, part D, step 7. The key
+  set holds every key version, so the fingerprint **changes at each key rotation**: publish the new
+  one, dated, and keep the earlier ones, since a bundle is checked against the fingerprint of its
+  period.
+- **Several replicas.** Each replica keeps the key set it read from OpenBao for 5 minutes
+  (`KEY_SET_TTL_MS` in `@lrfe/common`'s `jws.js`). After a key rotation, a replica shows the new version on
+  `/records/title/keys` within 5 minutes, at once when it signs an entry (signing reads the key
+  again and signs with its latest version). Every version keeps verifying.
+- **Deploy order.** The title proof asks audit for the entry's proof (`POST
+  /audit/anchoring/entry-proof`). An audit service older than CB-33 answers 404, read as "pending":
+  deploy audit before shipping-records, so proofs are not shown pending only because of the order.
+
 ## Settings
 
 | Setting | Default | What |
@@ -172,7 +189,7 @@ be reached the route answers 503, never "pending".
 | `LRFE_BL_MODULES` | all | the title modules that are on, comma-separated (`waybill`, always on, `negotiable`, `blank-endorsement`, `amendment`, `split`); an unknown name or a module without the one it needs stops the start ([title modules](../../domains/shipping/docs/title-states.md#modules-cb-38)) |
 | `TITLE_SIGNER` | not set | the platform key that signs the chain of title: `bao`, the key in OpenBao's transit engine (below); not set, an in-process key made at start outside production (development, tests, e2e: its entries do not verify after a restart) and **none in production**, where title commands are then refused (503); any other value stops the start |
 | `TITLE_SIGNING_KEY` | | with `TITLE_SIGNER=bao`: the transit key's name, type `ecdsa-p256`; the `kid` of a signature is `<key>:v<version>`, and after a rotation the older versions keep verifying |
-| `BAO_ADDR`, `BAO_ROLE_ID`, `BAO_SECRET_ID_FILE` | | with `TITLE_SIGNER=bao`: OpenBao's address and the service's AppRole (its role ID, and the file holding its secret ID); the AppRole needs `transit/sign/<key>` and read on `transit/keys/<key>`. Wiring OpenBao for shipping-records in `deploy/` is CB-36 |
+| `BAO_ADDR`, `BAO_ROLE_ID`, `BAO_SECRET_ID_FILE` | | with `TITLE_SIGNER=bao`: OpenBao's address and the service's AppRole (its role ID, and the file holding its secret ID); the AppRole needs `transit/sign/<key>` and read on `transit/keys/<key>`. In `deploy/` (CB-36): key `bl-title`, the AppRole prepared by `docker compose run --rm openbao-setup-shipping`, profile `shipping` only, then `TITLE_SIGNER=bao` in `.env` (not set by default: title commands refused, the rest works; `deploy/README.md`, part D, step 7) |
 | `LOG_LEVEL` | `info` | the log level |
 
 Run it alone with `npm run dev:shipping-records` in `backend/`, or with the others:
@@ -191,7 +208,7 @@ Users need a token with an organisation; a user of no organisation gets 403.
 | `POST /records/lookup`, `GET /records/seals`, `GET /records/:id/verify` | the audit service | labels and committed versions (a B/L pins no documents: `documents` and `pinnedBy` are empty), the seals in pages, the seal chain recomputed |
 | `GET /records/title/keys` | anyone, no token | the platform's public keys of the chain of title, every key version (a JWK set), for checking a chain offline; through the gateway `/api/records/title/keys` |
 | `GET /records/:id/title` | `bl.read`, of the carrier, a current or past holder or the consignee (before issue: the owner) | the title, the commands the caller may run now and the chain of title; 404 "B/L not found" for anyone else |
-| `POST /records/:id/title/:command` | `bl.issue` (issue, void, release, deliver) or `bl.endorse` (endorse, transfer, surrender, switch-to-paper), of an organisation that sees the B/L | runs a title command (above); 404 for an organisation that does not see the B/L, before any other refusal; a refusal records nothing |
+| `POST /records/:id/title/:command` | `bl.issue` (issue, void, release, deliver, amend, split) or `bl.endorse` (endorse, transfer, surrender, surrender-for-amendment, switch-to-paper), of an organisation that sees the B/L | runs a title command (above); 404 for an organisation that does not see the B/L, before any other refusal; a refusal records nothing |
 | `GET /records/:id/title/proof` | `bl.read`, of the carrier, a current or past holder or the consignee | the B/L's title proof (`lrfe-title-proof/1`), `?seq=` for an older entry; 404 "B/L not found" for anyone else and before issue, 503 while the proof on the blockchain cannot be read |
 | `POST /records/:id/versions/:n/commit`, `.../reject` | bpm | the review decision, `{by: {id, name}, comment}`: commit refuses the submitter (403, four-eyes, always on) and answers a retry by the same person the same; reject needs a comment |
 

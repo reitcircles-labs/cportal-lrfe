@@ -21,9 +21,9 @@ and CB-5 (the lint guard and this guide).
 | `backend/packages/storage`, `backend/packages/search-index` | file storage and keys; the search index and country pack | shared |
 | `backend/services/{identity,audit,extracts,edrms,search,bpm,gateway,intake}` | the shared services | shared |
 | `backend/services/land-records` | the land registry's record service | land |
-| `backend/services/shipping-records` | the shipping record service: draft B/Ls, versions, seals (CB-27) | shipping |
+| `backend/services/shipping-records` | the shipping record service: draft B/Ls, versions, seals (CB-27); the title of issued B/Ls, their signed chain of title and title proof (CB-29) | shipping |
 | `backend/domains/land` | `@lrfe/domain-land`, the land pack | land |
-| `backend/domains/shipping` | `@lrfe/domain-shipping`, the shipping pack: the B/L model (DCSA eBL 3.0), the B/L permissions, role and demo data, and its record kind | shipping |
+| `backend/domains/shipping` | `@lrfe/domain-shipping`, the shipping pack: the B/L model (DCSA eBL 3.0), the title engine (`/title`), the B/L permissions, role and demo data, and its record kind | shipping |
 
 The shared services know nothing about land or shipping. They read their product from the
 **domain pack** of the install, chosen by one setting, `LRFE_DOMAIN` (`land` when not set), and
@@ -117,6 +117,23 @@ of `LRFE_BL_FORMATS`; `backend/domains/shipping/docs/`), and in its sections:
 - `documents`, `workflows` and `wording`: empty. With `LRFE_DOMAIN=shipping` there are no document
   types (filing says so), only `document-amendment` is deployed; issuing an extract or raising an
   audit finding needs the wording and acknowledgers a fuller pack gives.
+
+**The title engine** (CB-29, `@lrfe/domain-shipping/title`) is the shipping pack's state machine
+of an issued B/L's title: kinds (negotiable, straight, sea waybill), states, the commands (issue,
+void, endorse named or in blank, transfer, surrender, release, deliver, surrender for amendment,
+amend, split, switch to paper), who may run each and every refusal
+([title states](../../backend/domains/shipping/docs/title-states.md)). It is pure code;
+shipping-records keeps each title (the holder ledger), runs the commands through the API
+(`POST /api/records/:id/title/:command`, permissions `bl.issue` and `bl.endorse`), signs each
+step into the B/L's **chain of title** with the platform's key (OpenBao's `bl-title`,
+`TITLE_SIGNER`), puts it on the audit trail and the blockchain, and gives the **title proof**
+(`lrfe-title-proof/1`) that the audit verifier checks offline
+([chain of title](../../backend/domains/shipping/docs/chain-of-title.md)). **Modules:** an install
+switches parts of the engine on with `LRFE_BL_MODULES` (`waybill`, always on, `negotiable`,
+`blank-endorsement`, `amendment`, `split`; all when not set); a command of a module that is off is
+refused, and stored data never depends on the setting. None of it exists on a land install: the
+title signer's OpenBao key and login are prepared only for the profile `shipping`
+(`deploy/README.md`, part D, step 7).
 
 A pack without a record kind is still valid: then there is no record service (`/api/records` is
 not routed, record calls answer 503, `record-version` proofs answer 400) and lookups search
@@ -338,3 +355,7 @@ pack first:
 - **CB-23 to CB-28** gave the shipping pack the B/L model and formats, the B/L permissions, role
   and demo data, and its record service `shipping-records` (the record contract, seals, events),
   wired into the gateway, compose (profile `shipping`) and a shipping e2e run.
+- **CB-29** (CB-30 to CB-38) added the title engine and its modules, the holder ledger, the signed
+  chain of title, the title proof, the title API, blank endorsement and transfer, amendment and
+  split, and the title signer in OpenBao under the profile `shipping`; a land install is unchanged
+  (upgrade rehearsal, CB-36).
