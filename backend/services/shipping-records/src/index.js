@@ -91,6 +91,7 @@ const titles = new TitleService({
   repo,
   events,
   modules,
+  formats,
   signer,
   audit,
   organisations,

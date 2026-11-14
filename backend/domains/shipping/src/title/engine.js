@@ -33,6 +33,19 @@ import {TITLE_WORDING} from './wording.js';
  * @property {?string} returnTo the organisation id the B/L goes back to after an amendment
  */
 
+/**
+ * The arguments that name part of a B/L's cargo (CB-35): a release naming any of them is refused,
+ * since a B/L is released whole (a part is split into its own B/L first).
+ */
+export const CARGO_PART_ARGUMENTS = Object.freeze([
+  'containers',
+  'equipmentReferences',
+  'cargoItems',
+  'consignmentItems',
+  'part',
+  'quantity',
+]);
+
 /** A command refused: `code` is stable, `message` the reason for people. */
 export class TitleRefusal extends Error {
   /**
@@ -265,12 +278,20 @@ const EFFECTS = {
   }),
 
   /**
+   * The whole B/L is released: never part of its cargo against a B/L that stays open.
+   *
    * @param {!Title} title
+   * @param {!Object} command
    * @return {{title: !Title}}
    */
-  release: title => ({
-    title: {...title, state: 'accomplished', holder: null},
-  }),
+  release: (title, command) => {
+    for (const name of CARGO_PART_ARGUMENTS) {
+      if (Object.hasOwn(command, name)) {
+        throw new TitleRefusal('partial-release', TITLE_WORDING.partialRelease);
+      }
+    }
+    return {title: {...title, state: 'accomplished', holder: null}};
+  },
 
   /**
    * @param {!Title} title

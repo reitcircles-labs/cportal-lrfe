@@ -201,6 +201,51 @@ export const TITLE_WORDING = Object.freeze({
 
   tooFewChildren: 'A split needs at least two new B/Ls',
 
+  partialRelease:
+    'A B/L is released whole: to release part of its cargo, split it into new B/Ls first',
+
+  draftOpen:
+    'A new version of this B/L is being drafted or in review: ' +
+    'finish or discard that draft before amending or splitting the B/L',
+
+  missingDocument: 'Send the new document of the B/L with its format',
+
+  differentReference:
+    'The new document must keep the carrier code and the transport document reference of this B/L',
+
+  kindChanged:
+    'The new document must stay a negotiable B/L (a B/L to order): its kind cannot change',
+
+  /**
+   * A new B/L of a split whose reference is the parent's or another new B/L's.
+   *
+   * @param {string} reference the reference given twice
+   * @return {string}
+   */
+  childReference: reference =>
+    `Each new B/L needs its own transport document reference: ${String(reference)} is used twice`,
+
+  /**
+   * A new B/L of a split whose reference the carrier already has.
+   *
+   * @param {string} reference
+   * @return {string}
+   */
+  childReferenceTaken: reference =>
+    `The carrier already has a B/L with the reference ${String(reference)}`,
+
+  /**
+   * A split whose new B/Ls do not carry exactly the B/L's cargo.
+   *
+   * @param {!Array<string>} problems the reasons, one per container
+   * @return {string}
+   */
+  cargoMismatch: problems => {
+    const more =
+      problems.length > 1 ? ` (and ${problems.length - 1} more)` : '';
+    return `The cargo of the new B/Ls must add up to the B/L's: ${problems[0]}${more}`;
+  },
+
   bearerUnconfirmed:
     'Switching a blank-endorsed B/L to paper makes it a bearer document: ' +
     'confirm it to go on',

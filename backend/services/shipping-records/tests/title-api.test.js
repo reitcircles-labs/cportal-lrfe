@@ -24,7 +24,7 @@ import {exampleWithReference, makeHttp, stores} from './helpers.js';
  * - Permissions: issue, void, release, deliver need bl.issue; endorse, transfer, surrender,
  *   switch-to-paper need bl.endorse; the read needs bl.read. A user of no organisation: 403.
  * - Unknown command: 400 {details.code: 'unknown-command'}, "Unknown command: <name>". amend,
- *   split and surrender-for-amendment (CB-35): 400 {details.code: 'not-available'}.
+ *   split and surrender-for-amendment are offered since CB-35 (title-amend-split.test.js).
  * - An organisation not registered, or not active: 422 {details.code:
  *   'unregistered-organisation'}; identity not answering: 503. The title service's option
  *   `organisations` is the client: standingOf(id) → 'active' | 'inactive' | 'unknown'.
@@ -466,13 +466,7 @@ for (const store of stores()) {
         }
       });
 
-      it('lists only the commands this API offers: not the amendment and split of CB-35', async () => {
-        const id = await endorsedToBank(ctx, 'CB34-READ-OFFERED');
-        const holder = (await read(ctx, id, staffOf(BANK))).json();
-        for (const later of ['surrender-for-amendment', 'amend', 'split']) {
-          expect(holder.allowedCommands).to.not.include(later);
-        }
-      });
+      // (changed: CB-35) amendment and split are offered now: title-amend-split.test.js lists them.
 
       it("lists only the commands the user's permissions allow (added: review, permissions besides the organisation's role)", async () => {
         const before = await committedBl(ctx, 'CB34-READ-PERMS-1');
@@ -768,17 +762,8 @@ for (const store of stores()) {
         });
       }
 
-      for (const name of ['amend', 'split', 'surrender-for-amendment']) {
-        it(`${name} is not offered yet (CB-35): 400 "not available", nothing recorded`, async () => {
-          const id = await endorsedToBank(ctx, nextReference('NAME'));
-          const before = await footprint(ctx, id);
-          const res = await command(ctx, id, name, staffOf(BANK));
-          expect(res.statusCode, res.body).to.equal(400);
-          expect(res.json().details.code).to.equal('not-available');
-          expect(res.json().message).to.match(/not available/);
-          expect(await footprint(ctx, id)).to.deep.equal(before);
-        });
-      }
+      // (changed: CB-35) amend, split and surrender-for-amendment are no longer 400
+      // not-available: title-amend-split.test.js.
 
       it('an endorsement without the organisation to receive it is refused 400, nothing recorded', async () => {
         const id = await endorsedToBank(ctx, 'CB34-NAME-NO-TO');

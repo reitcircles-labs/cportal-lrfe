@@ -9,8 +9,10 @@ import {
   describeGuard,
   organisationOf,
 } from '@lrfe/common';
+import {CARGO_PART_ARGUMENTS} from '@lrfe/domain-shipping/title';
+
 import {LIST_STATUSES} from './records.service.js';
-import {LATER_COMMANDS, OFFERED_COMMANDS} from './title.service.js';
+import {OFFERED_COMMANDS} from './title.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuid = {type: 'string', format: 'uuid'};
@@ -61,10 +63,24 @@ const decisionBody = {
   },
 };
 
+/** A new document of a B/L in a title command: its format, the document, its parties' links. */
+const titleDocument = {
+  type: 'object',
+  required: ['format', 'document'],
+  properties: {
+    format: {type: 'string', minLength: 1, maxLength: 50},
+    document: {type: 'object'},
+    partyOrganisations: {type: 'object'},
+  },
+};
+
 /**
- * The arguments of a title command (docs/title-states.md of the shipping pack). Anything else in
- * the body (an organisation, an actor, a kind) is ignored: the organisation is the session's, and
- * an issue reads the kind and its parties from the B/L.
+ * The arguments of a title command (docs/title-states.md of the shipping pack): `to`, `inBlank`
+ * and `confirmBearer` for endorse, transfer and switch-to-paper; an amendment's new document
+ * (`format`, `document`, `partyOrganisations`); a split's `children`, one new document each
+ * (CB-35). Anything else in the body (an organisation, an actor, a kind) is ignored: the
+ * organisation is the session's, and an issue reads the kind and its parties from the B/L. A
+ * release naming part of the cargo is refused (CB-35).
  */
 const titleCommandBody = {
   type: 'object',
@@ -72,11 +88,27 @@ const titleCommandBody = {
     to: {type: 'string', minLength: 1, maxLength: 100},
     inBlank: {type: 'boolean'},
     confirmBearer: {type: 'boolean'},
+    format: {type: 'string', minLength: 1, maxLength: 50},
+    document: {type: 'object'},
+    partyOrganisations: {type: 'object'},
+    children: {type: 'array', maxItems: 100, items: titleDocument},
   },
 };
 
-/** The names of a title command's arguments, as titleCommandBody lists them. */
-const TITLE_COMMAND_ARGUMENTS = ['to', 'inBlank', 'confirmBearer'];
+/**
+ * The names of a title command's arguments: those titleCommandBody lists, and the ones naming
+ * part of a cargo, which a release refuses.
+ */
+const TITLE_COMMAND_ARGUMENTS = [
+  'to',
+  'inBlank',
+  'confirmBearer',
+  'format',
+  'document',
+  'partyOrganisations',
+  'children',
+  ...CARGO_PART_ARGUMENTS,
+];
 
 /**
  * The engine's command of a title call: its name and only the arguments a command takes.
@@ -95,9 +127,8 @@ function titleCommandOf(name, body) {
 }
 
 /**
- * The permission a title command needs; 400 for a command the API does not offer (unknown, or
- * an amendment or split, which come with CB-35). The name comes from the request, so it is only
- * looked up in a Map or Set.
+ * The permission a title command needs; 400 for a command the API does not know. The name comes
+ * from the request, so it is only looked up in a Map.
  * @param {string} name
  * @return {string}
  */
@@ -105,11 +136,6 @@ function permissionOfCommand(name) {
   const permission = OFFERED_COMMANDS.get(name);
   if (permission !== undefined) {
     return permission;
-  }
-  if (LATER_COMMANDS.has(name)) {
-    throw new BadRequestError(`The command ${name} is not available yet`, {
-      code: 'not-available',
-    });
   }
   throw new BadRequestError(`Unknown command: ${name}`, {
     code: 'unknown-command',
@@ -396,8 +422,9 @@ export async function recordsRoutes(app, {service}) {
     },
   );
 
-  // a title command, run as the session's organisation: issue, void, release and deliver need
-  // bl.issue, endorse, transfer, surrender and switch-to-paper bl.endorse
+  // a title command, run as the session's organisation: issue, void, release, deliver, amend and
+  // split need bl.issue, endorse, transfer, surrender, surrender-for-amendment and switch-to-paper
+  // bl.endorse
   app.post(
     '/records/:id/title/:command',
     {

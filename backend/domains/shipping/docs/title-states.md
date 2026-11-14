@@ -70,7 +70,25 @@ to a name).
 | `switch-to-paper` | `confirmBearer?` | negotiable | `issued`, `with-holder` | holder | `switched-to-paper`, no holder |
 
 The endorsement is kept through surrender, amendment and release. The new document version of an
-amendment, and the children's documents of a split, are the service's business (CB-35).
+amendment, and the children's documents of a split, are the service's business (CB-35, the
+shipping record service's README):
+
+- **Amend** commits the carrier's new document as the B/L's next version (same carrier code and
+  reference, still to order, checked like any document), committed by the engine: the holder's
+  surrender for amendment is the authority, so there is no four-eyes review. The holder, the
+  endorsement and the chain are kept; the `amend` entry names the new version's hash. Refused
+  (`draft-open`, 409) while a version of the B/L is being drafted or in review.
+- **Split** closes the parent (`split`) and makes each child a new B/L of the carrier, version 1
+  committed by the engine, whose first entry `issue-from-split` follows the parent's `split`
+  entry. The children's cargo adds up to the parent's: together they name exactly the parent's
+  containers (one may be named by several children when its cargo is divided), and per container
+  their packages and gross weights add up (`splitCargoProblems`, `src/bill-of-lading/cargo.js`).
+  Their ports of discharge, and every other field, may differ. Refused (`draft-open`, 409) while
+  a version of the parent is being drafted or in review, as an amendment is.
+- **No partial release.** A B/L is released whole, from `surrendered`: a `release` naming part of
+  its cargo (`containers`, `equipmentReferences`, `cargoItems`, `consignmentItems`, `part`,
+  `quantity`: `CARGO_PART_ARGUMENTS`) is refused `partial-release`. To release part of a cargo,
+  the B/L is split first and the child carrying it released; the others stay open.
 
 ## Modules (CB-38)
 
@@ -130,6 +148,7 @@ Checked in this order; the first rule broken is the reason.
 | `same-holder` | `to` is the holder already | This B/L is already held by that organisation |
 | `invalid-argument` | `endorse` without a boolean `inBlank` | Say whether the B/L is endorsed in blank or to the named organisation |
 | `too-few-children` | `split` into fewer than two | A split needs at least two new B/Ls |
+| `partial-release` | `release` naming part of the cargo | A B/L is released whole: to release part of its cargo, split it into new B/Ls first |
 | `bearer-unconfirmed` | `switch-to-paper` of a blank-endorsed B/L without `confirmBearer` | Switching a blank-endorsed B/L to paper makes it a bearer document: confirm it to go on |
 
 ## Decisions

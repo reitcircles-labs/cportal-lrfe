@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import {
   AppError,
   BadRequestError,
@@ -7,8 +8,13 @@ import {
   sha256Hex,
   signJws,
 } from '@lrfe/common';
-import {billOfLadingHash} from '@lrfe/domain-shipping/bill-of-lading';
 import {
+  billOfLadingHash,
+  formatsFromSettings,
+  splitCargoProblems,
+} from '@lrfe/domain-shipping/bill-of-lading';
+import {
+  TITLE_WORDING,
   TitleRefusal,
   allowedCommands,
   applyTitleCommand,
@@ -16,10 +22,16 @@ import {
 } from '@lrfe/domain-shipping/title';
 
 import {TITLE_ENTRY_TYP, entryHashOf} from './chain.js';
+import {
+  checkedDocument,
+  committedEventOf,
+  convertedDocument,
+  engineCommittedVersion,
+} from './engine-versions.js';
 
 /**
- * The title commands the API offers (CB-34), each with the permission it needs: the carrier's
- * staff hold `bl.issue`, the holder's `bl.endorse`. The amendment and the split come with CB-35.
+ * The title commands the API offers (CB-34, CB-35), each with the permission it needs: the
+ * carrier's staff hold `bl.issue`, the holder's `bl.endorse`.
  * @type {!ReadonlyMap<string, string>}
  */
 export const OFFERED_COMMANDS = new Map([
@@ -27,18 +39,23 @@ export const OFFERED_COMMANDS = new Map([
   ['void', 'bl.issue'],
   ['release', 'bl.issue'],
   ['deliver', 'bl.issue'],
+  ['amend', 'bl.issue'],
+  ['split', 'bl.issue'],
   ['endorse', 'bl.endorse'],
   ['transfer', 'bl.endorse'],
   ['surrender', 'bl.endorse'],
+  ['surrender-for-amendment', 'bl.endorse'],
   ['switch-to-paper', 'bl.endorse'],
 ]);
 
-/** The engine's commands the API does not offer yet (CB-35). */
-export const LATER_COMMANDS = new Set([
-  'surrender-for-amendment',
-  'amend',
-  'split',
-]);
+/**
+ * The command of the first entry of a B/L made by a split (CB-35): its chain starts from the
+ * parent's `split` entry. Nobody runs it: the split writes it.
+ */
+export const ISSUE_FROM_SPLIT = 'issue-from-split';
+
+/** How many parents deep a title proof follows splits of splits. */
+const MAX_SPLIT_DEPTH = 50;
 
 /** The refusals answered 403: the organisation may not run the command. */
 const FORBIDDEN_REFUSALS = new Set([
@@ -55,6 +72,7 @@ const BAD_REQUEST_REFUSALS = new Set([
   'missing-recipient',
   'invalid-argument',
   'too-few-children',
+  'partial-release',
 ]);
 
 /**
@@ -263,6 +281,28 @@ function recipientsOf(command) {
 }
 
 /**
+ * The actor of a chain entry: the person and their organisation.
+ * @param {{id: string, name?: string, org?: string}} actor
+ * @return {{id: string, name: ?string, org: ?string}}
+ */
+function entryActor(actor) {
+  return {id: actor.id, name: actor.name ?? null, org: actor.org ?? null};
+}
+
+/**
+ * How many B/Ls a split's command asks for, as the engine counts them: 0 when `children` is not
+ * a list.
+ * @param {*} command the API's command
+ * @return {number}
+ */
+function childCountOf(command) {
+  if (!Array.isArray(command?.children)) {
+    return 0;
+  }
+  return command.children.length;
+}
+
+/**
  * The title engine's service (CB-31, README.md "The title"): the holder ledger of the B/Ls. A
  * title changes only through the state machine of `@lrfe/domain-shipping/title`, and only if
  * nobody changed it since it was read, so of two commands at the same moment exactly one wins.
@@ -277,7 +317,10 @@ export class TitleService {
    *   signer: ?object,
    *   audit?: ?{entryProof: function(string): !Promise<object>},
    *   organisations: {standingOf: function(string): !Promise<string>},
-   * }} options `modules`: the title modules on in this install (modulesFromSettings); `signer`:
+   *   formats?: !ReadonlyArray<object>,
+   * }} options `modules`: the title modules on in this install (modulesFromSettings); `formats`:
+   *     the B/L formats on (formatsFromSettings), which an amendment's and a split's documents
+   *     come in (the default format when not given); `signer`:
    *     the platform signer of the chain entries (signerFromEnv of @lrfe/common), null when there
    *     is none (title commands are then refused with 503); `audit`: the client of the audit
    *     service giving the trail-entry proof of an event (./audit-client.js), null when there is
@@ -292,6 +335,7 @@ export class TitleService {
     signer,
     audit = null,
     organisations,
+    formats = formatsFromSettings({}),
   }) {
     if (typeof organisations?.standingOf !== 'function') {
       throw new Error(
@@ -305,6 +349,7 @@ export class TitleService {
     this.signer = signer ?? null;
     this.audit = audit;
     this.organisations = organisations;
+    this.formats = formats;
   }
 
   /**
@@ -450,13 +495,17 @@ export class TitleService {
    * entry to the B/L's chain of title (CB-32), signed before anything is written (a failed
    * signature changes nothing) and stored in the same transaction as the title, with its event
    * `records.title.<command>` (CB-33): nothing is published for a refusal, a lost race or a
-   * failed transaction.
+   * failed transaction. An amendment (`{name: 'amend', format, document, partyOrganisations?}`)
+   * commits the new version in the same transaction; a split (`{name: 'split', children:
+   * [{format, document, partyOrganisations?}, ...]}`) closes the B/L and makes its children, all
+   * or nothing (CB-35).
    * @param {string} recordId
    * @param {{name: string}} command the command and its arguments
    * @param {{id: string, name?: string, org?: string}} actor the person, with their organisation
    * @param {{withChain?: boolean}} [options] `withChain`: the answer carries the chain of title
    *     (the API's answer)
-   * @return {!Promise<object>} the title as `read` answers it
+   * @return {!Promise<object>} the title as `read` answers it; a split's also names its children
+   *     (`children: [{recordId, recordNo}]`, in the order given)
    */
   async apply(recordId, command, actor, {withChain = false} = {}) {
     const {record, stored, chain} = await this.requireVisible(recordId, actor);
@@ -469,12 +518,18 @@ export class TitleService {
       issued = await this.issueOf(record);
       engineCommand = issued.command;
     }
+    if (engineCommand.name === 'split') {
+      engineCommand = {name: 'split', children: childCountOf(command)};
+    }
     const result = this.run(titleOf(stored), engineCommand, actor);
-    if (result.children) {
-      // CB-35: a split creates its child records and their first titles here.
-      throw new ConflictError('Splitting a B/L is not available yet', {
-        code: 'not-available',
+    if (engineCommand.name === 'split') {
+      return this.split(record, stored, chain, command, result, actor, {
+        withChain,
       });
+    }
+    let amendment = null;
+    if (engineCommand.name === 'amend') {
+      amendment = await this.amendmentOf(record, command, actor);
     }
     await this.requireRegistered(engineCommand);
     const now = this.clock();
@@ -484,12 +539,15 @@ export class TitleService {
       command: engineCommand.name,
       actor,
       title: result.title,
-      documentHash: issued?.documentHash ?? stored?.documentHash,
+      documentHash:
+        amendment?.version.documentHash ??
+        issued?.documentHash ??
+        stored?.documentHash,
       at: now,
     });
     let saved;
     let appended;
-    // the title, its chain entry and its event are committed together
+    // the title, its chain entry and its event (and an amendment's version) are committed together
     await this.atomic(async () => {
       if (issued) {
         await this.requireStillIssuable(recordId, issued.issuedVersion);
@@ -503,14 +561,25 @@ export class TitleService {
           updatedAt: now,
         });
       } else {
+        if (amendment) {
+          await this.requireStillAmendable(recordId, amendment.basedOn);
+        }
         saved = await this.repo.updateTitle(
           recordId,
-          {...result.title, revision: stored.revision + 1, updatedAt: now},
+          {
+            ...result.title,
+            ...amendment?.titlePatch,
+            revision: stored.revision + 1,
+            updatedAt: now,
+          },
           stored.revision,
         );
       }
       if (!saved) {
         throw changedMeanwhile();
+      }
+      if (amendment) {
+        await this.commitAmendment(record, amendment, actor);
       }
       appended = await this.repo.appendTitleEntry(entry);
       await this.publishEntry(record, appended, actor);
@@ -518,6 +587,290 @@ export class TitleService {
     // the write succeeded at the revision read, so the chain read with it was the whole chain
     const after = withChain ? [...chain, appended] : null;
     return this.viewOf(record, saved, actor, after);
+  }
+
+  /**
+   * Checks that no version of the B/L is being drafted or in review: an amendment would leave
+   * that draft after a version it never saw, a split would close the B/L under it (CB-35). 409
+   * `draft-open`; the carrier finishes or discards the draft first.
+   * @param {{draftVersion: ?number}} record
+   * @return {void}
+   */
+  requireNoDraft(record) {
+    if (record.draftVersion) {
+      throw new ConflictError(TITLE_WORDING.draftOpen, {code: 'draft-open'});
+    }
+  }
+
+  /**
+   * What an amendment commits (CB-35): the new version of the B/L after its current one, from
+   * the command's `{format, document, partyOrganisations?}`, converted and checked like any
+   * document (same carrier code and reference, still to order), keeping the current version's
+   * organisation links when it gives none. 409 while a version is being drafted or in review.
+   * @param {object} record
+   * @param {!Object} command the API's command
+   * @param {{id: string, name?: string}} actor
+   * @return {!Promise<{basedOn: number, version: !Object, titlePatch: !Object}>}
+   */
+  async amendmentOf(record, command, actor) {
+    this.requireNoDraft(record);
+    const current = await this.repo.getVersion(
+      record.id,
+      record.currentVersion,
+    );
+    const data = checkedDocument(
+      convertedDocument(this.formats, command, current.data.partyOrganisations),
+      {carrierCode: record.carrierCode, reference: record.recordNo},
+    );
+    const version = engineCommittedVersion({
+      record,
+      versionNumber: current.versionNumber + 1,
+      data,
+      previous: current,
+      actor,
+      action: 'amend',
+      at: this.clock(),
+    });
+    return {
+      basedOn: current.versionNumber,
+      version,
+      titlePatch: {
+        issuedVersion: version.versionNumber,
+        documentHash: version.documentHash,
+      },
+    };
+  }
+
+  /**
+   * Checks, inside the transaction of an amendment, that the B/L's current version is still the
+   * one amended and no draft was opened since (the record's row is locked until it ends): 409
+   * otherwise.
+   * @param {string} recordId
+   * @param {number} basedOn the current version the amendment follows
+   * @return {!Promise<void>}
+   */
+  async requireStillAmendable(recordId, basedOn) {
+    const current = await this.repo.lockRecord(recordId);
+    this.requireNoDraft(current);
+    if (current.currentVersion !== basedOn) {
+      throw changedMeanwhile();
+    }
+  }
+
+  /**
+   * Writes an amendment's version as the record's current one, with its event
+   * `records.record.committed`, in the caller's transaction.
+   * @param {object} record
+   * @param {{version: !Object}} amendment
+   * @param {{id: string, name?: string, org?: string}} actor
+   * @return {!Promise<void>}
+   */
+  async commitAmendment(record, {version}, actor) {
+    await this.repo.addVersion(version);
+    await this.repo.updateRecord(record.id, {
+      status: 'committed',
+      currentVersion: version.versionNumber,
+      updatedAt: version.committedAt,
+    });
+    await this.events?.publish(
+      'records.record.committed',
+      committedEventOf(record, version, actor),
+      {actor: {id: actor.id, name: actor.name ?? null}},
+    );
+  }
+
+  /**
+   * The B/Ls a split makes (CB-35), checked before anything is written: each child of the
+   * command's `children` converted and checked like any document (the parent's carrier code,
+   * still to order, valid), with its own reference (not the parent's nor another child's: 400;
+   * not one the carrier has: 409), and the children's cargo adding up to the parent's (400
+   * `cargo-mismatch`). Without `partyOrganisations` a child keeps the parent's links.
+   * @param {object} record the parent
+   * @param {!Object} command the API's command
+   * @param {{id: string, name?: string}} actor
+   * @param {!Date} at
+   * @return {!Promise<!Array<{record: !Object, version: !Object}>>} in the order given
+   */
+  async childrenOf(record, command, actor, at) {
+    const current = await this.repo.getVersion(
+      record.id,
+      record.currentVersion,
+    );
+    const documents = [];
+    const references = new Set([record.recordNo]);
+    for (const child of command.children) {
+      const data = checkedDocument(
+        convertedDocument(this.formats, child, current.data.partyOrganisations),
+        {carrierCode: record.carrierCode},
+      );
+      const reference = data.document.transportDocumentReference;
+      if (references.has(reference)) {
+        throw new BadRequestError(TITLE_WORDING.childReference(reference), {
+          code: 'child-reference',
+        });
+      }
+      references.add(reference);
+      documents.push(data);
+    }
+    const problems = splitCargoProblems(
+      current.data.document,
+      documents.map(data => data.document),
+    );
+    if (problems.length > 0) {
+      throw new BadRequestError(TITLE_WORDING.cargoMismatch(problems), {
+        code: 'cargo-mismatch',
+        problems,
+      });
+    }
+    const children = [];
+    for (const data of documents) {
+      const recordNo = data.document.transportDocumentReference;
+      const taken = await this.repo.findRecord({
+        organisationId: record.organisationId,
+        carrierCode: record.carrierCode,
+        recordNo,
+      });
+      if (taken) {
+        throw new ConflictError(TITLE_WORDING.childReferenceTaken(recordNo), {
+          code: 'reference-taken',
+        });
+      }
+      const child = {
+        id: randomUUID(),
+        recordNo,
+        carrierCode: record.carrierCode,
+        label: `B/L ${recordNo} (${record.carrierCode})`,
+        organisationId: record.organisationId,
+        status: 'committed',
+        currentVersion: 1,
+        draftVersion: null,
+        draftState: null,
+        createdAt: at,
+        createdById: actor.id,
+        createdByName: actor.name ?? null,
+        updatedAt: at,
+      };
+      const version = engineCommittedVersion({
+        record: child,
+        versionNumber: 1,
+        data,
+        previous: null,
+        actor,
+        action: 'split',
+        at,
+      });
+      children.push({record: child, version});
+    }
+    return children;
+  }
+
+  /**
+   * Splits a B/L into new B/Ls (CB-35, after the engine allowed it): the parent's title closes
+   * (`split`) with its entry; each child is a record of the carrier with its version 1 committed,
+   * its first title (the engine's) and its first entry `issue-from-split`, whose previousHash is
+   * the parent's `split` entry's hash. 409 `draft-open` while a version of the parent is being
+   * drafted or in review. Everything is checked and signed first (every child and its reference
+   * before any write), then written in one transaction with its events: all or nothing.
+   * @param {object} record the parent
+   * @param {!Object} stored the parent's stored title
+   * @param {!Array<object>} chain the parent's chain of title, as read with it
+   * @param {!Object} command the API's command
+   * @param {{title: !Object, children: !Array<!Object>}} result the engine's titles
+   * @param {{id: string, name?: string, org?: string}} actor
+   * @param {{withChain: boolean}} options
+   * @return {!Promise<object>} the parent's title as `read` answers it, with `children`
+   */
+  async split(record, stored, chain, command, result, actor, {withChain}) {
+    this.requireNoDraft(record);
+    const now = this.clock();
+    const children = await this.childrenOf(record, command, actor, now);
+    const splitEntry = await this.signedEntry({
+      recordId: record.id,
+      stored,
+      command: 'split',
+      actor,
+      title: result.title,
+      documentHash: stored.documentHash,
+      at: now,
+    });
+    const firsts = [];
+    for (const [i, child] of children.entries()) {
+      const title = result.children[i];
+      firsts.push(
+        await this.signed({
+          recordId: child.record.id,
+          seq: 1,
+          command: ISSUE_FROM_SPLIT,
+          actor: entryActor(actor),
+          from: null,
+          to: title.holder ?? null,
+          endorsement: title.endorsement,
+          documentHash: child.version.documentHash,
+          at: now.toISOString(),
+          previousHash: splitEntry.entryHash,
+          kid: await this.signer.currentKid(),
+        }),
+      );
+    }
+    let saved;
+    let appended;
+    // the parent closed, the children made: one transaction, all or nothing
+    await this.atomic(async () => {
+      this.requireNoDraft(await this.repo.lockRecord(record.id));
+      saved = await this.repo.updateTitle(
+        record.id,
+        {...result.title, revision: stored.revision + 1, updatedAt: now},
+        stored.revision,
+      );
+      if (!saved) {
+        throw changedMeanwhile();
+      }
+      appended = await this.repo.appendTitleEntry(splitEntry);
+      await this.publishEntry(record, appended, actor);
+      for (const [i, child] of children.entries()) {
+        await this.issueChild(child, result.children[i], firsts[i], actor, now);
+      }
+    });
+    const after = withChain ? [...chain, appended] : null;
+    const view = await this.viewOf(record, saved, actor, after);
+    view.children = children.map(child => ({
+      recordId: child.record.id,
+      recordNo: child.record.recordNo,
+    }));
+    return view;
+  }
+
+  /**
+   * Writes a child of a split, in the split's transaction: its record with version 1 and its
+   * event `records.record.committed`, its first title and its first entry with its event.
+   * @param {{record: !Object, version: !Object}} child
+   * @param {!Object} title the engine's first title of the child
+   * @param {!Object} entry its signed first entry
+   * @param {{id: string, name?: string, org?: string}} actor
+   * @param {!Date} at
+   * @return {!Promise<void>}
+   */
+  async issueChild(child, title, entry, actor, at) {
+    await this.repo.createRecord(child);
+    await this.events?.publish(
+      'records.record.committed',
+      committedEventOf(child.record, child.version, actor),
+      {actor: {id: actor.id, name: actor.name ?? null}},
+    );
+    const created = await this.repo.createTitle({
+      recordId: child.record.id,
+      ...title,
+      issuedVersion: 1,
+      documentHash: child.version.documentHash,
+      revision: 1,
+      createdAt: at,
+      updatedAt: at,
+    });
+    if (!created) {
+      throw changedMeanwhile();
+    }
+    const appended = await this.repo.appendTitleEntry(entry);
+    await this.publishEntry(child.record, appended, actor);
   }
 
   /**
@@ -570,7 +923,7 @@ export class TitleService {
     }
     const jwks = await this.keys();
     const anchor = await this.anchorOf(titleEventIdOf(recordId, selected));
-    return {
+    const bundle = {
       format: TITLE_PROOF_FORMAT,
       recordId,
       recordNo: record.recordNo,
@@ -580,6 +933,43 @@ export class TitleService {
       latest: selected === latestSeq,
       latestSeq,
     };
+    const parent = await this.parentOf(chain, MAX_SPLIT_DEPTH);
+    if (parent !== null) {
+      bundle.parent = parent;
+    }
+    return bundle;
+  }
+
+  /**
+   * The B/L a B/L was split from, for its title proof (CB-35): `{recordId, recordNo, entries}`,
+   * its whole chain of title, whose last entry (the `split`) the B/L's first entry links to; with
+   * its own `parent` when it was itself split from another. Null for a B/L of its own. The parent
+   * is found by the link itself: the entry whose hash is the first entry's previousHash.
+   * @param {!Array<object>} chain the B/L's chain of title
+   * @param {number} depth how many more parents to follow
+   * @return {!Promise<?{recordId: string, recordNo: string, entries: !Array<object>}>}
+   */
+  async parentOf(chain, depth) {
+    const first = chain[0];
+    if (depth <= 0 || first?.command !== ISSUE_FROM_SPLIT) {
+      return null;
+    }
+    const split = await this.repo.findTitleEntryByHash(first.previousHash);
+    if (split === null) {
+      return null;
+    }
+    const record = await this.repo.getRecord(split.recordId);
+    const entries = await this.repo.listTitleEntries(split.recordId);
+    const parent = {
+      recordId: split.recordId,
+      recordNo: record.recordNo,
+      entries: entries.filter(entry => entry.seq <= split.seq),
+    };
+    const grandparent = await this.parentOf(entries, depth - 1);
+    if (grandparent !== null) {
+      parent.parent = grandparent;
+    }
+    return parent;
   }
 
   /**
@@ -635,11 +1025,11 @@ export class TitleService {
     if (chain.length !== revision) {
       throw changedMeanwhile();
     }
-    const content = {
+    return this.signed({
       recordId,
       seq: revision + 1,
       command,
-      actor: {id: actor.id, name: actor.name ?? null, org: actor.org ?? null},
+      actor: entryActor(actor),
       from: stored?.holder ?? null,
       to: title.holder ?? null,
       endorsement: title.endorsement,
@@ -647,7 +1037,15 @@ export class TitleService {
       at: at.toISOString(),
       previousHash: chain.at(-1)?.entryHash ?? null,
       kid: await this.signer.currentKid(),
-    };
+    });
+  }
+
+  /**
+   * An entry's content with its hash and the platform's signature.
+   * @param {!Object} content the entry without entryHash and signature
+   * @return {!Promise<object>}
+   */
+  async signed(content) {
     const signature = await signJws(content, this.signer, {
       typ: TITLE_ENTRY_TYP,
       kid: content.kid,

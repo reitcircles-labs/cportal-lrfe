@@ -421,9 +421,18 @@ for (const store of stores()) {
           holder: CARRIER,
           returnTo: SHIPPER,
         });
+        // (changed: CB-35) an amendment carries its new document, committed as the next version
+        const current = await ctx.repo.getVersion(id, 1);
         const amended = await ctx.titles.apply(
           id,
-          {name: 'amend'},
+          {
+            name: 'amend',
+            format: 'dcsa-3.0',
+            document: {
+              ...current.data.document,
+              termsAndConditions: 'Amended (CB-31 test).',
+            },
+          },
           staffOf(CARRIER),
         );
         expect(amended.title).to.include({
@@ -482,7 +491,8 @@ for (const store of stores()) {
         expect(await ctx.repo.getTitle(id)).to.deep.equal(before);
       });
 
-      it('leaves a split to CB-35 (409), the title unchanged', async () => {
+      // (changed: CB-35) the split is built: one whose children are not new documents is refused
+      it('refuses a split whose children are not new documents (400), the title unchanged', async () => {
         const id = await committedBl(ctx, 'CB31-SPLIT');
         await ctx.titles.apply(id, {name: 'issue'}, staffOf(CARRIER));
         await ctx.titles.apply(
@@ -494,7 +504,8 @@ for (const store of stores()) {
         const error = await refused(
           ctx.titles.apply(id, {name: 'split', children: 2}, staffOf(CARRIER)),
         );
-        expect(error.statusCode).to.equal(409);
+        expect(error.statusCode).to.equal(400);
+        expect(error.details).to.deep.equal({code: 'too-few-children'});
         expect(await ctx.repo.getTitle(id)).to.deep.equal(before);
       });
 

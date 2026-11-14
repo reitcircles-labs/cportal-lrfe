@@ -5,7 +5,12 @@
  * no store, no service.
  */
 export {END_STATES, KINDS, STATES, TITLE_COMMANDS, kindOf} from './table.js';
-export {TitleRefusal, allowedCommands, applyTitleCommand} from './engine.js';
+export {
+  CARGO_PART_ARGUMENTS,
+  TitleRefusal,
+  allowedCommands,
+  applyTitleCommand,
+} from './engine.js';
 export {endorseeOf} from './endorsee.js';
 export {MODULES, MODULES_SETTING, modulesFromSettings} from './modules.js';
 export {TITLE_WORDING} from './wording.js';

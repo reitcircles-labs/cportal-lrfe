@@ -136,19 +136,27 @@ export const ACTIVE_ORGANISATIONS = Object.freeze({
  * `published` every event. With a `signer`, the title service (CB-31) signing its chain entries
  * with it (CB-32) is on the app too; `audit` is its client of the audit service, which gives the
  * trail-entry proof of an entry's event (CB-33); `organisations` its client of identity, which
- * says whether an organisation is registered and active (CB-34).
+ * says whether an organisation is registered and active (CB-34); `modules` the title modules on
+ * (all by default, as `modulesFromSettings` reads them; CB-35 turns some off).
  * @param {{open: function(): Promise<object>}} store
  * @param {{
  *   formats?: ReadonlyArray<object>,
  *   signer?: object,
  *   audit?: object,
  *   organisations?: object,
+ *   modules?: ReadonlyArray<string>,
  * }} [options]
  * @return {Promise<object>}
  */
 export async function makeHttp(
   store,
-  {formats, signer, audit, organisations = ACTIVE_ORGANISATIONS} = {},
+  {
+    formats,
+    signer,
+    audit,
+    organisations = ACTIVE_ORGANISATIONS,
+    modules = modulesFromSettings({}),
+  } = {},
 ) {
   const {repo, atomic, close, sequelize} = await store.open();
   const bus = createEventBus({driver: 'memory', source: 'shipping-records'});
@@ -166,7 +174,7 @@ export async function makeHttp(
     titles = new TitleService({
       repo,
       events,
-      modules: modulesFromSettings({}),
+      modules,
       clock: makeClock(),
       signer,
       audit,

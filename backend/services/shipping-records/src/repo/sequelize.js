@@ -78,6 +78,10 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "bl_version_seal_order" ON "${SCHEMA}"."bl_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`,
       );
+      // a split child's title proof finds its parent's split entry by its hash (CB-35)
+      await sequelize.query(
+        `CREATE INDEX IF NOT EXISTS "bl_title_entry_hash" ON "${SCHEMA}"."bl_title_entry" ("entryHash")`,
+      );
     },
 
     /**
@@ -322,6 +326,16 @@ export function createSequelizeRepo(sequelize) {
         order: [['seq', 'ASC']],
       });
       return rows.map(row => entryOf(plain(row)));
+    },
+    /**
+     * The chain-of-title entry with this entryHash, of any B/L (CB-35: a split child's first
+     * entry links to its parent's split entry by its hash), or null.
+     * @param {string} entryHash
+     * @return {!Promise<?object>}
+     */
+    async findTitleEntryByHash(entryHash) {
+      const row = plain(await models.TitleEntry.findOne({where: {entryHash}}));
+      return row ? entryOf(row) : null;
     },
     /**
      * Adds an entry to a B/L's chain of title, in the caller's transaction; a second entry with

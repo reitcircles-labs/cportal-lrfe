@@ -327,6 +327,21 @@ export function createMemoryRepo() {
       return clone(entries.get(recordId) ?? []);
     },
     /**
+     * The chain-of-title entry with this entryHash, of any B/L (CB-35: a split child's first
+     * entry links to its parent's split entry by its hash), or null.
+     * @param {string} entryHash
+     * @return {!Promise<?object>}
+     */
+    async findTitleEntryByHash(entryHash) {
+      for (const chain of entries.values()) {
+        const found = chain.find(entry => entry.entryHash === entryHash);
+        if (found) {
+          return clone(found);
+        }
+      }
+      return null;
+    },
+    /**
      * Adds an entry to a B/L's chain of title; a second entry with the same seq is refused, as
      * ./sequelize.js's primary key does.
      * @param {object} entry

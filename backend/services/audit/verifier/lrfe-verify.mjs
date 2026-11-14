@@ -1908,10 +1908,13 @@ const TITLE_ALGORITHM = 'ES256';
 
 /**
  * The state of a B/L's title after each command (backend/domains/shipping/docs/title-states.md):
- * a chain entry names its command, not the state it led to.
+ * a chain entry names its command, not the state it led to. `issue-from-split` is the first entry
+ * of a B/L made by a split (CB-35). The verifier imports nothing of the platform, so it keeps its
+ * own copy; a test compares it with the title engine's table.
  */
-const STATE_AFTER = new Map([
+export const TITLE_STATE_AFTER = new Map([
   ['issue', 'issued'],
+  ['issue-from-split', 'with-holder'],
   ['void', 'void'],
   ['endorse', 'with-holder'],
   ['transfer', 'with-holder'],
@@ -2028,15 +2031,17 @@ function chainDetail(entries, broken) {
 
 /**
  * Checks a B/L's chain of title as the bundle gives it: each entry's seq is its place (1..n), its
- * previousHash the entryHash of the one before (null for the first), its entryHash the hash of
+ * previousHash the entryHash of the one before (for the first: `startPrevious`, null for a B/L of
+ * its own, the parent's split entry's hash for a B/L made by a split), its entryHash the hash of
  * its content, and it belongs to the bundle's B/L. The seqs of the entries that fail.
  * @param {!Array<*>} entries
  * @param {*} recordId
+ * @param {?string} [startPrevious]
  * @return {!Array<*>}
  */
-function brokenTitleLinks(entries, recordId) {
+function brokenTitleLinks(entries, recordId, startPrevious = null) {
   const broken = [];
-  let previous = null;
+  let previous = startPrevious;
   for (const [index, entry] of entries.entries()) {
     if (!isObject(entry)) {
       broken.push(index + 1);
@@ -2056,6 +2061,60 @@ function brokenTitleLinks(entries, recordId) {
     previous = entry.entryHash;
   }
   return broken;
+}
+
+/** How many parents deep the verifier follows a split of a split. */
+const MAX_SPLIT_DEPTH = 50;
+
+/**
+ * Why the chain of the B/L a bundle's B/L was split from does not vouch for its first entry, or
+ * null when it does (CB-35): the parent's chain is linked and intact, all of the parent B/L (and,
+ * when it was split from another, its own parent checks the same way), every entry signed with
+ * the bundle's keys, ending with a `split` entry whose entryHash is the first entry's previousHash,
+ * and that first entry is an `issue-from-split`.
+ * @param {*} parent the bundle's `parent`: {recordId, recordNo, entries, parent?}
+ * @param {*} first the first entry of the B/L split from it
+ * @param {*} jwks the bundle's key set
+ * @param {number} depth how many more parents may follow
+ * @return {?string}
+ */
+function parentProblem(parent, first, jwks, depth) {
+  if (depth <= 0) {
+    return 'too many splits of splits to follow';
+  }
+  const entries =
+    isObject(parent) && Array.isArray(parent.entries) ? parent.entries : [];
+  if (entries.length === 0) {
+    return 'the bundle holds no chain of the B/L it was split from';
+  }
+  const label = `B/L ${parent.recordNo ?? parent.recordId}`;
+  let startPrevious = null;
+  if (parent.parent !== undefined) {
+    const above = parentProblem(parent.parent, entries[0], jwks, depth - 1);
+    if (above !== null) {
+      return above;
+    }
+    startPrevious = parent.parent.entries.at(-1).entryHash;
+  }
+  const broken = brokenTitleLinks(entries, parent.recordId, startPrevious);
+  if (broken.length > 0) {
+    return `the chain of ${label}: ${chainDetail(entries, broken)}`;
+  }
+  const unsigned = entries.filter(entry => !titleEntrySigned(entry, jwks));
+  if (unsigned.length > 0) {
+    return `the chain of ${label} has entries not signed with a key of the bundle's key set`;
+  }
+  const split = entries.at(-1);
+  if (split.command !== 'split') {
+    return `the chain of ${label} does not end with its split`;
+  }
+  if (!isObject(first) || first.command !== 'issue-from-split') {
+    return `the first entry is not the issue of a B/L split from ${label}`;
+  }
+  if (first.previousHash !== split.entryHash) {
+    return `the first entry does not follow the split of ${label}`;
+  }
+  return null;
 }
 
 /**
@@ -2098,13 +2157,17 @@ function titleAfter(bundle) {
     recordNo: bundle.recordNo ?? null,
     seq: last.seq ?? null,
     holder: last.to ?? null,
-    state: STATE_AFTER.get(last.command) ?? null,
+    state: TITLE_STATE_AFTER.get(last.command) ?? null,
   };
 }
 
 /**
  * Checks a B/L's title proof bundle (lrfe-title-proof/1, CB-33) offline:
- *   chain of title   the entries are linked (seq 1..n, each previousHash the entryHash before) and
+ *   split from       only for a B/L made by a split (the bundle's `parent`, CB-35): the parent's
+ *                    chain is linked, intact, of the parent B/L and signed with the bundle's keys,
+ *                    and ends with the `split` entry the first entry (`issue-from-split`) follows
+ *   chain of title   the entries are linked (seq 1..n, each previousHash the entryHash before; the
+ *                    first's null, or the parent's split entry's hash) and
  *                    intact (each entryHash the hash of its content), all of the bundle's B/L
  *   signatures       every entry is signed by the platform with a key of the bundle's key set
  *   title key        with `titleKey`: that key set is the one whose fingerprint the platform
@@ -2146,7 +2209,26 @@ export async function verifyTitleProof(
     return verdict();
   }
   const entries = Array.isArray(bundle.entries) ? bundle.entries : [];
-  const broken = brokenTitleLinks(entries, bundle.recordId);
+  // a B/L made by a split (CB-35): its chain starts from its parent's split entry
+  let startPrevious = null;
+  if (bundle.parent !== undefined) {
+    const problem = parentProblem(
+      bundle.parent,
+      entries[0],
+      bundle.jwks,
+      MAX_SPLIT_DEPTH,
+    );
+    check(
+      'split from',
+      problem === null,
+      problem ??
+        `split from B/L ${bundle.parent.recordNo}: its chain of title is linked, signed and ends with the split this chain starts from`,
+    );
+    if (problem === null) {
+      startPrevious = bundle.parent.entries.at(-1).entryHash;
+    }
+  }
+  const broken = brokenTitleLinks(entries, bundle.recordId, startPrevious);
   check(
     'chain of title',
     entries.length > 0 && broken.length === 0,

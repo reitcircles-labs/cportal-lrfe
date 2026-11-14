@@ -508,7 +508,13 @@ holder and the state after that entry. A bundle made before the anchoring (`anch
 true}`) is NOT VALID with only `anchored` failing: the chain is checked, not yet on the
 blockchain. In code: `verifyTitleProof(bundle, {address, titleKey})`. The bundle and the entries:
 [chain of title](../../domains/shipping/docs/chain-of-title.md#the-title-proof-cb-33). Tested in
-`tests/title-proof-verify.test.js`.
+`tests/title-proof-verify.test.js`. The proof of a B/L made by a split (CB-35) carries `parent`,
+the chain of the B/L it was split from: the verifier checks it as **split from** (linked, intact,
+of the parent B/L, signed with the bundle's keys, ending with the `split` entry the child's first
+entry `issue-from-split` follows; a split of a split nests its own `parent`), and checks the
+child's chain from that split entry's hash. Without its parent, or with another one, a child does
+not verify. The verifier's own table of the state after each command (`TITLE_STATE_AFTER`) is
+compared with the title engine's in `tests/title-split-proof.test.js`.
 
 **The anchoring status next to each version.** land-records' History (`GET /records/:id/history`)
 and edrms' documents (`GET /documents/:id`, for users) show each version's status: `waiting` for the

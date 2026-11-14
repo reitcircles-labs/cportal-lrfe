@@ -61,6 +61,16 @@ A chain is valid when it has entries and every one is linked, intact and signed.
 **last** entry leaves a valid shorter chain: it shows against the title (its `revision` is the
 number of entries) and against the last entry anchored on the blockchain (CB-33).
 
+## A B/L made by a split (CB-35)
+
+A split adds the `split` entry to the parent's chain (from the carrier, to nobody) and gives each
+child a chain of its own whose first entry is `issue-from-split`: seq 1, from nobody, to the
+organisation the parent was to go back to, the child's document hash, and as `previousHash` the
+`entryHash` of the parent's `split` entry. The child's chain is checked with
+`verifyTitleChain(entries, jwks, {startPreviousHash})`, the parent's split entry's hash; the link
+is also how the service finds a child's parent (by that entry's hash). Each first entry is
+published as `records.title.issue-from-split`.
+
 ## The title proof (CB-33)
 
 ### On the audit trail and the blockchain
@@ -85,6 +95,7 @@ event's id is a uuid made from the B/L and the seq (SHA-256 of
 | `entries` | the chain of title from entry 1 up to the entry proven: the last, or `?seq=` |
 | `jwks` | the platform's public keys, as `GET /api/records/title/keys` |
 | `anchor` | the audit service's trail-entry proof (`lrfe-audit-proof/1`) of the proven entry's event, once anchored; `{pending: true}` while it waits for the next anchoring |
+| `parent` | only for a B/L made by a split (CB-35): `{recordId, recordNo, entries}`, the whole chain of the B/L it was split from, ending with its `split` entry (with its own `parent` when that B/L was itself made by a split) |
 | `latest`, `latestSeq` | whether the proven entry is the B/L's last, and the last seq (online only: not checked offline) |
 
 ### Checking it offline
@@ -92,8 +103,11 @@ event's id is a uuid made from the B/L and the seq (SHA-256 of
 `node lrfe-verify.mjs title-proof.json --address <anchoring wallet> --title-key <fingerprint>`
 (the audit service's verifier, `services/audit/verifier/`, `verifyTitleProof` in code) checks:
 
+- **split from** (only with `parent`): the parent's chain is linked, intact, of the parent B/L and
+  signed with the bundle's keys, and ends with the `split` entry whose `entryHash` is the first
+  entry's `previousHash`, that first entry being an `issue-from-split`;
 - **chain of title**: the entries are linked and intact, as `verifyTitleChain` checks them, all of
-  the bundle's B/L;
+  the bundle's B/L (the first entry following null, or the parent's `split` entry);
 - **signatures**: every entry is signed with a key of the bundle's `jwks`;
 - **title key** (with `--title-key`): the `jwks` is the platform's: its fingerprint, SHA-256 hex of
   its canonical JSON, is the one the platform publishes (colons and case ignored). The key set

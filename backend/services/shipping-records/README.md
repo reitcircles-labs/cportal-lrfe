@@ -72,21 +72,52 @@ command, actor)` with the modules on in the install:
   any refusal that would tell the B/L's state.
 
 `TitleService.read(recordId, actor)` answers the title (null before issue) with the commands the
-caller may run now (only those the API offers). Amendment and split wait for CB-35, which creates
-the new B/Ls.
+caller may run now.
+
+- **Amendment and split (CB-35).** The holder surrenders the B/L for amendment
+  (`surrender-for-amendment`); the carrier then amends it or splits it. **amend** takes the new
+  document `{format, document, partyOrganisations?}` (without `partyOrganisations` the current
+  version's links are kept), converted and checked like any document: the same carrier code and
+  reference (400 `different-reference`), still to order (400 `kind-changed`), valid (400 with its
+  problems). It is committed by the engine as the next version (sealed after the version before,
+  its `records.record.committed` event published, no approver: the surrender for amendment is the
+  authority), in the same transaction as the title and the `amend` entry, which names the new
+  version's hash; the title's `issuedVersion` and `documentHash` become the new version's. While a
+  version is being drafted or in review the amendment is refused (409 `draft-open`): finish or
+  discard the draft first. **split** takes `{children: [{format, document, partyOrganisations?},
+  ...]}` (at least two): each child a B/L to order of the same carrier code (400
+  `different-reference`, `kind-changed`), with its own reference (the parent's or another
+  child's: 400 `child-reference`; one the carrier already has: 409), their cargo adding up to the
+  parent's (400 `cargo-mismatch`, `details.problems`; ports may differ), and, as for an
+  amendment, no version of the parent being drafted or in review (409 `draft-open`). Every child
+  and its reference is checked before anything is written. In one transaction, all or nothing: the parent's title closes (`split`) with its entry; each child becomes a record of
+  the carrier with version 1 committed by the engine and its event, a first title held by the
+  organisation the parent was to go back to, and its first entry `issue-from-split` following the
+  parent's `split` entry. The answer adds `children: [{recordId, recordNo}]`, in the order given.
+- **Release** is of the whole B/L: a release body naming part of its cargo is refused (400
+  `partial-release`).
+- **Known limit of the memory store** (`RECORDS_STORE=memory`, development and tests only): it
+  has no transactions. A split checks every child and its reference before writing, and the
+  parent's title is written first and only at the revision read, so a refusal or a lost race
+  changes nothing; but a child reference taken by another request in the moment between that
+  check and the write would leave the parent split with some children missing. PostgreSQL runs
+  the split in one transaction, all or nothing.
 
 ### The title API (CB-34)
 
 `POST /records/:id/title/:command` runs `issue`, `void`, `endorse`, `transfer`, `surrender`,
-`release`, `deliver` or `switch-to-paper` as the session's organisation, never one named in the
-request; the body `{to?, inBlank?, confirmBearer?}` gives the arguments, anything else in it is
-ignored. `GET /records/:id/title` reads it. Both answer `{recordId, title, allowedCommands,
+`release`, `deliver`, `surrender-for-amendment`, `amend`, `split` or `switch-to-paper` as the
+session's organisation, never one named in the request; the body `{to?, inBlank?,
+confirmBearer?}`, an amendment's `{format, document, partyOrganisations?}` or a split's
+`{children}` gives the arguments, anything else in it is ignored (a release naming part of the
+cargo is refused). `GET /records/:id/title` reads it. Both answer `{recordId, title, allowedCommands,
 chain}`, `chain` being the chain-of-title entries (`[]` before issue). The command's name is
 looked up in a Map (`OFFERED_COMMANDS` in `src/title.service.js`): an unknown one is 400
-`unknown-command`, `surrender-for-amendment`, `amend` and `split` are 400 `not-available` until
-CB-35. Permissions (shipping pack): `bl.issue` for `issue`, `void`, `release` and `deliver`
-(the carrier's staff), `bl.endorse` for `endorse`, `transfer`, `surrender` and `switch-to-paper`
-(the holder's); the demo role `bld` has both.
+`unknown-command`. Permissions (shipping pack): `bl.issue` for `issue`, `void`, `release`,
+`deliver`, `amend` and `split` (the carrier's staff), `bl.endorse` for `endorse`, `transfer`,
+`surrender`, `surrender-for-amendment` and `switch-to-paper` (the holder's); the demo role `bld`
+has both. The title proof of a B/L made by a split carries `parent`, the chain of the B/L it was
+split from ([chain of title](../../domains/shipping/docs/chain-of-title.md)).
 
 ### The chain of title (CB-32)
 
