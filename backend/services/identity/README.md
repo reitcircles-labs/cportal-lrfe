@@ -91,6 +91,10 @@ permission "Manage organisations" add, rename, suspend and reactivate them throu
   a refresh takes it again from the current user. Services read it with `organisationOf(request)`
   or `actorOf(request)` from `@lrfe/common`. Service tokens and tokens issued before CB-20 have no
   `org` and keep working until they expire.
+- **Standing, for the record service (CB-34).** `GET /organisations/:id/standing` answers the
+  domain pack's record service only (its service token: `land-records`, or `shipping-records` on a
+  shipping install) with `{id, status}` and nothing else; 404 for an organisation that does not
+  exist. The shipping record service asks it before a B/L goes to an organisation.
 
 ## Roles and permissions from the domain pack
 

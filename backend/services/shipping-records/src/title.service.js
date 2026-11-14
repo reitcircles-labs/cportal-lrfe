@@ -17,6 +17,29 @@ import {
 
 import {TITLE_ENTRY_TYP, entryHashOf} from './chain.js';
 
+/**
+ * The title commands the API offers (CB-34), each with the permission it needs: the carrier's
+ * staff hold `bl.issue`, the holder's `bl.endorse`. The amendment and the split come with CB-35.
+ * @type {!ReadonlyMap<string, string>}
+ */
+export const OFFERED_COMMANDS = new Map([
+  ['issue', 'bl.issue'],
+  ['void', 'bl.issue'],
+  ['release', 'bl.issue'],
+  ['deliver', 'bl.issue'],
+  ['endorse', 'bl.endorse'],
+  ['transfer', 'bl.endorse'],
+  ['surrender', 'bl.endorse'],
+  ['switch-to-paper', 'bl.endorse'],
+]);
+
+/** The engine's commands the API does not offer yet (CB-35). */
+export const LATER_COMMANDS = new Set([
+  'surrender-for-amendment',
+  'amend',
+  'split',
+]);
+
 /** The refusals answered 403: the organisation may not run the command. */
 const FORBIDDEN_REFUSALS = new Set([
   'no-organisation',
@@ -120,6 +143,31 @@ function proofUnavailable(cause) {
 }
 
 /**
+ * The 422 for an organisation a B/L cannot go to: not registered on the platform, or not active.
+ * @param {string} message
+ * @return {!AppError}
+ */
+function unregistered(message) {
+  return new AppError(422, message, {code: 'unregistered-organisation'});
+}
+
+/**
+ * The 503 while the organisations cannot be checked (identity down or failing). Shown to users,
+ * so no service named.
+ * @param {!Error} cause
+ * @return {!AppError}
+ */
+function organisationsUnavailable(cause) {
+  const error = new AppError(
+    503,
+    'The organisations cannot be checked now: try again later.',
+    {code: 'organisations-unavailable'},
+  );
+  error.cause = cause;
+  return error;
+}
+
+/**
  * The 404 of a B/L the caller does not see, the same as the record service's.
  * @return {!NotFoundError}
  */
@@ -158,22 +206,60 @@ function engineActor(actor) {
 
 /**
  * Whether an organisation sees a B/L's title: before issue the record's owner; after it the
- * carrier, the current holder or the consignee.
+ * carrier, the current holder, a past holder (any organisation the chain of title moved the B/L
+ * from or to) or the consignee.
  * @param {{organisationId: string}} record
  * @param {?object} stored the stored title, null before issue
+ * @param {!Array<{from: ?string, to: ?string}>} chain the B/L's chain of title
  * @param {(string|undefined)} organisation the caller's organisation
  * @return {boolean}
  */
-function canSee(record, stored, organisation) {
+function canSee(record, stored, chain, organisation) {
   if (typeof organisation !== 'string' || organisation === '') {
     return false;
   }
   if (stored === null) {
     return record.organisationId === organisation;
   }
-  // CB-34: past holders see it too, from the chain of title.
   const parties = [stored.carrier, stored.holder, stored.consignee];
-  return parties.includes(organisation);
+  if (parties.includes(organisation)) {
+    return true;
+  }
+  return chain.some(
+    entry => entry.from === organisation || entry.to === organisation,
+  );
+}
+
+/**
+ * The organisations a command hands the B/L to, which must be registered and active: the
+ * shipper, first holder, on issue; `to` on endorse and transfer. The consignee is not checked
+ * (README.md, "The title").
+ * @param {!Object} command the engine's command
+ * @return {!Array<{organisation: string, message: string}>}
+ */
+function recipientsOf(command) {
+  if (command.name === 'issue' && command.shipper) {
+    return [
+      {
+        organisation: command.shipper,
+        message:
+          "The shipper's organisation is not registered on this platform, or not active: the B/L cannot be issued to it",
+      },
+    ];
+  }
+  if (
+    (command.name === 'endorse' || command.name === 'transfer') &&
+    command.to
+  ) {
+    return [
+      {
+        organisation: command.to,
+        message:
+          'That organisation is not registered on this platform, or not active: the B/L cannot go to it',
+      },
+    ];
+  }
+  return [];
 }
 
 /**
@@ -190,11 +276,13 @@ export class TitleService {
    *   clock?: function(): Date,
    *   signer: ?object,
    *   audit?: ?{entryProof: function(string): !Promise<object>},
+   *   organisations: {standingOf: function(string): !Promise<string>},
    * }} options `modules`: the title modules on in this install (modulesFromSettings); `signer`:
    *     the platform signer of the chain entries (signerFromEnv of @lrfe/common), null when there
    *     is none (title commands are then refused with 503); `audit`: the client of the audit
    *     service giving the trail-entry proof of an event (./audit-client.js), null when there is
-   *     none (title proofs are then refused with 503)
+   *     none (title proofs are then refused with 503); `organisations`: the client of identity
+   *     saying whether an organisation is registered and active (./identity-client.js); required
    */
   constructor({
     repo,
@@ -203,13 +291,20 @@ export class TitleService {
     clock = () => new Date(),
     signer,
     audit = null,
+    organisations,
   }) {
+    if (typeof organisations?.standingOf !== 'function') {
+      throw new Error(
+        'TitleService needs its organisations client (identity), to check where a B/L goes',
+      );
+    }
     this.repo = repo;
     this.events = events;
     this.modules = modules;
     this.clock = clock;
     this.signer = signer ?? null;
     this.audit = audit;
+    this.organisations = organisations;
   }
 
   /**
@@ -222,11 +317,11 @@ export class TitleService {
   }
 
   /**
-   * A B/L's record and its stored title, when the caller sees them; 404 otherwise, never saying
-   * that the B/L exists.
+   * A B/L's record, its stored title and its chain of title, when the caller sees them; 404
+   * otherwise, never saying that the B/L exists.
    * @param {string} recordId
    * @param {{org?: string}} actor
-   * @return {!Promise<{record: object, stored: ?object}>}
+   * @return {!Promise<{record: object, stored: ?object, chain: !Array<object>}>}
    */
   async requireVisible(recordId, actor) {
     const record = await this.repo.getRecord(recordId);
@@ -234,21 +329,19 @@ export class TitleService {
       throw notFound();
     }
     const stored = await this.repo.getTitle(recordId);
-    if (!canSee(record, stored, actor?.org)) {
+    const chain = await this.repo.listTitleEntries(recordId);
+    if (!canSee(record, stored, chain, actor?.org)) {
       throw notFound();
     }
-    return {record, stored};
+    return {record, stored, chain};
   }
 
   /**
-   * What issuing a B/L issues: its current committed version, the hash of its B/L, and the issue
-   * command built from it (the kind from the document; the shipper, first holder of a negotiable
-   * B/L, and the consignee from the organisations its parties are linked to). 409 when the B/L
-   * has no committed version, or while a new version is in review.
-   * @param {object} record
-   * @return {!Promise<{issuedVersion: number, documentHash: string, command: object}>}
+   * Checks that a B/L can be issued now: 409 when it has no committed version, or while a new
+   * version is in review.
+   * @param {{currentVersion: ?number, draftState: ?string}} record
    */
-  async issueOf(record) {
+  requireIssuable(record) {
     if (!record.currentVersion) {
       throw new ConflictError(
         'This B/L has no committed version yet: it can be issued once a version is committed',
@@ -261,12 +354,23 @@ export class TitleService {
         {code: 'in-review'},
       );
     }
+  }
+
+  /**
+   * What issuing a B/L issues: its current committed version, the hash of its B/L, and the issue
+   * command built from it (the kind from the document; the shipper, first holder of a negotiable
+   * B/L, and the consignee from the organisations its parties are linked to). 409 when the B/L
+   * has no committed version, or while a new version is in review.
+   * @param {object} record
+   * @return {!Promise<{issuedVersion: number, documentHash: string, command: object}>}
+   */
+  async issueOf(record) {
+    this.requireIssuable(record);
     const version = await this.repo.getVersion(
       record.id,
       record.currentVersion,
     );
     const links = version.data.partyOrganisations ?? {};
-    // CB-34: identity checks that the shipper and consignee are registered, active organisations.
     return {
       issuedVersion: version.versionNumber,
       documentHash: billOfLadingHash(version.data),
@@ -300,20 +404,62 @@ export class TitleService {
   }
 
   /**
+   * Checks that the organisations a command hands the B/L to are registered and active (the
+   * shipper on issue, `to` on endorse and transfer): 422 when one is not, 503 while identity
+   * cannot answer.
+   * @param {!Object} command the engine's command
+   * @return {!Promise<void>}
+   */
+  async requireRegistered(command) {
+    for (const {organisation, message} of recipientsOf(command)) {
+      let standing;
+      try {
+        standing = await this.organisations.standingOf(organisation);
+      } catch (error) {
+        throw organisationsUnavailable(error);
+      }
+      if (standing !== 'active') {
+        throw unregistered(message);
+      }
+    }
+  }
+
+  /**
+   * Checks, inside the transaction that writes the first title, that the B/L is still issuable
+   * with the version read: the record's row is locked until the transaction ends, so a commit or
+   * a submission waits for the issue, and one that landed since the version was read makes the
+   * issue fail (409) rather than bind an older version.
+   * @param {string} recordId
+   * @param {number} issuedVersion the version the issue binds
+   * @return {!Promise<void>}
+   */
+  async requireStillIssuable(recordId, issuedVersion) {
+    const current = await this.repo.lockRecord(recordId);
+    this.requireIssuable(current);
+    if (current.currentVersion !== issuedVersion) {
+      throw changedMeanwhile();
+    }
+  }
+
+  /**
    * Runs a command on a B/L's title (README.md "The title"): `{name, ...arguments}`, e.g.
-   * `{name: 'endorse', to: 'org-b', inBlank: false}`. The new title is written only if the title
-   * is still the one read; a command that lost the race gets 409 "This B/L changed meanwhile".
-   * Each applied command adds one signed entry to the B/L's chain of title (CB-32), signed before
-   * anything is written (a failed signature changes nothing) and stored in the same transaction
-   * as the title, with its event `records.title.<command>` (CB-33): nothing is published for a
-   * refusal, a lost race or a failed transaction.
+   * `{name: 'endorse', to: 'org-b', inBlank: false}`. An organisation that does not see the B/L
+   * gets 404 before any other refusal. The organisations the B/L goes to must be registered and
+   * active. The new title is written only if the title is still the one read; a command that
+   * lost the race gets 409 "This B/L changed meanwhile". Each applied command adds one signed
+   * entry to the B/L's chain of title (CB-32), signed before anything is written (a failed
+   * signature changes nothing) and stored in the same transaction as the title, with its event
+   * `records.title.<command>` (CB-33): nothing is published for a refusal, a lost race or a
+   * failed transaction.
    * @param {string} recordId
    * @param {{name: string}} command the command and its arguments
    * @param {{id: string, name?: string, org?: string}} actor the person, with their organisation
+   * @param {{withChain?: boolean}} [options] `withChain`: the answer carries the chain of title
+   *     (the API's answer)
    * @return {!Promise<object>} the title as `read` answers it
    */
-  async apply(recordId, command, actor) {
-    const {record, stored} = await this.requireVisible(recordId, actor);
+  async apply(recordId, command, actor, {withChain = false} = {}) {
+    const {record, stored, chain} = await this.requireVisible(recordId, actor);
     if (this.signer === null) {
       throw notSetUp();
     }
@@ -330,6 +476,7 @@ export class TitleService {
         code: 'not-available',
       });
     }
+    await this.requireRegistered(engineCommand);
     const now = this.clock();
     const entry = await this.signedEntry({
       recordId,
@@ -341,9 +488,11 @@ export class TitleService {
       at: now,
     });
     let saved;
+    let appended;
     // the title, its chain entry and its event are committed together
     await this.atomic(async () => {
       if (issued) {
+        await this.requireStillIssuable(recordId, issued.issuedVersion);
         saved = await this.repo.createTitle({
           recordId,
           ...result.title,
@@ -363,10 +512,12 @@ export class TitleService {
       if (!saved) {
         throw changedMeanwhile();
       }
-      const appended = await this.repo.appendTitleEntry(entry);
+      appended = await this.repo.appendTitleEntry(entry);
       await this.publishEntry(record, appended, actor);
     });
-    return this.viewOf(record, saved, actor);
+    // the write succeeded at the revision read, so the chain read with it was the whole chain
+    const after = withChain ? [...chain, appended] : null;
+    return this.viewOf(record, saved, actor, after);
   }
 
   /**
@@ -521,43 +672,56 @@ export class TitleService {
    * see it.
    * @param {string} recordId
    * @param {{id: string, name?: string, org?: string}} actor
+   * @param {{withChain?: boolean}} [options] `withChain`: the answer carries the chain of title
+   *     (the API's answer)
    * @return {!Promise<object>}
    */
-  async read(recordId, actor) {
-    const {record, stored} = await this.requireVisible(recordId, actor);
-    return this.viewOf(record, stored, actor);
+  async read(recordId, actor, {withChain = false} = {}) {
+    const {record, stored, chain} = await this.requireVisible(recordId, actor);
+    return this.viewOf(record, stored, actor, withChain ? chain : null);
   }
 
   /**
-   * A title as `read` answers it: `title` null before issue, and `allowedCommands` for the
-   * caller (before issue: `issue` when the B/L can be issued now).
+   * A title as `read` answers it: `title` null before issue, `allowedCommands` for the caller
+   * (before issue: `issue` when the B/L can be issued now; only the commands the API offers),
+   * and `chain`, the chain of title, when given.
    * @param {object} record
    * @param {?object} stored
    * @param {{org?: string}} actor
-   * @return {!Promise<{recordId: string, title: ?object, allowedCommands: !Array<string>}>}
+   * @param {?Array<object>} [chain] the chain of title to answer with, null for none
+   * @return {!Promise<{
+   *   recordId: string,
+   *   title: ?object,
+   *   allowedCommands: !Array<string>,
+   *   chain: (!Array<object>|undefined),
+   * }>}
    */
-  async viewOf(record, stored, actor) {
-    if (stored === null) {
-      return {
-        recordId: record.id,
-        title: null,
-        allowedCommands: await this.issueAllowed(record, actor),
-      };
-    }
-    return {
+  async viewOf(record, stored, actor, chain = null) {
+    const view = {
       recordId: record.id,
-      title: {
+      title: null,
+      allowedCommands: [],
+    };
+    if (stored === null) {
+      view.allowedCommands = await this.issueAllowed(record, actor);
+    } else {
+      view.title = {
         ...titleOf(stored),
         issuedVersion: stored.issuedVersion,
         documentHash: stored.documentHash,
         revision: stored.revision,
         createdAt: stored.createdAt,
         updatedAt: stored.updatedAt,
-      },
-      allowedCommands: allowedCommands(titleOf(stored), engineActor(actor), {
+      };
+      const allowed = allowedCommands(titleOf(stored), engineActor(actor), {
         modules: this.modules,
-      }),
-    };
+      });
+      view.allowedCommands = allowed.filter(name => OFFERED_COMMANDS.has(name));
+    }
+    if (chain !== null) {
+      view.chain = chain;
+    }
+    return view;
   }
 
   /**

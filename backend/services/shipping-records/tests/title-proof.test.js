@@ -8,7 +8,13 @@ import {expect} from 'chai';
 import {verifyTitleChain} from '../src/chain.js';
 import {ShippingRecordsService} from '../src/records.service.js';
 import {TitleService} from '../src/title.service.js';
-import {exampleWithReference, makeClock, makeHttp, stores} from './helpers.js';
+import {
+  ACTIVE_ORGANISATIONS,
+  exampleWithReference,
+  makeClock,
+  makeHttp,
+  stores,
+} from './helpers.js';
 
 /**
  * CB-33: the chain of title on the audit trail and the blockchain, on the shipping records side.
@@ -371,6 +377,7 @@ for (const store of stores()) {
           repo: {...ctx.repo, getTitle: together(ctx.repo.getTitle, 2)},
           events: ctx.titles.events,
           modules: modulesFromSettings({}),
+          organisations: ACTIVE_ORGANISATIONS,
           clock: makeClock(),
           signer: ctx.titles.signer,
           audit,
@@ -416,6 +423,7 @@ for (const store of stores()) {
           repo: wrapRepo(ctx.repo),
           events,
           modules: modulesFromSettings({}),
+          organisations: ACTIVE_ORGANISATIONS,
           clock: makeClock(),
           signer: await createLocalSigner(),
           audit,

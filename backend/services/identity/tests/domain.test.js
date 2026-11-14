@@ -30,7 +30,13 @@ describe('the catalogue from the domain pack (CB-3)', () => {
     );
     expect(catalogue.permIds).to.include.members(['bl.read', 'bl.draft']);
     expect(catalogue.sodRules.map(r => r.id)).to.deep.equal(['sod1', 'sod4']);
-    expect(catalogue.roles[0].perms).to.deep.equal(['bl.read', 'bl.draft']);
+    // changed (CB-34): bld also issues and endorses B/Ls
+    expect(catalogue.roles[0].perms).to.deep.equal([
+      'bl.read',
+      'bl.draft',
+      'bl.issue',
+      'bl.endorse',
+    ]);
     expect(catalogue.offices.map(o => o.code)).to.deep.equal(['HQ']);
     expect(catalogue.demoUsers.map(u => u.roles)).to.deep.equal([
       ['adm'],

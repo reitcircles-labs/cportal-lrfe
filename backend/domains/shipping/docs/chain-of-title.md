@@ -76,7 +76,7 @@ event's id is a uuid made from the B/L and the seq (SHA-256 of
 
 ### The bundle
 
-`GET /api/records/:id/title/proof` (the carrier, the current holder, the consignee) gives:
+`GET /api/records/:id/title/proof` (the carrier, the current and past holders, the consignee) gives:
 
 | Field | What |
 |---|---|

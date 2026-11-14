@@ -116,15 +116,40 @@ async function openPostgres() {
 }
 
 /**
+ * Identity as the title service's client sees it, answering every organisation registered and
+ * active: for the tests of the engine's service (CB-31..33), whose organisations are not
+ * registered anywhere. The registration check itself is tested in title-api.test.js (CB-34).
+ * @type {{standingOf: function(string): !Promise<string>}}
+ */
+export const ACTIVE_ORGANISATIONS = Object.freeze({
+  /**
+   * Every organisation is active.
+   * @return {!Promise<string>}
+   */
+  async standingOf() {
+    return 'active';
+  },
+});
+
+/**
  * The service behind its HTTP app on a store: `as(user)` gives that user's auth header,
  * `published` every event. With a `signer`, the title service (CB-31) signing its chain entries
  * with it (CB-32) is on the app too; `audit` is its client of the audit service, which gives the
- * trail-entry proof of an entry's event (CB-33).
+ * trail-entry proof of an entry's event (CB-33); `organisations` its client of identity, which
+ * says whether an organisation is registered and active (CB-34).
  * @param {{open: function(): Promise<object>}} store
- * @param {{formats?: ReadonlyArray<object>, signer?: object, audit?: object}} [options]
+ * @param {{
+ *   formats?: ReadonlyArray<object>,
+ *   signer?: object,
+ *   audit?: object,
+ *   organisations?: object,
+ * }} [options]
  * @return {Promise<object>}
  */
-export async function makeHttp(store, {formats, signer, audit} = {}) {
+export async function makeHttp(
+  store,
+  {formats, signer, audit, organisations = ACTIVE_ORGANISATIONS} = {},
+) {
   const {repo, atomic, close, sequelize} = await store.open();
   const bus = createEventBus({driver: 'memory', source: 'shipping-records'});
   const events = atomic ? {...bus, atomic} : bus;
@@ -145,6 +170,7 @@ export async function makeHttp(store, {formats, signer, audit} = {}) {
       clock: makeClock(),
       signer,
       audit,
+      organisations,
     });
   }
   const app = await buildApp({service, titles, jwtSecret: SECRET});

@@ -296,6 +296,8 @@ services:
       LRFE_BL_MODULES: ${LRFE_BL_MODULES:-}
       # the audit service, which gives the proof of a chain-of-title entry on the blockchain (CB-33)
       AUDIT_URL: http://audit:3506
+      # identity, which says whether an organisation a B/L goes to is registered and active (CB-34)
+      IDENTITY_URL: http://identity:3501
     healthcheck: *healthcheck
     depends_on:
       db-setup: { condition: service_completed_successfully }

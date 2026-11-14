@@ -744,6 +744,17 @@ export class IdentityService {
     return organisation;
   }
 
+  /**
+   * Whether an organisation is registered and active, for the product's record service (CB-34):
+   * its id and status only, nothing else about it. 404 when there is no such organisation.
+   * @param {string} id
+   * @return {!Promise<{id: string, status: string}>}
+   */
+  async organisationStanding(id) {
+    const organisation = await this.requireOrganisation(id);
+    return {id: organisation.id, status: organisation.status};
+  }
+
   /** The id of the default organisation (made by the seed), or null before the seed has run. */
   async defaultOrganisationId() {
     return (await this.repo.getSetting(DEFAULT_ORGANISATION_KEY)) ?? null;

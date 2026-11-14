@@ -20,7 +20,10 @@ import {TreeService} from '../src/tree.service.js';
 import {ShippingRecordsService} from '../../shipping-records/src/records.service.js';
 import {TitleService} from '../../shipping-records/src/title.service.js';
 import {createMemoryRepo as createShippingRepo} from '../../shipping-records/src/repo/memory.js';
-import {exampleWithReference} from '../../shipping-records/tests/helpers.js';
+import {
+  ACTIVE_ORGANISATIONS,
+  exampleWithReference,
+} from '../../shipping-records/tests/helpers.js';
 import {fakeDriver} from './helpers.js';
 
 /**
@@ -90,6 +93,7 @@ export async function titleChain({reference = 'CB33-CHAIN', steps = 3} = {}) {
     modules: modulesFromSettings({}),
     clock,
     signer,
+    organisations: ACTIVE_ORGANISATIONS,
   });
   const drafter = {id: 'u-c1', name: 'Anna Shikongo', org: CARRIER};
   const approver = {id: 'u-c2', name: 'Petrus Amutenya', org: CARRIER};

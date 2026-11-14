@@ -103,6 +103,22 @@ export function createSequelizeRepo(sequelize) {
       return plain(await models.Record.findByPk(id));
     },
     /**
+     * A record read in the caller's transaction with its row locked until the transaction ends
+     * (CB-34: a commit or a submission waits for an issue in progress).
+     * @param {string} id
+     * @return {!Promise<?object>}
+     */
+    async lockRecord(id) {
+      return inTransaction(sequelize, async transaction =>
+        plain(
+          await models.Record.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+          }),
+        ),
+      );
+    },
+    /**
      * The record of an organisation with a carrier code and reference.
      * @param {{organisationId: string, carrierCode: string, recordNo: string}} reference
      * @return {!Promise<?object>}

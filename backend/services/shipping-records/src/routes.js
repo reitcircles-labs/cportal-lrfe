@@ -10,6 +10,7 @@ import {
   organisationOf,
 } from '@lrfe/common';
 import {LIST_STATUSES} from './records.service.js';
+import {LATER_COMMANDS, OFFERED_COMMANDS} from './title.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuid = {type: 'string', format: 'uuid'};
@@ -59,6 +60,88 @@ const decisionBody = {
     comment: {type: 'string', maxLength: 4000},
   },
 };
+
+/**
+ * The arguments of a title command (docs/title-states.md of the shipping pack). Anything else in
+ * the body (an organisation, an actor, a kind) is ignored: the organisation is the session's, and
+ * an issue reads the kind and its parties from the B/L.
+ */
+const titleCommandBody = {
+  type: 'object',
+  properties: {
+    to: {type: 'string', minLength: 1, maxLength: 100},
+    inBlank: {type: 'boolean'},
+    confirmBearer: {type: 'boolean'},
+  },
+};
+
+/** The names of a title command's arguments, as titleCommandBody lists them. */
+const TITLE_COMMAND_ARGUMENTS = ['to', 'inBlank', 'confirmBearer'];
+
+/**
+ * The engine's command of a title call: its name and only the arguments a command takes.
+ * @param {string} name
+ * @param {?Object} body
+ * @return {{name: string}}
+ */
+function titleCommandOf(name, body) {
+  const command = {name};
+  for (const key of TITLE_COMMAND_ARGUMENTS) {
+    if (body && Object.hasOwn(body, key)) {
+      command[key] = body[key];
+    }
+  }
+  return command;
+}
+
+/**
+ * The permission a title command needs; 400 for a command the API does not offer (unknown, or
+ * an amendment or split, which come with CB-35). The name comes from the request, so it is only
+ * looked up in a Map or Set.
+ * @param {string} name
+ * @return {string}
+ */
+function permissionOfCommand(name) {
+  const permission = OFFERED_COMMANDS.get(name);
+  if (permission !== undefined) {
+    return permission;
+  }
+  if (LATER_COMMANDS.has(name)) {
+    throw new BadRequestError(`The command ${name} is not available yet`, {
+      code: 'not-available',
+    });
+  }
+  throw new BadRequestError(`Unknown command: ${name}`, {
+    code: 'unknown-command',
+  });
+}
+
+/**
+ * A title answer with only the commands the user's permissions allow: the title service lists
+ * those of their organisation's role (carrier, holder), each command needing its permission too.
+ * @param {{allowedCommands: !Array<string>}} view
+ * @param {object} request
+ * @return {!Object}
+ */
+function forUser(view, request) {
+  const perms = request.user.perms ?? [];
+  const allowed = view.allowedCommands.filter(name =>
+    perms.includes(OFFERED_COMMANDS.get(name)),
+  );
+  return {...view, allowedCommands: allowed};
+}
+
+/**
+ * The title service on the app; 503 when there is none.
+ * @param {import('fastify').FastifyInstance} app
+ * @return {import('./title.service.js').TitleService}
+ */
+function titlesOf(app) {
+  if (!app.titles) {
+    throw new AppError(503, 'The chain of title is not available');
+  }
+  return app.titles;
+}
 
 /**
  * The user's organisation, which owns the B/Ls they create and is the only one whose B/Ls they
@@ -295,16 +378,59 @@ export async function recordsRoutes(app, {service}) {
 
   // the platform's public keys of the chain-of-title signatures, every key version: anyone may
   // check a chain with them, offline (CB-32)
-  app.get('/records/title/keys', async () => {
-    if (!app.titles) {
-      throw new AppError(503, 'The chain of title is not available');
-    }
-    return app.titles.keys();
-  });
+  app.get('/records/title/keys', async () => titlesOf(app).keys());
+
+  // ------------------------------------------------ the title (CB-34)
+
+  // a B/L's title, the commands the caller may run on it now and its chain of title, for the
+  // carrier, the current and past holders and the consignee
+  app.get(
+    '/records/:id/title',
+    {onRequest: canRead, schema: idParams()},
+    async req => {
+      ownerOf(req);
+      const view = await titlesOf(app).read(req.params.id, actorOf(req), {
+        withChain: true,
+      });
+      return forUser(view, req);
+    },
+  );
+
+  // a title command, run as the session's organisation: issue, void, release and deliver need
+  // bl.issue, endorse, transfer, surrender and switch-to-paper bl.endorse
+  app.post(
+    '/records/:id/title/:command',
+    {
+      onRequest: app.requireAnyPerm('bl.issue', 'bl.endorse'),
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id', 'command'],
+          properties: {id: uuid, command: {type: 'string', maxLength: 50}},
+        },
+        body: titleCommandBody,
+      },
+    },
+    async req => {
+      const name = req.params.command;
+      const permission = permissionOfCommand(name);
+      if (!(req.user.perms ?? []).includes(permission)) {
+        throw new ForbiddenError('Not permitted', {perm: permission});
+      }
+      ownerOf(req);
+      const view = await titlesOf(app).apply(
+        req.params.id,
+        titleCommandOf(name, req.body),
+        actorOf(req),
+        {withChain: true},
+      );
+      return forUser(view, req);
+    },
+  );
 
   // a B/L's title proof (lrfe-title-proof/1, CB-33): its chain of title, the platform's keys and
   // the proof of the last entry (or entry `seq`) on the blockchain, for the parties who see the
-  // title: the carrier, the current holder, the consignee
+  // title: the carrier, the current and past holders, the consignee
   app.get(
     '/records/:id/title/proof',
     {
@@ -319,10 +445,7 @@ export async function recordsRoutes(app, {service}) {
       },
     },
     async req => {
-      if (!app.titles) {
-        throw new AppError(503, 'The chain of title is not available');
-      }
-      return app.titles.proof(req.params.id, actorOf(req), {
+      return titlesOf(app).proof(req.params.id, actorOf(req), {
         seq: req.query.seq,
       });
     },

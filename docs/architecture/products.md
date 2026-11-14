@@ -104,8 +104,8 @@ generic prompt), the extract PDF layout, and the trail, tree and proof formats.
 (`@lrfe/domain-shipping/bill-of-lading`: DCSA eBL 3.0, the containers-only rule, the B/L formats
 of `LRFE_BL_FORMATS`; `backend/domains/shipping/docs/`), and in its sections:
 
-- `identity`: the group "Bills of lading" with `bl.read` and `bl.draft`, the role `bld` (B/L
-  documentation, both permissions), and demo data: the office `HQ` and, with a demo password, an
+- `identity`: the group "Bills of lading" with `bl.read`, `bl.draft`, `bl.issue` and `bl.endorse`
+  (issuing and moving B/Ls, CB-34), the role `bld` (B/L documentation, every one of them), and demo data: the office `HQ` and, with a demo password, an
   administrator and two B/L clerks at `shipping.example` (fictitious; the shipping e2e run signs
   them in).
 - `recordKind`: the record service `shipping-records` (`SHIPPING_RECORDS_URL`, default

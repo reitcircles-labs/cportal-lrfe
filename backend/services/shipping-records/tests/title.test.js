@@ -9,7 +9,12 @@ import {ForeignKeyConstraintError, UniqueConstraintError} from 'sequelize';
 
 import {ShippingRecordsService} from '../src/records.service.js';
 import {TitleService} from '../src/title.service.js';
-import {exampleWithReference, makeClock, stores} from './helpers.js';
+import {
+  ACTIVE_ORGANISATIONS,
+  exampleWithReference,
+  makeClock,
+  stores,
+} from './helpers.js';
 
 /** The organisations of the tests: the carrier owns the B/Ls. */
 const CARRIER = 'org-carrier';
@@ -89,7 +94,14 @@ async function makeServices(store, {modules = modulesFromSettings({})} = {}) {
   });
   // CB-32: every applied command adds a signed chain entry, so the title service needs a signer
   const signer = await createLocalSigner();
-  const titles = new TitleService({repo, events, modules, clock, signer});
+  const titles = new TitleService({
+    repo,
+    events,
+    modules,
+    clock,
+    signer,
+    organisations: ACTIVE_ORGANISATIONS,
+  });
   return {
     repo,
     events,
@@ -181,6 +193,7 @@ function racingTitles(ctx) {
     repo,
     events: ctx.events,
     modules: modulesFromSettings({}),
+    organisations: ACTIVE_ORGANISATIONS,
     clock: ctx.clock,
     signer: ctx.signer,
   });
@@ -671,8 +684,9 @@ for (const store of stores()) {
           const lost = results.filter(r => r.status === 'rejected');
           expect(won, `round ${round}`).to.have.length(1);
           expect(lost, `round ${round}`).to.have.length(1);
-          // read together: 409; read after the winner: the shipper no longer sees the B/L (404)
-          expect([409, 404]).to.include(lost[0].reason.statusCode);
+          // read together: 409; read after the winner: the shipper, now a past holder, still
+          // sees the B/L but may no longer endorse it (403). Changed (CB-34): past holders read.
+          expect([409, 403]).to.include(lost[0].reason.statusCode);
           const stored = await ctx.repo.getTitle(id);
           expect(stored.holder).to.equal(won[0].value.title.holder);
           expect(stored.revision).to.equal(2);

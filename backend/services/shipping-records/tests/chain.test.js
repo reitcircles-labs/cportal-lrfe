@@ -16,7 +16,13 @@ import {createFakeOpenBao} from '../../../packages/common/tests/fake-openbao.js'
 import {verifyTitleChain} from '../src/chain.js';
 import {ShippingRecordsService} from '../src/records.service.js';
 import {TitleService} from '../src/title.service.js';
-import {exampleWithReference, makeClock, makeHttp, stores} from './helpers.js';
+import {
+  ACTIVE_ORGANISATIONS,
+  exampleWithReference,
+  makeClock,
+  makeHttp,
+  stores,
+} from './helpers.js';
 
 /** The organisations of the tests: the carrier owns the B/Ls. */
 const CARRIER = 'org-carrier';
@@ -82,6 +88,7 @@ async function makeServices(store, signer) {
     repo,
     events,
     modules: modulesFromSettings({}),
+    organisations: ACTIVE_ORGANISATIONS,
     clock,
     signer,
   });
@@ -434,6 +441,7 @@ for (const store of stores()) {
           repo: ctx.repo,
           events: ctx.events,
           modules: modulesFromSettings({}),
+          organisations: ACTIVE_ORGANISATIONS,
           clock: ctx.clock,
           signer: failing,
         });
@@ -482,6 +490,7 @@ for (const store of stores()) {
             repo,
             events: ctx.events,
             modules: modulesFromSettings({}),
+            organisations: ACTIVE_ORGANISATIONS,
             clock: ctx.clock,
             signer: ctx.signer,
           });

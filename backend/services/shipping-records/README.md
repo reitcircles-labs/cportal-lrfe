@@ -11,8 +11,8 @@ gateway routes `/api/records` to it (`SHIPPING_RECORDS_URL`), and audit, bpm and
 there. In the compose file it runs with the profile `shipping`; the shipping e2e run
 (`npm run test:shipping` in `e2e/`) takes a B/L through it, the gateway and the audit service. The
 title of an issued B/L and its holder (L3, the holder ledger) are kept here too, with its signed
-chain of title (CB-32), each entry on the audit trail and the blockchain (CB-33); the routes that
-run title commands come with CB-34.
+chain of title (CB-32), each entry on the audit trail and the blockchain (CB-33), and the title
+commands are calls of this service (CB-34).
 
 ## A B/L record
 
@@ -50,19 +50,43 @@ command, actor)` with the modules on in the install:
 
 - **issue** needs a committed version and no new version in review; it is run by the B/L's owner
   organisation, which becomes the carrier. The kind comes from the document, the shipper (first
-  holder of a negotiable B/L, required) and the consignee from `partyOrganisations`.
+  holder of a negotiable B/L, required) and the consignee from `partyOrganisations`. The record's
+  row is read again, locked, in the transaction that writes the title: a commit or a submission
+  waits for the issue, and one that landed since the version was read makes the issue fail (409)
+  rather than bind an older version.
+- **Registered organisations (CB-34).** Possession moves only between organisations registered
+  and active on the platform: the shipper on issue and `to` on endorse and transfer are checked
+  with identity (`GET /organisations/:id/standing`, `IDENTITY_URL`) before anything is written;
+  422 (`details.code` `unregistered-organisation`) when one is not, 503 while identity cannot
+  answer. Known limit: the consignee of a straight B/L or sea waybill is not checked.
+  `TitleService` cannot be built without its identity client.
 - **Every command** writes the new title only if its revision is still the one read, in one
   transaction: of two commands at the same moment, exactly one wins, and the other gets 409 "This
   B/L changed meanwhile: read it again" (`details.code` `changed-meanwhile`).
 - **A refusal** changes nothing and gives the engine's reason, its code in `details.code`: 403 when
   the organisation may not run the command (`not-carrier`, `not-holder`, `no-organisation`), 400 for
   a wrong command or argument, 409 for the rest (the module is off, the kind, the state).
-- **Who sees a title:** before issue the record's owner; after it the carrier, the current holder
-  and the consignee (past holders come with CB-34). Anyone else gets 404 "B/L not
-  found", as for the record.
+- **Who sees a title:** before issue the record's owner; after it the carrier, the current holder,
+  past holders (any organisation the chain of title moved the B/L from or to) and the consignee.
+  Anyone else gets 404 "B/L not found", as for the record, for reads and commands alike and before
+  any refusal that would tell the B/L's state.
 
 `TitleService.read(recordId, actor)` answers the title (null before issue) with the commands the
-caller may run now. Split waits for CB-35, which creates the new B/Ls.
+caller may run now (only those the API offers). Amendment and split wait for CB-35, which creates
+the new B/Ls.
+
+### The title API (CB-34)
+
+`POST /records/:id/title/:command` runs `issue`, `void`, `endorse`, `transfer`, `surrender`,
+`release`, `deliver` or `switch-to-paper` as the session's organisation, never one named in the
+request; the body `{to?, inBlank?, confirmBearer?}` gives the arguments, anything else in it is
+ignored. `GET /records/:id/title` reads it. Both answer `{recordId, title, allowedCommands,
+chain}`, `chain` being the chain-of-title entries (`[]` before issue). The command's name is
+looked up in a Map (`OFFERED_COMMANDS` in `src/title.service.js`): an unknown one is 400
+`unknown-command`, `surrender-for-amendment`, `amend` and `split` are 400 `not-available` until
+CB-35. Permissions (shipping pack): `bl.issue` for `issue`, `void`, `release` and `deliver`
+(the carrier's staff), `bl.endorse` for `endorse`, `transfer`, `surrender` and `switch-to-paper`
+(the holder's); the demo role `bld` has both.
 
 ### The chain of title (CB-32)
 
@@ -106,6 +130,7 @@ be reached the route answers 503, never "pending".
 | `DB_SYNC` | `false` | `true`: create the schema and tables at start (development); otherwise `npm run db:setup` in `backend/` creates them |
 | `JWT_SECRET` | | the secret shared by every service, to check users' and services' tokens |
 | `AUDIT_URL` | `http://localhost:3506` | the audit service, which gives the proof of a chain-of-title entry on the blockchain (the title proof) |
+| `IDENTITY_URL` | `http://localhost:3501`; required in production (the start stops without it) | identity, which says whether an organisation a B/L goes to is registered and active (CB-34) |
 | `EVENT_BUS_DRIVER` | `log` | `log`, `memory` or `nats` (`NATS_URL`); with PostgreSQL, events go through the outbox in the same transaction as the change |
 | `LRFE_BL_FORMATS` | `dcsa-3.0` | the B/L formats that are on, comma-separated; an unknown name stops the start ([formats](../../domains/shipping/docs/formats.md)) |
 | `LRFE_BL_MODULES` | all | the title modules that are on, comma-separated (`waybill`, always on, `negotiable`, `blank-endorsement`, `amendment`, `split`); an unknown name or a module without the one it needs stops the start ([title modules](../../domains/shipping/docs/title-states.md#modules-cb-38)) |
@@ -129,7 +154,9 @@ Users need a token with an organisation; a user of no organisation gets 403.
 | `GET /records`, `GET /records/:id`, `GET /records/:id/versions`, `GET /records/:id/versions/:n` | `bl.read` (own organisation); the audit service (all), extracts (a record, a version) | the record contract's reading calls |
 | `POST /records/lookup`, `GET /records/seals`, `GET /records/:id/verify` | the audit service | labels and committed versions (a B/L pins no documents: `documents` and `pinnedBy` are empty), the seals in pages, the seal chain recomputed |
 | `GET /records/title/keys` | anyone, no token | the platform's public keys of the chain of title, every key version (a JWK set), for checking a chain offline; through the gateway `/api/records/title/keys` |
-| `GET /records/:id/title/proof` | `bl.read`, of the carrier, the current holder or the consignee | the B/L's title proof (`lrfe-title-proof/1`), `?seq=` for an older entry; 404 "B/L not found" for anyone else and before issue, 503 while the proof on the blockchain cannot be read |
+| `GET /records/:id/title` | `bl.read`, of the carrier, a current or past holder or the consignee (before issue: the owner) | the title, the commands the caller may run now and the chain of title; 404 "B/L not found" for anyone else |
+| `POST /records/:id/title/:command` | `bl.issue` (issue, void, release, deliver) or `bl.endorse` (endorse, transfer, surrender, switch-to-paper), of an organisation that sees the B/L | runs a title command (above); 404 for an organisation that does not see the B/L, before any other refusal; a refusal records nothing |
+| `GET /records/:id/title/proof` | `bl.read`, of the carrier, a current or past holder or the consignee | the B/L's title proof (`lrfe-title-proof/1`), `?seq=` for an older entry; 404 "B/L not found" for anyone else and before issue, 503 while the proof on the blockchain cannot be read |
 | `POST /records/:id/versions/:n/commit`, `.../reject` | bpm | the review decision, `{by: {id, name}, comment}`: commit refuses the submitter (403, four-eyes, always on) and answers a retry by the same person the same; reject needs a comment |
 
 The generated API description is [`docs/openapi.yaml`](docs/openapi.yaml) (`npm run docs` in

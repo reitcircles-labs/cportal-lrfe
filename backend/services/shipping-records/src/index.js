@@ -17,6 +17,7 @@ import {formatsFromSettings} from '@lrfe/domain-shipping/bill-of-lading';
 import {modulesFromSettings} from '@lrfe/domain-shipping/title';
 import {buildApp} from './app.js';
 import {createAuditClient} from './audit-client.js';
+import {createIdentityClient} from './identity-client.js';
 import {ShippingRecordsService} from './records.service.js';
 import {TitleService} from './title.service.js';
 import {createMemoryRepo} from './repo/memory.js';
@@ -73,7 +74,27 @@ const audit = createAuditClient({
 // the platform signer of the chain of title (TITLE_SIGNER, README.md "Settings"): none in
 // production without the key store, and title commands are then refused (503)
 const signer = await signerFromEnv(process.env);
-const titles = new TitleService({repo, events, modules, signer, audit});
+// whether an organisation a B/L goes to is registered and active, from identity (CB-34); in
+// production IDENTITY_URL must be set, else the start stops here
+const identityUrl =
+  process.env.NODE_ENV === 'production'
+    ? env('IDENTITY_URL')
+    : env('IDENTITY_URL', 'http://localhost:3501');
+const organisations = createIdentityClient({
+  baseUrl: identityUrl,
+  serviceToken: createServiceTokenSigner({
+    secret: jwtSecret,
+    service: 'shipping-records',
+  }),
+});
+const titles = new TitleService({
+  repo,
+  events,
+  modules,
+  signer,
+  audit,
+  organisations,
+});
 
 const app = await buildApp({
   service,

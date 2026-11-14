@@ -145,6 +145,15 @@ export function createMemoryRepo() {
       return clone(records.get(id)) ?? null;
     },
     /**
+     * A record, read as ./sequelize.js's reads it locked in a transaction; the memory store
+     * (development and tests) has no locks.
+     * @param {string} id
+     * @return {!Promise<?object>}
+     */
+    async lockRecord(id) {
+      return clone(records.get(id)) ?? null;
+    },
+    /**
      * The record of an organisation with a carrier code and reference.
      * @param {{organisationId: string, carrierCode: string, recordNo: string}} reference
      * @return {!Promise<?object>}

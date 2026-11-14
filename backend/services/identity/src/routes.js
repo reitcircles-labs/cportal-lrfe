@@ -312,6 +312,13 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     async req =>
       service.updateOrganisation(req.params.id, req.body, actorOf(req)),
   );
+  // whether an organisation is registered and active, for the product's record service only
+  // (CB-34: a B/L goes only to such an organisation); for a pack without records, nobody
+  app.get(
+    '/organisations/:id/standing',
+    {onRequest: app.requireService(...policyReaders), schema: idParam},
+    async req => service.organisationStanding(req.params.id),
+  );
   app.post(
     '/organisations/:id/suspend',
     {...organisations, schema: idParam},

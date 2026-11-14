@@ -178,6 +178,13 @@ export const ENDPOINTS = {
       summary: 'Rename an organisation',
       description: '`{ name }`. The code cannot change.',
     },
+    'GET /organisations/{id}/standing': {
+      tag: 'Organisations',
+      summary:
+        "Whether an organisation is registered and active (the product's record service only)",
+      description:
+        "For the service token of the domain pack's record service (land-records, or shipping-records on a shipping install): `{ id, status }`, `status` `Active` or `Suspended`, nothing else about the organisation. A B/L goes only to an active organisation (CB-34). 404 for an organisation that does not exist, 400 for an id that is not one.",
+    },
     'POST /organisations/{id}/suspend': {
       tag: 'Organisations',
       summary: 'Suspend an organisation',

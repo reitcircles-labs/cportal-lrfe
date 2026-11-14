@@ -74,12 +74,26 @@ export const ENDPOINTS = {
       description:
         'The B/L as the list has it, with `current` and `draft` (each a version with its data, or null) and `draftDiff` (always null). 404 for a B/L of another organisation.',
     },
+    'GET /records/{id}/title': {
+      tag: 'Records',
+      summary:
+        "A B/L's title: its state, holder, the commands you may run now and its chain of title",
+      description:
+        '`{ recordId, title, allowedCommands, chain }`. `title`: `{ kind, state, carrier, holder, endorsement, consignee, returnTo, issuedVersion, documentHash, revision, createdAt, updatedAt }`, null before issue. `allowedCommands`: the commands your organisation may run on it now (before issue: `issue` for the carrier that owns a B/L with a committed version and none in review). `chain`: the chain-of-title entries, signed, oldest first; `[]` before issue. Before issue only the organisation that owns the B/L sees it; after it the carrier, the current holder, past holders and the consignee. 404 "B/L not found" for anyone else, as for a B/L that does not exist. 403 for a user of no organisation.',
+    },
+    'POST /records/{id}/title/{command}': {
+      tag: 'Records',
+      summary:
+        'Run a title command on a B/L: issue, void, endorse, transfer, surrender, release, deliver, switch-to-paper',
+      description:
+        "Body `{ to?, inBlank?, confirmBearer? }` (anything else is ignored): `to` the organisation that receives the B/L (endorse, transfer), `inBlank` whether an endorsement is in blank, `confirmBearer` the confirmation to switch a blank-endorsed B/L to paper. The command runs as your session's organisation. `issue`, `void`, `release` and `deliver` need `bl.issue` (the carrier's staff); `endorse`, `transfer`, `surrender` and `switch-to-paper` need `bl.endorse` (the holder's). Issue binds the B/L's current committed version; the kind, the shipper (first holder) and the consignee come from it. The shipper on issue and `to` on endorse and transfer must be organisations registered and active on the platform (422 `unregistered-organisation`; 503 while that cannot be checked). Answers the title as `GET /records/{id}/title` does. Refusals, with the reason and `details.code` (the rules: backend/domains/shipping/docs/title-states.md): 404 \"B/L not found\" for an organisation that does not see the B/L, before any other refusal; 400 for an unknown command (`unknown-command`), an amendment or split (`not-available`, not offered yet) or a wrong argument; 403 when your organisation may not run it (`not-carrier`, `not-holder`) or for a user of no organisation; 409 for the kind, the state, a module that is off, a B/L without a committed version or with one in review, or a B/L changed meanwhile (`changed-meanwhile`, read it again); 503 while the platform signature is not set up. A refused command changes nothing and puts nothing on the trail.",
+    },
     'GET /records/{id}/title/proof': {
       tag: 'Records',
       summary:
         "A B/L's title proof: its chain of title, signed, with the last entry's proof on the blockchain",
       description:
-        "`seq` (optional, from 1): the proof of that entry instead of the last. `{ format: 'lrfe-title-proof/1', recordId, recordNo, entries, jwks, anchor, latest, latestSeq }`: the chain-of-title entries up to the one proven (never the document), the platform's public keys (as `GET /records/title/keys`), and `anchor`, the audit service's trail-entry proof of that entry's event (`lrfe-audit-proof/1`) once it is anchored, `{ pending: true }` before. `latest`: whether the entry is the B/L's last; `latestSeq`: the last. Checked offline with the audit verifier (`lrfe-verify.mjs title-proof.json --title-key …`). For the carrier, the current holder and the consignee; 404 \"B/L not found\" for any other organisation and before issue, 404 for a `seq` beyond the chain, 503 while the proof on the blockchain cannot be read.",
+        "`seq` (optional, from 1): the proof of that entry instead of the last. `{ format: 'lrfe-title-proof/1', recordId, recordNo, entries, jwks, anchor, latest, latestSeq }`: the chain-of-title entries up to the one proven (never the document), the platform's public keys (as `GET /records/title/keys`), and `anchor`, the audit service's trail-entry proof of that entry's event (`lrfe-audit-proof/1`) once it is anchored, `{ pending: true }` before. `latest`: whether the entry is the B/L's last; `latestSeq`: the last. Checked offline with the audit verifier (`lrfe-verify.mjs title-proof.json --title-key …`). For the carrier, the current and past holders and the consignee; 404 \"B/L not found\" for any other organisation and before issue, 404 for a `seq` beyond the chain, 503 while the proof on the blockchain cannot be read.",
     },
     'GET /records/{id}/versions': {
       tag: 'Records',
