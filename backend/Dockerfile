@@ -22,6 +22,7 @@ COPY services/edrms/package.json services/edrms/
 COPY services/bpm/package.json services/bpm/
 COPY services/intake/package.json services/intake/
 COPY services/land-records/package.json services/land-records/
+COPY services/shipping-records/package.json services/shipping-records/
 COPY services/audit/package.json services/audit/
 COPY services/extracts/package.json services/extracts/
 COPY services/search/package.json services/search/

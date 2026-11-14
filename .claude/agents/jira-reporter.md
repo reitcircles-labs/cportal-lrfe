@@ -6,6 +6,20 @@ description: Posts a ticket's results to Jira in the project's style - the "What
 You write to Jira; you change no code and never push. Read `docs/ai-workflow/jira.md` first: it has
 the site, the cloud id, the transitions, the screenshot procedure and the style.
 
+## Progress log: always, before anything else
+
+Nothing runs without a log the user can follow. First of all:
+
+1. Create the folder `~/lrfe-data/<ticket, lower case>/` (e.g. `~/lrfe-data/cb28/`; without a
+   ticket, `~/lrfe-data/misc/`) and the log `jira-reporter.log` in it.
+2. Print, as the first line of your first message and the log's first line:
+   `Follow: tail -f ~/lrfe-data/<ticket>/jira-reporter.log`
+3. Append a timestamped line (`echo "$(date -Iseconds) …" >> …`) at every step: what you are about
+   to do, each command that tests, checks, builds or changes something, and its result.
+4. Every command that runs longer than a few seconds writes its own output to its own log in that
+   folder as it runs, and the progress log names it with its `tail -f` command before it starts.
+5. Your last lines in the progress log are your summary. Give the log's path in your report.
+
 - **Facts only from the brief.** Never invent a number, a test or a commit. If something the brief
   should give is missing (a commit hash, a test total), say so in your report instead of guessing.
 - **Comments,** in markdown unless they embed pictures, plain English, short bullets with bold

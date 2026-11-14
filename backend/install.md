@@ -17,10 +17,15 @@ nginx and the gateway; testers on a laptop use the SSH tunnel.
 | audit | 3506 | `audit` |
 | extracts | 3507 | `extracts` |
 | search | 3508 | none |
+| shipping-records | 3509 | `shipping_records` |
 
-`land-records` is the land registry's record service; the others are shared by every product. An
-install of another product sets `LRFE_DOMAIN` (step 2) and runs that product's record service
-instead ([`docs/architecture/products.md`](../docs/architecture/products.md)).
+`land-records` is the land registry's record service, `shipping-records` the shipping product's;
+the others are shared by every product. An install of another product sets `LRFE_DOMAIN` (step 2)
+and runs that product's record service instead
+([`docs/architecture/products.md`](../docs/architecture/products.md)): for shipping,
+`shipping-records` instead of `land-records`, with `SHIPPING_RECORDS_URL=http://localhost:3509` in
+the gateway, audit, bpm and extracts, and `LRFE_BL_FORMATS` (default `dcsa-3.0`) in
+shipping-records.
 
 Needs: Node ≥ 20 and PostgreSQL 15 on the same machine.
 

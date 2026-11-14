@@ -22,6 +22,8 @@
  * With E2E_OPENSEARCH_URL, edrms searches through that search engine's index
  * (EDRMS_SEARCH=opensearch, no login: a test engine without its security plugin), for the load
  * tests of search on the test register (API-805).
+ * With E2E_DOMAIN=shipping (npm run test:shipping, CB-28), the services run the shipping product
+ * (LRFE_DOMAIN=shipping), with shipping-records instead of land-records; the land run is unchanged.
  * The gateway starts last, once the others answer /health, so "gateway up" means "stack ready".
  */
 import {execFileSync, spawn} from 'node:child_process';
@@ -39,6 +41,7 @@ import {
   BAO_DIR,
   DEMO_PASSWORD,
   E2E_BAO,
+  E2E_DOMAIN,
   FILES_DIR,
   JWT_SECRET,
   MAIL_DIR,
@@ -114,13 +117,25 @@ if (E2E_BAO === 'fake') {
 if (STORE_DIR && (process.env.E2E_DB !== 'postgres' || E2E_BAO !== 'real')) {
   throw new Error('E2E_STORE_DIR needs E2E_DB=postgres and E2E_BAO=real');
 }
+if (!['land', 'shipping'].includes(E2E_DOMAIN)) {
+  throw new Error(`E2E_DOMAIN must be land or shipping, got "${E2E_DOMAIN}"`);
+}
+// the shipping product: its pack in every service, and its record service, which the gateway
+// routes /api/records to (CB-28); the land run sets neither, as before
+const SHIPPING = E2E_DOMAIN === 'shipping';
+if (SHIPPING) {
+  Object.assign(COMMON, {
+    LRFE_DOMAIN: 'shipping',
+    SHIPPING_RECORDS_URL: url('shipping-records'),
+  });
+}
 const SERVICE_ENV = {};
 const SERVICES = [
   'identity',
   'edrms',
   'bpm',
   'intake',
-  'land-records',
+  SHIPPING ? 'shipping-records' : 'land-records',
   'audit',
   'extracts',
 ];

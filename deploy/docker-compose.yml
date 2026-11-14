@@ -11,6 +11,8 @@
 #   COMPOSE_PROFILES=postgres,bao,docs       (in .env) also the API docs (Swagger UI) on LRFE_DOCS_PORT
 #   COMPOSE_PROFILES=postgres,bao,search     (in .env) also the search engine, on its encrypted
 #                                            directory (README.md, parts H and I)
+#   COMPOSE_PROFILES=postgres,bao,shipping   (in .env, with LRFE_DOMAIN=shipping) also the B/L record
+#                                            service, shipping-records (README.md, "The product")
 #
 # Stored files (edrms, intake, extracts) are encrypted with keys from OpenBao by default
 # (*_ENCRYPTION=bao): initialise, unseal and prepare OpenBao right after the first start (README.md, part D).
@@ -105,6 +107,8 @@ services:
     command: ["node", "scripts/db-setup.js"]
     environment:
       DB_CONNECTION_STRING: *db-url
+      # a product's own record service gets its schema only on that product's installs (CB-28)
+      LRFE_DOMAIN: ${LRFE_DOMAIN:-land}
 
   # The event bus between the services, with JetStream for the durable events of the audit trail
   nats:
@@ -209,8 +213,10 @@ services:
       PORT: "3503"
       BPM_STORE: postgres
       EDRMS_URL: http://edrms:3502
-      # called only when a land record review is decided (no start-up dependency)
+      # called only when a record review is decided (no start-up dependency): the record service
+      # of the install's product, land-records or shipping-records (profile shipping)
       RECORDS_URL: http://land-records:3505
+      SHIPPING_RECORDS_URL: http://shipping-records:3509
     healthcheck: *healthcheck
     depends_on:
       db-setup: { condition: service_completed_successfully }
@@ -273,6 +279,24 @@ services:
       identity: { condition: service_healthy }
       edrms: { condition: service_healthy }
 
+  # The B/L record service of the shipping product (profile shipping, CB-27, CB-28): only with
+  # LRFE_DOMAIN=shipping. db-setup sets up its schema only then (a land install never has it).
+  shipping-records:
+    <<: *backend
+    profiles: ["shipping"]
+    working_dir: /app/services/shipping-records
+    command: ["node", "src/index.js"]
+    environment:
+      <<: *env
+      PORT: "3509"
+      RECORDS_STORE: postgres
+      # the B/L formats that are on, comma-separated (backend/domains/shipping/docs/formats.md)
+      LRFE_BL_FORMATS: ${LRFE_BL_FORMATS:-dcsa-3.0}
+    healthcheck: *healthcheck
+    depends_on:
+      db-setup: { condition: service_completed_successfully }
+      nats: { condition: service_healthy }
+
   audit:
     <<: *backend
     working_dir: /app/services/audit
@@ -281,7 +305,9 @@ services:
       <<: [*env, *org]
       PORT: "3506"
       AUDIT_STORE: postgres
+      # the record service of the install's product: land-records, or shipping-records (profile shipping)
       RECORDS_URL: http://land-records:3505
+      SHIPPING_RECORDS_URL: http://shipping-records:3509
       EDRMS_URL: http://edrms:3502
       BPM_URL: http://bpm:3503
       # anchoring on the blockchain: empty = off; ogmios = through the node of the profile blockchain,
@@ -314,6 +340,7 @@ services:
       # the record's current version and its owners, read when an extract is issued, whether that
       # version is on the blockchain yet, and its proof (attached inside the PDF)
       RECORDS_URL: http://land-records:3505
+      SHIPPING_RECORDS_URL: http://shipping-records:3509
       AUDIT_URL: http://audit:3506
       # the sealed PDFs, kept as issued for "download again": in the extracts-files volume
       EXTRACTS_STORAGE: local
@@ -387,11 +414,14 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       HOST: 0.0.0.0
       PORT: "3500"
+      # the product (CB-3): /api/records goes to its record service, land-records or shipping-records
+      LRFE_DOMAIN: ${LRFE_DOMAIN:-land}
       IDENTITY_URL: http://identity:3501
       EDRMS_URL: http://edrms:3502
       BPM_URL: http://bpm:3503
       INTAKE_URL: http://intake:3504
       RECORDS_URL: http://land-records:3505
+      SHIPPING_RECORDS_URL: http://shipping-records:3509
       AUDIT_URL: http://audit:3506
       EXTRACTS_URL: http://extracts:3507
       CORS_ORIGINS: ${LRFE_PUBLIC_URL}

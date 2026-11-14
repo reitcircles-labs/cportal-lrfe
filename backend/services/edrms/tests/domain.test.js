@@ -41,7 +41,7 @@ describe('edrms with another domain pack (CB-3)', () => {
     }
   });
 
-  it('lets no record service read documents with the shipping pack (CB-4)', async () => {
+  it("lets only the shipping pack's record service read documents with that pack (CB-4, CB-28)", async () => {
     const pack = await loadDomainPack('shipping');
     const {app, bearer, serviceToken} = await makeApp({pack});
     const read = async name =>
@@ -52,6 +52,7 @@ describe('edrms with another domain pack (CB-3)', () => {
         })
       ).statusCode;
     expect(await read('land-records')).to.equal(403);
+    expect(await read('shipping-records')).to.equal(200);
     expect(await read('audit')).to.equal(200);
   });
 

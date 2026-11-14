@@ -21,7 +21,7 @@ export {WORDING_PARTS} from './sections/wording.js';
  * - `wording`: texts per service (edrms, identity, audit, extracts).
  *
  * Every section is checked at start, so a broken pack fails before a service serves anything. An
- * empty pack (shipping, for now) has every section, with nothing in it.
+ * empty pack has every section, with nothing in it.
  *
  * A pack never imports `@lrfe/common`: common loads the pack while it is itself being loaded.
  * @typedef {object} DomainPack

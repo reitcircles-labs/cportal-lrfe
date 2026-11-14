@@ -10,5 +10,12 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["playwright.config.ts", "tests", "support", "stack"]
+  "include": [
+    "playwright.config.ts",
+    "playwright.shipping.config.ts",
+    "tests",
+    "tests-shipping",
+    "support",
+    "stack"
+  ]
 }

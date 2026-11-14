@@ -65,9 +65,9 @@ describe('extracts and the domain pack (CB-3)', () => {
     ]);
   });
 
-  it('with the shipping pack: no record service, and a call for a record answers 503 (CB-4)', async () => {
+  it('without a record service, a call for a record answers 503 (CB-4)', async () => {
     const shipping = await loadDomainPack('shipping');
-    expect(recordServiceOf(shipping)).to.equal(null);
+    expect(recordServiceOf({...shipping, recordKind: null})).to.equal(null);
     const service = new ExtractsService({
       repo: createMemoryRepo(),
       events: null,
@@ -86,7 +86,7 @@ describe('extracts and the domain pack (CB-3)', () => {
     ]);
   });
 
-  it('with the empty shipping pack: the app starts and answers', async () => {
+  it('with the shipping pack: the app starts and answers', async () => {
     const shipping = await loadDomainPack('shipping');
     const repo = createMemoryRepo();
     const service = new ExtractsService({

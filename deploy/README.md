@@ -100,12 +100,18 @@ Docker, in the folder the bundle is unpacked in.
    **The product** (`LRFE_DOMAIN`) chooses the domain pack every service reads its product's
    document types, roles, workflows, record kind and texts from (`backend/domains/<name>`,
    `docs/architecture/products.md` in the source repository). Not set means `land`, the land
-   registry, so an existing `.env` needs no change. `shipping` is an empty pack for now: the
-   services start, with no document types, product roles or workflows. Choose it when installing;
-   never change it on an install that holds data. The web container also writes it into
-   `/config.json` (`domain`). A pack that is missing or broken stops each service at start, with
-   the reason in `docker compose logs <service>`. The `web` image holds the land registry's app;
-   the shipping app has no image yet.
+   registry, so an existing `.env` needs no change. `shipping` is the electronic bills of lading
+   (B/Ls): no document types or workflows yet, the B/L role and permissions, and its own record
+   service, `shipping-records`, which runs only with the compose profile `shipping`. A shipping
+   install therefore sets both, `LRFE_DOMAIN=shipping` and `shipping` in `COMPOSE_PROFILES` (e.g.
+   `COMPOSE_PROFILES=postgres,bao,shipping`); a land install sets neither and never starts it.
+   `LRFE_BL_FORMATS` (default `dcsa-3.0`) lists the B/L formats it accepts. The gateway, audit,
+   bpm and extracts reach it at `SHIPPING_RECORDS_URL`, set in the compose file
+   (`http://shipping-records:3509`). Choose the product when installing; never change it on an
+   install that holds data. The web container also writes it into `/config.json` (`domain`). A
+   pack that is missing or broken stops each service at start, with the reason in
+   `docker compose logs <service>`. The `web` image holds the land registry's app; the shipping
+   app has no image yet.
 
    **The offices** (`CODE=Name` pairs, separated by `;`, codes of 2 to 5 capital letters) are
    created only once, on an empty database; empty means none, and the administrator adds them under

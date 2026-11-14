@@ -9,6 +9,8 @@
 **/*.yaml
 backend/.tools/
 backend/services/*/docs/openapi.json
+# DCSA's published files and examples, copied unchanged (checksums in each SOURCE.md)
+backend/domains/shipping/dcsa/
 e2e/.stack/
 e2e/.auth/
 **/coverage/

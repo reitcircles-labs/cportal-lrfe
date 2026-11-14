@@ -47,6 +47,8 @@ export const PORTS = {
   audit: apiBase + 10,
   docs: apiBase + 11, // the API docs container (npm run test:docker)
   extracts: apiBase + 12,
+  // the B/L record service, instead of land-records with E2E_DOMAIN=shipping (CB-28)
+  'shipping-records': apiBase + 13,
   web: Number(process.env.E2E_WEB_PORT || 4300),
   // the shipping app (CB-2): the port after the land registry's
   shipping: Number(process.env.E2E_WEB_PORT || 4300) + 1,
@@ -69,6 +71,13 @@ export const E2E_BAO =
       ? 'real'
       : 'fake');
 process.env.E2E_BAO = E2E_BAO;
+
+/**
+ * The product the stack runs (CB-28): `land` (the default) or `shipping` (E2E_DOMAIN=shipping, npm
+ * run test:shipping). Every backend service gets it as LRFE_DOMAIN, and the product's record
+ * service runs: land-records or shipping-records.
+ */
+export const E2E_DOMAIN = process.env.E2E_DOMAIN || 'land';
 
 /** The secret the stack's services sign and check tokens with (JWT_SECRET); the load tests sign their own. */
 export const JWT_SECRET = 'e2e-only-jwt-secret-not-used-anywhere-else';

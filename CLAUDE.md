@@ -7,7 +7,7 @@ These rules apply to every ticket; the details are in `docs/ai-workflow/`, read 
 **Layout** (details and how to add a product: `docs/architecture/products.md`): web apps in
 `angular-app/projects/{land-registry,shipping}` on the library `platform` (`npm start`: 4200,
 `npm run start:shipping`: 4201); shared `backend/packages` and `backend/services` (gateway 3500,
-services 3501–3508, `npm run dev`); product code in `backend/domains/{land,shipping}` and
+services 3501–3509, `npm run dev`); product code in `backend/domains/{land,shipping}` and
 `land-records`. `LRFE_DOMAIN` (default `land`) picks the pack. Shared code never imports product code (lint guard).
 
 ## Git and branches
@@ -31,7 +31,9 @@ services 3501–3508, `npm run dev`); product code in `backend/domains/{land,shi
 
 Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in `.claude/agents/`:
 `reviewer` (the review gate), `e2e-runner`, `ui-evidence-checker`, `jira-reporter`, `demo-release`,
-`scale-tester`, `pr-opener` (push and PR, then the checks), `notifier` (emails the user when work waits on their decision).
+`scale-tester`, `pr-opener` (push and PR, then the checks), `notifier` (emails the user when work waits on their decision),
+`builder` (builds a ticket from its agreed design), `log-cleaner` (removes finished runs' logs; also every 3 h by cron).
+Every agent keeps a progress log `~/lrfe-data/<ticket>/<agent>.log` and gives its `tail -f` first: nothing runs without one.
 
 1. Read the ticket and its "Agreed design"/"Done when"; move it to In Progress (transition 11). A new
    screen needs a design the user has agreed (a design artifact or ticket) before it is built.
@@ -56,6 +58,7 @@ Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in
   approver owns the record (details: `docs/ai-workflow/product.md`).
 - **Code:** Google TypeScript Style Guide (JS backend: the rules that apply), readable by a person: named
   exports, JSDoc, braces, no dense one-liners. Match the comment density of the surrounding code.
+  Always enforced: the `reviewer` agent treats any breach of the guide as blocking (its checklist).
 
 ## The demo install and the blockchain node: never harm them
 

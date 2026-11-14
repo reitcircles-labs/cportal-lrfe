@@ -42,7 +42,12 @@ function stackName(): string {
   if (process.env.E2E_DOCKER) {
     return `docker, EDRMS_SEARCH=${process.env.EDRMS_SEARCH || 'postgres'}`;
   }
-  return process.env.E2E_DB === 'postgres' ? 'PostgreSQL' : 'memory';
+  const store = process.env.E2E_DB === 'postgres' ? 'PostgreSQL' : 'memory';
+  // the shipping product's run (npm run test:shipping, CB-28)
+  if (process.env.E2E_DOMAIN === 'shipping') {
+    return `shipping, ${store}`;
+  }
+  return store;
 }
 
 /** Writes the progress file. */

@@ -54,6 +54,15 @@ describe('shared code may not import product code', () => {
     assert.equal(messages.length, 2);
   });
 
+  it('flags shipping-records imported by package name and by relative path', async () => {
+    const messages = await guardMessages(
+      "import {a} from '@lrfe/shipping-records';\n" +
+        "import {b} from '../../shipping-records/src/x.js';\nexport {a, b};\n",
+      'backend/services/audit/src/guard-sample.js',
+    );
+    assert.equal(messages.length, 2);
+  });
+
   it('flags land-records imported by relative path from a shared service', async () => {
     const messages = await guardMessages(
       "import {x} from '../../land-records/src/x.js';\nexport {x};\n",
@@ -109,6 +118,13 @@ describe('allowed imports pass the guard', () => {
       await guardMessages(
         backend,
         'backend/services/land-records/src/guard-sample.js',
+      ),
+      [],
+    );
+    assert.deepEqual(
+      await guardMessages(
+        "import {x} from '@lrfe/domain-shipping/bill-of-lading';\nexport {x};\n",
+        'backend/services/shipping-records/src/guard-sample.js',
       ),
       [],
     );

@@ -14,27 +14,42 @@ const run = promisify(execFile);
 const SERVICE_DIR = fileURLToPath(new URL('..', import.meta.url));
 
 describe('the catalogue from the domain pack (CB-3)', () => {
-  it('has only the platform roles and permissions with the shipping pack', async () => {
+  it("has the platform roles and the shipping pack's B/L permissions, role and demo data", async () => {
     const catalogue = catalogueOf(await loadDomainPack('shipping'));
-    expect(catalogue.roleIds).to.deep.equal(['adm']);
+    expect(catalogue.roleIds).to.deep.equal(['bld', 'adm']);
     expect(catalogue.groups).to.deep.equal([
       'General',
       'Capture',
       'Verification',
+      'Bills of lading',
       'Audit',
       'Administration',
     ]);
     expect(catalogue.permIds.some(p => p.startsWith('record.'))).to.equal(
       false,
     );
+    expect(catalogue.permIds).to.include.members(['bl.read', 'bl.draft']);
     expect(catalogue.sodRules.map(r => r.id)).to.deep.equal(['sod1', 'sod4']);
-    expect(catalogue.offices).to.deep.equal([]);
-    expect(catalogue.demoUsers).to.deep.equal([]);
+    expect(catalogue.roles[0].perms).to.deep.equal(['bl.read', 'bl.draft']);
+    expect(catalogue.offices.map(o => o.code)).to.deep.equal(['HQ']);
+    expect(catalogue.demoUsers.map(u => u.roles)).to.deep.equal([
+      ['adm'],
+      ['bld'],
+      ['bld'],
+    ]);
 
     const repo = createMemoryRepo();
     await seedIdentity(repo, {catalogue, demoPassword: 'x'.repeat(12)});
-    expect((await repo.listRoles()).map(r => r.id)).to.deep.equal(['adm']);
-    expect(await repo.listUsers()).to.deep.equal([]);
+    expect((await repo.listRoles()).map(r => r.id)).to.deep.equal([
+      'bld',
+      'adm',
+    ]);
+    const users = await repo.listUsers();
+    expect(users.map(u => u.email)).to.deep.equal(
+      catalogue.demoUsers.map(u => u.email),
+    );
+    expect(users.every(u => u.status === 'Active')).to.equal(true);
+    expect(new Set(users.map(u => u.organisationId)).size).to.equal(1);
   });
 
   it("adds the land pack's groups, roles and rules in the platform's order", () => {
@@ -125,7 +140,7 @@ describe('the catalogue from the domain pack (CB-3)', () => {
     );
   });
 
-  it('builds the app and serves the catalogue with LRFE_DOMAIN=shipping, no record service', async () => {
+  it('builds the app and serves the catalogue with LRFE_DOMAIN=shipping (CB-28)', async () => {
     // the install's pack is loaded once per process: this runs in its own
     const script = `
       import {createEventBus} from '@lrfe/common';
@@ -143,17 +158,17 @@ describe('the catalogue from the domain pack (CB-3)', () => {
       const app = await buildApp({service, jwtSecret: 'x'.repeat(40), logger: false});
       await app.ready();
       const catalogue = await service.catalogue();
-      const policies = await app.inject({
+      const policiesFor = async sub => (await app.inject({
         url: '/policies/effective',
         headers: {
-          authorization: 'Bearer ' + app.jwt.sign({typ: 'service', sub: 'land-records'}),
+          authorization: 'Bearer ' + app.jwt.sign({typ: 'service', sub}),
         },
-      });
+      })).statusCode;
       console.log(JSON.stringify({
         groups: catalogue.groups,
         roles: catalogue.roles.map(r => r.id),
         users: (await repo.listUsers()).length,
-        policies: policies.statusCode,
+        policies: [await policiesFor('land-records'), await policiesFor('shipping-records')],
       }));
       await app.close();
     `;
@@ -163,11 +178,18 @@ describe('the catalogue from the domain pack (CB-3)', () => {
       {cwd: SERVICE_DIR, env: {...process.env, LRFE_DOMAIN: 'shipping'}},
     );
     expect(JSON.parse(stdout.trim().split('\n').pop())).to.deep.equal({
-      groups: ['General', 'Capture', 'Verification', 'Audit', 'Administration'],
-      roles: ['adm'],
-      users: 0,
-      // no record service in the pack: no service may read the effective policies (CB-4)
-      policies: 403,
+      groups: [
+        'General',
+        'Capture',
+        'Verification',
+        'Bills of lading',
+        'Audit',
+        'Administration',
+      ],
+      roles: ['bld', 'adm'],
+      users: 3,
+      // only the pack's record service may read the effective policies (CB-4)
+      policies: [403, 200],
     });
   });
 });

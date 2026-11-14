@@ -227,9 +227,10 @@ export default tseslint.config(
   },
 
   // Shared code does not import product code (CB-5, docs/architecture/products.md). Shared code:
-  // the platform web library, the shared services (all but land-records) and backend/packages.
-  // Product code: the domain packs in backend/domains (@lrfe/domain-land, @lrfe/domain-shipping and
-  // any later @lrfe/domain-*), the land-records service and the land-registry and shipping apps.
+  // the platform web library, the shared services (all but land-records and shipping-records) and
+  // backend/packages. Product code: the domain packs in backend/domains (@lrfe/domain-land,
+  // @lrfe/domain-shipping and any later @lrfe/domain-*), the record services land-records and
+  // shipping-records, and the land-registry and shipping apps.
   // Products may import shared code, so they are not listed here. @lrfe/domain-pack is shared (the
   // contract every pack follows) and stays allowed.
   //
@@ -249,6 +250,7 @@ export default tseslint.config(
     ],
     ignores: [
       'backend/services/land-records/**',
+      'backend/services/shipping-records/**',
       '**/tests/**',
       '**/*.test.js',
       '**/*.test.mjs',
@@ -259,14 +261,16 @@ export default tseslint.config(
         {
           patterns: [
             {
-              regex: '^@lrfe/(domain-(?!pack(/|$))|land-records(/|$))',
+              regex:
+                '^@lrfe/(domain-(?!pack(/|$))|(land|shipping)-records(/|$))',
               message:
-                'Shared code may not import a product (a domain pack other than @lrfe/domain-pack, or land-records). Move what both need into shared code, or load the pack through @lrfe/common. See docs/architecture/products.md.',
+                'Shared code may not import a product (a domain pack other than @lrfe/domain-pack, land-records or shipping-records). Move what both need into shared code, or load the pack through @lrfe/common. See docs/architecture/products.md.',
             },
             {
-              regex: '^(\\.\\./)+(domains/|(services/)?land-records(/|$))',
+              regex:
+                '^(\\.\\./)+(domains/|(services/)?(land|shipping)-records(/|$))',
               message:
-                'Shared code may not import product code (backend/domains or the land-records service). Move what both need into shared code. See docs/architecture/products.md.',
+                'Shared code may not import product code (backend/domains, or the land-records or shipping-records service). Move what both need into shared code. See docs/architecture/products.md.',
             },
           ],
         },

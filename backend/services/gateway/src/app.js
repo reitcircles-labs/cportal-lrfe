@@ -7,7 +7,8 @@ import {createBaseApp, domain, recordServiceOf} from '@lrfe/common';
  * The routing table of an install: public path prefix → upstream service. The prefix is stripped
  * except for the part the service expects (e.g. /api/auth/login → identity /auth/login). Add a
  * row per new service. `/api/records` goes to the product's record service, as the domain pack
- * names it (CB-4: land-records for land); a pack without records has no such route.
+ * names it (CB-4: land-records for land, shipping-records for shipping); a pack without records
+ * has no such route.
  * @param {{name: string} | null} recordService
  * @return {Array<{prefix: string, service: string, rewritePrefix: string}>}
  */

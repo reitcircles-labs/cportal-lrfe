@@ -45,7 +45,7 @@ describe('bpm and the domain pack (CB-3)', () => {
     expect(review).to.deep.equal(land.workflows.definitions[0]);
   });
 
-  it('with the empty shipping pack: only the platform workflows nobody has to acknowledge, and the app starts', async () => {
+  it('with the shipping pack: only the platform workflows nobody has to acknowledge, and the app starts', async () => {
     const shipping = await loadDomainPack('shipping');
     const {engine, keys} = await deployed(shipping);
     expect(keys).to.deep.equal(['document-amendment']);
@@ -82,17 +82,31 @@ describe('bpm and the domain pack (CB-3)', () => {
     ]);
   });
 
-  it('with the shipping pack: no record service, so no records connectors (CB-4)', async () => {
+  it('without a record service, no records connectors (CB-4)', async () => {
     const shipping = await loadDomainPack('shipping');
+    const bare = {...shipping, recordKind: null};
     const connectors = createConnectors({
       urls: {
         edrms: 'http://edrms',
-        records: recordServiceOf(shipping)?.url ?? null,
+        records: recordServiceOf(bare)?.url ?? null,
       },
       serviceToken: () => 'token',
     });
     expect(Object.keys(connectors)).to.not.include('records.commitVersion');
     expect(Object.keys(connectors)).to.not.include('records.rejectVersion');
+  });
+
+  it('with the shipping pack: the records connectors call shipping-records (CB-28)', async () => {
+    const shipping = await loadDomainPack('shipping');
+    const connectors = createConnectors({
+      urls: {edrms: 'http://edrms', records: recordServiceOf(shipping).url},
+      serviceToken: () => 'token',
+    });
+    expect(Object.keys(connectors)).to.include.members([
+      'records.commitVersion',
+      'records.rejectVersion',
+    ]);
+    expect(recordServiceOf(shipping).name).to.equal('shipping-records');
   });
 
   it('with one acknowledger: the task alone, without a gateway', async () => {

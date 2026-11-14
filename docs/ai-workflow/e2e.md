@@ -23,6 +23,22 @@ npm run -s test:docker > .progress/full.log 2>&1                   # the contain
   shows up as `ERR_MODULE_NOT_FOUND` in a host-side spec (the API docs check), not as a product failure.
 - Release images: `node demo/release.mjs test --version <v>` (the docker e2e, its log written as it runs).
 
+## The shipping run (CB-28)
+
+The shipping product's backend has its own run, API only (no web app), on the same ports:
+
+```bash
+npm run -s test:shipping > .progress/shipping.log 2>&1                  # in memory
+E2E_DB=postgres npm run -s test:shipping > .progress/shipping.log 2>&1  # on PostgreSQL
+```
+
+It starts the stack with `E2E_DOMAIN=shipping` (every service on the shipping pack,
+shipping-records on the API port + 13 instead of land-records) and runs `e2e/tests-shipping/`
+with `playwright.shipping.config.ts`, one worker. Its users are the shipping pack's demo users,
+signed in by the spec itself (not `support/catalogue.ts`, which is land's). It writes the same
+`progress.log`, so not beside a land run in the same checkout. A ticket that touches the shared
+services or the shipping product runs it too.
+
 ## Projects and order
 
 `playwright.config.ts` runs `setup` (enrols the demo users), then `chromium` (the main suite in

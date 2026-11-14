@@ -1,0 +1,23 @@
+{
+  "name": "@lrfe/shipping-records",
+  "version": "0.1.0",
+  "description": "Shipping records: draft bills of lading of an organisation, versioned, reviewed by a second person, sealed",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "mocha 'tests/**/*.test.js' --timeout 20000"
+  },
+  "dependencies": {
+    "@lrfe/common": "0.1.0",
+    "@lrfe/domain-shipping": "0.1.0",
+    "@lrfe/record-contract": "0.1.0",
+    "sequelize": "^6.37.3"
+  },
+  "devDependencies": {
+    "chai": "^5.1.1",
+    "mocha": "^10.7.3"
+  }
+}

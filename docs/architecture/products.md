@@ -21,8 +21,9 @@ and CB-5 (the lint guard and this guide).
 | `backend/packages/storage`, `backend/packages/search-index` | file storage and keys; the search index and country pack | shared |
 | `backend/services/{identity,audit,extracts,edrms,search,bpm,gateway,intake}` | the shared services | shared |
 | `backend/services/land-records` | the land registry's record service | land |
+| `backend/services/shipping-records` | the shipping record service: draft B/Ls, versions, seals (CB-27) | shipping |
 | `backend/domains/land` | `@lrfe/domain-land`, the land pack | land |
-| `backend/domains/shipping` | `@lrfe/domain-shipping`, an empty pack | shipping |
+| `backend/domains/shipping` | `@lrfe/domain-shipping`, the shipping pack: the B/L model (DCSA eBL 3.0), the B/L permissions, role and demo data, and its record kind | shipping |
 
 The shared services know nothing about land or shipping. They read their product from the
 **domain pack** of the install, chosen by one setting, `LRFE_DOMAIN` (`land` when not set), and
@@ -37,10 +38,12 @@ shared code from importing product code.
 | 4201 | shipping web app | `npm run start:shipping` in `angular-app/` |
 | 3500 | gateway, the only backend entry point of the apps | `npm run dev` in `backend/` |
 | 3501 to 3508 | identity, edrms, bpm, intake, land-records, audit, extracts, search | `npm run dev` in `backend/` |
+| 3509 | shipping-records (with `LRFE_DOMAIN=shipping`) | `npm run dev -- shipping-records nats` in `backend/` (never started by default) |
 | 3510 | API docs | `npm run dev` in `backend/` |
 
 Both apps pass `/api/...` to the gateway on 3500 (`angular-app/proxy.conf.json`). In the e2e
-tests the shipping app runs on the web port + 1 (`e2e/stack/config.mjs`).
+tests the shipping app runs on the web port + 1 (`e2e/stack/config.mjs`), and shipping-records,
+in the shipping run, on the API port + 13.
 
 ## The web apps (CB-2)
 
@@ -60,7 +63,7 @@ folder, like the shipping app's port, CB-6).
 | --- | --- | --- |
 | Run | `npm start` (port 4200) | `npm run start:shipping` (port 4201) |
 | Build | `npm run build`: `dist/land-registry` | `npm run build:shipping`: `dist/shipping` |
-| e2e | the web port | the web port + 1 (`e2e/tests/shipping-app.spec.ts`) |
+| e2e | the web port | the web port + 1 (`e2e/tests/shipping-app.spec.ts`); the B/L through the API: `npm run test:shipping` (`docs/ai-workflow/e2e.md`) |
 | Docker image | `lrfe-web` (`angular-app/Dockerfile`) | none yet |
 
 Screens that are generic but still carry land wording (dashboard, documents, audit, anchorings,
@@ -97,12 +100,28 @@ permission groups and the `adm` role, the rules `sod1` and `sod4`, the audit wor
 `document-amendment`, the generic reading pipeline (the duplicate check, the `text` field type, a
 generic prompt), the extract PDF layout, and the trail, tree and proof formats.
 
-**The shipping pack** has every section and nothing in it. With `LRFE_DOMAIN=shipping` the
-services start: no document types (filing says so), only the `adm` role and no demo users, only
-`document-amendment` deployed, no record service (`/api/records` is not routed, record calls answer
-503, `record-version` proofs answer 400), lookups search documents only. It is a starting point:
-issuing an extract or raising an audit finding needs the wording and acknowledgers a real pack
-gives.
+**The shipping pack** (CB-23 to CB-28) holds the bill-of-lading model
+(`@lrfe/domain-shipping/bill-of-lading`: DCSA eBL 3.0, the containers-only rule, the B/L formats
+of `LRFE_BL_FORMATS`; `backend/domains/shipping/docs/`), and in its sections:
+
+- `identity`: the group "Bills of lading" with `bl.read` and `bl.draft`, the role `bld` (B/L
+  documentation, both permissions), and demo data: the office `HQ` and, with a demo password, an
+  administrator and two B/L clerks at `shipping.example` (fictitious; the shipping e2e run signs
+  them in).
+- `recordKind`: the record service `shipping-records` (`SHIPPING_RECORDS_URL`, default
+  `http://localhost:3509`), its source and the committed event `records.record.committed`. A
+  committed B/L version is a tree leaf of type 1 and has a `record-version` proof, as a land
+  record. No `commitPermission` (a version is committed by the workflow service, by a second
+  person), no `lookup` patterns (a B/L number is the carrier's reference: a search goes to the
+  record service as words), no business-key processes or linked subjects yet.
+- `documents`, `workflows` and `wording`: empty. With `LRFE_DOMAIN=shipping` there are no document
+  types (filing says so), only `document-amendment` is deployed; issuing an extract or raising an
+  audit finding needs the wording and acknowledgers a fuller pack gives.
+
+A pack without a record kind is still valid: then there is no record service (`/api/records` is
+not routed, record calls answer 503, `record-version` proofs answer 400) and lookups search
+documents only; the shared services' tests check that case with a pack whose `recordKind` is
+null.
 
 **The country pack** (API-713, `backend/packages/search-index/src/country-pack.js`) is a different
 thing: a JSON file chosen by a two-letter code, for a country's conventions (names, numbers,
@@ -148,8 +167,8 @@ version, 400 for a bad query, body or cursor, 409 when the version is no longer 
 **The contract test.** `describeRecordContract({name, client, fixture})` from
 `@lrfe/record-contract/contract-suite` is a mocha suite that calls each of these on a running
 service and checks the shapes (never a product's values), the 404s, and commit and reject of a
-submitted version. land-records runs it in `services/land-records/tests/contract.test.js`, in
-process over `app.inject`. Details in
+submitted version. land-records and shipping-records each run it in their
+`tests/contract.test.js`, in process over `app.inject`. Details in
 [`backend/packages/record-contract/README.md`](../../backend/packages/record-contract/README.md).
 
 ## Organisations (CB-18)
@@ -279,7 +298,11 @@ starting point, and land as the full example.
 8. **e2e.** Add the app to `e2e/playwright.config.ts` (an `ng serve <app>` web server on a port of
    its own, in `e2e/stack/config.mjs`), its record service to `e2e/stack/start-backend.mjs`, and
    specs under `e2e/tests/` (like `e2e/tests/shipping-app.spec.ts`). The suite must pass in memory
-   and on PostgreSQL (`docs/ai-workflow/e2e.md`).
+   and on PostgreSQL (`docs/ai-workflow/e2e.md`). Tests of the product's own backend run on a
+   stack in its mode, as shipping's: `E2E_DOMAIN=shipping` in `e2e/stack/start-backend.mjs` (every
+   service on the pack, its record service instead of land-records), its own Playwright config
+   (`e2e/playwright.shipping.config.ts`) and specs (`e2e/tests-shipping/`), `npm run
+   test:shipping`.
 
 **What not to change:** the names in "Fixed names" above; the land pack and `land-records`; the
 shared services, beyond moving a land term into the pack when the new product needs that part
@@ -312,3 +335,6 @@ pack first:
   pack.
 - **CB-4** replaced the calls to `land-records` by name with the record contract.
 - **CB-5** added the lint guard and turned this page into the guide.
+- **CB-23 to CB-28** gave the shipping pack the B/L model and formats, the B/L permissions, role
+  and demo data, and its record service `shipping-records` (the record contract, seals, events),
+  wired into the gateway, compose (profile `shipping`) and a shipping e2e run.

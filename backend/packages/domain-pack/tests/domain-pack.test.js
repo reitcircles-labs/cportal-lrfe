@@ -2,7 +2,7 @@ import {expect} from 'chai';
 
 import {checkDomainPack, isPackName} from '../src/index.js';
 
-/** A pack with every section and nothing in it, as the shipping pack is today. */
+/** A pack with every section and nothing in it, as the shipping pack was at first. */
 function emptyPack(name = 'demo') {
   return {
     name,
