@@ -1,7 +1,8 @@
 /**
  * The B/L state machine in table form (CB-30, docs/title-states.md): the kinds, the states and,
- * for each command, the states it runs from, the kinds it applies to and who may run it. Both
- * `applyTitleCommand` and `allowedCommands` work from this table, so the rules live here only.
+ * for each command, the states it runs from, the kinds it applies to, who may run it and the
+ * module it belongs to (CB-38, `modules.js`). Both `applyTitleCommand` and `allowedCommands` work
+ * from this table, so the rules live here only.
  */
 
 /** The kinds of B/L. */
@@ -42,6 +43,16 @@ export const END_STATES = Object.freeze([
   'delivered',
 ]);
 
+/**
+ * The module of each kind of B/L, for the commands every kind has (issue, void): a negotiable B/L
+ * needs the negotiable module, a straight B/L or sea waybill the waybill module (always on).
+ */
+const MODULE_OF_KIND = Object.freeze({
+  negotiable: 'negotiable',
+  straight: 'waybill',
+  waybill: 'waybill',
+});
+
 /** The negotiable states a holder may act from. */
 const HELD = Object.freeze(['issued', 'with-holder']);
 
@@ -54,6 +65,11 @@ const HELD = Object.freeze(['issued', 'with-holder']);
  * @property {string} who `carrier` (the issuer), `holder` (the current holder) or `anyone`
  * @property {?string} to the state it leads to (null: it depends on the command's arguments)
  * @property {!Array<string>=} endorsements the endorsements it needs, when it needs one
+ * @property {string} module the module it belongs to (`MODULES`), switched per install
+ * @property {!Object<string, string>=} moduleOfKind when the module depends on the kind of B/L:
+ *     the module of each kind (`module` then stays for a kind that is not known)
+ * @property {string=} moduleInBlank when an endorsement in blank belongs to another module: that
+ *     module (`module` stays the one of an endorsement to a name)
  */
 
 /**
@@ -79,13 +95,29 @@ function deepFreeze(value) {
  * @type {!Readonly<!Object<string, !TitleCommandRule>>}
  */
 export const TITLE_COMMANDS = deepFreeze({
-  issue: {from: [null], kinds: ALL_KINDS, who: 'anyone', to: 'issued'},
-  void: {from: ['issued'], kinds: ALL_KINDS, who: 'carrier', to: 'void'},
+  issue: {
+    from: [null],
+    kinds: ALL_KINDS,
+    who: 'anyone',
+    to: 'issued',
+    module: 'waybill',
+    moduleOfKind: MODULE_OF_KIND,
+  },
+  void: {
+    from: ['issued'],
+    kinds: ALL_KINDS,
+    who: 'carrier',
+    to: 'void',
+    module: 'waybill',
+    moduleOfKind: MODULE_OF_KIND,
+  },
   endorse: {
     from: HELD,
     kinds: [KINDS.NEGOTIABLE],
     who: 'holder',
     to: 'with-holder',
+    module: 'negotiable',
+    moduleInBlank: 'blank-endorsement',
   },
   transfer: {
     from: HELD,
@@ -93,48 +125,56 @@ export const TITLE_COMMANDS = deepFreeze({
     who: 'holder',
     to: 'with-holder',
     endorsements: ['blank'],
+    module: 'blank-endorsement',
   },
   surrender: {
     from: HELD,
     kinds: [KINDS.NEGOTIABLE],
     who: 'holder',
     to: 'surrendered',
+    module: 'negotiable',
   },
   release: {
     from: ['surrendered'],
     kinds: [KINDS.NEGOTIABLE],
     who: 'carrier',
     to: 'accomplished',
+    module: 'negotiable',
   },
   deliver: {
     from: ['issued'],
     kinds: [KINDS.STRAIGHT, KINDS.WAYBILL],
     who: 'carrier',
     to: 'delivered',
+    module: 'waybill',
   },
   'surrender-for-amendment': {
     from: HELD,
     kinds: [KINDS.NEGOTIABLE],
     who: 'holder',
     to: 'amendment-requested',
+    module: 'amendment',
   },
   amend: {
     from: ['amendment-requested'],
     kinds: [KINDS.NEGOTIABLE],
     who: 'carrier',
     to: 'with-holder',
+    module: 'amendment',
   },
   split: {
     from: ['amendment-requested'],
     kinds: [KINDS.NEGOTIABLE],
     who: 'carrier',
     to: 'split',
+    module: 'split',
   },
   'switch-to-paper': {
     from: HELD,
     kinds: [KINDS.NEGOTIABLE],
     who: 'holder',
     to: 'switched-to-paper',
+    module: 'negotiable',
   },
 });
 

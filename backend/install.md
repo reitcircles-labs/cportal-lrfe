@@ -25,7 +25,9 @@ and runs that product's record service instead
 ([`docs/architecture/products.md`](../docs/architecture/products.md)): for shipping,
 `shipping-records` instead of `land-records`, with `SHIPPING_RECORDS_URL=http://localhost:3509` in
 the gateway, audit, bpm and extracts, and `LRFE_BL_FORMATS` (default `dcsa-3.0`) in
-shipping-records.
+shipping-records. `LRFE_BL_MODULES` (default: all) will list the B/L title modules on, read by
+shipping-records from CB-31 on
+([`title-states.md`](domains/shipping/docs/title-states.md#modules-cb-38)).
 
 Needs: Node ≥ 20 and PostgreSQL 15 on the same machine.
 

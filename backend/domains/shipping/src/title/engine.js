@@ -1,3 +1,4 @@
+import {ALL_MODULES, moduleOff} from './modules.js';
 import {END_STATES, KINDS, TITLE_COMMANDS} from './table.js';
 import {TITLE_WORDING} from './wording.js';
 
@@ -14,6 +15,9 @@ import {TITLE_WORDING} from './wording.js';
  * - `endorsement`: `none`, `named` or `blank`;
  * - `consignee`: the organisation of a non-negotiable B/L's consignee, or null;
  * - `returnTo`: while the carrier holds the B/L for an amendment, the holder it goes back to.
+ *
+ * Both functions take the modules on in the install (CB-38, `modules.js`; all by default): a
+ * command of a module that is off is refused before any other rule, and nothing else changes.
  */
 
 /**
@@ -54,16 +58,49 @@ function isOrganisation(value) {
 }
 
 /**
- * Throws the refusal of a command that its rule does not allow: the kind, the state, the actor or
- * the endorsement (its arguments are checked by its effect). The first rule broken is the reason.
+ * The options of the engine's functions.
+ *
+ * @typedef {object} TitleOptions
+ * @property {!ReadonlyArray<string>=} modules the names of the modules on (`modulesFromSettings`);
+ *     all by default
+ */
+
+/**
+ * The module a command's case belongs to: by the kind of B/L for issue and void (the title's, or
+ * the one issued), in blank or to a name for endorse.
+ *
+ * @param {!TitleCommandRule} rule the command's rule
+ * @param {?Title} title the title, null before issue
+ * @param {!Object} command the command and its arguments
+ * @return {string} the module's name
+ */
+function moduleOf(rule, title, command) {
+  if (rule.moduleOfKind) {
+    const kind = title?.kind ?? command.kind;
+    if (typeof kind === 'string' && Object.hasOwn(rule.moduleOfKind, kind)) {
+      return rule.moduleOfKind[kind];
+    }
+  }
+  if (rule.moduleInBlank && command.inBlank === true) {
+    return rule.moduleInBlank;
+  }
+  return rule.module;
+}
+
+/**
+ * Throws the refusal of a command that its rule does not allow: its module, the kind, the state,
+ * the actor or the endorsement (its arguments are checked by its effect). The first rule broken is
+ * the reason.
  *
  * @param {?Title} title the title, null before issue
- * @param {string} name the command's name
+ * @param {!Object} command the command's name and its arguments
  * @param {{organisation: string}} actor the organisation running it
+ * @param {!ReadonlyArray<string>} modules the modules on
  * @return {void}
  * @throws {TitleRefusal}
  */
-function checkRule(title, name, actor) {
+function checkRule(title, command, actor, modules) {
+  const name = command.name;
   if (typeof name !== 'string' || !Object.hasOwn(TITLE_COMMANDS, name)) {
     throw new TitleRefusal(
       'unknown-command',
@@ -71,6 +108,10 @@ function checkRule(title, name, actor) {
     );
   }
   const rule = TITLE_COMMANDS[name];
+  const off = moduleOff(moduleOf(rule, title, command), modules);
+  if (off !== null) {
+    throw new TitleRefusal('module-off', TITLE_WORDING.moduleOff(off));
+  }
   if (title === null && name !== 'issue') {
     throw new TitleRefusal('not-issued', TITLE_WORDING.notIssued);
   }
@@ -315,13 +356,19 @@ const EFFECTS = {
  * @param {?Title} title the title, null before the B/L is issued
  * @param {{name: string}} command the command's name and its arguments
  * @param {{organisation: string}} actor the organisation running it
+ * @param {!TitleOptions=} options the modules on
  * @return {{title: !Title, children: (!Array<!Title>|undefined)}} the next title (a split also
  *     gives its children's first titles); the title given is not changed
  * @throws {TitleRefusal} when the command is not allowed, with the reason
  */
-export function applyTitleCommand(title, command, actor) {
+export function applyTitleCommand(
+  title,
+  command,
+  actor,
+  {modules = ALL_MODULES} = {},
+) {
   const name = command?.name;
-  checkRule(title, name, actor);
+  checkRule(title, command ?? {}, actor, modules);
   if (name === 'issue') {
     return issue(command, actor);
   }
@@ -329,17 +376,19 @@ export function applyTitleCommand(title, command, actor) {
 }
 
 /**
- * The commands an organisation may run on a B/L's title now (their arguments aside).
+ * The commands an organisation may run on a B/L's title now (their arguments aside: endorse is
+ * listed when it may endorse to a name).
  *
  * @param {?Title} title the title, null before the B/L is issued
  * @param {{organisation: string}} actor the organisation
+ * @param {!TitleOptions=} options the modules on
  * @return {!Array<string>} the command names, in the table's order
  */
-export function allowedCommands(title, actor) {
+export function allowedCommands(title, actor, {modules = ALL_MODULES} = {}) {
   const allowed = [];
   for (const name of Object.keys(TITLE_COMMANDS)) {
     try {
-      checkRule(title, name, actor);
+      checkRule(title, {name}, actor, modules);
       allowed.push(name);
     } catch (error) {
       if (!(error instanceof TitleRefusal)) {

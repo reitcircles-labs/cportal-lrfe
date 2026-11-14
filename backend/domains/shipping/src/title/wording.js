@@ -27,6 +27,14 @@ const END_STATE_NAMES = {
   delivered: 'delivered',
 };
 
+/** How a reason names each module that can be off, before "is not enabled on this platform". */
+const MODULE_NAMES = {
+  negotiable: 'Negotiable B/Ls are',
+  'blank-endorsement': 'Endorsing in blank is',
+  amendment: 'Amending a B/L is',
+  split: 'Splitting a B/L is',
+};
+
 /**
  * Each command as a reason names it: `verb` after "may", `done` after "cannot be".
  */
@@ -88,6 +96,17 @@ export const TITLE_WORDING = Object.freeze({
    * @return {string}
    */
   unknownCommand: command => `Unknown command: ${String(command)}`,
+
+  /**
+   * A command of a module that is off in this install.
+   *
+   * @param {string} module the module that is off
+   * @return {string}
+   */
+  moduleOff: module => {
+    const subject = ownValue(MODULE_NAMES, module) ?? `The ${module} module is`;
+    return `${subject} not enabled on this platform`;
+  },
 
   notIssued: 'This B/L has not been issued yet: it can only be issued',
 

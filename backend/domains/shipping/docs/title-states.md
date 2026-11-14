@@ -1,4 +1,4 @@
-# B/L title states and commands (CB-30)
+# B/L title states and commands (CB-30, CB-38)
 
 The title engine, `@lrfe/domain-shipping/title` (`src/title/`), says what state a bill of
 lading's title is in, which commands may run on it, and who may run them. It is pure code: it
@@ -48,10 +48,12 @@ The rules live in one table, `TITLE_COMMANDS` (`src/title/table.js`); `applyTitl
 
 ## Commands
 
-`applyTitleCommand(title, command, actor)`: `title` is null before issue, `command` is
-`{name, ...arguments}`, `actor` is `{organisation}`. It gives `{title}` (a split also gives
-`children`) or throws a `TitleRefusal` with a stable `code` and a reason for people.
-`allowedCommands(title, actor)` lists the commands that organisation may run now.
+`applyTitleCommand(title, command, actor, {modules})`: `title` is null before issue, `command` is
+`{name, ...arguments}`, `actor` is `{organisation}`, `modules` the modules on (below; all when not
+given). It gives `{title}` (a split also gives `children`) or throws a `TitleRefusal` with a
+stable `code` and a reason for people. `allowedCommands(title, actor, {modules})` lists the
+commands that organisation may run now (arguments aside: `endorse` is listed when it may endorse
+to a name).
 
 | Command | Arguments | Kinds | From | Who | Leads to |
 |---|---|---|---|---|---|
@@ -70,6 +72,41 @@ The rules live in one table, `TITLE_COMMANDS` (`src/title/table.js`); `applyTitl
 The endorsement is kept through surrender, amendment and release. The new document version of an
 amendment, and the children's documents of a split, are the service's business (CB-35).
 
+## Modules (CB-38)
+
+An install switches parts of the engine on with `LRFE_BL_MODULES`: module names, comma-separated.
+Not set or blank: every module. `waybill` is always on, listed or not. The module of each command,
+and for `issue`, `void` and `endorse` of each case, is in `TITLE_COMMANDS` (`module`,
+`moduleOfKind`, `moduleInBlank`); `MODULES` (`src/title/modules.js`) lists each module's name,
+label, needs and commands.
+
+| Module | Label | Needs | Commands |
+|---|---|---|---|
+| `waybill` | Sea waybills and straight B/Ls | (always on) | `issue` of a sea waybill or straight B/L, `deliver`, `void` of a sea waybill or straight B/L |
+| `negotiable` | Negotiable B/Ls | | `issue` of a B/L to order, `endorse` to a name, `surrender`, `release`, `switch-to-paper`, `void` of a negotiable B/L |
+| `blank-endorsement` | Blank endorsement | `negotiable` | `endorse` with `inBlank` true, `transfer` |
+| `amendment` | Amendment | `negotiable` | `surrender-for-amendment`, `amend` |
+| `split` | Split | `amendment` | `split` |
+
+- **A command of a module that is off is refused** (`module-off`) before any other rule but an
+  unknown command, and `allowedCommands` leaves it out. The reason names the most basic module
+  that is off: a split while negotiable B/Ls are off says "Negotiable B/Ls are not enabled on this
+  platform".
+- **`void` of a negotiable B/L belongs to `negotiable`**: it is the carrier's cancel before the
+  B/L has moved, available whenever negotiable B/Ls are.
+- **Stored data never depends on the setting:** no field of a title changes with it. Turning a
+  module off only refuses that module's new commands: a B/L made while it was on stays as it is
+  and readable, and goes on with the commands of the modules still on (a blank-endorsed B/L can
+  still be endorsed to a name with blank endorsement off).
+- **Turn a module off only when no B/L is in the middle of it.** A B/L waits wherever only that
+  module's commands could move it on: one in `amendment-requested` stays there while
+  `amendment` is off, and a negotiable B/L with a holder can neither move nor be surrendered
+  while `negotiable` is off. Nothing is lost: turning the module on again lets it go on.
+- `modulesFromSettings(source = process.env)` reads the setting. An unknown name, an empty name in
+  the list, or a module without the one it needs (e.g. `blank-endorsement` without `negotiable`,
+  `split` without `amendment`) stops the start with a message naming it and the known modules.
+  The shipping record service reads it at start from CB-31 on, when it runs the engine.
+
 ## Refusals
 
 Checked in this order; the first rule broken is the reason.
@@ -77,6 +114,7 @@ Checked in this order; the first rule broken is the reason.
 | Code | When | Example reason |
 |---|---|---|
 | `unknown-command` | no such command | Unknown command: burn |
+| `module-off` | the command's module is off in this install | Negotiable B/Ls are not enabled on this platform |
 | `not-issued` | a command other than `issue` before issue | This B/L has not been issued yet: it can only be issued |
 | `already-issued` | `issue` on an issued B/L | This B/L is already issued |
 | `no-organisation` | no acting organisation | The command needs the organisation that runs it |

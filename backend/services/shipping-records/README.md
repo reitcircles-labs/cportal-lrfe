@@ -46,6 +46,7 @@ writer never silently wins, and a submitted version is always the one its event 
 | `JWT_SECRET` | | the secret shared by every service, to check users' and services' tokens |
 | `EVENT_BUS_DRIVER` | `log` | `log`, `memory` or `nats` (`NATS_URL`); with PostgreSQL, events go through the outbox in the same transaction as the change |
 | `LRFE_BL_FORMATS` | `dcsa-3.0` | the B/L formats that are on, comma-separated; an unknown name stops the start ([formats](../../domains/shipping/docs/formats.md)) |
+| `LRFE_BL_MODULES` | all | coming with the title engine (CB-31): the title modules that are on, comma-separated (`waybill`, always on, `negotiable`, `blank-endorsement`, `amendment`, `split`); an unknown name or a module without the one it needs stops the start ([title modules](../../domains/shipping/docs/title-states.md#modules-cb-38)) |
 | `LOG_LEVEL` | `info` | the log level |
 
 Run it alone with `npm run dev:shipping-records` in `backend/`, or with the others:
