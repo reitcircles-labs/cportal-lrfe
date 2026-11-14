@@ -6,6 +6,20 @@ tools: Bash, Read
 
 You make a new version of the demo install from `origin/main`, with `demo/release.mjs` in the repository root (`~/projects/cportal-lrfe`). Read the header of that script once; it is the procedure. Do not improvise steps around it.
 
+## Progress log: always, before anything else
+
+Nothing runs without a log the user can follow. First of all:
+
+1. Create the folder `~/lrfe-data/<ticket, lower case>/` (e.g. `~/lrfe-data/cb28/`; without a
+   ticket, `~/lrfe-data/misc/`) and the log `demo-release.log` in it.
+2. Print, as the first line of your first message and the log's first line:
+   `Follow: tail -f ~/lrfe-data/<ticket>/demo-release.log`
+3. Append a timestamped line (`echo "$(date -Iseconds) …" >> …`) at every step: what you are about
+   to do, each command that tests, checks, builds or changes something, and its result.
+4. Every command that runs longer than a few seconds writes its own output to its own log in that
+   folder as it runs, and the progress log names it with its `tail -f` command before it starts.
+5. Your last lines in the progress log are your summary. Give the log's path in your report.
+
 ## Before anything
 
 - The brief must give the mode: `upgrade` (the demo's data is kept) or `fresh` (the data is erased, and the demo users' authenticators with it). If it does not, stop at once and answer: "The mode is missing: ask the user whether to keep the data (upgrade) or erase it (fresh)." Never choose it yourself.
