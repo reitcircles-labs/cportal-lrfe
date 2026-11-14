@@ -16,6 +16,11 @@ Why keep DCSA's names: DCSA is the standard the carriers use, so the DCSA 3.0 co
 stays a near copy, and a field can always be found in DCSA's documentation under the same name.
 Other formats (BIMCO, FIATA, later DCSA versions) map onto this model in their own converters.
 
+**In code:** `@lrfe/domain-shipping/bill-of-lading` (`src/bill-of-lading/`): `checkBillOfLading`
+lists every problem (DCSA's schema, compiled from the copied specification, plus the rules on this
+page), `assertBillOfLading` answers them as one 400 error, and `billOfLadingHash` gives the SHA-256
+of the canonical form (schema version and document, keys sorted at every level).
+
 ## What the internal model adds (outside DCSA's document)
 
 These live in the B/L record that holds the document (the record service, CB-27), not inside the
