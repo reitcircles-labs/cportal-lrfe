@@ -30,6 +30,12 @@ import {
   mayEndorse,
 } from './bl-endorse';
 import {
+  type SettlementCommand,
+  settlementCommands,
+  settlementQuestion,
+  titleNote,
+} from './bl-surrender';
+import {
   carrierOf,
   chainRows,
   consigneeLabel,
@@ -67,6 +73,10 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
  * The holder endorses the B/L to a named organisation (CB-45, from the CB-12 design): "Endorse
  * to…" opens the "Endorse" panel, where it picks a registered organisation (not its own, not the
  * holder) and confirms; that organisation becomes the holder at once and the chain gains the step.
+ * At the end of the journey (CB-46, from the CB-13 design, good weather) the holder surrenders the
+ * B/L to the carrier, which then holds it, and the carrier releases the goods: the B/L is
+ * accomplished, with no holder and nothing more to do. Both are confirmed first; a note in the
+ * B/L box says where it stands, read out as it changes.
  */
 @Component({
   selector: 'app-bl-detail',
@@ -83,7 +93,8 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             <h1 style="margin:4px 0 4px;font-size:32px">{{ v.record.label }}</h1>
             <span [class]="'tag ' + tagClass()">{{ state() }}</span>
           </div>
-          <!-- the actions on the B/L: CB-44 the draft's and the issue, CB-45..46 the others -->
+          <!-- the actions on the B/L: CB-44 the draft's and the issue, CB-45 the endorsement,
+               CB-46 the surrender and the release -->
           <section class="actions row" aria-label="Actions">
             @if (canSubmit()) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="submit()">Submit for approval</button>
@@ -96,6 +107,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             }
             @if (canEndorse() && !endorsing()) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse()" #endorseOpen>Endorse to…</button>
+            }
+            @for (s of settlements(); track s.name) {
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="settle(s)">{{ s.label }}</button>
             }
           </section>
         </header>
@@ -156,6 +170,8 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
         <section class="panel">
           <div class="panel-head"><h2>B/L</h2></div>
           <div class="panel-body">
+            <!-- present from the start, filled once the B/L is surrendered, so that it is read out -->
+            <p [class]="titleNoteClass()" role="status" aria-live="polite" tabindex="-1" #titleNote>{{ titleNoteText() }}</p>
             <dl class="kv facts">
               <dt>Reference</dt><dd class="mono">{{ v.record.recordNo }}</dd>
               <dt>Carrier code</dt><dd class="mono">{{ v.record.carrierCode }}</dd>
@@ -211,6 +227,7 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
     .field { display: grid; gap: 6px; max-width: 520px; }
     .field .label { font-weight: 600; font-size: 13px; }
     .choice { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+    .title-note { margin: 0 0 12px; }
     .warn { display: block; margin-top: 2px; font-size: 13px; color: var(--danger-fg); }
   `,
   ],
@@ -233,6 +250,9 @@ export class BlDetailComponent {
     viewChild<ElementRef<HTMLButtonElement>>('endorseOpen');
   private readonly endorsePanel =
     viewChild<ElementRef<HTMLElement>>('endorsePanel');
+  /** The note on where the B/L stands, which takes the focus after a surrender or release. */
+  private readonly titleNoteRef =
+    viewChild<ElementRef<HTMLElement>>('titleNote');
 
   protected readonly view = signal<BlTitleView | null>(null);
   /** The B/L's record with its open draft, before issue and for its own organisation only. */
@@ -317,6 +337,22 @@ export class BlDetailComponent {
       label: COMMAND_LABELS.get(name) ?? name,
     })),
   );
+
+  /** The surrender for the holder, the release for the carrier of a surrendered B/L (CB-46). */
+  protected readonly settlements = computed(() =>
+    settlementCommands(this.view()?.allowedCommands ?? []),
+  );
+  /** Where the B/L stands once surrendered or accomplished, '' before. */
+  protected readonly titleNoteText = computed(() =>
+    titleNote(this.view()?.title?.state ?? null),
+  );
+  /** The note's look: an information note once there is something to say, else none. */
+  protected readonly titleNoteClass = computed(() => {
+    if (this.titleNoteText() === '') {
+      return '';
+    }
+    return 'title-note note info';
+  });
 
   /** The B/L's state as the list gives it, from the title view. */
   private readonly blState = computed(() => {
@@ -446,6 +482,35 @@ export class BlDetailComponent {
     await this.act(COMMAND_DONE.get(command) ?? 'Done', () =>
       this.bls.command(this.id(), command),
     );
+  }
+
+  /**
+   * Surrenders the B/L to the carrier, or releases its goods, once the user confirms what
+   * happens; the focus then moves to the note on where the B/L stands. A refusal is shown, and
+   * the B/L is read again (someone may have done it first).
+   * @param command the surrender or the release
+   * @return when the page shows the B/L again
+   */
+  protected async settle(command: SettlementCommand): Promise<void> {
+    const label = this.view()?.record.label ?? '';
+    const confirmed = await this.confirm.ask({
+      title: settlementQuestion(command.name, label),
+      body: command.body,
+      confirmLabel: command.confirmLabel,
+    });
+    if (!confirmed) {
+      return;
+    }
+    const done = await this.act(command.done, () =>
+      this.bls.command(this.id(), command.name),
+    );
+    if (!done) {
+      await this.load(this.id());
+      return;
+    }
+    this.focusAfterRender(() => {
+      this.titleNoteRef()?.nativeElement.focus();
+    });
   }
 
   /**

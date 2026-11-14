@@ -12,7 +12,8 @@ import type {
 /**
  * The calls of the shipping record service the B/L screens make (gateway prefix /api/records).
  * The organisation is always the session's: no call names one. Drafting, submitting, approving
- * and issuing a B/L since CB-44; endorsing it to a named organisation since CB-45.
+ * and issuing a B/L since CB-44; endorsing it to a named organisation since CB-45; surrendering
+ * it and releasing its goods since CB-46.
  */
 @Injectable({providedIn: 'root'})
 export class BlApi {
@@ -94,7 +95,8 @@ export class BlApi {
   }
 
   /**
-   * Runs a title command on a B/L as the user's organisation (CB-44: the issue).
+   * Runs a title command on a B/L as the user's organisation (CB-44: the issue;
+   * CB-46: the surrender and the release).
    * @param id the B/L's id
    * @param command the command's name, one of the title's allowedCommands
    * @return the title view after it
