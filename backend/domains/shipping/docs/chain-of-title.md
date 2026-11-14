@@ -109,6 +109,27 @@ command, [title states](title-states.md)). A bundle made before the anchoring fa
 **anchored**: the chain and its signatures are checked, not yet vouched for by the blockchain.
 Removing the last entries of a bundle does not pass: the last entry left is not the anchored one.
 
+## The endorsee written out (CB-37)
+
+An endorsement never changes the stored document: no new version, the same `documentHash` in every
+entry (Jira CB-37 comment 11579). The endorsee is read from the chain instead and laid over the
+document only when a B/L is written out:
+
+- `endorseeOf(entries)` (`@lrfe/domain-shipping/title`): the `to` of the latest `endorse` entry
+  when its `endorsement` is `named`; null after a blank endorsement or before any endorsement.
+  Transfers, surrender and release after it do not change it.
+- `fromModel(billOfLading, {status, endorsee})` of the DCSA 3.0 converter: `endorsee` absent, the
+  document as stored; null, no `documentParties.endorsee` (one stored at drafting is left out:
+  DCSA reads no endorsee on a B/L to order as blank endorsed); a DCSA Endorsee party (`partyName`
+  and `identifyingCodes`), written as `documentParties.endorsee`. An endorsee on a B/L not to
+  order, or on one that names a consignee, is an error. The stored B/L is never changed.
+
+### Left for later
+
+- **The organisation as a DCSA party:** no route writes a B/L out in DCSA yet, so the caller gives
+  `fromModel` the endorsee party. The B/L output route, when it comes, will map the organisation
+  `endorseeOf` names to a party from its registered name (and identifying codes).
+
 ## DCSA PINT
 
 DCSA's Platform Interoperability API (PINT, `DCSA_EBL_PINT` 3.0.0-Beta-20261005) moves an eBL

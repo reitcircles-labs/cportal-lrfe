@@ -24,8 +24,10 @@ An object with:
 - `label`: its name for people, e.g. `BIMCO eB/L 1.0`;
 - `toModel(document)`: the document in its format → `{billOfLading, status}`, a B/L of the model
   (`{schemaVersion, document}`) and the format's own status of it, or null;
-- `fromModel(billOfLading, {status})`: a B/L of the model → the document in its format, with the
-  status the platform holds for it.
+- `fromModel(billOfLading, {status, endorsee})`: a B/L of the model → the document in its
+  format, with the status the platform holds for it and, when given, the endorsee of its chain of
+  title (CB-37; null for none, absent for the document as stored; see
+  [chain of title](chain-of-title.md), "The endorsee written out").
 
 `toModel` never changes what it is given, and its answer must pass `checkBillOfLading`: a format
 that carries less than the model needs is refused with the model's own problems, never filled in

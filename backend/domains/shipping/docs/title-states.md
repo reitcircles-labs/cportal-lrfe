@@ -140,7 +140,9 @@ Checked in this order; the first rule broken is the reason.
   Possession still moves only between registered organisations: that is the service's check
   (CB-34, CB-37), not the engine's.
 - **The endorsee is not written into the stored document at endorsement:** the chain of title
-  records it, and the DCSA converter adds it when a B/L is written out (CB-37).
+  records it, and the DCSA converter adds it when a B/L is written out (CB-37, built:
+  `endorseeOf` and `fromModel`'s `endorsee`, see [chain of title](chain-of-title.md), "The
+  endorsee written out").
 - **A B/L can be voided only while still with the shipper**, never once it has been endorsed or
   transferred.
 - **Switching a blank-endorsed B/L to paper needs a confirmation**, because the paper becomes a

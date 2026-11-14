@@ -46,7 +46,7 @@ R = required by DCSA. "Kept" = same name and rules as DCSA.
 | `isShippedOnBoardType` | R | kept | |
 | `freightPaymentTermCode` | | kept | |
 | `isElectronic` | R | kept | Always `true` for a B/L created on the platform; kept so a B/L switched to paper (L3) can say so. |
-| `isToOrder` | R | kept | `true` = negotiable ("to order"); `false` = straight. DCSA: no endorsee on a to-order B/L means blank endorsed (a question for CB-29). |
+| `isToOrder` | R | kept | `true` = negotiable ("to order"); `false` = straight. DCSA: no endorsee on a to-order B/L means blank endorsed; the converter writes the endorsee from the chain of title (CB-37). |
 | `numberOfCopiesWithCharges`, `numberOfCopiesWithoutCharges`, `numberOfOriginalsWithCharges`, `numberOfOriginalsWithoutCharges` | | kept | Paper-era counts; an electronic B/L has one original. Kept as data for a switch to paper. |
 | `displayedNameForPlaceOfReceipt`, `…PortOfLoad`, `…PortOfDischarge`, `…PlaceOfDelivery` | | kept | The names as printed on the document. |
 | `shippedOnBoardDate`, `receivedForShipmentDate`, `issueDate` | | kept | |
@@ -83,7 +83,7 @@ and later layers rely on.
 | location objects (`placeOfReceipt`, `portOfLoading`, …) | per DCSA | A location name, facility name, address (or address lines), facility code, UN location code or coordinates, as DCSA allows for each place. |
 | `documentParties.shipper` | (itself required) | Name, address, identifying codes, tax references, contacts. |
 | `documentParties.consignee` | when not to order | Required when `isToOrder` is false (a straight B/L or a sea waybill); never together with an endorsee (DCSA rule). |
-| `documentParties.endorsee` | | Only on a to-order B/L: the party title is endorsed to. None on a to-order B/L = blank endorsed. |
+| `documentParties.endorsee` | | Only on a to-order B/L: the party title is endorsed to. None on a to-order B/L = blank endorsed. Not stored at endorsement: the converter writes it out from the chain of title (CB-37, [chain of title](chain-of-title.md)). |
 | `documentParties.issuingParty` | (itself required) | The carrier (or its agent) that issues. |
 | `documentParties.onBehalfOfShipper`, `onBehalfOfConsignee`, `carriersAgentAtDestination`, `notifyParties[]`, `other[]` | | |
 | `consignmentItems[]` | `carrierBookingReference`, `descriptionOfGoods`, `HSCodes`, `cargoItems` (≥1) | |

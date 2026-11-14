@@ -10,6 +10,7 @@ import {canonicalJson, createLocalSigner, signJws} from '@lrfe/common';
 
 import {entryHashOf} from '../../shipping-records/src/chain.js';
 import {verifyProof, verifyTitleProof} from '../verifier/lrfe-verify.mjs';
+import {failedChecks} from './helpers.js';
 import {audited, publicSource} from './register.js';
 import {BANK, BUYER, auditedChain, bundleOf} from './title-proof.js';
 
@@ -24,7 +25,6 @@ const VERIFIER = fileURLToPath(
   new URL('../verifier/lrfe-verify.mjs', import.meta.url),
 );
 const clone = x => structuredClone(x);
-const failed = r => r.checks.filter(c => !c.ok).map(c => c.name);
 
 /**
  * The fingerprint a --title-key pins: SHA-256 of the canonical JSON of the platform's key set, hex.
@@ -92,7 +92,7 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
     it('verifies offline: chain, signatures, the last entry anchored on the blockchain', async () => {
       const r = await verifyTitleProof(bundleOf(c, anchor), offline);
       assert.equal(r.valid, true, JSON.stringify(r.checks));
-      assert.deepEqual(failed(r), []);
+      assert.deepEqual(failedChecks(r), []);
     });
 
     it('names the current holder and the state after the last entry', async () => {
@@ -135,7 +135,7 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
     it('verifies the chain but says it is not anchored (not valid yet), naming the holder', async () => {
       const r = await verifyTitleProof(bundleOf(c, {pending: true}), offline);
       assert.equal(r.valid, false);
-      assert.deepEqual(failed(r), ['anchored']);
+      assert.deepEqual(failedChecks(r), ['anchored']);
       assert.equal(r.title.holder, BUYER);
     });
 
@@ -147,7 +147,7 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
         offline,
       );
       assert.equal(r.valid, false);
-      assert.ok(failed(r).length > 1, JSON.stringify(r.checks));
+      assert.ok(failedChecks(r).length > 1, JSON.stringify(r.checks));
     });
   });
 
@@ -315,7 +315,7 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
       const result = JSON.parse(run.stdout);
       assert.equal(result.valid, false);
       assert.equal(result.title.holder, BUYER);
-      assert.deepEqual(failed(result), ['anchored']);
+      assert.deepEqual(failedChecks(result), ['anchored']);
     });
 
     it('takes --title-key: another fingerprint fails (exit 1)', () => {
@@ -326,7 +326,7 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
       ]);
       assert.equal(run.status, 1);
       const result = JSON.parse(run.stdout);
-      assert.ok(failed(result).length > 1, run.stdout);
+      assert.ok(failedChecks(result).length > 1, run.stdout);
     });
 
     it('names --title-key in its usage', () => {

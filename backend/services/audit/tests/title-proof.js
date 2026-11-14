@@ -63,16 +63,32 @@ export function staffOf(org) {
 export const asService = service =>
   createServiceTokenSigner({secret: SECRET, service});
 
+/** The journey of CB-33: issue, then two named endorsements (shipper → bank → buyer). */
+const NAMED_JOURNEY = Object.freeze([
+  [CARRIER, {name: 'issue'}],
+  [SHIPPER, {name: 'endorse', to: BANK, inBlank: false}],
+  [BANK, {name: 'endorse', to: BUYER, inBlank: false}],
+]);
+
 /**
  * A negotiable B/L of the carrier, committed and issued to the shipper, then endorsed to the
  * bank and by the bank to the buyer (named endorsements): its chain of title as the shipping
  * records service stores it, the platform's public keys and the title after the last entry.
- * `steps` lets a test stop the journey earlier.
- * @param {{reference?: string, steps?: number}} [options]
+ * `steps` lets a test stop the journey earlier; `journey` runs other steps instead, each
+ * `[organisation, command]` (the mixed journey of CB-37).
+ * @param {{
+ *   reference?: string,
+ *   steps?: number,
+ *   journey?: !Array<!Array<*>>,
+ * }} [options]
  * @return {!Promise<{recordId: string, recordNo: string, entries: !Array<object>,
  *     jwks: {keys: !Array<object>}, title: object, actors: !Array<object>}>}
  */
-export async function titleChain({reference = 'CB33-CHAIN', steps = 3} = {}) {
+export async function titleChain({
+  reference = 'CB33-CHAIN',
+  journey = NAMED_JOURNEY,
+  steps = journey.length,
+} = {}) {
   const repo = createShippingRepo();
   const events = createEventBus({driver: 'memory', source: 'shipping-records'});
   let now = Date.parse('2026-11-14T08:00:00Z');
@@ -108,13 +124,9 @@ export async function titleChain({reference = 'CB33-CHAIN', steps = 3} = {}) {
   );
   await records.submit(record.id, 1, drafter, CARRIER);
   await records.commit(record.id, 1, {by: approver}, 'bpm');
-  const journey = [
-    [CARRIER, {name: 'issue'}],
-    [SHIPPER, {name: 'endorse', to: BANK, inBlank: false}],
-    [BANK, {name: 'endorse', to: BUYER, inBlank: false}],
-  ].slice(0, steps);
+  const taken = journey.slice(0, steps);
   const actors = [];
-  for (const [org, command] of journey) {
+  for (const [org, command] of taken) {
     await titles.apply(record.id, command, staffOf(org));
     actors.push(staffOf(org));
   }
@@ -257,15 +269,21 @@ export function serviceHeader(service) {
  * A B/L's chain followed by the audit service of a shipping install: each entry published as its
  * event and recorded, optionally anchored. Gives the chain, the events, their trail entries, the
  * audit service and `proofOfEntry(seq)`.
- * @param {{anchored?: boolean, steps?: number, reference?: string}} [options]
+ * @param {{
+ *   anchored?: boolean,
+ *   steps?: number,
+ *   reference?: string,
+ *   journey?: !Array<!Array<*>>,
+ * }} [options] (titleChain's steps and journey)
  * @return {!Promise<object>}
  */
 export async function auditedChain({
   anchored = true,
-  steps = 3,
+  steps,
   reference,
+  journey,
 } = {}) {
-  const chain = await titleChain({steps, reference});
+  const chain = await titleChain({steps, reference, journey});
   const audit = await titleAudit();
   const events = [];
   const trailEntries = [];

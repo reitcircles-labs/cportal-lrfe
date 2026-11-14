@@ -99,6 +99,11 @@ a command whose signature cannot be made, or whose entry cannot be stored, chang
 entry fields, the hash, the signature and how they map to DCSA PINT's transfer chain:
 [chain of title](../../domains/shipping/docs/chain-of-title.md).
 
+An endorsement adds no version: the stored document and its hash stay as issued. The endorsee
+is read from the chain (`endorseeOf`) and added only when a B/L is written out in DCSA (CB-37,
+[chain of title](../../domains/shipping/docs/chain-of-title.md), "The endorsee written out"); no
+route writes a B/L out yet.
+
 `verifyTitleChain(entries, jwks)` (`src/chain.js`) checks a chain offline, entry by entry
 (linked, intact, signed), with the platform's public keys from `GET /records/title/keys`. Without
 a signer (production without `TITLE_SIGNER`), title commands are refused with 503.
