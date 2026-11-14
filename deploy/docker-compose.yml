@@ -107,6 +107,8 @@ services:
     command: ["node", "scripts/db-setup.js"]
     environment:
       DB_CONNECTION_STRING: *db-url
+      # a product's own record service gets its schema only on that product's installs (CB-28)
+      LRFE_DOMAIN: ${LRFE_DOMAIN:-land}
 
   # The event bus between the services, with JetStream for the durable events of the audit trail
   nats:
@@ -278,7 +280,7 @@ services:
       edrms: { condition: service_healthy }
 
   # The B/L record service of the shipping product (profile shipping, CB-27, CB-28): only with
-  # LRFE_DOMAIN=shipping. Its schema is set up by db-setup, like every service's.
+  # LRFE_DOMAIN=shipping. db-setup sets up its schema only then (a land install never has it).
   shipping-records:
     <<: *backend
     profiles: ["shipping"]
