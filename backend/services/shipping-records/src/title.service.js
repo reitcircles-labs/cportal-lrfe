@@ -1279,6 +1279,26 @@ export class TitleService {
   }
 
   /**
+   * The organisations registered and active on the platform (CB-44), `{id, code, name}` each, as
+   * identity lists them: whom a carrier's new B/L may name as its shipper or consignee. 503 while
+   * identity cannot answer.
+   * @return {!Promise<!Array<{id: string, code: string, name: string}>>}
+   */
+  async activeOrganisations() {
+    try {
+      return await this.organisations.activeOrganisations();
+    } catch (cause) {
+      const error = new AppError(
+        503,
+        'The organisations cannot be listed now: try again later.',
+        {code: 'organisations-unavailable'},
+      );
+      error.cause = cause;
+      throw error;
+    }
+  }
+
+  /**
    * The names of organisations (CB-42), `{id: name}`, each asked of identity once. An
    * organisation identity gives no name for, or every one while identity cannot answer, is left
    * out: the screens then show its id, and a list or a title never fails for a name.

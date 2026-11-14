@@ -32,6 +32,13 @@ export function demoEmails(role: string): string[] {
   return DEMO_USERS.filter(u => u.roles.includes(role)).map(u => u.email);
 }
 
+/**
+ * The shipping pack's roles (CB-44): the carrier's staff, who draft, approve and issue B/Ls, and
+ * the trade staff of shippers, banks and buyers, who move the B/Ls they hold.
+ */
+export const CARRIER_ROLE = 'bld';
+export const TRADE_ROLE = 'blt';
+
 /** The password of the users the specs invite. */
 export const INVITED_PASSWORD = 'e2e shipping user password 2026';
 
@@ -140,14 +147,15 @@ export async function acceptInvitation(
  * @param api the request context, on the gateway
  * @param admin the signed-in administrator
  * @param label a word for the names, e.g. "Bank"
- * @param role the user's role (the B/L clerk's by default)
+ * @param role the user's role: the carrier's staff (CARRIER_ROLE) by default, TRADE_ROLE for a
+ *     shipper, bank or buyer
  * @return the organisation and its signed-in clerk
  */
 export async function organisationWithClerk(
   api: APIRequestContext,
   admin: SignedIn,
   label: string,
-  role = 'bld',
+  role = CARRIER_ROLE,
 ): Promise<Organisation> {
   const id = unique();
   const created = await api.post('/api/organisations', {

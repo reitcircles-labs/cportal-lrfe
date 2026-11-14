@@ -16,6 +16,7 @@ import {evidence} from '../support/evidence';
 import {
   INVITED_PASSWORD,
   demoEmails,
+  TRADE_ROLE,
   organisationWithClerk,
   serviceToken,
   signIn,
@@ -125,9 +126,14 @@ test.describe(
       api = await playwright.request.newContext({baseURL: GATEWAY_URL});
       admin = await signIn(api, demoEmails('adm')[0]);
       carrier = await organisationWithClerk(api, admin, 'Carrier');
-      shipper = await organisationWithClerk(api, admin, 'Shipper');
-      bank = await organisationWithClerk(api, admin, 'Bank');
-      outsider = await organisationWithClerk(api, admin, 'Outsider');
+      shipper = await organisationWithClerk(api, admin, 'Shipper', TRADE_ROLE);
+      bank = await organisationWithClerk(api, admin, 'Bank', TRADE_ROLE);
+      outsider = await organisationWithClerk(
+        api,
+        admin,
+        'Outsider',
+        TRADE_ROLE,
+      );
 
       issued = await createBl();
       const submitted = await api.post(

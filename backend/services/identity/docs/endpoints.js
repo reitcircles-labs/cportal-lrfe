@@ -178,6 +178,13 @@ export const ENDPOINTS = {
       summary: 'Rename an organisation',
       description: '`{ name }`. The code cannot change.',
     },
+    'GET /organisations/active': {
+      tag: 'Organisations',
+      summary:
+        "The organisations registered and active (the product's record service only)",
+      description:
+        "For the service token of the domain pack's record service: `{ organisations: [{ id, code, name }] }`, the Active organisations sorted by name, nothing else about them. On a shipping install, the organisations a carrier's clerk may name as the shipper or consignee of a new B/L (CB-44). The administrators' list is `GET /organisations`.",
+    },
     'GET /organisations/{id}/standing': {
       tag: 'Organisations',
       summary:

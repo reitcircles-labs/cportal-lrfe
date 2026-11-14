@@ -7,9 +7,10 @@ import {
   signal,
 } from '@angular/core';
 import {RouterLink} from '@angular/router';
-import {toApiError} from '@lrfe/platform';
+import {AuthService, toApiError} from '@lrfe/platform';
 
 import {BlApi} from './bl.api';
+import {mayDraft} from './bl-actions';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
 import {
   kindLabel,
@@ -39,6 +40,7 @@ interface Row {
 /**
  * The home of the shipping app (CB-42): the B/Ls the user's organisation is party to, as carrier,
  * holder, past holder or consignee, its drafts among them, newest first; each opens its page.
+ * Who drafts B/Ls starts a new one from here (CB-44).
  */
 @Component({
   selector: 'app-bl-list',
@@ -46,9 +48,14 @@ interface Row {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
-      <header>
-        <h1 style="margin:4px 0 4px;font-size:36px">Bills of lading</h1>
-        <p class="muted" style="margin:0">The B/Ls your organisation carries, holds or held, or is the consignee of.</p>
+      <header class="row" style="justify-content:space-between;align-items:flex-end;gap:12px">
+        <div>
+          <h1 style="margin:4px 0 4px;font-size:36px">Bills of lading</h1>
+          <p class="muted" style="margin:0">The B/Ls your organisation carries, holds or held, or is the consignee of.</p>
+        </div>
+        @if (mayDraft()) {
+          <a class="btn btn-primary" routerLink="/bls/new">New B/L</a>
+        }
       </header>
       <section class="panel">
         @if (error(); as e) {
@@ -72,7 +79,7 @@ interface Row {
                 <tr>
                   <td>
                     <a class="rec" [routerLink]="['/bls', r.item.id]">
-                      <strong>{{ r.item.label }}</strong><span class="small muted">{{ r.item.recordNo }}</span>
+                      <strong>{{ r.item.label }}</strong>
                     </a>
                   </td>
                   <td>{{ r.kind }}</td>
@@ -112,7 +119,10 @@ export class BlListComponent {
   private readonly bls = inject(BlApi);
   private readonly viewer = injectViewer();
   private readonly latest = new LatestRequest();
+  private readonly auth = inject(AuthService);
 
+  /** Whether the user drafts B/Ls, and so may start a new one. */
+  protected readonly mayDraft = computed(() => mayDraft(this.auth.perms()));
   protected readonly pageSize = PAGE_SIZE;
   protected readonly offset = signal(0);
   protected readonly items = signal<BlListItem[]>([]);

@@ -7,6 +7,8 @@ import {
   carrierOf,
   chainRows,
   kindLabel,
+  NO_CONSIGNEE,
+  consigneeLabel,
   partyLabel,
   rolesLabel,
   stateLabel,
@@ -265,5 +267,45 @@ describe('carrierOf (added: review, a draft showed no carrier)', () => {
 
   it('before issue without the carrier role (never answered by the service): nobody', () => {
     assert.equal(carrierOf({title: null, roles: []}, ME), null);
+  });
+});
+
+describe('consigneeLabel (added: an issued B/L to order names no consignee, as before issue)', () => {
+  /**
+   * A title with its kind and consignee.
+   * @param kind the kind
+   * @param consignee the consignee's organisation, if any
+   * @return the title
+   */
+  function title(kind: string, consignee: string | null) {
+    return {
+      kind,
+      state: 'issued',
+      carrier: 'org-carrier',
+      holder: 'org-bank',
+      endorsement: 'none',
+      consignee,
+    };
+  }
+
+  it('a negotiable B/L: "None: to order"', () => {
+    assert.equal(consigneeLabel(title('negotiable', null), ME), NO_CONSIGNEE);
+  });
+
+  it('a straight B/L or a waybill: its consignee, by name', () => {
+    const names = {'org-buyer': 'Buyer Trading'};
+    assert.equal(
+      consigneeLabel(title('straight', 'org-buyer'), ME, names),
+      'Buyer Trading',
+    );
+    assert.equal(
+      consigneeLabel(title('waybill', 'org-buyer'), ME, names),
+      'Buyer Trading',
+    );
+  });
+
+  it('no title, or no consignee named: a dash', () => {
+    assert.equal(consigneeLabel(null, ME), '—');
+    assert.equal(consigneeLabel(title('straight', null), ME), '—');
   });
 });

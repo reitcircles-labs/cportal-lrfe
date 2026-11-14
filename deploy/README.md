@@ -336,6 +336,17 @@ upgrade **audit before shipping-records**: an older audit has no route for the p
 chain-of-title entry, and a title proof then says "pending" until audit is upgraded. A land install
 needs nothing: the title engine and its key are the shipping product's only.
 
+**Upgrading a shipping install to the split B/L roles (CB-44).** The shipping product now has two
+staff roles: `bld`, "B/L documentation (carrier)" (view, draft, approve and issue B/Ls), and the
+new `blt`, "B/L trade (shipper, bank, buyer)" (view B/Ls and endorse, transfer or surrender the
+ones the organisation holds). Identity adds `blt` at the first start; the data is kept. An install
+seeded before keeps the permissions stored for `bld`, which still include `bl.endorse`. After the
+upgrade, an administrator moves the staff of shippers, banks and buyers from `bld` to `blt` (their
+roles, `PUT /api/users/{id}/roles`), and takes `bl.endorse` from `bld` (identity's
+`PUT /api/roles/permissions`, with `admin.roles`; the shipping app has no roles screen yet) so that
+carrier staff only draft, approve and issue.
+A land install needs nothing.
+
 **Upgrading to organisations (CB-18).** The data is kept. On the first start, identity creates one
 default organisation, named from `LRFE_ORG_NAME`, and puts every existing office and user into it.
 The same first start builds an audit index (`trail_entry_actor_org`) that reads the whole audit

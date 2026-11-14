@@ -63,6 +63,15 @@ const decisionBody = {
   },
 };
 
+/** A person's approval of a version in review (CB-44): an optional comment. */
+const approvalBody = {
+  type: ['object', 'null'],
+  additionalProperties: false,
+  properties: {
+    comment: {type: 'string', maxLength: 4000},
+  },
+};
+
 /** A new document of a B/L in a title command: its format, the document, its parties' links. */
 const titleDocument = {
   type: 'object',
@@ -323,6 +332,34 @@ export async function recordsRoutes(app, {service}) {
     async req =>
       service.submit(req.params.id, req.params.n, actorOf(req), ownerOf(req)),
   );
+
+  // ------------------------------------------------ approval on the platform (CB-44)
+
+  // a second person of the B/L's organisation approves the version in review (four eyes: never
+  // one of its drafters), which commits it; issuing it is then a title command
+  app.post(
+    '/records/:id/versions/:n/approve',
+    {
+      onRequest: app.requirePerm('bl.issue'),
+      schema: {...idParams(versionParam), body: approvalBody},
+    },
+    async req =>
+      service.approve(
+        req.params.id,
+        req.params.n,
+        actorOf(req),
+        ownerOf(req),
+        req.body ?? {},
+      ),
+  );
+
+  // the organisations registered and active on the platform, whom a new B/L may name as its
+  // shipper or consignee (CB-44)
+  app.get('/records/organisations', {onRequest: canDraft}, async req => {
+    // only a user of an organisation drafts B/Ls: 403 for one of none
+    ownerOf(req);
+    return {items: await titlesOf(app).activeOrganisations()};
+  });
 
   // ------------------------------------------------ review decisions (bpm)
 

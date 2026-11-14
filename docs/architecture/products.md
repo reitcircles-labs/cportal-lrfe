@@ -105,7 +105,9 @@ generic prompt), the extract PDF layout, and the trail, tree and proof formats.
 of `LRFE_BL_FORMATS`; `backend/domains/shipping/docs/`), and in its sections:
 
 - `identity`: the group "Bills of lading" with `bl.read`, `bl.draft`, `bl.issue` and `bl.endorse`
-  (issuing and moving B/Ls, CB-34), the role `bld` (B/L documentation, every one of them), and demo data: the office `HQ` and, with a demo password, an
+  (issuing and moving B/Ls, CB-34), the roles `bld` (B/L documentation of a carrier: read, draft, issue) and `blt` (B/L trade
+  of a shipper, bank or buyer: read, endorse; CB-44; an install seeded before keeps the stored
+  permissions of `bld` until an administrator changes them), and demo data: the office `HQ` and, with a demo password, an
   administrator and two B/L clerks at `shipping.example` (fictitious; the shipping e2e run signs
   them in).
 - `recordKind`: the record service `shipping-records` (`SHIPPING_RECORDS_URL`, default

@@ -4859,6 +4859,42 @@ paths:
       x-access:
         allOf:
           - admin.organisations
+  /api/organisations/active:
+    get:
+      tags:
+        - identity · Organisations
+      summary: The organisations registered and active (the product's record service only)
+      description: >-
+        For the service token of the domain pack's record service: `{ organisations: [{ id, code, name }] }`, the Active organisations
+        sorted by name, nothing else about them. On a shipping install, the organisations a carrier's clerk may name as the shipper or
+        consignee of a new B/L (CB-44). The administrators' list is `GET /organisations`.
+
+
+        **Access:** Service token only, from: `land-records`. Browsers cannot call this.
+      operationId: identity_getOrganisationsActive
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - serviceToken: []
+      x-access:
+        services:
+          - land-records
   /api/policies:
     get:
       tags:

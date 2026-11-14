@@ -70,7 +70,7 @@ export interface BlTitleView {
     draftState: string | null;
   };
   title: TitleSummary | null;
-  /** The commands the user may run now; their buttons come with CB-44..46. */
+  /** The commands the user may run now; CB-44 offers the issue, CB-45..46 the others. */
   allowedCommands: string[];
   roles: PartyRole[];
   chain: ChainEntry[];
@@ -82,4 +82,51 @@ export interface BlTitleView {
 export interface Viewer {
   organisationId: string | null;
   organisation: string;
+}
+
+/** One entry of a version's change log (the fields the app reads). */
+export interface VersionChange {
+  byId: string | null;
+  /** `create`, `open`, `edit`, `submit`, `commit`, `reject`... */
+  action: string;
+}
+
+/** A version of a B/L as the record read gives it (the fields the app reads, CB-44). */
+export interface DraftVersion {
+  versionNumber: number;
+  /** `draft`, `in_review` or `committed`. */
+  state: string;
+  createdById?: string | null;
+  createdByName?: string | null;
+  submittedById?: string | null;
+  submittedByName?: string | null;
+  approvedByName?: string | null;
+  changes?: VersionChange[];
+  /** The B/L of the model: its DCSA document, and its parties' organisations. */
+  data?: {
+    document?: Record<string, unknown>;
+    partyOrganisations?: Record<string, string>;
+  };
+}
+
+/**
+ * A B/L of the user's own organisation as `GET /records/:id` answers it (the fields the app reads,
+ * CB-44): its open draft, before it is issued.
+ */
+export interface BlRecord {
+  id: string;
+  recordNo: string;
+  status: string;
+  draftVersion: number | null;
+  draftState: string | null;
+  draft: DraftVersion | null;
+  /** The current committed version, null before the first commit. */
+  current: DraftVersion | null;
+}
+
+/** An organisation a new B/L may name as its shipper or consignee (CB-44). */
+export interface PartyOrganisation {
+  id: string;
+  code: string;
+  name: string;
 }

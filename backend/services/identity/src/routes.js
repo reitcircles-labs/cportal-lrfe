@@ -279,6 +279,13 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     },
     async () => ({organisations: await service.listOrganisations()}),
   );
+  // the organisations registered and active, for the product's record service only (CB-44: whom a
+  // carrier's clerk may name as the shipper or consignee of a new B/L); id, code and name only
+  app.get(
+    '/organisations/active',
+    {onRequest: app.requireService(...policyReaders)},
+    async () => ({organisations: await service.activeOrganisations()}),
+  );
   const organisations = {onRequest: app.requirePerm('admin.organisations')};
   const organisationName = str({minLength: 1, maxLength: 200});
   app.post(

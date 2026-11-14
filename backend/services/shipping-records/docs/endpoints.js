@@ -30,6 +30,18 @@ export const ENDPOINTS = {
       description:
         'The draft is frozen in review, with you as its submitter, until a second person commits it or sends it back. 409 when version `n` is not the open draft, or when it was changed meanwhile.',
     },
+    'POST /records/{id}/versions/{n}/approve': {
+      tag: 'Records',
+      summary: 'Approve a version in review, as a second person (four eyes)',
+      description:
+        "`{ comment? }`. For a person with `bl.issue` of the B/L's organisation (CB-44): commits the version as `commit` does (sealed, chained, `records.record.committed` published), with you as its approver. Never one of its drafters: whoever created, changed or submitted that version gets 403 (`details.code` `own-draft`). 403 without `bl.issue` or for a user of no organisation; 404 for another organisation's B/L. 409 when the version is not in review (still a draft, or committed by someone else; of two approvals at the same moment one wins). A retry by the same approver answers the record unchanged. The B/L is then issued with `POST /records/{id}/title/issue`.",
+    },
+    'GET /records/organisations': {
+      tag: 'Records',
+      summary: 'The organisations a new B/L may name',
+      description:
+        '`{ items: [{ id, code, name }] }`: the organisations registered and active on the platform, as identity lists them (CB-44), for the shipper and consignee of a new B/L (`partyOrganisations`). Needs `bl.draft`; 403 for a user of no organisation; 503 (`details.code` `organisations-unavailable`) while identity cannot answer.',
+    },
     'POST /records/{id}/versions/{n}/commit': {
       tag: 'Records',
       summary: 'Commit an approved version (bpm only)',

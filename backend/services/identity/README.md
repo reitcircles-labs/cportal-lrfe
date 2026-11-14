@@ -99,6 +99,10 @@ permission "Manage organisations" add, rename, suspend and reactivate them throu
   shipping install) with `{id, status, name}` and nothing else; 404 for an organisation that does
   not exist. The shipping record service asks it before a B/L goes to an organisation, and for the
   names of the organisations a B/L names, which its parties see (CB-42).
+- **Active organisations, for the record service (CB-44).** `GET /organisations/active` answers
+  the same service only with `{organisations: [{id, code, name}]}`, the Active organisations sorted
+  by name: on a shipping install, whom a carrier's clerk may name as the shipper or consignee of a
+  new B/L. The administrators' `GET /organisations` is unchanged.
 
 ## Roles and permissions from the domain pack
 

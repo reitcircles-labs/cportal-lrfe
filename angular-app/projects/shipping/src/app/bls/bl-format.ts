@@ -1,9 +1,17 @@
 /**
  * How the shipping app shows a B/L (CB-42): its kind, its state, the organisation's roles on it,
- * the organisations it names and its chain of title. Product wording, generic: no country, no
- * organisation, no tool name. Tested by bl-format.test.ts (`npm run test:shipping`).
+ * the organisations it names and its chain of title; before issue, the version being approved or
+ * issued (CB-44). Product wording, generic: no country, no organisation, no tool name. Tested by
+ * bl-format.test.ts and bl-actions.test.ts (`npm run test:shipping`).
  */
-import type {BlState, ChainEntry, PartyRole, Viewer} from './bl.model';
+import type {
+  BlState,
+  ChainEntry,
+  DraftVersion,
+  PartyRole,
+  TitleSummary,
+  Viewer,
+} from './bl.model';
 
 /** How a state is shown at a glance: being drafted, waiting, live, or ended. */
 export type StateTone = 'draft' | 'review' | 'live' | 'ended';
@@ -212,4 +220,184 @@ export function carrierOf(
     return viewer.organisationId;
   }
   return null;
+}
+
+/** A fact of a version, as the approval panel lists it, with a warning when it needs a look. */
+export interface DraftFact {
+  label: string;
+  value: string;
+  warning?: string;
+}
+
+/** The consignee of a B/L to order: none is named. */
+export const NO_CONSIGNEE = 'None: to order';
+
+/**
+ * A value of a document read at a path, when it is text.
+ * @param value where to start
+ * @param path the keys and indexes to follow
+ * @return the text, '' when there is none
+ */
+function textAt(value: unknown, path: ReadonlyArray<string | number>): string {
+  let current: unknown = value;
+  for (const key of path) {
+    if (current === null || typeof current !== 'object') {
+      return '';
+    }
+    current = (current as Record<string | number, unknown>)[key];
+  }
+  return typeof current === 'string' ? current : '';
+}
+
+/**
+ * The voyage of a document: vessel and voyage, then the ports.
+ * @param document the version's document
+ * @return the text, '' when it has none
+ */
+function voyageOf(document: Record<string, unknown>): string {
+  const transports = document['transports'];
+  const vessel = [
+    textAt(transports, ['vesselVoyages', 0, 'vesselName']),
+    textAt(transports, ['vesselVoyages', 0, 'carrierExportVoyageNumber']),
+  ]
+    .filter(text => text !== '')
+    .join(' ');
+  const from = textAt(transports, ['portOfLoading', 'UNLocationCode']);
+  const to = textAt(transports, ['portOfDischarge', 'UNLocationCode']);
+  const ports = from !== '' || to !== '' ? `${from} → ${to}` : '';
+  return [vessel, ports].filter(text => text !== '').join(', ');
+}
+
+/**
+ * The kind a document will be issued as, as the title engine reads it: a sea waybill, a B/L to
+ * order (negotiable) or a straight B/L.
+ * @param document the version's document
+ * @return the kind's id, as kindLabel names it
+ */
+export function draftKind(document: Record<string, unknown>): string {
+  if (document['transportDocumentTypeCode'] === 'SWB') {
+    return 'waybill';
+  }
+  if (document['isToOrder'] === true) {
+    return 'negotiable';
+  }
+  return 'straight';
+}
+
+/**
+ * A party of a version: the organisation it is linked to (what the issue uses), by name, with a
+ * warning when the document names it otherwise, or when it is linked to none.
+ * @param label the fact's label
+ * @param typed the party's name as the document gives it
+ * @param linked the id of the organisation it is linked to, '' for none
+ * @param names the organisations' names, by id
+ * @return the fact
+ */
+function partyFact(
+  label: string,
+  typed: string,
+  linked: string,
+  names: Readonly<Record<string, string>>,
+): DraftFact {
+  if (linked === '') {
+    if (typed === '') {
+      return {label, value: NONE};
+    }
+    return {
+      label,
+      value: typed,
+      warning: `"${typed}" is not linked to an organisation on the platform.`,
+    };
+  }
+  const name = names[linked];
+  if (name === undefined) {
+    return {label, value: linked};
+  }
+  if (typed !== '' && typed !== name) {
+    return {
+      label,
+      value: name,
+      warning: `The document names "${typed}", but the B/L goes to ${name}.`,
+    };
+  }
+  return {label, value: name};
+}
+
+/**
+ * What the approver, and then the issuer, sees of a version: its kind, its shipper and consignee
+ * (the organisations they are linked to, by name), the voyage, the container, the goods, who
+ * prepared it and, once approved, who approved it.
+ * @param version the version, null when there is none
+ * @param names the organisations' names, by id
+ * @return the facts, none without a version
+ */
+export function draftFacts(
+  version: DraftVersion | null,
+  names: Readonly<Record<string, string>>,
+): DraftFact[] {
+  if (version === null) {
+    return [];
+  }
+  const document = version.data?.document ?? {};
+  const links = version.data?.partyOrganisations ?? {};
+  const parties = document['documentParties'];
+  const kind = draftKind(document);
+  let consignee: DraftFact = {label: 'Consignee', value: NO_CONSIGNEE};
+  if (kind !== 'negotiable') {
+    consignee = partyFact(
+      'Consignee',
+      textAt(parties, ['consignee', 'partyName']),
+      links['consignee'] ?? '',
+      names,
+    );
+  }
+  const plain: Array<[string, string]> = [
+    ['Voyage', voyageOf(document)],
+    [
+      'Container',
+      textAt(document['utilizedTransportEquipments'], [
+        0,
+        'equipment',
+        'equipmentReference',
+      ]),
+    ],
+    [
+      'Goods',
+      textAt(document['consignmentItems'], [0, 'descriptionOfGoods', 0]),
+    ],
+    ['Prepared by', version.createdByName ?? ''],
+  ];
+  if (version.state === 'committed') {
+    plain.push(['Approved by', version.approvedByName ?? '']);
+  }
+  return [
+    {label: 'Kind', value: kindLabel(kind)},
+    partyFact(
+      'Shipper',
+      textAt(parties, ['shipper', 'partyName']),
+      links['shipper'] ?? '',
+      names,
+    ),
+    consignee,
+    ...plain.map(([label, value]) => ({label, value: value || NONE})),
+  ];
+}
+
+/**
+ * The consignee of an issued B/L: none for a B/L to order (negotiable), as before issue; the
+ * named organisation of a straight B/L or a sea waybill.
+ * @param title the B/L's title, null before issue
+ * @param viewer who looks at the B/L
+ * @param names the names the service gave
+ * @return the words
+ */
+export function consigneeLabel(
+  title: TitleSummary | null,
+  viewer: Viewer,
+  names: OrganisationNames = {},
+): string {
+  if (title?.kind === 'negotiable') {
+    return NO_CONSIGNEE;
+  }
+  return partyLabel(title?.consignee, viewer, names);
 }

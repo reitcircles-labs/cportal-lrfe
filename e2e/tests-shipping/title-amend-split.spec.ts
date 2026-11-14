@@ -18,6 +18,7 @@ import {expect, test, type APIRequestContext} from '@playwright/test';
 import {unique} from '../support/admin';
 import {
   demoEmails,
+  TRADE_ROLE,
   organisationWithClerk,
   serviceToken,
   signIn,
@@ -139,8 +140,8 @@ test.describe('amendment and split through the gateway (CB-35)', () => {
     const [first, second] = demoEmails('bld');
     carrier = await signIn(api, first);
     approver = await signIn(api, second);
-    shipper = await organisationWithClerk(api, admin, 'Shipper');
-    bank = await organisationWithClerk(api, admin, 'Bank');
+    shipper = await organisationWithClerk(api, admin, 'Shipper', TRADE_ROLE);
+    bank = await organisationWithClerk(api, admin, 'Bank', TRADE_ROLE);
     reference = `CB35${unique().toUpperCase()}`.slice(0, 18);
   });
 

@@ -36,6 +36,26 @@ Each change of a version adds one to its `revision`. A change or a submission ma
 someone else changed or submitted since it was read is refused (409, reload and try again): the last
 writer never silently wins, and a submitted version is always the one its event names.
 
+## Approval on the platform: four eyes (CB-44)
+
+A shipping install runs no review workflow, so a person approves a B/L's version in review on
+the platform: `POST /records/:id/versions/:n/approve` (`{comment?}`), with `bl.issue`, by a person
+of the B/L's organisation (another's B/L is 404). Four eyes, decided on CB-11: **never one of the
+version's drafters**, anyone who created or opened it, changed it or submitted it (403,
+`details.code` `own-draft`); a reviewer who sent it back before is not a drafter. The version is
+then committed exactly as `commit` does it (sealed, chained, `records.record.committed` with the
+approver as actor; the change log's entry says `via: 'approval'`): a retry by the same approver
+answers it unchanged, a version no longer in review is 409, and of two approvals at the same moment
+one wins. The B/L is then issued with the title API (`issue`, below). In the shipping pack the role
+`bld` (the carrier's staff: `bl.read`, `bl.draft`, `bl.issue`) drafts, approves and issues: a
+second `bld` user approves what the first drafted. The staff of shippers, banks and buyers get
+`blt` (`bl.read`, `bl.endorse`).
+
+`GET /records/organisations` (`bl.draft`) lists the organisations registered and active on the
+platform, `{items: [{id, code, name}]}`, as identity gives them (`GET /organisations/active`, asked
+with this service's token): whom a new B/L may name as its shipper or consignee
+(`partyOrganisations`); 503 `organisations-unavailable` while identity cannot answer.
+
 ## The title (the holder ledger)
 
 An issued B/L has one **title** (table `bl_title`, CB-31): its kind (`negotiable`, `straight` or
@@ -115,8 +135,8 @@ allowedCommands, roles, chain}` (`record` and `roles` since CB-42), `chain` bein
 looked up in a Map (`OFFERED_COMMANDS` in `src/title.service.js`): an unknown one is 400
 `unknown-command`. Permissions (shipping pack): `bl.issue` for `issue`, `void`, `release`,
 `deliver`, `amend` and `split` (the carrier's staff), `bl.endorse` for `endorse`, `transfer`,
-`surrender`, `surrender-for-amendment` and `switch-to-paper` (the holder's); the demo role `bld`
-has both. The title proof of a B/L made by a split carries `parent`, the chain of the B/L it was
+`surrender`, `surrender-for-amendment` and `switch-to-paper` (the holder's); in the shipping pack
+the carrier's staff role `bld` has `bl.issue`, the trade role `blt` `bl.endorse` (CB-44). The title proof of a B/L made by a split carries `parent`, the chain of the B/L it was
 split from ([chain of title](../../domains/shipping/docs/chain-of-title.md)).
 
 ### The B/Ls of an organisation (CB-42)
@@ -205,7 +225,7 @@ be reached the route answers 503, never "pending".
 | `DB_SYNC` | `false` | `true`: create the schema and tables at start (development); otherwise `npm run db:setup` in `backend/` creates them |
 | `JWT_SECRET` | | the secret shared by every service, to check users' and services' tokens |
 | `AUDIT_URL` | `http://localhost:3506` | the audit service, which gives the proof of a chain-of-title entry on the blockchain (the title proof) |
-| `IDENTITY_URL` | `http://localhost:3501`; required in production (the start stops without it) | identity, which says whether an organisation a B/L goes to is registered and active (CB-34), and gives the names of a B/L's organisations (CB-42) |
+| `IDENTITY_URL` | `http://localhost:3501`; required in production (the start stops without it) | identity, which says whether an organisation a B/L goes to is registered and active (CB-34), gives the names of a B/L's organisations (CB-42) and lists the organisations a new B/L may name (CB-44) |
 | `EVENT_BUS_DRIVER` | `log` | `log`, `memory` or `nats` (`NATS_URL`); with PostgreSQL, events go through the outbox in the same transaction as the change |
 | `LRFE_BL_FORMATS` | `dcsa-3.0` | the B/L formats that are on, comma-separated; an unknown name stops the start ([formats](../../domains/shipping/docs/formats.md)) |
 | `LRFE_BL_MODULES` | all | the title modules that are on, comma-separated (`waybill`, always on, `negotiable`, `blank-endorsement`, `amendment`, `split`); an unknown name or a module without the one it needs stops the start ([title modules](../../domains/shipping/docs/title-states.md#modules-cb-38)) |
@@ -233,6 +253,8 @@ Users need a token with an organisation; a user of no organisation gets 403.
 | `GET /records/:id/title` | `bl.read`, of the carrier, a current or past holder or the consignee (before issue: the owner) | the title, the commands the caller may run now and the chain of title; 404 "B/L not found" for anyone else |
 | `POST /records/:id/title/:command` | `bl.issue` (issue, void, release, deliver, amend, split) or `bl.endorse` (endorse, transfer, surrender, surrender-for-amendment, switch-to-paper), of an organisation that sees the B/L | runs a title command (above); 404 for an organisation that does not see the B/L, before any other refusal; a refusal records nothing |
 | `GET /records/:id/title/proof` | `bl.read`, of the carrier, a current or past holder or the consignee | the B/L's title proof (`lrfe-title-proof/1`), `?seq=` for an older entry; 404 "B/L not found" for anyone else and before issue, 503 while the proof on the blockchain cannot be read |
+| `POST /records/:id/versions/:n/approve` | `bl.issue` (own organisation), never one of the version's drafters (CB-44) | approves the version in review, `{comment?}`: committed as by `commit`; 403 `own-draft` for a drafter |
+| `GET /records/organisations` | `bl.draft` | the organisations registered and active, which a new B/L may name (CB-44) |
 | `POST /records/:id/versions/:n/commit`, `.../reject` | bpm | the review decision, `{by: {id, name}, comment}`: commit refuses the submitter (403, four-eyes, always on) and answers a retry by the same person the same; reject needs a comment |
 
 The generated API description is [`docs/openapi.yaml`](docs/openapi.yaml) (`npm run docs` in

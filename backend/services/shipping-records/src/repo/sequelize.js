@@ -308,16 +308,27 @@ export function createSequelizeRepo(sequelize) {
      * @param {{
      *   recordId: string,
      *   versionNumber: number,
+     *   expectedRevision?: number,
      *   versionPatch: object,
      *   recordPatch: object,
-     * }} commit
+     * }} commit `expectedRevision`: only while the version is still at that revision (CB-44), else 409
      * @return {!Promise<{record: object, version: object}>}
      */
-    async commit({recordId, versionNumber, versionPatch, recordPatch}) {
+    async commit({
+      recordId,
+      versionNumber,
+      expectedRevision,
+      versionPatch,
+      recordPatch,
+    }) {
+      const where = {recordId, versionNumber, state: 'in_review'};
+      if (expectedRevision !== undefined) {
+        where.revision = expectedRevision;
+      }
       return inTransaction(sequelize, async transaction => {
         const [n] = await models.Version.update(
           {...versionPatch, state: 'committed'},
-          {where: {recordId, versionNumber, state: 'in_review'}, transaction},
+          {where, transaction},
         );
         if (!n) {
           throw new ConflictError('The version is not in review');

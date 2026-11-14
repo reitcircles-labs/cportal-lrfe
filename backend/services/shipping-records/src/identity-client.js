@@ -13,6 +13,9 @@ const TIMEOUT_MS = 10_000;
  *                   reached, 502 for any other answer
  *   nameOf(id)      the organisation's name (CB-42, the same route), null when identity knows
  *                   none; rejects as standingOf does
+ *   activeOrganisations()  the organisations registered and active, {id, code, name} each
+ *                   (CB-44, GET /organisations/active): whom a new B/L may name; rejects with
+ *                   503 when identity cannot be reached, 502 for any answer but 200
  * @param {{
  *   baseUrl: string,
  *   serviceToken: function(): string,
@@ -22,6 +25,7 @@ const TIMEOUT_MS = 10_000;
  * @return {{
  *   standingOf: function(string): !Promise<string>,
  *   nameOf: function(string): !Promise<?string>,
+ *   activeOrganisations: function(): !Promise<!Array<{id: string, code: string, name: string}>>,
  * }}
  */
 export function createIdentityClient({
@@ -31,17 +35,14 @@ export function createIdentityClient({
   timeoutMs = TIMEOUT_MS,
 }) {
   /**
-   * Identity's answer about an organisation, `{id, status, name}`, or null when it knows none (404,
-   * or 400 for a text that is no organisation id); rejects with 503 when identity cannot be
-   * reached, 502 for any other answer.
-   * @param {string} id the organisation's id
-   * @return {!Promise<?{status: string, name: (string|undefined)}>}
+   * Asks identity with this service's token: its raw answer; rejects with 503 when identity
+   * cannot be reached.
+   * @param {string} path
+   * @return {!Promise<!Response>}
    */
-  async function askStanding(id) {
-    const url = `${baseUrl}/organisations/${encodeURIComponent(id)}/standing`;
-    let res;
+  async function ask(path) {
     try {
-      res = await fetchImpl(url, {
+      return await fetchImpl(`${baseUrl}${path}`, {
         method: 'GET',
         headers: {authorization: `Bearer ${serviceToken()}`},
         signal: AbortSignal.timeout(timeoutMs),
@@ -52,6 +53,17 @@ export function createIdentityClient({
         `The identity service cannot be reached: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Identity's answer about an organisation, `{id, status, name}`, or null when it knows none (404,
+   * or 400 for a text that is no organisation id); rejects with 503 when identity cannot be
+   * reached, 502 for any other answer.
+   * @param {string} id the organisation's id
+   * @return {!Promise<?{status: string, name: (string|undefined)}>}
+   */
+  async function askStanding(id) {
+    const res = await ask(`/organisations/${encodeURIComponent(id)}/standing`);
     if (res.status === 404 || res.status === 400) {
       return null;
     }
@@ -91,6 +103,21 @@ export function createIdentityClient({
         return null;
       }
       return answer.name;
+    },
+    /**
+     * The organisations registered and active on the platform (CB-44), whom a new B/L may name.
+     * @return {!Promise<!Array<{id: string, code: string, name: string}>>}
+     */
+    async activeOrganisations() {
+      const res = await ask('/organisations/active');
+      if (!res.ok) {
+        throw new AppError(
+          502,
+          `The identity service answered ${res.status} to a list of organisations`,
+        );
+      }
+      const {organisations} = await res.json();
+      return organisations.map(o => ({id: o.id, code: o.code, name: o.name}));
     },
   };
 }

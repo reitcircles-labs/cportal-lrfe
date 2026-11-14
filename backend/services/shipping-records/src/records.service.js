@@ -101,6 +101,47 @@ function assertSameDocument(record, document) {
 }
 
 /**
+ * What the change log of a version committed by a person's approval on the platform says it came
+ * through (CB-44), where bpm's decisions say `bpm`.
+ */
+const APPROVED_ON_PLATFORM = 'approval';
+
+/** The change-log actions of the people who drafted a version. */
+const DRAFTING_ACTIONS = new Set(['create', 'open', 'edit', 'submit']);
+
+/**
+ * The people who drafted a version (CB-44, four eyes): who created or opened it, changed it or
+ * submitted it. A reviewer who sent it back is not one of them.
+ * @param {object} version
+ * @return {!Set<string>} their ids
+ */
+function draftersOf(version) {
+  const drafters = new Set();
+  for (const id of [version.createdById, version.submittedById]) {
+    if (id) {
+      drafters.add(id);
+    }
+  }
+  for (const change of version.changes ?? []) {
+    if (DRAFTING_ACTIONS.has(change.action) && change.byId) {
+      drafters.add(change.byId);
+    }
+  }
+  return drafters;
+}
+
+/**
+ * The 403 for a drafter approving their own version (CB-44, four eyes).
+ * @return {!ForbiddenError}
+ */
+function ownDraft() {
+  return new ForbiddenError(
+    'You drafted this version, so a second person must approve it (four-eyes)',
+    {code: 'own-draft'},
+  );
+}
+
+/**
  * The 409 for a draft changed or submitted by someone else since it was read.
  * @return {!ConflictError}
  */
@@ -449,6 +490,11 @@ export class ShippingRecordsService {
         `Version ${n} is not in review (${version.state})`,
       );
     }
+    // an approval on the platform checks its drafters again on the version read here: one sent
+    // back, changed by the approver and submitted again since approve() read it is refused
+    if (via === APPROVED_ON_PLATFORM && draftersOf(version).has(by.id)) {
+      throw ownDraft();
+    }
     if (by.id === version.submittedById) {
       throw new ForbiddenError(
         'The submitter cannot approve their own version (four-eyes)',
@@ -472,6 +518,7 @@ export class ShippingRecordsService {
       await this.repo.commit({
         recordId: id,
         versionNumber: n,
+        expectedRevision: version.revision,
         versionPatch: {
           ...approved,
           seal,
@@ -510,6 +557,29 @@ export class ShippingRecordsService {
       );
     });
     return this.getRecord(id);
+  }
+
+  /**
+   * Approved on the platform by a person of the B/L's organisation (CB-44; the route checks
+   * bl.issue): four eyes, so never one of the version's drafters (403, `details.code`
+   * `own-draft`). Then committed as `commit` commits it: sealed, chained, its event published; a
+   * retry by the same approver answers it unchanged, a version no longer in review is 409.
+   * @param {string} id
+   * @param {number} n
+   * @param {{id: string, name?: string}} actor the approver
+   * @param {string} organisationId the approver's organisation: another's B/L is 404
+   * @param {{comment?: string}} [body]
+   * @return {Promise<object>} the record as getRecord answers it
+   */
+  async approve(id, n, actor, organisationId, {comment} = {}) {
+    const record = await this.requireRecord(id, organisationId);
+    const version = await this.requireVersion(record, n);
+    if (draftersOf(version).has(actor.id)) {
+      throw ownDraft();
+    }
+    const by = {id: actor.id, name: actor.name};
+    await this.commit(id, n, {by, comment}, APPROVED_ON_PLATFORM);
+    return this.getRecord(id, organisationId);
   }
 
   /**

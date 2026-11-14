@@ -1,6 +1,7 @@
 /**
  * Onboarding on the shipping app's screens (CB-43): the platform administrator adds a carrier, a
- * shipper, two banks and a buyer, and invites one person into each with the B/L role. Then the
+ * shipper, two banks and a buyer, and invites one person into each with the B/L role (CB-44: the
+ * carrier's staff role for the carrier, the trade role for the others). Then the
  * carrier's and the shipper's people accept their invitations; the carrier issues a B/L to order
  * to the shipper (through the API, as CB-42 does), and the shipper's person signs in on the screen
  * and finds it on the home, held by their organisation. Screenshots for the ticket with
@@ -43,6 +44,20 @@ interface Onboarded {
 
 /** The organisations the administrator onboards, in order. */
 const LABELS = ['Carrier', 'Shipper', 'Bank 1', 'Bank 2', 'Buyer'];
+
+/** The roles of the shipping pack (CB-44), by id and as the screens name them. */
+const CARRIER_STAFF = {id: 'bld', label: 'B/L documentation (carrier)'};
+const TRADE_STAFF = {id: 'blt', label: 'B/L trade (shipper, bank, buyer)'};
+
+/**
+ * The role the person invited into an organisation gets: the carrier's staff role for the
+ * carrier, the trade role for the others.
+ * @param label the organisation's label
+ * @return the role
+ */
+function roleOf(label: string): {id: string; label: string} {
+  return label === 'Carrier' ? CARRIER_STAFF : TRADE_STAFF;
+}
 
 /**
  * DCSA's example transport document (a B/L to order) with its own reference.
@@ -172,7 +187,8 @@ test.describe(
 
         await page.getByLabel('Full name').fill(organisation.person.name);
         await page.getByLabel('Email').fill(organisation.person.email);
-        await page.getByRole('checkbox', {name: 'B/L documentation'}).check();
+        const role = roleOf(organisation.label);
+        await page.getByRole('checkbox', {name: role.label}).check();
         // the system administrator's role is not offered to an organisation's staff
         await expect(
           page.getByRole('checkbox', {name: 'System administrator'}),
@@ -183,7 +199,7 @@ test.describe(
           hasText: organisation.person.name,
         });
         await expect(row).toContainText(organisation.person.email);
-        await expect(row).toContainText('B/L documentation');
+        await expect(row).toContainText(role.label);
         await expect(row).toContainText('Invited');
         await expect(staff.locator('tbody tr')).toHaveCount(1);
         if (i === 0) {
@@ -208,7 +224,7 @@ test.describe(
       await evidence(page, 'CB-43', 'The five organisations onboarded');
     });
 
-    test('identity has each person in their organisation, with the B/L role', async () => {
+    test('identity has each person in their organisation, with their B/L role', async () => {
       const res = await api.get('/api/users', {headers: admin.headers});
       expect(res.status(), await res.text()).toBe(200);
       const users: Array<{
@@ -222,7 +238,7 @@ test.describe(
         const person = users.find(u => u.email === organisation.person.email);
         expect(person, organisation.person.email).toBeTruthy();
         expect(person?.organisationId).toBe(organisation.id);
-        expect(person?.roles).toEqual(['bld']);
+        expect(person?.roles).toEqual([roleOf(organisation.label).id]);
         expect(person?.status).toBe('Invited');
       }
       // the buyer's code was taken by another office: its office has a free code of the same stem

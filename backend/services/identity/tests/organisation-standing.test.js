@@ -20,7 +20,7 @@ import {makeApp} from './helpers.js';
  *     401 for a person's token, 403 for another service
  *
  * And the shipping pack's title permissions in the catalogue: bl.issue and bl.endorse, given to
- * the demo role bld.
+ * the roles (CB-44: issuing to the carrier's staff role bld, endorsing to the trade role blt).
  */
 
 const run = promisify(execFile);
@@ -169,14 +169,11 @@ describe("the shipping pack's title permissions in the catalogue (CB-34)", () =>
     expect(group).to.deep.equal(['Bills of lading', 'Bills of lading']);
   });
 
-  it('gives the demo role bld every B/L permission', async () => {
+  it('gives the carrier staff role bld issuing and the trade role blt endorsing (changed: CB-44 splits the roles)', async () => {
     const catalogue = catalogueOf(await loadDomainPack('shipping'));
     const bld = catalogue.roles.find(r => r.id === 'bld');
-    expect(bld.perms).to.have.members([
-      'bl.read',
-      'bl.draft',
-      'bl.issue',
-      'bl.endorse',
-    ]);
+    expect(bld.perms).to.have.members(['bl.read', 'bl.draft', 'bl.issue']);
+    const blt = catalogue.roles.find(r => r.id === 'blt');
+    expect(blt.perms).to.have.members(['bl.read', 'bl.endorse']);
   });
 });

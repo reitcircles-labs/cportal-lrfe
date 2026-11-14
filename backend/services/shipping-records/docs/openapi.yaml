@@ -310,6 +310,119 @@ paths:
       x-access:
         allOf:
           - bl.draft
+  /records/{id}/versions/{n}/approve:
+    post:
+      tags:
+        - Records
+      summary: Approve a version in review, as a second person (four eyes)
+      description: >-
+        `{ comment? }`. For a person with `bl.issue` of the B/L's organisation (CB-44): commits the version as `commit` does (sealed,
+        chained, `records.record.committed` published), with you as its approver. Never one of its drafters: whoever created, changed or
+        submitted that version gets 403 (`details.code` `own-draft`). 403 without `bl.issue` or for a user of no organisation; 404 for
+        another organisation's B/L. 409 when the version is not in review (still a draft, or committed by someone else; of two approvals at
+        the same moment one wins). A retry by the same approver answers the record unchanged. The B/L is then issued with `POST
+        /records/{id}/title/issue`.
+
+
+        **Access:** Signed-in user with permission `bl.issue`.
+      operationId: postRecordsIdVersionsNApprove
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: "n"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type:
+                - object
+                - "null"
+              additionalProperties: false
+              properties:
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.issue
+  /records/organisations:
+    get:
+      tags:
+        - Records
+      summary: The organisations a new B/L may name
+      description: >-
+        `{ items: [{ id, code, name }] }`: the organisations registered and active on the platform, as identity lists them (CB-44), for the
+        shipper and consignee of a new B/L (`partyOrganisations`). Needs `bl.draft`; 403 for a user of no organisation; 503 (`details.code`
+        `organisations-unavailable`) while identity cannot answer.
+
+
+        **Access:** Signed-in user with permission `bl.draft`.
+      operationId: getRecordsOrganisations
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.draft
   /records/{id}/versions/{n}/commit:
     post:
       tags:

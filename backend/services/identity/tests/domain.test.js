@@ -16,7 +16,8 @@ const SERVICE_DIR = fileURLToPath(new URL('..', import.meta.url));
 describe('the catalogue from the domain pack (CB-3)', () => {
   it("has the platform roles and the shipping pack's B/L permissions, role and demo data", async () => {
     const catalogue = catalogueOf(await loadDomainPack('shipping'));
-    expect(catalogue.roleIds).to.deep.equal(['bld', 'adm']);
+    // changed (CB-44): the carrier's staff role bld and the trade staff role blt
+    expect(catalogue.roleIds).to.deep.equal(['bld', 'blt', 'adm']);
     expect(catalogue.groups).to.deep.equal([
       'General',
       'Capture',
@@ -30,13 +31,15 @@ describe('the catalogue from the domain pack (CB-3)', () => {
     );
     expect(catalogue.permIds).to.include.members(['bl.read', 'bl.draft']);
     expect(catalogue.sodRules.map(r => r.id)).to.deep.equal(['sod1', 'sod4']);
-    // changed (CB-34): bld also issues and endorses B/Ls
+    // changed (CB-44): bld is the carrier's staff (drafts, approves, issues); blt the trade
+    // staff of shippers, banks and buyers (moves the B/Ls they hold)
     expect(catalogue.roles[0].perms).to.deep.equal([
       'bl.read',
       'bl.draft',
       'bl.issue',
-      'bl.endorse',
     ]);
+    expect(catalogue.roles[1].id).to.equal('blt');
+    expect(catalogue.roles[1].perms).to.deep.equal(['bl.read', 'bl.endorse']);
     expect(catalogue.offices.map(o => o.code)).to.deep.equal(['HQ']);
     expect(catalogue.demoUsers.map(u => u.roles)).to.deep.equal([
       ['adm'],
@@ -48,6 +51,7 @@ describe('the catalogue from the domain pack (CB-3)', () => {
     await seedIdentity(repo, {catalogue, demoPassword: 'x'.repeat(12)});
     expect((await repo.listRoles()).map(r => r.id)).to.deep.equal([
       'bld',
+      'blt',
       'adm',
     ]);
     const users = await repo.listUsers();
@@ -192,7 +196,7 @@ describe('the catalogue from the domain pack (CB-3)', () => {
         'Audit',
         'Administration',
       ],
-      roles: ['bld', 'adm'],
+      roles: ['bld', 'blt', 'adm'],
       users: 3,
       // only the pack's record service may read the effective policies (CB-4)
       policies: [403, 200],

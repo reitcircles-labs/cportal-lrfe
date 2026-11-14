@@ -5,12 +5,15 @@ import {OrganisationDetailComponent} from './admin/organisation-detail.component
 import {OrganisationListComponent} from './admin/organisation-list.component';
 import {BlDetailComponent} from './bls/bl-detail.component';
 import {BlListComponent} from './bls/bl-list.component';
+import {BlNewComponent} from './bls/bl-new.component';
+import {draftGuard} from './bls/bl.guards';
 import {DeniedComponent} from './denied.component';
 import {ShellComponent} from './shell.component';
 
 /**
  * The shipping app's screens: the platform's sign-in, and, signed in, the B/Ls the organisation
- * is party to and the page of each (CB-42); for the platform administrator, the organisations and
+ * is party to and the page of each (CB-42), and a new B/L's draft for those who draft them
+ * (CB-44); for the platform administrator, the organisations and
  * their staff (CB-43), which anyone else is refused; and that refusal.
  */
 export const routes: Routes = [
@@ -21,6 +24,7 @@ export const routes: Routes = [
     canActivate: [authGuard],
     children: [
       {path: '', component: BlListComponent, canActivate: [homeGuard]},
+      {path: 'bls/new', component: BlNewComponent, canActivate: [draftGuard]},
       {path: 'bls/:id', component: BlDetailComponent},
       {
         path: 'admin/organisations',

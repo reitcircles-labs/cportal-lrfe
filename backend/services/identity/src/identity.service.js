@@ -715,6 +715,20 @@ export class IdentityService {
     return organisations.map(o => this.publicOrganisation(o, offices, users));
   }
 
+  /**
+   * The organisations registered and active on the platform, sorted by name, with their id, code
+   * and name only (CB-44): those a B/L may name as its shipper or consignee, for the record
+   * service.
+   * @return {!Promise<!Array<{id: string, code: string, name: string}>>}
+   */
+  async activeOrganisations() {
+    const organisations = await this.repo.listOrganisations();
+    return organisations
+      .filter(o => o.status === 'Active')
+      .map(o => ({id: o.id, code: o.code, name: o.name}))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   publicOrganisation(o, offices = [], users = []) {
     return {
       id: o.id,

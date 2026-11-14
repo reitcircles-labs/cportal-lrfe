@@ -20,6 +20,7 @@ import {expect, test, type APIRequestContext} from '@playwright/test';
 import {unique} from '../support/admin';
 import {
   demoEmails,
+  TRADE_ROLE,
   organisationWithClerk,
   serviceToken,
   signIn,
@@ -185,10 +186,10 @@ test.describe('blank endorsement and transfer through the gateway (CB-37)', () =
     const [first, second] = demoEmails('bld');
     carrier = await signIn(api, first);
     approver = await signIn(api, second);
-    shipper = await organisationWithClerk(api, admin, 'Shipper');
-    bankA = await organisationWithClerk(api, admin, 'BankA');
-    bankB = await organisationWithClerk(api, admin, 'BankB');
-    buyer = await organisationWithClerk(api, admin, 'Buyer');
+    shipper = await organisationWithClerk(api, admin, 'Shipper', TRADE_ROLE);
+    bankA = await organisationWithClerk(api, admin, 'BankA', TRADE_ROLE);
+    bankB = await organisationWithClerk(api, admin, 'BankB', TRADE_ROLE);
+    buyer = await organisationWithClerk(api, admin, 'Buyer', TRADE_ROLE);
     const organisations = [
       carrier.organisationId,
       shipper.id,

@@ -305,14 +305,24 @@ export function createMemoryRepo() {
      * @param {{
      *   recordId: string,
      *   versionNumber: number,
+     *   expectedRevision?: number,
      *   versionPatch: object,
      *   recordPatch: object,
-     * }} commit
+     * }} commit `expectedRevision`: only while the version is still at that revision (CB-44), else 409
      * @return {!Promise<{record: object, version: object}>}
      */
-    async commit({recordId, versionNumber, versionPatch, recordPatch}) {
+    async commit({
+      recordId,
+      versionNumber,
+      expectedRevision,
+      versionPatch,
+      recordPatch,
+    }) {
       const version = findVersion(recordId, versionNumber);
-      if (!version || version.state !== 'in_review') {
+      const changed =
+        expectedRevision !== undefined &&
+        version?.revision !== expectedRevision;
+      if (!version || version.state !== 'in_review' || changed) {
         throw new ConflictError('The version is not in review');
       }
       Object.assign(version, clone(versionPatch), {state: 'committed'});
