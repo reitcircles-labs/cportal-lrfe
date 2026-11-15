@@ -1,9 +1,12 @@
 import {Injectable, inject} from '@angular/core';
 import {ApiService} from '@lrfe/platform';
+import type {AmendRequest} from './bl-amend';
 import type {DraftRequest} from './bl-draft';
+import type {SplitRequest} from './bl-split';
 import type {Jwks, TitleProof} from './bl-check';
 import {endorseRequest} from './bl-endorse';
 import type {
+  BlLink,
   BlListItem,
   BlPage,
   BlRecord,
@@ -16,7 +19,7 @@ import type {
  * The organisation is always the session's: no call names one. Drafting, submitting, approving
  * and issuing a B/L since CB-44; endorsing it to a named organisation since CB-45; surrendering
  * it and releasing its goods since CB-46; finding one by its number, its proof file and the
- * platform's keys since CB-47.
+ * platform's keys since CB-47; amending it and splitting it into new B/Ls since CB-50.
  */
 @Injectable({providedIn: 'root'})
 export class BlApi {
@@ -153,6 +156,37 @@ export class BlApi {
     return this.api.post<BlTitleView>(
       `/records/${encodeURIComponent(id)}/title/endorse`,
       endorseRequest(to),
+    );
+  }
+
+  /**
+   * Amends a B/L the carrier holds for a change: its new document becomes the next version, and
+   * the B/L goes back to the holder who asked (CB-50).
+   * @param id the B/L's id
+   * @param request the format and the new document
+   * @return the title view after it
+   */
+  amend(id: string, request: AmendRequest): Promise<BlTitleView> {
+    return this.api.post<BlTitleView>(
+      `/records/${encodeURIComponent(id)}/title/amend`,
+      request,
+    );
+  }
+
+  /**
+   * Splits a B/L the carrier holds for a change into new B/Ls, one per document, issued to the
+   * holder who asked; the B/L is closed (CB-50).
+   * @param id the B/L's id
+   * @param request one document per new B/L
+   * @return the parent's title view after it, with its children
+   */
+  split(
+    id: string,
+    request: SplitRequest,
+  ): Promise<BlTitleView & {children: BlLink[]}> {
+    return this.api.post<BlTitleView & {children: BlLink[]}>(
+      `/records/${encodeURIComponent(id)}/title/split`,
+      request,
     );
   }
 }

@@ -98,7 +98,8 @@ describe('stateLabel and stateTone', () => {
       ['issued', 'Issued', 'live'],
       ['with-holder', 'With holder', 'live'],
       ['surrendered', 'Surrendered', 'live'],
-      ['amendment-requested', 'Amendment requested', 'live'],
+      // (changed: CB-50, the agreed design names this state "Change requested")
+      ['amendment-requested', 'Change requested', 'live'],
       ['accomplished', 'Accomplished', 'ended'],
       ['delivered', 'Delivered', 'ended'],
       ['void', 'Void', 'ended'],
@@ -250,6 +251,55 @@ describe('chainRows', () => {
 
   it('an empty chain gives no rows', () => {
     assert.deepEqual(chainRows([], ME), []);
+  });
+
+  it('with the links of an amendment and a split: the version an amendment made (added: CB-50)', () => {
+    const rows = chainRows(
+      [
+        entry({seq: 1, command: 'issue'}),
+        entry({seq: 2, command: 'surrender-for-amendment'}),
+        entry({seq: 3, command: 'amend'}),
+        entry({seq: 4, command: 'surrender-for-amendment'}),
+        entry({seq: 5, command: 'amend'}),
+      ],
+      ME,
+      {},
+      {issuedVersion: 3},
+    );
+    assert.deepEqual(
+      rows.map(r => r.step),
+      [
+        'Issued',
+        'Surrendered for amendment',
+        'Amended: version 2',
+        'Surrendered for amendment',
+        'Amended: version 3',
+      ],
+    );
+  });
+
+  it('with the links: the B/Ls a split made, and the B/L a child was split from (added: CB-50)', () => {
+    const [split] = chainRows(
+      [entry({command: 'split'})],
+      ME,
+      {},
+      {
+        splitInto: [
+          {recordId: 'r-a', recordNo: 'BL1-A'},
+          {recordId: 'r-b', recordNo: 'BL1-B'},
+        ],
+      },
+    );
+    assert.equal(split.step, 'Split into BL1-A, BL1-B');
+    const [first] = chainRows(
+      [entry({command: 'issue-from-split'})],
+      ME,
+      {},
+      {
+        splitFrom: {recordId: 'r-p', recordNo: 'BL1'},
+      },
+    );
+    assert.equal(first.step, 'Issued from split of BL1');
   });
 });
 

@@ -120,6 +120,11 @@ caller may run now.
   the carrier with version 1 committed by the engine and its event, a first title held by the
   organisation the parent was to go back to, and its first entry `issue-from-split` following the
   parent's `split` entry. The answer adds `children: [{recordId, recordNo}]`, in the order given.
+  The title read (and every command's answer) links them (CB-50): a child has `splitFrom:
+  {recordId, recordNo}`, a split parent `splitInto: [{recordId, recordNo}]`, by number; numbers
+  only. Earlier holders never get an amended version's values: records and versions are read by
+  their carrier alone (404 for every other organisation, past holders included), and the title
+  read gives a version number and hash, never a document.
 - **Release** is of the whole B/L: a release body naming part of its cargo is refused (400
   `partial-release`).
 - **Known limit of the memory store** (`RECORDS_STORE=memory`, development and tests only): it

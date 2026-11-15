@@ -419,6 +419,18 @@ export function createSequelizeRepo(sequelize) {
       return row ? entryOf(row) : null;
     },
     /**
+     * The first entries of the B/Ls a split made (CB-50): those whose previousHash is the
+     * parent's `split` entry's hash and whose command is `issue-from-split`.
+     * @param {string} splitEntryHash
+     * @return {!Promise<!Array<object>>}
+     */
+    async listSplitChildEntries(splitEntryHash) {
+      const rows = await models.TitleEntry.findAll({
+        where: {previousHash: splitEntryHash, command: 'issue-from-split'},
+      });
+      return rows.map(row => entryOf(plain(row)));
+    },
+    /**
      * Adds an entry to a B/L's chain of title, in the caller's transaction; a second entry with
      * the same seq is refused by the primary key.
      * @param {object} entry

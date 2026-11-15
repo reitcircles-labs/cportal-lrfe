@@ -26,6 +26,16 @@ export interface TitleSummary {
   holder: string | null;
   endorsement: string;
   consignee: string | null;
+  /** While the carrier holds the B/L for a change, the holder it goes back to (CB-50). */
+  returnTo?: string | null;
+  /** The version of the B/L its title stands for: the one issued, then each amendment's. */
+  issuedVersion?: number;
+}
+
+/** A B/L another is linked to by a split (CB-50): its id and number. */
+export interface BlLink {
+  recordId: string;
+  recordNo: string;
 }
 
 /** One B/L of the list of the B/Ls the organisation is party to. */
@@ -76,6 +86,10 @@ export interface BlTitleView {
   chain: ChainEntry[];
   /** The names of the organisations the title and its chain name, by id; some may be missing. */
   organisationNames: Record<string, string>;
+  /** The B/L this one was split from, for a B/L made by a split (CB-50). */
+  splitFrom?: BlLink;
+  /** The B/Ls this one was split into, once split, by number (CB-50). */
+  splitInto?: BlLink[];
 }
 
 /** Who looks at a B/L: their organisation, to name it as theirs. */

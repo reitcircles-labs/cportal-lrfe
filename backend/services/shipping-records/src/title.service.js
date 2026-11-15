@@ -1210,7 +1210,8 @@ export class TitleService {
    * A title as `read` answers it: `record`, the B/L's reference and drafting state (CB-42),
    * `title` null before issue, `allowedCommands` for the caller (before issue: `issue` when the
    * B/L can be issued now; only the commands the API offers), `roles`, the caller's
-   * organisation's roles on the B/L (CB-42), `chain`, the chain of title, when asked for, and
+   * organisation's roles on the B/L (CB-42), `chain`, the chain of title, when asked for,
+   * `splitFrom` and `splitInto`, the B/Ls it is linked to by a split, when it is (CB-50), and
    * `organisationNames`, the names of the organisations the title and its chain name (CB-42).
    * @param {object} record
    * @param {?object} stored
@@ -1224,6 +1225,8 @@ export class TitleService {
    *   allowedCommands: !Array<string>,
    *   roles: !Array<string>,
    *   chain: (!Array<object>|undefined),
+   *   splitFrom: (!Object|undefined),
+   *   splitInto: (!Array<!Object>|undefined),
    *   organisationNames: !Object<string, string>,
    * }>}
    */
@@ -1254,12 +1257,60 @@ export class TitleService {
     if (withChain) {
       view.chain = chain;
     }
+    Object.assign(view, await this.splitLinksOf(stored, chain));
     const named = [record.organisationId, ...partiesOf(stored)];
     for (const entry of chain) {
       named.push(entry.from, entry.to, entry.actor?.org);
     }
     view.organisationNames = await this.namesOf(named);
     return view;
+  }
+
+  /**
+   * The B/Ls a B/L is linked to by a split (CB-50), for its page: `splitFrom`, the B/L a child was
+   * split from, and `splitInto`, the B/Ls a split parent was split into, by number; each
+   * `{recordId, recordNo}`, and only the links that apply. Numbers only, never a document: whoever
+   * sees the B/L sees the numbers of the B/Ls it is linked to, as its title proof shows them.
+   * @param {?object} stored the stored title, null before issue
+   * @param {!Array<object>} chain the B/L's chain of title
+   * @return {!Promise<{
+   *   splitFrom: ({recordId: string, recordNo: string}|undefined),
+   *   splitInto: (!Array<{recordId: string, recordNo: string}>|undefined),
+   * }>}
+   */
+  async splitLinksOf(stored, chain) {
+    const links = {};
+    const first = chain[0];
+    if (first?.command === ISSUE_FROM_SPLIT) {
+      const parentEntry = await this.repo.findTitleEntryByHash(
+        first.previousHash,
+      );
+      if (parentEntry !== null) {
+        links.splitFrom = await this.linkOf(parentEntry.recordId);
+      }
+    }
+    const split = chain.findLast(entry => entry.command === 'split');
+    if (stored?.state === 'split' && split !== undefined) {
+      const firsts = await this.repo.listSplitChildEntries(split.entryHash);
+      const children = [];
+      for (const entry of firsts) {
+        children.push(await this.linkOf(entry.recordId));
+      }
+      links.splitInto = children.sort((a, b) =>
+        a.recordNo.localeCompare(b.recordNo),
+      );
+    }
+    return links;
+  }
+
+  /**
+   * A B/L as a link names it: its id and number.
+   * @param {string} recordId
+   * @return {!Promise<{recordId: string, recordNo: string}>}
+   */
+  async linkOf(recordId) {
+    const record = await this.repo.getRecord(recordId);
+    return {recordId, recordNo: record.recordNo};
   }
 
   /**

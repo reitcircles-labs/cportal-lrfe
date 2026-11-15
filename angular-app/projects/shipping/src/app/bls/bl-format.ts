@@ -5,6 +5,7 @@
  * bl-format.test.ts and bl-actions.test.ts (`npm run test:shipping`).
  */
 import type {
+  BlLink,
   BlState,
   ChainEntry,
   DraftVersion,
@@ -48,7 +49,7 @@ const STATE_NAMES: ReadonlyMap<string, {label: string; ended: boolean}> =
     ['issued', {label: 'Issued', ended: false}],
     ['with-holder', {label: 'With holder', ended: false}],
     ['surrendered', {label: 'Surrendered', ended: false}],
-    ['amendment-requested', {label: 'Amendment requested', ended: false}],
+    ['amendment-requested', {label: 'Change requested', ended: false}],
     ['accomplished', {label: 'Accomplished', ended: true}],
     ['delivered', {label: 'Delivered', ended: true}],
     ['void', {label: 'Void', ended: true}],
@@ -161,27 +162,176 @@ export function partyLabel(
   return `${own} (your organisation)`;
 }
 
+/** What the title read says of a B/L's versions and splits, to name its steps (CB-50). */
+export interface ChainLinks {
+  /** The version the title stands for now. */
+  issuedVersion?: number;
+  /** The B/Ls it was split into. */
+  splitInto?: readonly BlLink[];
+  /** The B/L it was split from. */
+  splitFrom?: BlLink | null;
+}
+
+/**
+ * The version each amendment of a chain made (CB-50): the title's version now, counted back over
+ * the amendments, so a B/L issued at a later version counts on from there.
+ * @param chain the chain-of-title entries, oldest first
+ * @param issuedVersion the version the title stands for now
+ * @return the version made, by the amendment entry's seq
+ */
+export function amendedVersions(
+  chain: readonly ChainEntry[],
+  issuedVersion: number,
+): Map<number, number> {
+  const amendments = chain.filter(entry => entry.command === 'amend');
+  const versions = new Map<number, number>();
+  let version = issuedVersion - amendments.length;
+  for (const entry of amendments) {
+    version += 1;
+    versions.set(entry.seq, version);
+  }
+  return versions;
+}
+
+/**
+ * The name of a step: with the links given, an amendment names the version it made, a split the
+ * B/Ls it made and a child's first step the B/L it was split from.
+ * @param entry the entry
+ * @param links the links of the B/L
+ * @param versions the version each amendment made, by seq
+ * @return the step's name
+ */
+function stepName(
+  entry: ChainEntry,
+  links: ChainLinks,
+  versions: ReadonlyMap<number, number>,
+): string {
+  const name = STEP_NAMES.get(entry.command) ?? entry.command;
+  const version = versions.get(entry.seq);
+  if (entry.command === 'amend' && version !== undefined) {
+    return `Amended: version ${version}`;
+  }
+  const children = links.splitInto ?? [];
+  if (entry.command === 'split' && children.length > 0) {
+    return `Split into ${children.map(c => c.recordNo).join(', ')}`;
+  }
+  if (entry.command === 'issue-from-split' && links.splitFrom) {
+    return `Issued from split of ${links.splitFrom.recordNo}`;
+  }
+  return name;
+}
+
 /**
  * A B/L's chain of title as the rows of its page, oldest first.
  * @param chain the chain-of-title entries
  * @param viewer who looks at the B/L
  * @param names the names the service gave
+ * @param links the B/L's version and split links, to name its steps (CB-50)
  * @return one row per entry
  */
 export function chainRows(
   chain: readonly ChainEntry[],
   viewer: Viewer,
   names: OrganisationNames = {},
+  links: ChainLinks = {},
 ): ChainRow[] {
   const ordered = [...chain].sort((a, b) => a.seq - b.seq);
+  let versions = new Map<number, number>();
+  if (links.issuedVersion !== undefined) {
+    versions = amendedVersions(ordered, links.issuedVersion);
+  }
   return ordered.map(entry => ({
     seq: entry.seq,
-    step: STEP_NAMES.get(entry.command) ?? entry.command,
+    step: stepName(entry, links, versions),
     from: partyLabel(entry.from, viewer, names),
     to: partyLabel(entry.to, viewer, names),
     by: entry.actor.name || NONE,
     at: entry.at,
   }));
+}
+
+/** The title state while the carrier holds the B/L for a change (CB-50). */
+const CHANGE_STATE = 'amendment-requested';
+
+/** One version of a B/L: its number and since when (CB-50). */
+export interface VersionLine {
+  version: number;
+  at: string;
+}
+
+/**
+ * What the page says while the carrier holds the B/L for a change: to the carrier, who asked and
+ * that it goes back to them; to the one who asked, that it comes back to them.
+ * @param title the title, null before issue
+ * @param viewer who looks at the B/L
+ * @param names the names the service gave
+ * @return the text, '' in another state and for anyone else
+ */
+export function changeRequestNote(
+  title: TitleSummary | null,
+  viewer: Viewer,
+  names: OrganisationNames = {},
+): string {
+  if (title?.state !== CHANGE_STATE || !viewer.organisationId) {
+    return '';
+  }
+  if (viewer.organisationId === title.carrier) {
+    const who = partyLabel(title.returnTo, viewer, names);
+    return `${who} asked for a change. The B/L goes back to them.`;
+  }
+  if (viewer.organisationId === title.returnTo) {
+    return 'Change requested: the carrier holds the B/L to change it and give it back to you.';
+  }
+  return '';
+}
+
+/**
+ * The holder while the carrier holds the B/L for a change: the carrier, to go back to the one who
+ * asked.
+ * @param title the title, null before issue
+ * @param viewer who looks at the B/L
+ * @param names the names the service gave
+ * @return the words, null in another state
+ */
+export function changeHolderLabel(
+  title: TitleSummary | null,
+  viewer: Viewer,
+  names: OrganisationNames = {},
+): string | null {
+  if (title?.state !== CHANGE_STATE) {
+    return null;
+  }
+  const carrier = partyLabel(title.carrier, viewer, names);
+  const back = partyLabel(title.returnTo, viewer, names);
+  return `${carrier}, to go back to ${back}`;
+}
+
+/**
+ * The versions of an issued B/L, oldest first: the one issued (or made by a split), then one per
+ * amendment, each since its step of the chain of title.
+ * @param chain the chain-of-title entries
+ * @param issuedVersion the version the title stands for now
+ * @return the versions, none before issue
+ */
+export function versionHistory(
+  chain: readonly ChainEntry[],
+  issuedVersion: number,
+): VersionLine[] {
+  const ordered = [...chain].sort((a, b) => a.seq - b.seq);
+  const amended = amendedVersions(ordered, issuedVersion);
+  const lines: VersionLine[] = [];
+  for (const entry of ordered) {
+    const version = amended.get(entry.seq);
+    if (version !== undefined) {
+      lines.push({version, at: entry.at});
+    } else if (
+      entry.command === 'issue' ||
+      entry.command === 'issue-from-split'
+    ) {
+      lines.push({version: issuedVersion - amended.size, at: entry.at});
+    }
+  }
+  return lines;
 }
 
 /**

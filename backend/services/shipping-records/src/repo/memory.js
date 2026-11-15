@@ -400,6 +400,25 @@ export function createMemoryRepo() {
       return null;
     },
     /**
+     * The first entries of the B/Ls a split made (CB-50): those whose previousHash is the
+     * parent's `split` entry's hash and whose command is `issue-from-split`.
+     * @param {string} splitEntryHash
+     * @return {!Promise<!Array<object>>}
+     */
+    async listSplitChildEntries(splitEntryHash) {
+      const found = [];
+      for (const chain of entries.values()) {
+        const first = chain[0];
+        if (
+          first?.previousHash === splitEntryHash &&
+          first.command === 'issue-from-split'
+        ) {
+          found.push(clone(first));
+        }
+      }
+      return found;
+    },
+    /**
      * Adds an entry to a B/L's chain of title; a second entry with the same seq is refused, as
      * ./sequelize.js's primary key does.
      * @param {object} entry
