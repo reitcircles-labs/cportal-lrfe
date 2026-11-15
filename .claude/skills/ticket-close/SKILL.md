@@ -21,8 +21,8 @@ The rules are in `CLAUDE.md`; this is the order, with the agents that keep the m
 5. **Commit:** `git add <explicit paths>`; message `<KEY> <what it does>`, a few bullets, and
    `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Push only through the `pr-opener` agent
    (step 8), never `git push` by hand.
-6. **Jira:** for UI work, upload the screenshots here in the main conversation
-   (`docs/ai-workflow/jira.md`; agents can't), then the `jira-reporter` agent with the key, the facts
+6. **Jira:** for UI work, upload all the screenshots here in the main conversation in one go: one
+   upload call, one shell loop, only `<file> <id>` printed (`docs/ai-workflow/jira.md`; agents can't), then the `jira-reporter` agent with the key, the facts
    (changes, test numbers, commit, branch), the uploaded ids with their captions, and "close" (or why
    it stays open).
 7. **Memory:** update the open-threads note when something is now waiting on the user. If this was
