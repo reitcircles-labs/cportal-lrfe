@@ -230,10 +230,10 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
         }
         @if (changeDocument(); as document) {
           @if (changing() === 'amend' && canAmend()) {
-            <app-bl-amend [recordId]="v.recordId" [recordNo]="v.record.recordNo" [carrierCode]="v.record.carrierCode" [version]="currentVersion()" [document]="document" [holderName]="returnToName()" (amended)="changeDone()" (stale)="reload()" (cancelled)="closeChange()" />
+            <app-bl-amend [recordId]="v.recordId" [recordNo]="v.record.recordNo" [carrierCode]="v.record.carrierCode" [version]="currentVersion()" [document]="document" [holderName]="returnToName()" (amended)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
           }
           @if (changing() === 'split' && canSplit()) {
-            <app-bl-split [recordId]="v.recordId" [recordNo]="v.record.recordNo" [document]="document" [holderName]="returnToName()" (split)="changeDone()" (stale)="reload()" (cancelled)="closeChange()" />
+            <app-bl-split [recordId]="v.recordId" [recordNo]="v.record.recordNo" [document]="document" [holderName]="returnToName()" (split)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
           }
         }
         @if (shown()) {
@@ -895,11 +895,16 @@ export class BlDetailComponent {
   }
 
   /**
-   * Reads the B/L again, after a refusal that says it moved on.
+   * Reads the B/L again, after a refusal of an amendment or a split that says it moved on; when
+   * the B/L may no longer be changed, its panel closes and the page says why (CB-54).
+   * @param reason the refusal, in plain words
    * @return when the page shows it
    */
-  protected async reload(): Promise<void> {
+  protected async changeStale(reason: string): Promise<void> {
     await this.load(this.id());
+    if (this.changing() === null) {
+      this.actionError.set(reason);
+    }
   }
 
   /**

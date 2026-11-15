@@ -147,8 +147,11 @@ export class BlAmendComponent {
 
   /** The B/L is amended: the page reads it again and closes the panel. */
   readonly amended = output<void>();
-  /** A refusal says the B/L moved on: the page reads it again. */
-  readonly stale = output<void>();
+  /**
+   * A refusal says the B/L moved on: the page reads it again, and says why when the panel
+   * closes (CB-54).
+   */
+  readonly stale = output<string>();
   /** The carrier closes the panel without amending. */
   readonly cancelled = output<void>();
 
@@ -233,7 +236,7 @@ export class BlAmendComponent {
       const refusal = refusalOf(toApiError(e));
       this.refusal.set(refusal);
       if (refusal.reload) {
-        this.stale.emit();
+        this.stale.emit(refusal.message);
       }
     } finally {
       this.busy.set(false);

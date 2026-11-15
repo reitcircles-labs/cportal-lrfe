@@ -3,6 +3,7 @@
 // versions of an amended B/L, what earlier holders are told (never the new values) and the
 // refusals of the record service in plain words (`npm run test:shipping`).
 import {strict as assert} from 'node:assert';
+import {readdirSync, readFileSync} from 'node:fs';
 import {describe, it} from 'node:test';
 
 import {
@@ -12,6 +13,7 @@ import {
   mayAskForChange,
   maySplit,
   pastHolderNote,
+  REFUSAL_REASONS,
   refusalOf,
   seesVersions,
 } from './bl-change.ts';
@@ -396,6 +398,148 @@ describe('the refusals, in plain words', () => {
       refusalOf({status: 400, message: 'Bad', details: {problems: 'x'}})
         .problems,
       [],
+    );
+  });
+});
+
+/**
+ * The refusal codes a source gives: the title engine's `new TitleRefusal('code', …)` and the
+ * record service's `code: 'code'`.
+ * @param text the source
+ * @return its codes
+ */
+function codesIn(text: string): string[] {
+  const found: string[] = [];
+  const pattern = /(?:TitleRefusal\(\s*|code: )'([a-z]+(?:-[a-z]+)*)'/g;
+  for (const match of text.matchAll(pattern)) {
+    found.push(match[1]);
+  }
+  return found;
+}
+
+/**
+ * Every refusal code of the title engine and the shipping record service, read from their
+ * sources (read, not imported: a new code there fails the table test below until the page has
+ * words for it).
+ * @return the codes
+ */
+function serviceCodes(): string[] {
+  const backend = new URL('../../../../../../backend/', import.meta.url);
+  const sources = [new URL('domains/shipping/src/title/engine.js', backend)];
+  const service = new URL('services/shipping-records/src/', backend);
+  for (const name of readdirSync(service)) {
+    if (name.endsWith('.js')) {
+      sources.push(new URL(name, service));
+    }
+  }
+  const codes = new Set<string>();
+  for (const source of sources) {
+    for (const code of codesIn(readFileSync(source, 'utf8'))) {
+      codes.add(code);
+    }
+  }
+  return [...codes].sort();
+}
+
+describe('every refusal of the title engine and the record service, in plain words (CB-54)', () => {
+  const codes = serviceCodes();
+  const vendors = /jev|typesafe|gemini|cardano|openbao|dcsa/i;
+
+  it('finds the codes of the engine and of the service', () => {
+    assert.ok(codes.includes('wrong-state'), 'an engine code');
+    assert.ok(codes.includes('changed-meanwhile'), 'a service code');
+    assert.ok(codes.length >= 35, `${codes.length} codes`);
+  });
+
+  for (const code of codes) {
+    it(`${code}: the page has plain words for it`, () => {
+      assert.ok(Object.hasOwn(REFUSAL_REASONS, code), 'no words');
+      const words = REFUSAL_REASONS[code];
+      assert.ok(words.trim().length > 0);
+      assert.ok(!words.includes(code), 'names its code');
+      assert.ok(!vendors.test(words), 'names a vendor');
+      assert.match(words, /^[A-Z].*[.]$/, 'a sentence');
+      // what the page shows when the service gives no reason
+      const refusal = refusalOf({status: 409, message: '', details: {code}});
+      assert.equal(refusal.message, words);
+    });
+  }
+});
+
+describe('refusals the service words for developers, and unknown ones (CB-54)', () => {
+  it('a reason meant for developers: the page says it in its own words', () => {
+    const cases: Array<[string, number, string]> = [
+      ['unknown-command', 400, 'Unknown command: burn'],
+      ['unknown-kind', 400, 'Unknown kind of B/L: x'],
+      [
+        'no-organisation',
+        403,
+        'The command needs the organisation that runs it',
+      ],
+      ['invalid-argument', 400, 'inBlank must be a boolean'],
+      [
+        'not-set-up',
+        503,
+        'the platform signature is not set up (TITLE_SIGNER)',
+      ],
+      ['own-draft', 403, 'four-eyes'],
+    ];
+    for (const [code, status, message] of cases) {
+      const refusal = refusalOf({status, message, details: {code}});
+      assert.equal(refusal.message, REFUSAL_REASONS[code], code);
+      assert.equal(refusal.reload, false, code);
+    }
+  });
+
+  it('issued by someone else first: the reason, and the page reads it again', () => {
+    const refusal = refusalOf({
+      status: 409,
+      message: 'This B/L is already issued',
+      details: {code: 'already-issued'},
+    });
+    assert.deepEqual(refusal, {
+      message: 'This B/L is already issued',
+      problems: [],
+      reload: true,
+    });
+  });
+
+  it('an unknown code: the reason given, or a plain fallback', () => {
+    assert.equal(
+      refusalOf({status: 409, message: 'Not now', details: {code: 'new-one'}})
+        .message,
+      'Not now',
+    );
+    assert.equal(
+      refusalOf({status: 409, message: '  ', details: {code: 'new-one'}})
+        .message,
+      'This action could not be done. Nothing was changed.',
+    );
+    assert.equal(
+      refusalOf({status: 400, message: ''}).message,
+      'This action could not be done. Nothing was changed.',
+    );
+    assert.equal(
+      refusalOf({status: 409, message: 'x', details: {code: 'new-one'}}).reload,
+      false,
+    );
+  });
+
+  it('a failure of the service it has no words for: try again later', () => {
+    for (const status of [500, 502, 503]) {
+      assert.equal(
+        refusalOf({status, message: 'Internal Server Error'}).message,
+        'This action could not be done now: try again later. Nothing was changed.',
+        String(status),
+      );
+    }
+  });
+
+  it('a known code beats a code-like name on the object prototype', () => {
+    assert.equal(
+      refusalOf({status: 409, message: '', details: {code: 'toString'}})
+        .message,
+      'This action could not be done. Nothing was changed.',
     );
   });
 });

@@ -45,9 +45,91 @@ const NOT_FOUND =
 const CHANGED_MEANWHILE =
   'This B/L changed meanwhile. The page now shows it as it is.';
 
+/**
+ * The page's own words for each refusal of the title engine and the record service (CB-54), by
+ * its code: shown when the service gives no reason, or when its reason is meant for developers.
+ * Every code the engine or the service can give has words here (bl-change.test.ts checks it).
+ */
+export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
+  // the title engine
+  'unknown-command': 'This action is not offered for B/Ls.',
+  'module-off': 'This kind of action is not enabled on this platform.',
+  'not-issued': 'This B/L has not been issued yet: it can only be issued.',
+  'already-issued': 'This B/L is already issued.',
+  'no-organisation':
+    'Your account is not linked to an organisation, so it cannot act on B/Ls. Ask your administrator.',
+  'wrong-kind': 'This kind of B/L does not allow this action.',
+  closed: 'Nothing more can be done with this B/L.',
+  'wrong-state': 'This B/L no longer allows this action in its current state.',
+  'not-carrier': 'Only the carrier that issued this B/L may do this.',
+  'not-holder': 'Only the current holder of this B/L may do this.',
+  'not-endorsed-in-blank':
+    'This B/L is endorsed to a named organisation: it moves only by endorsement, not by transfer.',
+  'unknown-kind': 'This kind of B/L is not known.',
+  'missing-shipper':
+    'A negotiable B/L needs its shipper, its first holder: name the shipper.',
+  'missing-recipient': 'Pick the organisation that is to receive the B/L.',
+  'same-holder': 'This B/L is already held by that organisation.',
+  'invalid-argument':
+    'Say whether the B/L is endorsed in blank or to the organisation picked.',
+  'partial-release':
+    'A B/L is released whole: to release part of its cargo, split it into new B/Ls first.',
+  'too-few-children': 'A split needs at least two new B/Ls.',
+  'bearer-unconfirmed':
+    'Switching a blank-endorsed B/L to paper makes the paper a bearer document: confirm it to go on.',
+  // the record service
+  'not-committed':
+    'This B/L has no approved version yet: it can be issued once a version is approved.',
+  'in-review':
+    'A new version of this B/L is waiting for approval: it can be issued once that is decided.',
+  'unregistered-organisation':
+    'That organisation is not registered or not active on this platform.',
+  'organisations-unavailable':
+    'The organisations cannot be checked now: try again later.',
+  'changed-meanwhile': CHANGED_MEANWHILE,
+  'not-set-up':
+    'B/L actions are not available yet on this platform. Tell your administrator.',
+  'draft-open':
+    'A new version of this B/L is being drafted or waits for approval: finish or discard it first.',
+  'missing-document': 'The new document of the B/L is missing.',
+  'different-reference':
+    'The new document must keep the carrier code and the reference of this B/L.',
+  'kind-changed':
+    'The new document must stay a negotiable B/L (a B/L to order).',
+  'child-reference': 'Each new B/L needs its own reference.',
+  'cargo-mismatch': "The cargo of the new B/Ls must add up to the B/L's.",
+  'reference-taken': 'The carrier already has a B/L with that reference.',
+  'own-draft':
+    'You drafted or changed this version, so another person must approve it.',
+  'proof-unavailable':
+    'The proof on the blockchain cannot be read now: try again later.',
+  'no-number': 'Give the number of the B/L to look for.',
+});
+
+/**
+ * The refusals whose reason, as the service words it, is meant for developers: the page says
+ * them in its own words.
+ */
+const OWN_WORDS: ReadonlySet<string> = new Set([
+  'unknown-command',
+  'unknown-kind',
+  'no-organisation',
+  'invalid-argument',
+  'not-set-up',
+  'own-draft',
+]);
+
+/** What the page says of a refusal it has no words for, when the service gives no reason. */
+const REFUSED = 'This action could not be done. Nothing was changed.';
+
+/** What the page says of a failure of the service it has no words for. */
+const UNAVAILABLE =
+  'This action could not be done now: try again later. Nothing was changed.';
+
 /** The refusals after which the page reads the B/L again: it moved on since it was read. */
 const RELOAD_CODES: ReadonlySet<string> = new Set([
   'changed-meanwhile',
+  'already-issued',
   'wrong-state',
   'closed',
   'not-holder',
@@ -222,9 +304,34 @@ function codeOf(details: unknown): string {
 }
 
 /**
- * A refusal of the record service in plain words: the reason it gives (the record service words
- * each refusal for people), with each problem it names; a B/L not found, or one that moved on
- * since it was read, is read again.
+ * The reason a refusal gives, in plain words: the service's reason, which names the state, the
+ * organisation or the reference (the service words its refusals for people); the page's own
+ * words when the service gives none, or one meant for developers; a plain fallback for a
+ * refusal the page has no words for.
+ * @param code the refusal's code, '' when it has none
+ * @param error the refusal
+ * @return the reason
+ */
+function reasonOf(code: string, error: RefusalSource): string {
+  const own = Object.hasOwn(REFUSAL_REASONS, code)
+    ? REFUSAL_REASONS[code]
+    : null;
+  const given = error.message.trim();
+  if (own !== null && (OWN_WORDS.has(code) || given === '')) {
+    return own;
+  }
+  if (own === null && error.status >= 500) {
+    return UNAVAILABLE;
+  }
+  if (given !== '') {
+    return given;
+  }
+  return own ?? REFUSED;
+}
+
+/**
+ * A refusal of the record service in plain words, with each problem it names; a B/L not found,
+ * or one that moved on since it was read, is read again.
  * @param error the refusal
  * @return what the page shows
  */
@@ -237,5 +344,9 @@ export function refusalOf(error: RefusalSource): Refusal {
   if (code === 'changed-meanwhile') {
     return {message: CHANGED_MEANWHILE, problems, reload: true};
   }
-  return {message: error.message, problems, reload: RELOAD_CODES.has(code)};
+  return {
+    message: reasonOf(code, error),
+    problems,
+    reload: RELOAD_CODES.has(code),
+  };
 }
