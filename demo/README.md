@@ -119,7 +119,80 @@ The steps are the same, with these differences:
   pack). The demo documents, the AI and the extracts are the land registry's: their lines do not concern a shipping
   demo.
 - **Anchoring** as in "Anchoring for the demo", and the title signer prepared (`deploy/README.md`, part D, step 7):
-  without it the carrier cannot issue.
+  without it the carrier cannot issue. The shipping demo install below has the title signer prepared, and anchors on
+  the land demo's blockchain node through a relay (below).
+
+### The shipping demo install (CB-49)
+
+The shipping demo is a **second demo install** beside the land registry's, with its own compose project, port, data
+and key store; the land demo (project `lrfe`, port 8088), its OpenBao and the blockchain node are never touched by it.
+
+| | Land demo | Shipping demo |
+|---|---|---|
+| Compose project | `lrfe` | `lrfe-shipping` |
+| Web app | port 8088 | port 8089 (`./remoteConnect.sh 8089` on the laptop) |
+| Settings | `deploy/.env` | `deploy/.env.shipping` (not in git, this user only) |
+| OpenBao | its own; `~/lrfe-demo-openbao-init.json` | its own, with the title signing key `bl-title`; `~/lrfe-shipping-openbao-init.json` |
+| Locked volumes | `lrfe_cardano-db`, `lrfe_bao-data` (`compose.keep-volumes.yml`) | `lrfe-shipping_bao-data` (`compose.keep-volumes.shipping.yml`) |
+| Anchoring | on, through the bundled node | on the same node, through its relay `shipping-node-relay` (`compose.node-relay.shipping.yml`), metadata `"product": "shipping"` |
+| Wallet | in its OpenBao; address in `~/lrfe-demo-wallet-address.txt` | its own, in its OpenBao; address in `~/lrfe-shipping-demo-wallet-address.txt` (fund this one for shipping, never the land one) |
+
+All through `demo/release.mjs`, from the repository root (the `demo-release` agent in Claude Code):
+
+```bash
+node demo/release.mjs rehearse --shipping --version V      # a throwaway shipping install (lrfe-rehearsal-shipping, 8717): READY?
+node demo/release.mjs install-shipping --version V         # the first install of the shipping demo
+node demo/release.mjs deploy --shipping --version V --mode upgrade   # later versions; --mode fresh erases its data
+node demo/release.mjs all --shipping --mode upgrade        # build, rehearse --shipping, test, deploy --shipping
+```
+
+- **`install-shipping`** writes `deploy/.env.shipping` when it is missing: the land demo's settings with **new
+  secrets** (`JWT_SECRET`, `POSTGRES_PASSWORD`, `SEED_DEMO_PASSWORD`, `BOOTSTRAP_ADMIN_PASSWORD`), `LRFE_DOMAIN=shipping`,
+  `COMPOSE_PROFILES=postgres,bao,shipping`, port 8089, its own bundled database (`POSTGRES_HOST`, `POSTGRES_DB`,
+  `POSTGRES_URL_OPTIONS` emptied), `CARDANO_PROVIDER=ogmios` and `LRFE_NODE_NETWORK` (the land demo's network that holds
+  its node, read from docker), without the AI, the document check, the S3 bucket, the search directory, the seal and
+  the land registry's organisation texts and offices; nothing is printed. An existing file is
+  used as it is (only `LRFE_VERSION` set). It creates `lrfe-shipping_bao-data`, starts the install, initialises its
+  OpenBao into `~/lrfe-shipping-openbao-init.json` (refused if that file exists: it would hold the only unseal key of
+  an earlier OpenBao), unseals and prepares it (`openbao-setup`, then `openbao-setup-shipping`), switches on the
+  encryption of stored files and `TITLE_SIGNER=bao`, writes its new wallet's address to
+  `~/lrfe-shipping-demo-wallet-address.txt`, and ends with the readiness check. If a step fails half-way, `.env.shipping` is
+  put back as it was given. It refuses when `lrfe-shipping` has containers already: then `deploy --shipping`.
+- **The guards.** Every shipping step is refused before anything changes when it would use the project `lrfe` or
+  `lrfe-rehearsal`, `deploy/.env`, the land demo's port or API docs port, a compose file naming the land demo's
+  volumes (`lrfe_…`), the profile `blockchain` (a second node; also from the shell's `COMPOSE_PROFILES`), settings
+  that are not a shipping install's, an `LRFE_NODE_NETWORK` other than the land node's, or any service but
+  `shipping-node-relay` on the land demo's network (checked on the composed configuration). Each shipping step,
+  `teardown --shipping` included, reads the land demo's `openbao` and `cardano` before and after and fails if they are
+  not the same containers, never restarted; the first install also lists the land network's containers and their
+  names before and after: only the relay may join. `--shipping` takes no `--project`, `--env` or `--compose-file`.
+- **The demo users** are those of "A shipping install" above; the password: `grep SEED_DEMO_PASSWORD
+  deploy/.env.shipping`. Each sets up the authenticator at the first sign-in (step 3).
+- **Readiness:** `node demo/check-readiness.mjs --env deploy/.env.shipping --project lrfe-shipping`.
+- **After a restart of the server** its OpenBao is sealed too; unseal it in `deploy/`:
+
+  ```bash
+  python3 -c "import json,os,sys; sys.stdout.write(json.load(open(os.path.expanduser('~/lrfe-shipping-openbao-init.json')))['unseal_keys_b64'][0])" \
+    | docker compose -p lrfe-shipping --env-file .env.shipping exec -T openbao bao write -address=http://127.0.0.1:8200 sys/unseal key=-
+  ```
+
+- **`deploy --shipping`** checks the land network's members before and after as the first install does (only the
+  relay, under its own names), and an unfunded wallet ends it as "waiting for funds" (`waitsForFunds: true`), not as a
+  failure. The relay's image is pinned by digest in `compose.node-relay.shipping.yml` (how to update it is written
+  there). Evidence packs of the shipping install verify with `lrfe-verify.mjs <pack> --product shipping`.
+- **A fresh start** before a demo: `node demo/release.mjs deploy --shipping --version <its version> --mode fresh`
+  (the B/Ls, users' authenticators and organisations go; its OpenBao and title key stay).
+- **Anchoring** (CB-49): on the land demo's node, with nothing of the land demo changed. The node is reachable only
+  on the land demo's network, so one small relay of the shipping install (`shipping-node-relay`, a name no land
+  service has) joins that network as well as its own and passes the shipping audit service's calls to `cardano:1337`.
+  The batches carry `"product": "shipping"` under the same label 8890 (`backend/services/audit/README.md`, "The
+  product") and are paid from the shipping install's **own wallet**, made by its own OpenBao's setup. **Fund it**:
+  send test ADA (preview) to the address in `~/lrfe-shipping-demo-wallet-address.txt`; until then the readiness check says
+  "wallet not funded: anchoring waits until it is", and the check at the end of the storyline shows the proof
+  "pending" (every signature checks). After funding, the next batch goes out within `ANCHOR_PERIOD`.
+- **A first install that failed** half-way (no data yet): remove what it made, in `deploy/`,
+  `docker compose -p lrfe-shipping --env-file .env.shipping down -v`, `docker volume rm lrfe-shipping_bao-data`, and
+  `~/lrfe-shipping-openbao-init.json`; never with `-p lrfe`.
 
 ## Encryption at rest
 
@@ -226,7 +299,8 @@ node demo/release.mjs test --version 0.1.0-3b19fe7          # the docker e2e on 
 node demo/release.mjs deploy --version 0.1.0-3b19fe7 --mode upgrade   # or --mode fresh: data erased
 ```
 
-or all four, stopping at the first failure: `node demo/release.mjs all --mode upgrade`.
+or all four, stopping at the first failure: `node demo/release.mjs all --mode upgrade`. The shipping demo has the
+same steps with `--shipping` ("The shipping demo install" above).
 
 - **upgrade** keeps the data and the authenticator set-ups; **fresh** is step 1 of "Before every demo"
   (and the users set up their authenticators again).

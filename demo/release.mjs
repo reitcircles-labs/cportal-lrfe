@@ -12,6 +12,16 @@
  *                                                            V on the demo install: data kept, or erased
  *   node demo/release.mjs all --mode upgrade|fresh           all four, stopping at the first failure
  *
+ * The shipping demo (CB-49), a second demo install beside the land registry's, never touching it:
+ * project lrfe-shipping, port 8089, settings deploy/.env.shipping, its own OpenBao and data:
+ *
+ *   node demo/release.mjs rehearse --shipping --version V [--keep]   a throwaway shipping install
+ *                                                            (project lrfe-rehearsal-shipping, port 8717)
+ *   node demo/release.mjs teardown --shipping                remove that rehearsal install
+ *   node demo/release.mjs install-shipping --version V       the shipping demo's first install
+ *   node demo/release.mjs deploy --shipping --version V --mode upgrade|fresh
+ *   node demo/release.mjs all --shipping --mode upgrade|fresh
+ *
  * deploy also takes --project, --env and --compose-file (repeatable) for an install other than the
  * demo's: the rehearsal install, for example, to show that the guards refuse. Every step prints what
  * it did and ends with one line "RESULT {json}". The exit code is 0 only when the step succeeded.
@@ -21,6 +31,9 @@
  * must keep their compose configuration (else nothing is changed), and the same container, start
  * time and restart count afterwards; deploy/.env is copied before it is changed; old images are
  * kept. Secrets (the root token, the demo password) are passed by environment, never printed.
+ * A shipping install (demo/shipping-install.mjs) is refused before anything changes when it would
+ * be the land demo's project, settings, port or volumes, or start a blockchain node of its own;
+ * every shipping step also checks that the land demo's openbao and cardano were not touched.
  */
 import {spawnSync} from 'node:child_process';
 import {
@@ -38,6 +51,23 @@ import {
 import {homedir, tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+
+import {
+  DEMO_ENV_FILE,
+  REHEARSAL_TEARDOWN_PROFILES,
+  SHIPPING_DEMO,
+  SHIPPING_LOCK_FILE,
+  SHIPPING_REHEARSAL,
+  SHIPPING_RELAY_FILE,
+  landNetworkProblems,
+  nodeNetworkProblems,
+  parseSettings,
+  rollbackCommand,
+  shippingSettings,
+  shippingTargetProblems,
+  withSettings,
+} from './shipping-install.mjs';
+import {readinessOutcome} from './anchoring-funds.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEPLOY = join(REPO, 'deploy');
@@ -117,33 +147,7 @@ function run(
 
 /** The settings of an install, read the way docker compose reads them (as check-readiness.mjs). */
 function readEnv(file) {
-  const env = {};
-  for (const raw of readFileSync(file, 'utf8').split('\n')) {
-    const line = raw.replace(/\r$/, '').replace(/^\s*export\s+/, '');
-    const match = /^([A-Za-z0-9_]+)=(.*)$/.exec(line);
-    if (!match) continue;
-    let value = match[2];
-    const quoted = /^(['"])(.*)\1\s*(#.*)?$/.exec(value);
-    value = quoted ? quoted[2] : value.replace(/\s+#.*$/, '').trim();
-    env[match[1]] = value;
-  }
-  return env;
-}
-
-/** The settings file with `values` set: each line replaced in place, or added at the end. */
-function withSettings(text, values) {
-  const lines = text.split('\n');
-  const seen = new Set();
-  for (let i = 0; i < lines.length; i++) {
-    const name = /^\s*(?:export\s+)?([A-Za-z0-9_]+)=/.exec(lines[i])?.[1];
-    if (name && name in values) {
-      lines[i] = `${name}=${values[name]}`;
-      seen.add(name);
-    }
-  }
-  const added = Object.keys(values).filter(k => !seen.has(k));
-  while (lines.length && lines[lines.length - 1] === '') lines.pop();
-  return [...lines, ...added.map(k => `${k}=${values[k]}`), ''].join('\n');
+  return parseSettings(readFileSync(file, 'utf8'));
 }
 
 /** Writes a file readable by this user only. */
@@ -271,12 +275,14 @@ function readiness(install) {
     return {
       ready: report.ready,
       fails: of('fail').map(r => `${r.item}: ${r.detail}`),
+      failItems: of('fail').map(r => r.item),
       warns: of('warn').length,
     };
   } catch {
     return {
       ready: false,
       fails: ['the readiness check gave no answer'],
+      failItems: ['readiness'],
       warns: 0,
     };
   }
@@ -334,29 +340,77 @@ const rehearsalInstall = () =>
     envFile: rehearsalEnvFile(),
   });
 
-function rehearsalExists() {
+/**
+ * Whether an install has containers.
+ * @param {string} project its compose project
+ * @return {boolean}
+ */
+function installExists(project) {
   const res = run(
     'docker',
-    ['ps', '-aq', '--filter', `label=com.docker.compose.project=${REHEARSAL}`],
+    ['ps', '-aq', '--filter', `label=com.docker.compose.project=${project}`],
     {capture: true},
   );
   return res.out.trim() !== '';
 }
 
-function teardown() {
+/**
+ * The rehearsal installs `teardown` may remove: the land registry's and the shipping product's.
+ * @param {boolean} shipping the shipping rehearsal
+ * @return {{project: string, dir: string, envFile: string}}
+ */
+function rehearsalOf(shipping) {
+  if (shipping) {
+    return {
+      project: SHIPPING_REHEARSAL.project,
+      dir: SHIPPING_REHEARSAL.dir,
+      envFile: join(SHIPPING_REHEARSAL.dir, 'rehearsal.env'),
+    };
+  }
+  return {project: REHEARSAL, dir: REHEARSAL_DIR, envFile: rehearsalEnvFile()};
+}
+
+/**
+ * `teardown` from the command line: for the shipping rehearsal, with the land demo's openbao and
+ * cardano checked before and after (the relay of a shipping rehearsal was on the land network).
+ * @param {boolean} shipping the shipping rehearsal, else the land registry's
+ * @return {!Object}
+ */
+function teardownChecked(shipping) {
+  if (!shipping) {
+    return teardown(false);
+  }
+  const landBefore = landDemoState();
+  const result = teardown(true);
+  const problems = checkGuardsAfter(landBefore, landDemoState());
+  if (problems.length) {
+    throw new Refusal(`guard (land demo): ${problems.join('; ')}`);
+  }
+  return {
+    ...result,
+    landDemo: `${Object.keys(landBefore).join(' and ') || 'nothing'} of lrfe: same containers, no restart`,
+  };
+}
+
+/**
+ * Removes a rehearsal install: its containers, volumes, network, settings and keys.
+ * @param {boolean} shipping the shipping rehearsal, else the land registry's
+ * @return {{removed: boolean}}
+ */
+function teardown(shipping = false) {
+  const {project, dir, envFile} = rehearsalOf(shipping);
   // the rehearsal's own settings, else the demo's (only read, for compose's required values)
-  const envFile = existsSync(rehearsalEnvFile())
-    ? rehearsalEnvFile()
-    : join(DEPLOY, '.env');
-  // `down -v` only ever for the rehearsal project, with every profile it uses
+  const settingsFile = existsSync(envFile) ? envFile : DEMO_ENV_FILE;
+  // `down -v` only ever for a rehearsal project, with every profile it may use, the shipping
+  // product's included (CB-49)
   const res = run(
     'docker',
     [
       'compose',
       '--project-name',
-      REHEARSAL,
+      project,
       '--env-file',
-      envFile,
+      settingsFile,
       '-f',
       join(DEPLOY, 'docker-compose.yml'),
       'down',
@@ -365,11 +419,11 @@ function teardown() {
     ],
     {
       cwd: DEPLOY,
-      env: {COMPOSE_PROFILES: 'postgres,bao,bao-setup'},
+      env: {COMPOSE_PROFILES: REHEARSAL_TEARDOWN_PROFILES},
       capture: true,
     },
   );
-  rmSync(REHEARSAL_DIR, {recursive: true, force: true});
+  rmSync(dir, {recursive: true, force: true});
   const left = run(
     'docker',
     [
@@ -377,24 +431,36 @@ function teardown() {
       'ls',
       '-q',
       '--filter',
-      `label=com.docker.compose.project=${REHEARSAL}`,
+      `label=com.docker.compose.project=${project}`,
     ],
     {capture: true},
   ).out.trim();
-  if (rehearsalExists() || left) {
+  if (installExists(project) || left) {
     throw new Refusal(
-      `the rehearsal install is not fully removed: ${res.err.trim().split('\n').pop()}`,
+      `the rehearsal install ${project} is not fully removed: ${res.err.trim().split('\n').pop()}`,
     );
   }
   log(
-    'rehearsal install removed: containers, volumes, network, settings, keys',
+    `rehearsal install ${project} removed: containers, volumes, network, settings, keys`,
   );
   return {removed: true};
 }
 
-/** The rehearsal's OpenBao: initialised, unsealed and prepared; returns its root token. */
-function prepareOpenBao(install) {
-  const initFile = join(REHEARSAL_DIR, 'openbao-init.json');
+/**
+ * An install's new OpenBao: initialised (its unseal key and root token written to `initFile`, this
+ * user only, never over an existing file), unsealed and prepared; with `shipping`, also for the
+ * title signer (openbao-setup-shipping). Returns its root token.
+ * @param {!Object} install the install (installOf)
+ * @param {string} initFile where its unseal key and root token are kept
+ * @param {boolean=} shipping prepare the title signer too
+ * @return {string}
+ */
+function prepareOpenBao(install, initFile, shipping = false) {
+  if (existsSync(initFile)) {
+    throw new Refusal(
+      `${initFile} exists: it holds the only unseal key of an earlier OpenBao. Nothing was changed.`,
+    );
+  }
   const init = install.compose(
     [
       'exec',
@@ -411,7 +477,7 @@ function prepareOpenBao(install) {
     {capture: true},
   );
   if (!init.ok) throw new Refusal(`OpenBao init failed: ${init.err.trim()}`);
-  writePrivate(initFile, init.out);
+  writeFileSync(initFile, init.out, {mode: 0o600, flag: 'wx'});
   const {unseal_keys_b64: keys, root_token: token} = JSON.parse(init.out);
   const unseal = install.compose(
     [
@@ -427,32 +493,37 @@ function prepareOpenBao(install) {
     {input: keys[0], capture: true},
   );
   if (!unseal.ok) throw new Refusal('OpenBao unseal failed');
-  // the node elects itself leader a few seconds after unsealing: the setup is tried until it is
+  runSetup(install, token, 'openbao-setup');
+  if (shipping) {
+    runSetup(install, token, 'openbao-setup-shipping');
+  }
+  log(
+    `${install.project}: OpenBao initialised, unsealed and prepared${shipping ? ', the title signer too' : ''}`,
+  );
+  return token;
+}
+
+/**
+ * Runs one of OpenBao's setup services (openbao-setup, openbao-setup-shipping) with the root token.
+ * The node elects itself leader a few seconds after unsealing: the setup is tried until it is.
+ * @param {!Object} install the install (installOf)
+ * @param {string} token OpenBao's root token
+ * @param {string} service the setup service, also the name of its profile without "openbao-"
+ */
+function runSetup(install, token, service) {
+  const profile = service.replace(/^openbao-/, 'bao-');
   let setup;
   for (let i = 0; i < 20; i++) {
     setup = install.compose(
-      [
-        '--profile',
-        'bao-setup',
-        'run',
-        '--rm',
-        '-T',
-        '-e',
-        'BAO_TOKEN',
-        'openbao-setup',
-      ],
+      ['--profile', profile, 'run', '--rm', '-T', '-e', 'BAO_TOKEN', service],
       {env: {BAO_TOKEN: token}, capture: true},
     );
-    if (setup.ok) break;
+    if (setup.ok) {
+      return;
+    }
     spawnSync('sleep', ['3']);
   }
-  if (!setup.ok) {
-    throw new Refusal(
-      `the OpenBao setup failed: ${setup.err.trim().split('\n').pop()}`,
-    );
-  }
-  log('rehearsal OpenBao initialised, unsealed and prepared');
-  return token;
+  throw new Refusal(`${service} failed: ${setup.err.trim().split('\n').pop()}`);
 }
 
 /**
@@ -536,7 +607,11 @@ function demoSealCertificate(install, token) {
     .join('\\n');
 }
 
-function rehearse(version, keep) {
+/**
+ * Refuses when the images of a version are not built.
+ * @param {string} version the images' version
+ */
+function requireImages(version) {
   for (const tag of [`lrfe-backend:${version}`, `lrfe-web:${version}`]) {
     if (!imageExists(tag)) {
       throw new Refusal(
@@ -544,7 +619,11 @@ function rehearse(version, keep) {
       );
     }
   }
-  if (rehearsalExists()) {
+}
+
+function rehearse(version, keep) {
+  requireImages(version);
+  if (installExists(REHEARSAL)) {
     log('a rehearsal install is left from before: removing it first');
     teardown();
   }
@@ -569,7 +648,10 @@ function rehearse(version, keep) {
   log(`rehearsal install ${REHEARSAL} on ${version}, port ${REHEARSAL_PORT}`);
   try {
     upAndWait(install);
-    const token = prepareOpenBao(install);
+    const token = prepareOpenBao(
+      install,
+      join(REHEARSAL_DIR, 'openbao-init.json'),
+    );
     const cert = demoSealCertificate(install, token);
     // the seal as the demo install has it; every stored file encrypted at rest (API-795)
     writePrivate(
@@ -597,6 +679,434 @@ function rehearse(version, keep) {
   } finally {
     if (!keep) teardown();
   }
+}
+
+// ---------------------------------------------------------------------------------------- shipping
+
+/**
+ * The land demo's openbao and cardano as they run now (read only): a shipping step checks them
+ * before and after, and they must be the same containers, never restarted.
+ * @return {!Object<string, {id: string, startedAt: string, restarts: number, hash: string}>}
+ */
+function landDemoState() {
+  return guardedState({project: 'lrfe'});
+}
+
+/**
+ * Refuses a shipping install that would touch the land demo or is not a shipping install
+ * (demo/shipping-install.mjs), before anything is changed.
+ * @param {!Object} install the install (installOf)
+ */
+function refuseShippingProblems(install) {
+  const demoSettings = existsSync(DEMO_ENV_FILE) ? readEnv(DEMO_ENV_FILE) : {};
+  const problems = shippingTargetProblems({
+    project: install.project,
+    envFile: install.envFile,
+    settings: install.settings,
+    composeFiles: install.files.map(file => ({
+      file,
+      text: readFileSync(file, 'utf8'),
+    })),
+    demoSettings,
+    shellProfiles: process.env.COMPOSE_PROFILES,
+  });
+  // anchoring through the relay (CB-49): to the land node's own network, and only the relay on it
+  const nodeNetwork = install.settings.LRFE_NODE_NETWORK;
+  if (nodeNetwork) {
+    const landNetwork = landNodeNetwork();
+    if (nodeNetwork !== landNetwork) {
+      problems.push(
+        `LRFE_NODE_NETWORK=${nodeNetwork} is not the land demo's node network (${landNetwork})`,
+      );
+    } else {
+      const config = install.compose(['config', '--format', 'json'], {
+        capture: true,
+      });
+      if (!config.ok) {
+        problems.push(`compose config failed: ${config.err.trim()}`);
+      } else {
+        problems.push(
+          ...nodeNetworkProblems(JSON.parse(config.out), landNetwork),
+        );
+      }
+    }
+  }
+  if (problems.length) {
+    throw new Refusal(`${problems.join('; ')}. Nothing was changed.`);
+  }
+}
+
+/**
+ * The network of the land demo that holds its blockchain node, read from docker (the container of
+ * project lrfe's service cardano): the one network the shipping relay joins.
+ * @return {string}
+ */
+function landNodeNetwork() {
+  const ids = run(
+    'docker',
+    [
+      'ps',
+      '-q',
+      '--filter',
+      'label=com.docker.compose.project=lrfe',
+      '--filter',
+      'label=com.docker.compose.service=cardano',
+    ],
+    {capture: true},
+  )
+    .out.trim()
+    .split('\n')
+    .filter(Boolean);
+  if (ids.length !== 1) {
+    throw new Refusal(
+      `the land demo's blockchain node is not running (${ids.length} containers): the shipping install anchors through it`,
+    );
+  }
+  const networks = run(
+    'docker',
+    [
+      'inspect',
+      ids[0],
+      '--format',
+      '{{range $name, $n := .NetworkSettings.Networks}}{{$name}} {{end}}',
+    ],
+    {capture: true},
+  )
+    .out.trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (networks.length !== 1) {
+    throw new Refusal(
+      `the land demo's blockchain node is on ${networks.length} networks, not one: ${networks.join(', ')}`,
+    );
+  }
+  return networks[0];
+}
+
+/**
+ * The land demo's network as the relay sees it: the containers on it and their names (aliases),
+ * read only, for the before/after comparison of a shipping step.
+ * @return {!Array<string>} one line per container: its name and aliases, sorted
+ */
+function landNetworkMembers() {
+  const network = landNodeNetwork();
+  const ids = run(
+    'docker',
+    [
+      'network',
+      'inspect',
+      network,
+      '--format',
+      '{{range $id, $c := .Containers}}{{$id}} {{end}}',
+    ],
+    {capture: true},
+  )
+    .out.trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return ids
+    .map(id =>
+      run(
+        'docker',
+        [
+          'inspect',
+          id,
+          '--format',
+          `{{.Name}} {{with index .NetworkSettings.Networks "${network}"}}{{join .Aliases ","}}{{end}}`,
+        ],
+        {capture: true},
+      ).out.trim(),
+    )
+    .sort();
+}
+
+/**
+ * Whether these settings are a shipping install's: the product or its profile.
+ * @param {!Object<string, string>} settings the install's settings
+ * @return {boolean}
+ */
+function isShipping(settings) {
+  const profiles = (settings.COMPOSE_PROFILES || '').split(',');
+  return (
+    settings.LRFE_DOMAIN === 'shipping' ||
+    profiles.map(p => p.trim()).includes('shipping')
+  );
+}
+
+/**
+ * Sets up a new shipping install (CB-49): started with its stored files unencrypted and the title
+ * signer off, its own OpenBao initialised, unsealed and prepared (the title signer too), then
+ * every stored file encrypted and the title signer on (TITLE_SIGNER=bao), and the readiness check.
+ * The land demo's openbao and cardano are checked before and after; with anchoring through the
+ * relay, also the land network's members, and the new wallet's address is written to `walletFile`.
+ * An unfunded wallet is "waiting for funds", not a failure.
+ * @param {{project: string, envFile: string, initFile: string, walletFile: (string|undefined)}}
+ *     target the new install, where its OpenBao's keys and its wallet's address are written
+ * @return {{ready: boolean, waitsForFunds: boolean, warns: number, landDemo: string,
+ *     landNetwork: ({added: !Array<string>}|undefined), wallet: (?string|undefined)}}
+ */
+function setUpShipping({project, envFile, initFile, walletFile}) {
+  const final = readFileSync(envFile, 'utf8');
+  // the first start before OpenBao is prepared: nothing that needs its keys (the stored files'
+  // keys, the title key, the anchoring wallet's key)
+  const first = withSettings(final, {
+    EXTRACTS_ENCRYPTION: 'off',
+    EDRMS_ENCRYPTION: 'off',
+    INTAKE_ENCRYPTION: 'off',
+    TITLE_SIGNER: '',
+    CARDANO_PROVIDER: '',
+  });
+  let install = installOf({project, envFile});
+  refuseShippingProblems(install);
+  const landBefore = landDemoState();
+  const relayed = Boolean(install.settings.LRFE_NODE_NETWORK);
+  const membersBefore = relayed ? landNetworkMembers() : [];
+  // its key store, external when the shipping lock is on: compose never creates it
+  if (
+    install.files.some(f => f.endsWith('compose.keep-volumes.shipping.yml'))
+  ) {
+    const volume = `${project}_bao-data`;
+    if (!run('docker', ['volume', 'inspect', volume], {capture: true}).ok) {
+      if (!run('docker', ['volume', 'create', volume], {capture: true}).ok) {
+        throw new Refusal(`docker volume create ${volume} failed`);
+      }
+      log(`created ${volume} (its key store, kept by the shipping lock)`);
+    }
+  }
+  try {
+    writeFileSync(envFile, first);
+    install = installOf({project, envFile});
+    log(
+      `${project}: first start on ${install.settings.LRFE_VERSION}, port ${install.settings.LRFE_HTTP_PORT}`,
+    );
+    upAndWait(install);
+    prepareOpenBao(install, initFile, true);
+  } catch (err) {
+    // the settings as they were given, never left half switched (stored files unencrypted)
+    writeFileSync(envFile, final);
+    throw new Refusal(
+      `${err.message}. ${envFile} is back as it was given; the install is half set up (demo/README.md, "A first install that failed")`,
+    );
+  }
+  writeFileSync(
+    envFile,
+    withSettings(final, {
+      EXTRACTS_ENCRYPTION: 'bao',
+      EDRMS_ENCRYPTION: 'bao',
+      INTAKE_ENCRYPTION: 'bao',
+      TITLE_SIGNER: 'bao',
+    }),
+  );
+  install = installOf({project, envFile});
+  upAndWait(install);
+  const problems = checkGuardsAfter(landBefore, landDemoState());
+  if (problems.length) {
+    throw new Refusal(`guard (land demo): ${problems.join('; ')}`);
+  }
+  const result = {
+    landDemo: `${Object.keys(landBefore).join(' and ') || 'nothing'} of lrfe: same containers, no restart`,
+  };
+  if (relayed) {
+    result.landNetwork = landNetworkChange(membersBefore, landNetworkMembers());
+    result.wallet = shippingWallet(install, walletFile);
+  }
+  const check = checkedReadiness(install);
+  return {
+    ready: check.ready,
+    waitsForFunds: check.waitsForFunds,
+    warns: check.warns,
+    ...result,
+  };
+}
+
+/**
+ * The readiness check after a shipping step: ready, or waiting for funds (a new wallet: anchoring
+ * waits until it is funded, the rest works, said plainly); refused otherwise.
+ * @param {!Object} install the install (installOf)
+ * @return {{ready: boolean, waitsForFunds: boolean, warns: number}}
+ */
+function checkedReadiness(install) {
+  const check = readiness(install);
+  const {ok, waitsForFunds} = readinessOutcome(check);
+  let verdict = 'NOT READY';
+  if (check.ready) {
+    verdict = 'READY';
+  } else if (waitsForFunds) {
+    verdict =
+      'WAITING FOR FUNDS: ready but for the wallet, not funded yet; anchoring waits';
+  }
+  log(`${install.project} readiness: ${verdict} (${check.warns} worth a look)`);
+  if (!ok) {
+    throw new Refusal(
+      `${install.project} is not ready: ${check.fails.join('; ')}`,
+    );
+  }
+  return {ready: check.ready, waitsForFunds, warns: check.warns};
+}
+
+/**
+ * What a shipping step changed on the land demo's network: only the relay, under its own names, may
+ * have joined it (demo/shipping-install.mjs, landNetworkProblems).
+ * @param {!Array<string>} before the members before (landNetworkMembers)
+ * @param {!Array<string>} after the members after
+ * @return {{added: !Array<string>}}
+ */
+function landNetworkChange(before, after) {
+  const problems = landNetworkProblems(before, after);
+  if (problems.length) {
+    throw new Refusal(landNetworkRefusal(problems));
+  }
+  return {added: after.filter(member => !before.includes(member))};
+}
+
+/**
+ * The refusal's text when the land demo's network changed otherwise than by the relay.
+ * @param {!Array<string>} problems what changed (landNetworkProblems)
+ * @return {string}
+ */
+function landNetworkRefusal(problems) {
+  return `guard (land demo's network): ${problems.join('; ')}`;
+}
+
+/**
+ * The shipping install's own anchoring wallet (in its own OpenBao): its public address, written to
+ * `walletFile` when given, so that it can be funded with test ADA.
+ * @param {!Object} install the install (installOf)
+ * @param {(string|undefined)} walletFile where to write the address
+ * @return {?string} the address, or null when it cannot be read yet
+ */
+function shippingWallet(install, walletFile) {
+  const res = run(
+    'curl',
+    [
+      '-s',
+      '--max-time',
+      '10',
+      `http://127.0.0.1:${install.settings.LRFE_HTTP_PORT}/api/audit/anchoring/wallet`,
+    ],
+    {capture: true},
+  );
+  let address = null;
+  try {
+    address = JSON.parse(res.out).address ?? null;
+  } catch {
+    // not readable yet: the readiness check says why
+  }
+  if (address && walletFile) {
+    writeFileSync(walletFile, `${address}\n`);
+    log(
+      `its anchoring wallet: ${address} (also in ${walletFile}); fund it with test ADA`,
+    );
+  }
+  return address;
+}
+
+/**
+ * A throwaway shipping install from these images (project lrfe-rehearsal-shipping, port 8717), set
+ * up as the shipping demo's first install is, then removed unless `keep`.
+ * @param {string} version the images' version
+ * @param {boolean} keep keep it for a closer look (teardown --shipping removes it)
+ * @return {!Object}
+ */
+function rehearseShipping(version, keep) {
+  requireImages(version);
+  if (installExists(SHIPPING_REHEARSAL.project)) {
+    log('a shipping rehearsal install is left from before: removing it first');
+    teardown(true);
+  }
+  const {project, dir, envFile} = rehearsalOf(true);
+  mkdirSync(dir, {recursive: true, mode: 0o700});
+  // the shipping demo's settings when it has them, else the land demo's (only read), else the
+  // template, as a shipping install with new secrets, on the rehearsal's port, without the lock
+  const base = [
+    SHIPPING_DEMO.envFile,
+    DEMO_ENV_FILE,
+    join(DEPLOY, '.env.example'),
+  ].find(file => existsSync(file));
+  // anchoring as the shipping demo's: through the relay to the land demo's node, its own wallet
+  writePrivate(
+    envFile,
+    shippingSettings(readFileSync(base, 'utf8'), {
+      version,
+      port: SHIPPING_REHEARSAL.port,
+      composeFile: `docker-compose.yml:${SHIPPING_RELAY_FILE}`,
+      nodeNetwork: landNodeNetwork(),
+    }),
+  );
+  log(
+    `shipping rehearsal install ${project} on ${version}, port ${SHIPPING_REHEARSAL.port}`,
+  );
+  try {
+    const result = setUpShipping({
+      project,
+      envFile,
+      initFile: join(dir, 'openbao-init.json'),
+      walletFile: join(dir, 'wallet-address.txt'),
+    });
+    return {version, ...result, kept: keep};
+  } finally {
+    if (!keep) {
+      teardown(true);
+    }
+  }
+}
+
+/**
+ * The shipping demo's first install (project lrfe-shipping, port 8089): its settings file
+ * deploy/.env.shipping written from the land demo's when missing (new secrets, never printed),
+ * its own OpenBao (unseal key and root token in ~/lrfe-shipping-openbao-init.json) and data.
+ * Refused when it is installed already: then `deploy --shipping`.
+ * @param {string} version the images' version
+ * @return {!Object}
+ */
+function installShipping(version) {
+  requireImages(version);
+  const {project, envFile, initFile, port} = SHIPPING_DEMO;
+  if (installExists(project)) {
+    throw new Refusal(
+      `${project} is installed already: node demo/release.mjs deploy --shipping --version ${version} --mode upgrade|fresh`,
+    );
+  }
+  if (existsSync(initFile)) {
+    throw new Refusal(
+      `${initFile} exists: it holds the only unseal key of an earlier OpenBao. Nothing was changed.`,
+    );
+  }
+  let written = false;
+  if (!existsSync(envFile)) {
+    writePrivate(
+      envFile,
+      shippingSettings(readFileSync(DEMO_ENV_FILE, 'utf8'), {
+        version,
+        port,
+        composeFile: `docker-compose.yml:${SHIPPING_LOCK_FILE}:${SHIPPING_RELAY_FILE}`,
+        nodeNetwork: landNodeNetwork(),
+      }),
+    );
+    written = true;
+    log(`${envFile} written: new secrets, the shipping product, port ${port}`);
+  } else {
+    writeFileSync(
+      envFile,
+      withSettings(readFileSync(envFile, 'utf8'), {LRFE_VERSION: version}),
+    );
+  }
+  const result = setUpShipping({
+    project,
+    envFile,
+    initFile,
+    walletFile: SHIPPING_DEMO.walletFile,
+  });
+  return {
+    version,
+    project,
+    port,
+    envFile,
+    envWritten: written,
+    initFile,
+    ...result,
+    note: `Each demo user sets up the authenticator at the first sign-in (demo/README.md, "A shipping install"). Anchoring waits until its wallet (address in ${SHIPPING_DEMO.walletFile}) has test ADA.`,
+  };
 }
 
 // -------------------------------------------------------------------------------------------- test
@@ -726,11 +1236,21 @@ function deploy(version, mode, {project, envFile, composeFiles}) {
       );
     }
   }
+  // a shipping install, the shipping demo's or another: never the land demo's project, port or
+  // volumes, nor a blockchain node of its own (CB-49); the land demo is checked after it
+  const shipping =
+    isShipping(current.settings) || project === SHIPPING_DEMO.project;
+  if (shipping) {
+    refuseShippingProblems(current);
+  }
   for (const tag of [`lrfe-backend:${version}`, `lrfe-web:${version}`]) {
     if (!imageExists(tag)) throw new Refusal(`${tag} is not built`);
   }
   const previous = current.settings.LRFE_VERSION;
   const before = guardedState(current);
+  const landBefore = shipping ? landDemoState() : {};
+  const relayed = shipping && Boolean(current.settings.LRFE_NODE_NETWORK);
+  const membersBefore = relayed ? landNetworkMembers() : [];
   const volumeExists = name =>
     run('docker', ['volume', 'inspect', name], {capture: true}).ok;
   const protectedBefore = PROTECTED_VOLUMES.map(v => `${project}_${v}`).filter(
@@ -779,21 +1299,25 @@ function deploy(version, mode, {project, envFile, composeFiles}) {
     throw new Refusal(
       `${err.message}. LRFE_VERSION is now ${version} (was ${previous}); the old settings are in ${backup}. ` +
         `Guards: ${guards.length ? guards.join('; ') : 'openbao and cardano untouched'}. ` +
-        `To go back: node demo/release.mjs deploy --version ${previous} --mode upgrade`,
+        `To go back: ${rollbackCommand({project, envFile, version: previous})}`,
     );
   }
 
   const problems = checkGuardsAfter(before, guardedState(install));
   if (problems.length) throw new Refusal(`guard: ${problems.join('; ')}`);
-  const lost = protectedBefore.filter(name => !volumeExists(name));
-  if (lost.length) throw new Refusal(`guard: ${lost.join(', ')} missing`);
-  const check = readiness(install);
-  log(
-    `readiness: ${check.ready ? 'READY' : 'NOT READY'} (${check.warns} worth a look)`,
-  );
-  if (!check.ready) {
-    throw new Refusal(`not ready after the deploy: ${check.fails.join('; ')}`);
+  const landProblems = checkGuardsAfter(landBefore, landDemoState());
+  if (landProblems.length) {
+    throw new Refusal(`guard (land demo): ${landProblems.join('; ')}`);
   }
+  const lost = protectedBefore.filter(name => !volumeExists(name));
+  if (lost.length) {
+    throw new Refusal(`guard: ${lost.join(', ')} missing`);
+  }
+  const landNetwork = relayed
+    ? landNetworkChange(membersBefore, landNetworkMembers())
+    : undefined;
+  // a shipping install whose wallet is not funded yet waits for funds (CB-49); land as before
+  const check = shipping ? checkedReadiness(install) : landReadiness(install);
   return {
     version,
     previous,
@@ -801,13 +1325,31 @@ function deploy(version, mode, {project, envFile, composeFiles}) {
     backup,
     guarded: Object.keys(before).map(s => `${s}: same container, no restart`),
     protectedVolumes: protectedBefore,
-    ready: true,
+    ready: check.ready,
+    waitsForFunds: check.waitsForFunds,
+    landNetwork,
     warns: check.warns,
     note:
       mode === 'fresh'
         ? 'The demo users must set up their authenticators again (a fresh start removes them).'
         : null,
   };
+}
+
+/**
+ * The readiness check after a land deploy, as before: refused unless ready.
+ * @param {!Object} install the install (installOf)
+ * @return {{ready: boolean, waitsForFunds: boolean, warns: number}}
+ */
+function landReadiness(install) {
+  const check = readiness(install);
+  log(
+    `readiness: ${check.ready ? 'READY' : 'NOT READY'} (${check.warns} worth a look)`,
+  );
+  if (!check.ready) {
+    throw new Refusal(`not ready after the deploy: ${check.fails.join('; ')}`);
+  }
+  return {ready: true, waitsForFunds: false, warns: check.warns};
 }
 
 // -------------------------------------------------------------------------------------------- main
@@ -820,18 +1362,49 @@ try {
     if (!v) throw new Refusal('--version is required');
     return v;
   };
-  const target = () => ({
-    project: option('--project', 'lrfe'),
-    envFile: resolve(option('--env', join(DEPLOY, '.env'))),
-    composeFiles: option('--compose-file', [], true),
-  });
-  if (command === 'build') result = build();
-  else if (command === 'rehearse') {
-    result = rehearse(version(), process.argv.includes('--keep'));
-  } else if (command === 'teardown') result = teardown();
-  else if (command === 'test') result = test(version());
-  else if (command === 'deploy') {
-    result = deploy(version(), option('--mode'), target());
+  const shipping = process.argv.includes('--shipping');
+  // the shipping demo's project and settings are fixed: never given (nor the land demo's)
+  const refuseOtherTarget = name => {
+    for (const given of ['--project', '--env', '--compose-file']) {
+      if (option(given, [], true).length) {
+        throw new Refusal(
+          `${name} chooses the shipping demo install itself: ${given} is not taken`,
+        );
+      }
+    }
+  };
+  const target = () => {
+    if (shipping) {
+      refuseOtherTarget('--shipping');
+      return {
+        project: SHIPPING_DEMO.project,
+        envFile: SHIPPING_DEMO.envFile,
+        composeFiles: [],
+      };
+    }
+    return {
+      project: option('--project', 'lrfe'),
+      envFile: resolve(option('--env', DEMO_ENV_FILE)),
+      composeFiles: option('--compose-file', [], true),
+    };
+  };
+  const rehearseOne = (v, keep) =>
+    shipping ? rehearseShipping(v, keep) : rehearse(v, keep);
+  if (command === 'build') {
+    result = build();
+  } else if (command === 'rehearse') {
+    result = rehearseOne(version(), process.argv.includes('--keep'));
+  } else if (command === 'teardown') {
+    result = teardownChecked(shipping);
+  } else if (command === 'test') {
+    result = test(version());
+  } else if (command === 'install-shipping') {
+    refuseOtherTarget('install-shipping');
+    result = installShipping(version());
+  } else if (command === 'deploy') {
+    const mode = option('--mode');
+    const where = target();
+    result = deploy(version(), mode, where);
   } else if (command === 'all') {
     const mode = option('--mode');
     if (!['upgrade', 'fresh'].includes(mode)) {
@@ -839,14 +1412,15 @@ try {
         '--mode must be upgrade (data kept) or fresh (data erased): ask the user which',
       );
     }
+    const where = target();
     const built = build();
-    const rehearsal = rehearse(built.version, false);
+    const rehearsal = rehearseOne(built.version, false);
     const e2e = test(built.version);
-    const deployed = deploy(built.version, mode, target());
+    const deployed = deploy(built.version, mode, where);
     result = {built, rehearsal, e2e, deployed};
   } else {
     throw new Refusal(
-      'usage: node demo/release.mjs build | rehearse --version V [--keep] | teardown | test --version V | deploy --version V --mode upgrade|fresh | all --mode upgrade|fresh',
+      'usage: node demo/release.mjs build | rehearse [--shipping] --version V [--keep] | teardown [--shipping] | test --version V | deploy [--shipping] --version V --mode upgrade|fresh | all [--shipping] --mode upgrade|fresh | install-shipping --version V',
     );
   }
   console.log(`RESULT ${JSON.stringify({ok: true, command, ...result})}`);

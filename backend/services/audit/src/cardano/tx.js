@@ -42,8 +42,13 @@ export function addressOf(publicKey, network) {
     .to_bech32(NETWORK_IDS[network] === 1 ? 'addr' : 'addr_test');
 }
 
-/** The metadata of one anchoring. Strings are at most 64 bytes on chain: hashes go as 64 hex characters. */
-export function anchorMetadata({root, size, batch, prev}) {
+/**
+ * The metadata of one anchoring. Strings are at most 64 bytes on chain: hashes go as 64 hex
+ * characters. `product` (CB-49): the product of an install whose pack names one (shipping), last,
+ * so that one label serves every product, CIP-25 style; none (the land registry) writes the object
+ * exactly as before.
+ */
+export function anchorMetadata({root, size, batch, prev, product = null}) {
   const hex = /^[0-9a-f]{64}$/;
   if (!hex.test(root || '')) {
     throw new CardanoError(
@@ -57,7 +62,24 @@ export function anchorMetadata({root, size, batch, prev}) {
       'ECONFIG',
     );
   }
-  return {v: 1, sys: 'lrfe-audit', root, size, batch, ...(prev ? {prev} : {})};
+  if (
+    product !== null &&
+    !(typeof product === 'string' && /^[a-z][a-z0-9-]{0,30}$/.test(product))
+  ) {
+    throw new CardanoError(
+      'The product in the anchoring metadata must be a pack name',
+      'ECONFIG',
+    );
+  }
+  return {
+    v: 1,
+    sys: 'lrfe-audit',
+    root,
+    size,
+    batch,
+    ...(prev ? {prev} : {}),
+    ...(product ? {product} : {}),
+  };
 }
 
 /**

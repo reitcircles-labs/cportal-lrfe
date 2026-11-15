@@ -253,8 +253,10 @@ test.describe('a bill of lading on the shipping product (CB-28)', () => {
       'lrfe-verify.mjs',
     );
     const {verifyProof} = await import(pathToFileURL(verifier).href);
+    // a shipping install's anchoring names its product (CB-49)
     const result = await verifyProof(proof, {
       address: wallet.address,
+      product: 'shipping',
       fetchImpl: (url: string, init: RequestInit) =>
         fetch(
           `${GATEWAY_URL}/api/audit/test/koios/${new URL(url).pathname.split('/').pop()}`,

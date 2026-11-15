@@ -339,7 +339,11 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
 
   describe('the existing formats, unchanged', () => {
     it('verifies a B/L entry’s trail-entry proof (lrfe-audit-proof/1) as before', async () => {
-      const r = await verifyProof(clone(anchor), offline);
+      // a shipping install's anchoring names its product (CB-49)
+      const r = await verifyProof(clone(anchor), {
+        ...offline,
+        product: 'shipping',
+      });
       assert.equal(r.valid, true, JSON.stringify(r.checks));
       assert.equal(anchor.format, 'lrfe-audit-proof/1');
       assert.deepEqual(Object.keys(anchor), [

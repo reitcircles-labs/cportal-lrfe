@@ -82,8 +82,12 @@ export const E2E_DOMAIN = process.env.E2E_DOMAIN || 'land';
 /** The secret the stack's services sign and check tokens with (JWT_SECRET); the load tests sign their own. */
 export const JWT_SECRET = 'e2e-only-jwt-secret-not-used-anywhere-else';
 
-/** Password of every seeded demo user (identity's SEED_DEMO_PASSWORD). The stack is in memory only. */
-export const DEMO_PASSWORD = 'e2e-demo-password-2026';
+/**
+ * Password of every seeded demo user (identity's SEED_DEMO_PASSWORD). The stack is in memory only.
+ * E2E_DEMO_PASSWORD: a rehearsal install's (CB-49: the shipping storyline run against it).
+ */
+export const DEMO_PASSWORD =
+  process.env.E2E_DEMO_PASSWORD || 'e2e-demo-password-2026';
 
 /**
  * The organisation of the test install in containers (API-712, start-docker.mjs): other texts than

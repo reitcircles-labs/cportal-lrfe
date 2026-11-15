@@ -64,7 +64,7 @@ folder, like the shipping app's port, CB-6).
 | Run | `npm start` (port 4200) | `npm run start:shipping` (port 4201) |
 | Build | `npm run build`: `dist/land-registry` | `npm run build:shipping`: `dist/shipping` |
 | e2e | the web port | the web port + 1 (`e2e/tests/shipping-app.spec.ts`); the B/L through the API: `npm run test:shipping` (`docs/ai-workflow/e2e.md`) |
-| Docker image | `lrfe-web` (`angular-app/Dockerfile`) | none yet |
+| Docker image | `lrfe-web` (`angular-app/Dockerfile`) | the same `lrfe-web` image, which holds both apps: `LRFE_DOMAIN=shipping` serves this one (CB-49) |
 
 Screens that are generic but still carry land wording (dashboard, documents, audit, anchorings,
 administration) stay in the land registry until shipping needs them; they then move to the

@@ -11,6 +11,15 @@ and the storyline `demo/STORYLINE.md`. This page holds what must never go wrong.
 - OpenBao holds the wallet key and the seal keys; its init file (unseal key, root token) is
   `~/lrfe-demo-openbao-init.json`, snapshots in `~/lrfe-backups/`. The demo seal certificate and its
   demo authority are in `~/lrfe-demo-seal/`.
+- **The shipping demo** (CB-49) is a second install beside it: project **`lrfe-shipping`**, port
+  8089, settings `deploy/.env.shipping`, its own OpenBao (`~/lrfe-shipping-openbao-init.json`, the
+  title key) and data, its key store `lrfe-shipping_bao-data` locked by
+  `demo/compose.keep-volumes.shipping.yml`. It anchors on the land demo's node through its relay
+  `shipping-node-relay` (the only shipping container on the land network; metadata `"product":
+  "shipping"`), paid from its own wallet (address in `~/lrfe-shipping-demo-wallet-address.txt`, funded by
+  the user). Never send from the land demo's wallet for it.
+  Only through `node demo/release.mjs … --shipping` / `install-shipping` (demo/README.md, "The
+  shipping demo install"); never a command on it without `-p lrfe-shipping --env-file .env.shipping`.
 
 ## Never
 
@@ -31,6 +40,7 @@ and the storyline `demo/STORYLINE.md`. This page holds what must never go wrong.
   after, check the same container IDs, start times and restart counts; then the readiness check
   (`node demo/check-readiness.mjs`).
 - **Experiments:** the throwaway project `lrfe-rehearsal` (port 8716, its own OpenBao, removed with
-  `node demo/release.mjs teardown`). Never use `--profile` alone on it: it replaces
+  `node demo/release.mjs teardown`, the shipping profiles' containers and volumes included), and for
+  shipping `lrfe-rehearsal-shipping` (port 8717, `rehearse --shipping`, `teardown --shipping`). Never use `--profile` alone on it: it replaces
   `COMPOSE_PROFILES`, so `down` misses the others' containers.
 - Set `LRFE_TIME_ZONE` (Africa/Windhoek for Namibia): unset, the extract prints UTC.

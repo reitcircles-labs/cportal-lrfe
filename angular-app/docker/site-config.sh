@@ -18,6 +18,9 @@
 # (docker/security-headers.conf, API-822): with EDRMS_STORAGE=s3, documents open from links signed
 # by the S3 bucket (AWS_BUCKET_NAME, AWS_BUCKET_REGION), so its origin is allowed in frames and
 # images. Written as the nginx variable $lrfe_document_origins, empty with local storage.
+#
+# And the app nginx serves (CB-49): the image holds both apps, the land registry's and the shipping
+# product's; LRFE_DOMAIN=shipping serves the shipping app, anything else the land registry's.
 set -eu
 
 out=${SITE_CONFIG_FILE:-/tmp/lrfe/config.json}
@@ -71,3 +74,14 @@ mkdir -p "$(dirname "$origins_file")"
 printf 'map $host $lrfe_document_origins {\n    default "%s";\n}\n' "$origins" > "$origins_file.tmp"
 mv "$origins_file.tmp" "$origins_file"
 echo "site-config: document origins: ${origins:-none}"
+
+# the app of the install's product: only a known product chooses another folder
+app_root_file=${APP_ROOT_FILE:-/tmp/lrfe/app-root.conf}
+case "${LRFE_DOMAIN:-}" in
+    shipping) app_root=/usr/share/nginx/shipping ;;
+    *) app_root=/usr/share/nginx/html ;;
+esac
+mkdir -p "$(dirname "$app_root_file")"
+printf 'root %s;\n' "$app_root" > "$app_root_file.tmp"
+mv "$app_root_file.tmp" "$app_root_file"
+echo "site-config: app served from $app_root"

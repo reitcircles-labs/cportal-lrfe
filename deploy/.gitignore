@@ -1,3 +1,5 @@
 # the site settings hold secrets; export bundles are build output
 .env
 dist/
+# the shipping demo install's settings (demo/release.mjs install-shipping): secrets too
+.env.shipping

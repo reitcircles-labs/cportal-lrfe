@@ -1,0 +1,13 @@
+# The shipping demo install's lock on its key store (CB-49): OpenBao's data, with the title signing
+# key (bl-title) that signs every B/L's chain of title; without it no new title entry can be signed
+# with the published key. Declared external, compose never deletes it, not even with
+# `docker compose down -v`; it also never creates it: `node demo/release.mjs install-shipping`
+# creates it before the first start.
+#
+# Switched on in deploy/.env.shipping:
+#   COMPOSE_FILE=docker-compose.yml:../demo/compose.keep-volumes.shipping.yml
+# The name is that of the project lrfe-shipping; the land demo's volumes are never named here.
+volumes:
+  bao-data:
+    external: true
+    name: lrfe-shipping_bao-data

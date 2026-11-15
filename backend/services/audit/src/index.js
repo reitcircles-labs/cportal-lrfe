@@ -20,6 +20,7 @@ import {buildApp} from './app.js';
 import {TrailService} from './trail.service.js';
 import {TreeService} from './tree.service.js';
 import {cardanoFromEnv} from './cardano/adapter.js';
+import {recordKindOf} from './domain.js';
 import {AnchorService, parsePeriod} from './anchor.service.js';
 import {BackfillService, createSealSources} from './backfill.service.js';
 import {createVerifySources, ProofService} from './proof.service.js';
@@ -74,8 +75,13 @@ const log = {
   error: (...a) => app.log.error(...a),
 };
 const tree = new TreeService({repo, logger: log});
-// anchoring on Cardano (README.md section 3), when CARDANO_PROVIDER is set; a wrong setting stops the start
-const cardano = cardanoFromEnv(process.env, {logger: log, events});
+// anchoring on Cardano (README.md section 3), when CARDANO_PROVIDER is set; a wrong setting stops the start.
+// The product the pack names (CB-49: shipping) goes into every anchoring's metadata; land names none.
+const cardano = cardanoFromEnv(process.env, {
+  logger: log,
+  events,
+  product: recordKindOf()?.anchorProduct ?? null,
+});
 const serviceToken = createServiceTokenSigner({
   secret: env('JWT_SECRET'),
   service: 'audit',

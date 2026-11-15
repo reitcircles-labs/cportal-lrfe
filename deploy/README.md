@@ -5,7 +5,7 @@ standard ones:
 
 | Container | Image | What it is |
 |---|---|---|
-| web | `lrfe-web:<version>` | The web app, and `/api/...` passed to the gateway. The only one reachable from outside |
+| web | `lrfe-web:<version>` | The web app (the land registry's, or the shipping app with `LRFE_DOMAIN=shipping`), and `/api/...` passed to the gateway. The only one reachable from outside |
 | gateway, identity, edrms, bpm, intake, land-records, audit, extracts | `lrfe-backend:<version>` | The backend services (one image, each container runs one service) |
 | db-setup | `lrfe-backend:<version>` | Runs on every start before the services: sets up the database's schemas and tables, then exits |
 | postgres (the default) | `postgres:16.15` | The database. Or an existing PostgreSQL server instead: part B, "An existing PostgreSQL server" |
@@ -118,8 +118,8 @@ Docker, in the folder the bundle is unpacked in.
    `SHIPPING_RECORDS_URL`, set in the compose file (`http://shipping-records:3509`). Choose the product when installing; never change it on an
    install that holds data. The web container also writes it into `/config.json` (`domain`). A
    pack that is missing or broken stops each service at start, with the reason in
-   `docker compose logs <service>`. The `web` image holds the land registry's app; the shipping
-   app has no image yet.
+   `docker compose logs <service>`. The `web` image holds both apps and serves the one of
+   `LRFE_DOMAIN`: the land registry's, or with `shipping` the shipping app (CB-49).
 
    **The offices** (`CODE=Name` pairs, separated by `;`, codes of 2 to 5 capital letters) are
    created only once, on an empty database; empty means none, and the administrator adds them under
