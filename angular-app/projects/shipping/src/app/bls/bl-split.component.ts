@@ -204,11 +204,12 @@ export class BlSplitComponent {
   }
 
   /**
-   * Keeps a part's number as typed.
+   * Keeps a part's number as typed; an earlier refusal no longer applies.
    * @param index the part's place
    * @param value as typed
    */
   protected setReference(index: number, value: string): void {
+    this.refusal.set(null);
     this.parts.update(parts =>
       parts.map((part, i) =>
         i === index ? {...part, reference: value} : part,
@@ -230,6 +231,7 @@ export class BlSplitComponent {
     value: string,
   ): void {
     const number = value.trim() === '' ? null : Number(value);
+    this.refusal.set(null);
     this.parts.update(parts =>
       parts.map((part, i) => {
         if (i !== index) {
@@ -245,6 +247,7 @@ export class BlSplitComponent {
 
   /** Adds an empty part ("Add a B/L"). */
   protected add(): void {
+    this.refusal.set(null);
     this.parts.update(parts => addPart(parts, this.rows(), this.recordNo()));
   }
 

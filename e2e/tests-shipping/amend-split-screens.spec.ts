@@ -214,6 +214,9 @@ test.describe(
       await expect(chain.locator('tbody tr').last()).toContainText(
         'Surrendered for amendment',
       );
+      await expect(fact(page, 'Your role')).toHaveText(
+        'Asked for a change: the B/L comes back to you',
+      );
       await dismissToasts(page);
       await evidence(page, TICKET, 'Change requested: held by the carrier');
     });

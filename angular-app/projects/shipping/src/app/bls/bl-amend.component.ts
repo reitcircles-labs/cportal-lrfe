@@ -126,6 +126,7 @@ import {BL_SHARED_STYLES} from './bl-shared.styles';
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
     .field { display: flex; flex-direction: column; gap: 4px; }
     .amend-table th[scope='row'] { font-weight: 600; white-space: nowrap; }
+    .amend-table tr.changed td:nth-child(3) { background: var(--success-bg, #e6f4ea); }
     .amend-table tr.changed td:nth-child(3) .input { outline: 2px solid var(--color-accent, #2f6fde); }
     .changes, .problems { margin: 0; padding-left: 18px; }
     ins { background: var(--success-bg, #e6f4ea); text-decoration: none; padding: 0 2px; }

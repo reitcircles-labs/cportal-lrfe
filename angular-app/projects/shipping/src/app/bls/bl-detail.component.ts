@@ -546,9 +546,19 @@ export class BlDetailComponent {
     }
     return this.factOf('Kind') ?? kindLabel(null);
   });
-  protected readonly roles = computed(() =>
-    rolesLabel(this.view()?.roles ?? []),
-  );
+  /** The viewer's role; the holder who asked for a change is told the B/L comes back to it. */
+  protected readonly roles = computed(() => {
+    const v = this.view();
+    const roles = v?.roles ?? [];
+    const organisationId = this.viewer().organisationId;
+    const waitsForIt =
+      !!organisationId &&
+      v?.title?.returnTo === organisationId &&
+      !roles.includes('holder');
+    return waitsForIt
+      ? 'Asked for a change: the B/L comes back to you'
+      : rolesLabel(roles);
+  });
   protected readonly carrier = computed(() => {
     const v = this.view();
     if (v === null) {
