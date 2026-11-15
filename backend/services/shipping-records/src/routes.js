@@ -17,6 +17,8 @@ import {OFFERED_COMMANDS} from './title.service.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuid = {type: 'string', format: 'uuid'};
 const versionParam = {n: {type: 'integer', minimum: 1}};
+/** The longest B/L number a lookup takes (CB-47); a transport document reference has 20 at most. */
+const MAX_NUMBER_LENGTH = 100;
 
 /**
  * The path parameters of a record route.
@@ -59,6 +61,15 @@ const decisionBody = {
         name: {type: 'string'},
       },
     },
+    comment: {type: 'string', maxLength: 4000},
+  },
+};
+
+/** A person's approval of a version in review (CB-44): an optional comment. */
+const approvalBody = {
+  type: ['object', 'null'],
+  additionalProperties: false,
+  properties: {
     comment: {type: 'string', maxLength: 4000},
   },
 };
@@ -324,6 +335,42 @@ export async function recordsRoutes(app, {service}) {
       service.submit(req.params.id, req.params.n, actorOf(req), ownerOf(req)),
   );
 
+  // ------------------------------------------------ approval on the platform (CB-44)
+
+  // a second person of the B/L's organisation approves the version in review (four eyes: never
+  // one of its drafters), which commits it; issuing it is then a title command
+  app.post(
+    '/records/:id/versions/:n/approve',
+    {
+      onRequest: app.requirePerm('bl.issue'),
+      schema: {...idParams(versionParam), body: approvalBody},
+    },
+    async req =>
+      service.approve(
+        req.params.id,
+        req.params.n,
+        actorOf(req),
+        ownerOf(req),
+        req.body ?? {},
+      ),
+  );
+
+  // the organisations registered and active on the platform, whom a new B/L may name as its
+  // shipper or consignee (CB-44) and whom its holder may endorse it to (CB-45: trade staff have
+  // bl.endorse, not bl.draft); only the id, code and name of each
+  app.get(
+    '/records/organisations',
+    {onRequest: app.requireAnyPerm('bl.draft', 'bl.endorse')},
+    async req => {
+      // only a user of an organisation drafts or endorses B/Ls: 403 for one of none
+      ownerOf(req);
+      const organisations = await titlesOf(app).activeOrganisations();
+      return {
+        items: organisations.map(({id, code, name}) => ({id, code, name})),
+      };
+    },
+  );
+
   // ------------------------------------------------ review decisions (bpm)
 
   app.post(
@@ -407,6 +454,32 @@ export async function recordsRoutes(app, {service}) {
   app.get('/records/title/keys', async () => titlesOf(app).keys());
 
   // ------------------------------------------------ the title (CB-34)
+
+  // the B/Ls the session's organisation is party to (CB-42): its drafts, and the B/Ls of which it
+  // is the carrier, the holder, a past holder or the consignee, each with its title and the
+  // organisation's roles; the organisation is the session's, never one named in the request.
+  // `number` finds a B/L by its number among them (CB-47: "Check a B/L by number")
+  app.get(
+    '/records/title',
+    {
+      onRequest: canRead,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            limit: {type: 'integer', minimum: 1, maximum: 200, default: 50},
+            offset: OFFSET_SCHEMA,
+            number: {type: 'string', maxLength: MAX_NUMBER_LENGTH},
+          },
+        },
+      },
+    },
+    async req => {
+      ownerOf(req);
+      return titlesOf(app).listForParty(actorOf(req), req.query);
+    },
+  );
 
   // a B/L's title, the commands the caller may run on it now and its chain of title, for the
   // carrier, the current and past holders and the consignee

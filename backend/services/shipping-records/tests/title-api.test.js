@@ -38,6 +38,8 @@ const BUYER = 'org-buyer';
 const CONSIGNEE = 'org-consignee';
 const STRANGER = 'org-stranger';
 const SUSPENDED = 'org-suspended';
+/** The platform operator's own organisation (CB-48): never part of a B/L. */
+const OPERATOR = 'org-operator';
 const UNKNOWN = 'org-unknown';
 
 /** Every B/L permission, as the demo role bld has them after CB-34. */
@@ -96,6 +98,7 @@ function standInIdentity() {
     [CONSIGNEE, 'active'],
     [STRANGER, 'active'],
     [SUSPENDED, 'inactive'],
+    [OPERATOR, 'operator'],
   ]);
   const identity = {
     asked: [],
@@ -435,8 +438,18 @@ for (const store of stores()) {
         expect(res.statusCode, res.body).to.equal(200);
         expect(res.json()).to.deep.equal({
           recordId: id,
+          // the reference and the caller's roles (CB-42)
+          record: {
+            recordNo: 'CB34-READ-BEFORE',
+            carrierCode: 'MSC',
+            label: 'B/L CB34-READ-BEFORE (MSC)',
+            status: 'committed',
+            draftState: null,
+          },
           title: null,
           allowedCommands: ['issue'],
+          roles: ['carrier'],
+          organisationNames: {},
           chain: [],
         });
       });
@@ -807,6 +820,30 @@ for (const store of stores()) {
           expect(await ctx.repo.listTitleEntries(id)).to.deep.equal([]);
         });
       }
+
+      it("an endorsement to the platform operator's organisation is refused 422, nothing recorded (CB-48)", async () => {
+        const id = await endorsedToBank(ctx, nextReference('OPR'));
+        const before = await footprint(ctx, id);
+        const res = await command(ctx, id, 'endorse', staffOf(BANK), {
+          to: OPERATOR,
+          inBlank: false,
+        });
+        expect(res.statusCode, res.body).to.equal(422);
+        expect(res.json().details.code).to.equal('unregistered-organisation');
+        expect(res.json().message).to.match(/operator/);
+        expect(await footprint(ctx, id)).to.deep.equal(before);
+      });
+
+      it("an issue whose shipper is the platform operator's organisation is refused 422 (CB-48)", async () => {
+        const id = await committedBl(ctx, nextReference('OPR'), {
+          shipper: OPERATOR,
+        });
+        const res = await command(ctx, id, 'issue', staffOf(CARRIER));
+        expect(res.statusCode, res.body).to.equal(422);
+        expect(res.json().details.code).to.equal('unregistered-organisation');
+        expect(res.json().message).to.match(/operator/);
+        expect(await ctx.repo.getTitle(id)).to.equal(null);
+      });
 
       it('a transfer to an organisation not registered is refused 422, nothing recorded', async () => {
         const id = await committedBl(ctx, 'CB34-REG-TRANSFER');

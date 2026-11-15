@@ -55,7 +55,8 @@ test('the shipping sign-in shows the port picture on a wide screen and on a phon
   await page.goto('/#/login');
   await expect(picture).toBeVisible();
   await expect(picture).toHaveJSProperty('complete', true);
-  await expect(page.getByText('Logo', {exact: true})).toBeVisible();
+  // CB-48: the shipping product configures no logo, so no placeholder box shows.
+  await expect(page.getByText('Logo', {exact: true})).toHaveCount(0);
   await expect(page.getByText('Transfer', {exact: true})).toBeVisible();
   await test.info().attach('shipping sign-in, wide, light', {
     body: await page.screenshot(),

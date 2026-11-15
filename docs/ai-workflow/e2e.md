@@ -64,6 +64,13 @@ tests with screenshots on and numbers them into `e2e/evidence/API-123/` with a `
 captions. For one spec only (for example one that runs after the main suite):
 `npm run evidence -- API-123 --spec tests/<file>.spec.ts`. Upload: `docs/ai-workflow/jira.md`.
 
+The shipping product's specs (`tests-shipping/`) run on the shipping stack
+(`playwright.shipping.config.ts`, which also serves the shipping app): `npm run evidence -- CB-42
+--shipping` for the tagged tests, or `npm run evidence -- CB-42 --spec tests-shipping/<file>.spec.ts`
+(a spec in `tests-shipping/` is run there without `--shipping`). The shots are numbered into
+`e2e/evidence/CB-42/` with their `manifest.json`, as for land. Set `E2E_API_PORT`/`E2E_WEB_PORT`
+outside the main checkout. `npm run test:stack` in `e2e/` tests how the script reads its arguments.
+
 Check the screenshots with an agent (does each match the design or storyline?), not in the main
 conversation.
 

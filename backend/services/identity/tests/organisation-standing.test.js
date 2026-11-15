@@ -13,13 +13,14 @@ import {makeApp} from './helpers.js';
  * active, so that a B/L only goes to such an organisation:
  *
  *   GET /organisations/:id/standing   service token of the pack's record service only
- *     200 {id, status}   status 'Active' or 'Suspended'; nothing else about the organisation
+ *     200 {id, status, name}   status 'Active' or 'Suspended', and its name (CB-42: the parties
+ *                        of a B/L see each other's names); nothing else about the organisation
  *     404                no such organisation ("Organisation not found")
  *     400                not an organisation id
  *     401 for a person's token, 403 for another service
  *
  * And the shipping pack's title permissions in the catalogue: bl.issue and bl.endorse, given to
- * the demo role bld.
+ * the roles (CB-44: issuing to the carrier's staff role bld, endorsing to the trade role blt).
  */
 
 const run = promisify(execFile);
@@ -63,20 +64,28 @@ async function setup() {
 }
 
 describe("an organisation's standing, for the record service (CB-34)", () => {
-  it('answers an active organisation: its id and status, nothing more', async () => {
+  it('answers an active organisation: its id, status and name, nothing more (changed: CB-42 adds the name)', async () => {
     const {bank, standing, asService, app} = await setup();
     // the land pack's record service in these tests (the default pack)
     const res = await standing(bank.id, asService('land-records'));
     expect(res.statusCode, res.body).to.equal(200);
-    expect(res.json()).to.deep.equal({id: bank.id, status: 'Active'});
+    expect(res.json()).to.deep.equal({
+      id: bank.id,
+      status: 'Active',
+      name: 'First Bank',
+    });
     await app.close();
   });
 
-  it('answers a suspended organisation as Suspended', async () => {
+  it('answers a suspended organisation as Suspended, with its name (changed: CB-42 adds the name)', async () => {
     const {buyer, standing, asService, app} = await setup();
     const res = await standing(buyer.id, asService('land-records'));
     expect(res.statusCode, res.body).to.equal(200);
-    expect(res.json()).to.deep.equal({id: buyer.id, status: 'Suspended'});
+    expect(res.json()).to.deep.equal({
+      id: buyer.id,
+      status: 'Suspended',
+      name: 'Buyer Trading',
+    });
     await app.close();
   });
 
@@ -160,14 +169,11 @@ describe("the shipping pack's title permissions in the catalogue (CB-34)", () =>
     expect(group).to.deep.equal(['Bills of lading', 'Bills of lading']);
   });
 
-  it('gives the demo role bld every B/L permission', async () => {
+  it('gives the carrier staff role bld issuing and the trade role blt endorsing (changed: CB-44 splits the roles)', async () => {
     const catalogue = catalogueOf(await loadDomainPack('shipping'));
     const bld = catalogue.roles.find(r => r.id === 'bld');
-    expect(bld.perms).to.have.members([
-      'bl.read',
-      'bl.draft',
-      'bl.issue',
-      'bl.endorse',
-    ]);
+    expect(bld.perms).to.have.members(['bl.read', 'bl.draft', 'bl.issue']);
+    const blt = catalogue.roles.find(r => r.id === 'blt');
+    expect(blt.perms).to.have.members(['bl.read', 'bl.endorse']);
   });
 });

@@ -8,7 +8,7 @@
  * user in again. The shipping run has one worker, so the file is never written twice at once.
  */
 import {createHmac} from 'node:crypto';
-import {expect, type APIRequestContext} from '@playwright/test';
+import {expect, type APIRequestContext, type Page} from '@playwright/test';
 import {appPath, invitationEmail, officeCode, unique} from './admin';
 import {codeFor, readSecrets, saveSecrets} from './auth';
 import {identity} from '../../backend/domains/shipping/src/identity.js';
@@ -32,8 +32,15 @@ export function demoEmails(role: string): string[] {
   return DEMO_USERS.filter(u => u.roles.includes(role)).map(u => u.email);
 }
 
+/**
+ * The shipping pack's roles (CB-44): the carrier's staff, who draft, approve and issue B/Ls, and
+ * the trade staff of shippers, banks and buyers, who move the B/Ls they hold.
+ */
+export const CARRIER_ROLE = 'bld';
+export const TRADE_ROLE = 'blt';
+
 /** The password of the users the specs invite. */
-const INVITED_PASSWORD = 'e2e shipping user password 2026';
+export const INVITED_PASSWORD = 'e2e shipping user password 2026';
 
 /** A signed-in user: who they are and the header with their access token. */
 export interface SignedIn {
@@ -115,19 +122,40 @@ export async function signIn(
 }
 
 /**
+ * Accepts the invitation emailed to a user, with the password of invited users (INVITED_PASSWORD),
+ * as the link in the email does (CB-43: also for users invited on the screens).
+ * @param api the request context, on the gateway
+ * @param email the invited user's email
+ */
+export async function acceptInvitation(
+  api: APIRequestContext,
+  email: string,
+): Promise<void> {
+  const token = new URL(
+    appPath((await invitationEmail(email)).link).replace('/#/', '/'),
+    'http://x',
+  ).searchParams.get('token');
+  const accepted = await api.post('/api/invitations/accept', {
+    data: {token, password: INVITED_PASSWORD},
+  });
+  expect(accepted.status(), await accepted.text()).toBe(200);
+}
+
+/**
  * A new organisation with one office and one user of the given role, invited, activated and
  * signed in, all through the API as the administrator.
  * @param api the request context, on the gateway
  * @param admin the signed-in administrator
  * @param label a word for the names, e.g. "Bank"
- * @param role the user's role (the B/L clerk's by default)
+ * @param role the user's role: the carrier's staff (CARRIER_ROLE) by default, TRADE_ROLE for a
+ *     shipper, bank or buyer
  * @return the organisation and its signed-in clerk
  */
 export async function organisationWithClerk(
   api: APIRequestContext,
   admin: SignedIn,
   label: string,
-  role = 'bld',
+  role = CARRIER_ROLE,
 ): Promise<Organisation> {
   const id = unique();
   const created = await api.post('/api/organisations', {
@@ -161,14 +189,7 @@ export async function organisationWithClerk(
     },
   });
   expect(invited.status(), await invited.text()).toBe(201);
-  const token = new URL(
-    appPath((await invitationEmail(email)).link).replace('/#/', '/'),
-    'http://x',
-  ).searchParams.get('token');
-  const accepted = await api.post('/api/invitations/accept', {
-    data: {token, password: INVITED_PASSWORD},
-  });
-  expect(accepted.status(), await accepted.text()).toBe(200);
+  await acceptInvitation(api, email);
 
   const clerk = await signIn(api, email, INVITED_PASSWORD);
   expect(clerk.organisationId).toBe(organisation.id);
@@ -178,4 +199,26 @@ export async function organisationWithClerk(
     name: organisation.name,
     clerk,
   };
+}
+
+/**
+ * Signs a user in to the shipping app in the browser (CB-42): the platform's sign-in screen, then
+ * the authenticator, whose secret their first sign-in through the API kept.
+ * @param page the page, on the shipping app
+ * @param email the user's email
+ * @param password the user's password
+ */
+export async function signInOnScreen(
+  page: Page,
+  email: string,
+  password: string,
+): Promise<void> {
+  const secret = readSecrets()[email];
+  expect(secret, `the authenticator secret of ${email}`).toBeTruthy();
+  await page.goto('/#/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', {name: 'Sign in', exact: true}).click();
+  await page.getByLabel('6-digit code').fill(codeFor(secret));
+  await page.getByRole('button', {name: 'Verify and sign in'}).click();
 }

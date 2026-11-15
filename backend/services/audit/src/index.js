@@ -11,6 +11,7 @@ import {
   envInt,
   envOneOf,
   healthCheck,
+  orgDefaultsOf,
   orgFromEnv,
   recordServiceOf,
   startService,
@@ -121,7 +122,8 @@ const evidence = new EvidenceService({
   events,
   cardano,
   logger: log,
-  organisation: orgFromEnv().fullName,
+  // the site's organisation, else the pack's (CB-48: a shipping install is no deeds registry)
+  organisation: orgFromEnv(process.env, orgDefaultsOf(domain)).fullName,
   sources: createEvidenceSources({
     recordsUrl,
     recordsLabel,

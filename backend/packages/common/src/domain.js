@@ -1,6 +1,6 @@
 import {checkDomainPack, isPackName} from '@lrfe/domain-pack';
 
-import {env} from './config.js';
+import {DEFAULT_ORG, env} from './config.js';
 
 /** The pack an install uses when `LRFE_DOMAIN` is not set: existing installs need no change. */
 export const DEFAULT_DOMAIN = 'land';
@@ -52,4 +52,15 @@ export function recordServiceOf(pack) {
     label: service.label,
     url: env(service.urlSetting, service.defaultUrl),
   };
+}
+
+/**
+ * The texts of the organisation running the portal when the site's settings (LRFE_ORG_*) do not
+ * set them (CB-48): the pack's own (`identity.defaultOrganisation`), else the first site's
+ * (DEFAULT_ORG). Give them to orgFromEnv.
+ * @param {import('@lrfe/domain-pack').DomainPack} pack
+ * @return {{name: string, subtitle: string, parent: string, place: string}}
+ */
+export function orgDefaultsOf(pack) {
+  return pack.identity.defaultOrganisation ?? DEFAULT_ORG;
 }

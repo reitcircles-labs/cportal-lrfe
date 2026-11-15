@@ -7,6 +7,13 @@
  * and lists what was taken. The files are in evidence/<ticket>/, ready to attach to the ticket.
  * With --spec, only that spec runs, with the sign-in setup and without the projects it depends on
  * (one worker, so the setup runs first): quicker for a spec that runs after the main suite.
+ *
+ * npm run evidence -- CB-42 --shipping
+ * npm run evidence -- CB-42 --spec tests-shipping/bl-home.spec.ts
+ *
+ * The shipping product's specs (CB-42): on the shipping stack (playwright.shipping.config.ts,
+ * E2E_DOMAIN=shipping), with --shipping or for a spec in tests-shipping/. The arguments are read
+ * by evidence-plan.mjs.
  */
 import {spawnSync} from 'node:child_process';
 import {
@@ -19,44 +26,25 @@ import {
 } from 'node:fs';
 import {join} from 'node:path';
 import {E2E_DIR} from './config.mjs';
+import {evidencePlan} from './evidence-plan.mjs';
 
-const args = process.argv.slice(2);
-const specAt = args.indexOf('--spec');
-const spec = specAt < 0 ? null : args[specAt + 1];
-const tickets =
-  specAt < 0 ? args : args.filter((_, i) => i !== specAt && i !== specAt + 1);
-if (
-  !tickets.length ||
-  tickets.some(t => !/^[A-Z][A-Z0-9]+-\d+$/.test(t)) ||
-  (specAt >= 0 && !spec)
-) {
+const plan = evidencePlan(process.argv.slice(2));
+if (!plan) {
   console.error(
-    'Usage: npm run evidence -- API-606 [API-609 …] [--spec tests/<file>.spec.ts]',
+    'Usage: npm run evidence -- API-606 [API-609 …] [--spec tests/<file>.spec.ts] [--shipping]',
   );
   process.exit(2);
 }
+const {tickets} = plan;
 for (const t of tickets) {
   rmSync(join(E2E_DIR, 'evidence', t), {recursive: true, force: true});
 }
 
-const run = spawnSync(
-  'npx',
-  [
-    'playwright',
-    'test',
-    ...(spec ? ['tests/auth.setup.ts', spec, '--no-deps', '--workers=1'] : []),
-    '--grep',
-    // with --spec, also the sign-in setup: its title starts "enrol the demo users"
-    spec
-      ? `${tickets.map(t => `@${t}`).join('|')}|enrol`
-      : tickets.map(t => `@${t}`).join('|'),
-  ],
-  {
-    cwd: E2E_DIR,
-    stdio: 'inherit',
-    env: {...process.env, E2E_EVIDENCE: '1'},
-  },
-);
+const run = spawnSync('npx', plan.args, {
+  cwd: E2E_DIR,
+  stdio: 'inherit',
+  env: {...process.env, ...plan.env},
+});
 
 for (const t of tickets) {
   const dir = join(E2E_DIR, 'evidence', t);

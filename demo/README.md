@@ -7,6 +7,8 @@ What a demo of the portal needs, next to the install in `deploy/`.
 | `documents/` | The demo document set (API-716): fictitious scans of two chains of title, to scan in, verify, file and build land records from. Its README has the story, the suggested demo flow and what the AI reads. |
 | `check-readiness.mjs` | The readiness check (API-717): run it before every demo (below). |
 | `STORYLINE.md` | The storyline (API-720): what the demo giver does, role by role, from scanning to the audit and the owner's extract that anyone can check. |
+| `SHIPPING-STORYLINE.md` | The shipping product's storyline (CB-48): one negotiable B/L from the carrier through two banks to the buyer, surrendered, released and checked. See "A shipping install" below. |
+| `demo-users.mjs` | The demo users the readiness check looks for: the land registry's, or the shipping pack's on a shipping install. |
 
 ## Before every demo: a known starting state
 
@@ -84,6 +86,40 @@ node demo/check-readiness.mjs
 
 **READY**, still 0 data, and the users you will show marked "authenticator set up". Under Anchoring: the wallet
 readable, the blockchain node synced, enough funds. The remaining "!" lines are expected: users you will not show.
+
+## A shipping install
+
+The shipping product's demo (`SHIPPING-STORYLINE.md`) runs on an install of its own with `LRFE_DOMAIN=shipping` and
+`shipping` in `COMPOSE_PROFILES` (`deploy/README.md`, "The product"), never on the land registry's demo install. Its
+starting state is a fresh install, made as in step 1 above (with the `shipping-records` container among those removed).
+The steps are the same, with these differences:
+
+- **The demo data.** With `SEED_DEMO_PASSWORD` set, identity creates on start the five organisations of the journey,
+  each with an office of its code and name, and seven demo users (`backend/domains/shipping/src/identity.js`; a restart
+  duplicates nothing):
+
+  | User | Organisation | Role |
+  |---|---|---|
+  | `a.morgan@shipping.example` | the default organisation, the platform operator | system administrator |
+  | `l.okafor@bluewater-lines.example` | Bluewater Meridian Lines (carrier) | B/L documentation (carrier): drafts |
+  | `r.menon@bluewater-lines.example` | Bluewater Meridian Lines (carrier) | B/L documentation (carrier): approves, issues, releases |
+  | `a.ribeiro@highland-coffee.example` | Highland Coffee Exporters (shipper) | B/L trade |
+  | `g.mensah@harbour-trust.example` | Harbour Trust Bank (exporter's bank) | B/L trade |
+  | `m.tanaka@northgate-bank.example` | Northgate Commercial Bank (buyer's bank) | B/L trade |
+  | `y.demir@roastery-collective.example` | Roastery Collective Imports (buyer) | B/L trade |
+
+  They sign in like the land demo users: the demo password (`grep SEED_DEMO_PASSWORD deploy/.env`), then the
+  authenticator, set up at the first sign-in. Set it up for all seven before the demo (step 3).
+- **The default organisation** is named "Shipping Registry" when `.env` has no `LRFE_ORG_NAME` (the shipping pack's
+  name, CB-48); remove the land registry's `LRFE_ORG_*` lines of `.env.example`, or set your own.
+  It is never offered as a shipper, consignee or endorsee: the platform operator takes no part in a B/L.
+- **An existing shipping install** (seeded before CB-48) keeps its earlier demo users and its default organisation's
+  old name, and gets the new organisations and users beside them: start from a fresh install for the demo.
+- **The readiness check** checks these seven users instead of the land registry's (it reads them from the shipping
+  pack). The demo documents, the AI and the extracts are the land registry's: their lines do not concern a shipping
+  demo.
+- **Anchoring** as in "Anchoring for the demo", and the title signer prepared (`deploy/README.md`, part D, step 7):
+  without it the carrier cannot issue.
 
 ## Encryption at rest
 
@@ -271,7 +307,7 @@ It reads `deploy/.env` (never printing a secret) and checks:
 |---|---|
 | Containers | every container running and healthy, `db-setup` finished, the optional ones of `COMPOSE_PROFILES` (e.g. `docs`) |
 | Apps | the web app and its site settings; each service answering through the web app and the gateway; the API docs when the profile is on |
-| Demo users | each demo user exists, is active (or suspended/invited as the demo data has them), and the demo password works; whether the authenticator is set up. Checked inside the identity container: nobody is signed in, so no failed sign-in is recorded |
+| Demo users | each demo user exists, is active (or suspended/invited as the demo data has them), and the demo password works; whether the authenticator is set up. The land registry's users, or on a shipping install the shipping pack's (`demo-users.mjs`). Checked inside the identity container: nobody is signed in, so no failed sign-in is recorded |
 | Reading scans | the AI is set up and accepts its key (checked from the intake container, without spending); the cross-check on or off |
 | Demo documents | the set is complete and unchanged (`documents/SHA256SUMS`) |
 | Data | what is already in the install (batches, scanned and filed documents, land records), with the fresh-start commands when there is any |

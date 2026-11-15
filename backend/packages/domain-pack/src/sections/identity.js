@@ -8,6 +8,8 @@ const FIELDS = [
   'separationOfDuties',
   'offices',
   'demoUsers',
+  'demoOrganisations',
+  'defaultOrganisation',
 ];
 
 /** A permission id, as stored in databases and tokens: `record.view`, `extract.issue`. */
@@ -16,6 +18,8 @@ const PERMISSION_ID = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 const SHORT_ID = /^[a-z][a-z0-9-]{0,30}$/;
 /** An office code, permanent once created: 2 to 5 capital letters. */
 const OFFICE_CODE = /^[A-Z]{2,5}$/;
+/** The texts of the organisation running the portal, as the site's settings LRFE_ORG_* give them. */
+const ORGANISATION_TEXTS = ['name', 'subtitle', 'parent', 'place'];
 /** The states a demo user can be created in. */
 const USER_STATUSES = ['Active', 'Suspended', 'Invited'];
 
@@ -29,7 +33,13 @@ const USER_STATUSES = ['Active', 'Suspended', 'Invited'];
  * - `roles`: `{id, label, desc, home, perms}`; `home` is the screen a user lands on.
  * - `separationOfDuties`: `{id, a, b, label, on}`: holding permissions `a` and `b` conflicts.
  * - `offices`: `{code, name, type, address, contact}` created in an empty database.
- * - `demoUsers`: `{name, email, office, roles, status}` created with a demo password.
+ * - `demoUsers`: `{name, email, office, organisation?, roles, status}` created with a demo
+ *   password; `organisation` is the code of one of the demo organisations, else the user is put
+ *   into the default organisation.
+ * - `demoOrganisations`: `{code, name}` created with the demo users (CB-48), each with one office
+ *   of the same code and name.
+ * - `defaultOrganisation`: `{name, subtitle, parent, place}`, the texts of the organisation
+ *   running the portal when the site does not set them (LRFE_ORG_*); the platform's otherwise.
  *
  * Whether the ids clash with the platform's, or name permissions and roles that exist, is checked
  * by identity, which knows the platform's own.
@@ -131,9 +141,12 @@ export function checkIdentity(pack, section) {
       where,
       user,
       ['name', 'email'],
-      ['office', 'status'],
+      ['office', 'status', 'organisation'],
       ['roles'],
     );
+    if (user.organisation !== undefined) {
+      checkText(pack, `${where}.organisation`, user.organisation);
+    }
     if (!user.email.includes('@')) {
       fail(pack, `identity: ${where}.email is not an email address`);
     }
@@ -155,6 +168,37 @@ export function checkIdentity(pack, section) {
     'demoUsers',
     users.map(u => u.email),
   );
+
+  const organisations = section.demoOrganisations ?? [];
+  checkList(pack, 'demoOrganisations', organisations, (organisation, where) => {
+    checkFields(pack, where, organisation, ['code', 'name']);
+    checkId(pack, where, organisation.code, OFFICE_CODE, 'code');
+  });
+  checkUnique(
+    pack,
+    'demoOrganisations',
+    organisations.map(o => o.code),
+  );
+
+  if (section.defaultOrganisation !== undefined) {
+    checkDefaultOrganisation(pack, section.defaultOrganisation);
+  }
+}
+
+/**
+ * Checks the default organisation's texts: a name, and a subtitle, parent body and place that
+ * may be empty (not shown), as the site's settings may be.
+ * @param {string} pack
+ * @param {unknown} texts
+ */
+function checkDefaultOrganisation(pack, texts) {
+  const where = 'defaultOrganisation';
+  checkFields(pack, where, texts, ['name'], ORGANISATION_TEXTS.slice(1));
+  for (const key of ORGANISATION_TEXTS.slice(1)) {
+    if (typeof texts[key] !== 'string') {
+      fail(pack, `identity: ${where}.${key} is not a text`);
+    }
+  }
 }
 
 /**

@@ -95,7 +95,11 @@ Docker, in the folder the bundle is unpacked in.
    setting missing from `.env` altogether shows the first site's text. The web
    container reads them on every start (`docker compose up -d` after a change; users reload the
    page). These are display texts, readable by anyone who opens the portal: never a secret. A
-   change does not rename the entry already in users' authenticator apps.
+   change does not rename the entry already in users' authenticator apps. **A shipping install**
+   (`LRFE_DOMAIN=shipping`) has texts of its own when a setting is missing from `.env`: the name
+   "Shipping Registry", no subtitle, parent or place (the shipping pack's, CB-48). So for one,
+   remove the four `LRFE_ORG_*` lines of `.env.example` (they are the land registry's), or set
+   your own. The name is also the default organisation's, given when it is created.
 
    **The product** (`LRFE_DOMAIN`) chooses the domain pack every service reads its product's
    document types, roles, workflows, record kind and texts from (`backend/domains/<name>`,
@@ -335,6 +339,17 @@ up -d`. If services are upgraded one by one,
 upgrade **audit before shipping-records**: an older audit has no route for the proof of a
 chain-of-title entry, and a title proof then says "pending" until audit is upgraded. A land install
 needs nothing: the title engine and its key are the shipping product's only.
+
+**Upgrading a shipping install to the split B/L roles (CB-44).** The shipping product now has two
+staff roles: `bld`, "B/L documentation (carrier)" (view, draft, approve and issue B/Ls), and the
+new `blt`, "B/L trade (shipper, bank, buyer)" (view B/Ls and endorse, transfer or surrender the
+ones the organisation holds). Identity adds `blt` at the first start; the data is kept. An install
+seeded before keeps the permissions stored for `bld`, which still include `bl.endorse`. After the
+upgrade, an administrator moves the staff of shippers, banks and buyers from `bld` to `blt` (their
+roles, `PUT /api/users/{id}/roles`), and takes `bl.endorse` from `bld` (identity's
+`PUT /api/roles/permissions`, with `admin.roles`; the shipping app has no roles screen yet) so that
+carrier staff only draft, approve and issue.
+A land install needs nothing.
 
 **Upgrading to organisations (CB-18).** The data is kept. On the first start, identity creates one
 default organisation, named from `LRFE_ORG_NAME`, and puts every existing office and user into it.

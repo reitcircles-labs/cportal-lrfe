@@ -1,4 +1,4 @@
-import {Op, UniqueConstraintError} from 'sequelize';
+import {Op, QueryTypes, UniqueConstraintError} from 'sequelize';
 import {ConflictError, inTransaction} from '@lrfe/common';
 import {defineModels, SCHEMA} from './models.js';
 
@@ -78,6 +78,17 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "bl_version_seal_order" ON "${SCHEMA}"."bl_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`,
       );
+      // the list of a party's B/Ls finds them by their parties (CB-42)
+      for (const column of ['carrier', 'holder', 'consignee']) {
+        await sequelize.query(
+          `CREATE INDEX IF NOT EXISTS "bl_title_${column}" ON "${SCHEMA}"."bl_title" ("${column}")`,
+        );
+      }
+      for (const column of ['from', 'to']) {
+        await sequelize.query(
+          `CREATE INDEX IF NOT EXISTS "bl_title_entry_${column}" ON "${SCHEMA}"."bl_title_entry" ("${column}")`,
+        );
+      }
       // a split child's title proof finds its parent's split entry by its hash (CB-35)
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "bl_title_entry_hash" ON "${SCHEMA}"."bl_title_entry" ("entryHash")`,
@@ -183,6 +194,65 @@ export function createSequelizeRepo(sequelize) {
       return {items: rows.map(plain), total: count};
     },
     /**
+     * A page of the B/Ls an organisation is party to (CB-42), newest first: before issue those it
+     * owns; after it those of which it is the carrier, the holder or the consignee, or that its
+     * chain of title moved from or to it. Each with its title (null before issue) and whether the
+     * chain names the organisation. With `number`, only those whose number (`recordNo`) is that
+     * one, whatever its case (CB-47).
+     * @param {{
+     *   organisationId: string,
+     *   limit?: number,
+     *   offset?: number,
+     *   number?: string,
+     * }} query
+     * @return {!Promise<{
+     *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
+     *   total: number,
+     * }>}
+     */
+    async listPartyRecords({organisationId, limit = 50, offset = 0, number}) {
+      const from = `
+        FROM "${SCHEMA}"."bill_of_lading" r
+        LEFT JOIN "${SCHEMA}"."bl_title" t ON t."recordId" = r."id"`;
+      const inChain = `EXISTS (
+        SELECT 1 FROM "${SCHEMA}"."bl_title_entry" e
+        WHERE e."recordId" = r."id" AND (e."from" = :org OR e."to" = :org))`;
+      // with a number, only the B/Ls of that number (CB-47), whatever its case
+      let numbered = '';
+      if (number !== undefined) {
+        numbered = 'AND lower(r."recordNo") = lower(:number)';
+      }
+      const where = `
+        WHERE ((t."recordId" IS NULL AND r."organisationId" = :org)
+          OR t."carrier" = :org OR t."holder" = :org OR t."consignee" = :org
+          OR ${inChain})
+          ${numbered}`;
+      const replacements = {org: organisationId, number: number ?? null};
+      const rows = await sequelize.query(
+        `SELECT r."id", ${inChain} AS "inChain" ${from} ${where}
+         ORDER BY r."createdAt" DESC, r."id" ASC LIMIT :limit OFFSET :offset`,
+        {
+          replacements: {...replacements, limit, offset},
+          type: QueryTypes.SELECT,
+        },
+      );
+      const [{total}] = await sequelize.query(
+        `SELECT COUNT(*)::int AS "total" ${from} ${where}`,
+        {replacements, type: QueryTypes.SELECT},
+      );
+      const ids = rows.map(row => row.id);
+      const records = await models.Record.findAll({where: {id: ids}});
+      const titles = await models.Title.findAll({where: {recordId: ids}});
+      const recordById = new Map(records.map(row => [row.id, plain(row)]));
+      const titleById = new Map(titles.map(row => [row.recordId, plain(row)]));
+      const items = rows.map(row => ({
+        record: recordById.get(row.id),
+        title: titleById.get(row.id) ?? null,
+        inChain: row.inChain,
+      }));
+      return {items, total};
+    },
+    /**
      * @param {string} id
      * @param {object} patch
      * @return {!Promise<?object>} the record, or null when there is none
@@ -251,16 +321,27 @@ export function createSequelizeRepo(sequelize) {
      * @param {{
      *   recordId: string,
      *   versionNumber: number,
+     *   expectedRevision?: number,
      *   versionPatch: object,
      *   recordPatch: object,
-     * }} commit
+     * }} commit `expectedRevision`: only while the version is still at that revision (CB-44), else 409
      * @return {!Promise<{record: object, version: object}>}
      */
-    async commit({recordId, versionNumber, versionPatch, recordPatch}) {
+    async commit({
+      recordId,
+      versionNumber,
+      expectedRevision,
+      versionPatch,
+      recordPatch,
+    }) {
+      const where = {recordId, versionNumber, state: 'in_review'};
+      if (expectedRevision !== undefined) {
+        where.revision = expectedRevision;
+      }
       return inTransaction(sequelize, async transaction => {
         const [n] = await models.Version.update(
           {...versionPatch, state: 'committed'},
-          {where: {recordId, versionNumber, state: 'in_review'}, transaction},
+          {where, transaction},
         );
         if (!n) {
           throw new ConflictError('The version is not in review');

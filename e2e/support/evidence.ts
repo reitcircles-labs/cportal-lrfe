@@ -7,7 +7,8 @@
  * fast and leave nothing behind. Tests of one ticket may run in parallel, so each test keeps its own
  * list (evidence/<ticket>/.parts/) and names its files by its place in the source; afterwards
  * stack/evidence.mjs numbers them in that order (NN-<title>.png) and writes manifest.json with the
- * commit they were taken on. Every screen shows only the test stack's fictitious data.
+ * commit they were taken on. Every screen shows only the test stack's fictitious data, and an
+ * authenticator's setup key and QR code are masked.
  */
 import {execFileSync} from 'node:child_process';
 import {mkdirSync, writeFileSync} from 'node:fs';
@@ -64,7 +65,11 @@ export async function evidence(page: Page, ticket: string, title: string) {
     .replace(/^-|-$/g, '')
     .slice(0, 60);
   const file = `${basename(info.file)}~${String(info.line).padStart(5, '0')}~${String(shots.length + 1).padStart(2, '0')}~${slug}.png`;
-  await page.screenshot({path: join(parts, file)});
+  // an authenticator's setup key and QR code are secrets: never in a picture (CB-48)
+  await page.screenshot({
+    path: join(parts, file),
+    mask: [page.locator('code.key'), page.locator('img.qr')],
+  });
   shots.push({
     file,
     title,

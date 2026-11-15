@@ -4,7 +4,11 @@ import {
   provideAppInitializer,
   provideZoneChangeDetection,
 } from '@angular/core';
-import {provideRouter, withHashLocation} from '@angular/router';
+import {
+  provideRouter,
+  withComponentInputBinding,
+  withHashLocation,
+} from '@angular/router';
 import {
   provideHttpClient,
   withInterceptors,
@@ -24,7 +28,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideProduct(SHIPPING),
     provideZoneChangeDetection({eventCoalescing: true}),
-    provideRouter(routes, withHashLocation()),
+    provideRouter(routes, withHashLocation(), withComponentInputBinding()),
     provideHttpClient(withXhr(), withInterceptors([authInterceptor])),
     // resume the session from the refresh cookie, if any, before the first route resolves
     provideAppInitializer(() => inject(AuthService).restore()),

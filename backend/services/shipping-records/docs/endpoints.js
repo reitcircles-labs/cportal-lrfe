@@ -30,6 +30,19 @@ export const ENDPOINTS = {
       description:
         'The draft is frozen in review, with you as its submitter, until a second person commits it or sends it back. 409 when version `n` is not the open draft, or when it was changed meanwhile.',
     },
+    'POST /records/{id}/versions/{n}/approve': {
+      tag: 'Records',
+      summary: 'Approve a version in review, as a second person (four eyes)',
+      description:
+        "`{ comment? }`. For a person with `bl.issue` of the B/L's organisation (CB-44): commits the version as `commit` does (sealed, chained, `records.record.committed` published), with you as its approver. Never one of its drafters: whoever created, changed or submitted that version gets 403 (`details.code` `own-draft`). 403 without `bl.issue` or for a user of no organisation; 404 for another organisation's B/L. 409 when the version is not in review (still a draft, or committed by someone else; of two approvals at the same moment one wins). A retry by the same approver answers the record unchanged. The B/L is then issued with `POST /records/{id}/title/issue`.",
+    },
+    'GET /records/organisations': {
+      tag: 'Records',
+      summary:
+        'The organisations a new B/L may name, or its holder endorse it to',
+      description:
+        '`{ items: [{ id, code, name }] }`: the organisations registered and active on the platform, as identity lists them (CB-44), only those three fields of each: for the shipper and consignee of a new B/L (`partyOrganisations`) and for the organisation its holder endorses it to (`to`, CB-45). Needs `bl.draft` or `bl.endorse`; 403 for a user of no organisation; 503 (`details.code` `organisations-unavailable`) while identity cannot answer.',
+    },
     'POST /records/{id}/versions/{n}/commit': {
       tag: 'Records',
       summary: 'Commit an approved version (bpm only)',
@@ -61,6 +74,12 @@ export const ENDPOINTS = {
         "`{ keys: [{ kty: 'EC', crv: 'P-256', x, y, kid, alg: 'ES256', use: 'sig' }] }`: a JWK set of every version of the platform's signing key, to check the signature of each chain-of-title entry (its `kid` picks the key), also offline. 503 while the platform signature is not set up.",
       auth: 'public',
     },
+    'GET /records/title': {
+      tag: 'Records',
+      summary: 'List the B/Ls your organisation is party to',
+      description:
+        "`{ items, total }`, newest first; `limit` (1 to 200, 50 by default) and `offset` page it. The B/Ls your session's organisation sees with `GET /records/{id}/title`: before issue the ones it owns (its drafts, in review or committed), after it those of which it is the carrier, the current holder, a past holder or the consignee. Never another organisation's B/L; the organisation is never taken from the request. `number` (CB-47, up to 100 characters): only the B/Ls of that number (the whole transport document reference, whatever its case and the spaces around it; two carriers may use the same one); another organisation's B/L of that number is never found, so the answer is the same as for a number nobody uses; 400 for a blank number. Each item: the fields of `GET /records` (`id`, `recordNo`, `carrierCode`, `label`, `status`, `draftState`, ...), `title` (`{ kind, state, carrier, holder, endorsement, consignee, updatedAt }`, null before issue) and `roles`, your organisation's roles on it (`carrier`, `holder`, `past-holder`, `consignee`; the carrier is never its own past holder). `organisationNames`: `{ id: name }` of the organisations the items name (owner, carrier, holder, consignee), as identity gives them; one it gives no name for, or every one while identity cannot answer, is left out (show its id): the list never fails for a name. 403 for a user of no organisation.",
+    },
     'GET /records/seals': {
       tag: 'Records',
       summary:
@@ -79,7 +98,7 @@ export const ENDPOINTS = {
       summary:
         "A B/L's title: its state, holder, the commands you may run now and its chain of title",
       description:
-        '`{ recordId, title, allowedCommands, chain }`. `title`: `{ kind, state, carrier, holder, endorsement, consignee, returnTo, issuedVersion, documentHash, revision, createdAt, updatedAt }`, null before issue. `allowedCommands`: the commands your organisation may run on it now (before issue: `issue` for the carrier that owns a B/L with a committed version and none in review). `chain`: the chain-of-title entries, signed, oldest first; `[]` before issue. Before issue only the organisation that owns the B/L sees it; after it the carrier, the current holder, past holders and the consignee. 404 "B/L not found" for anyone else, as for a B/L that does not exist. 403 for a user of no organisation.',
+        '`{ recordId, record, title, allowedCommands, roles, chain, organisationNames }`. `organisationNames`: `{ id: name }` of the organisations the title and its chain name, as identity gives them; one without a name, or every one while identity cannot answer, is left out (the read never fails for a name). `record`: `{ recordNo, carrierCode, label, status, draftState }`, the reference and drafting state of the B/L. `roles`: the roles of your organisation on it (`carrier`, `holder`, `past-holder`, `consignee`). `title`: `{ kind, state, carrier, holder, endorsement, consignee, returnTo, issuedVersion, documentHash, revision, createdAt, updatedAt }`, null before issue. `allowedCommands`: the commands your organisation may run on it now (before issue: `issue` for the carrier that owns a B/L with a committed version and none in review). `chain`: the chain-of-title entries, signed, oldest first; `[]` before issue. Before issue only the organisation that owns the B/L sees it; after it the carrier, the current holder, past holders and the consignee. 404 "B/L not found" for anyone else, as for a B/L that does not exist. 403 for a user of no organisation.',
     },
     'POST /records/{id}/title/{command}': {
       tag: 'Records',

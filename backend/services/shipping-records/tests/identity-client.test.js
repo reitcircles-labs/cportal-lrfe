@@ -64,6 +64,15 @@ describe('the identity client of shipping records (CB-34)', () => {
     expect(init.headers.authorization).to.equal('Bearer the-token');
   });
 
+  it("the platform operator's own organisation is the operator, never active (CB-48)", async () => {
+    const identity = createIdentityClient({
+      baseUrl: 'http://identity:3501',
+      serviceToken,
+      fetchImpl: answering(200, {id: ORG, status: 'Active', operator: true}),
+    });
+    expect(await identity.standingOf(ORG)).to.equal('operator');
+  });
+
   it('a suspended organisation is inactive', async () => {
     const identity = createIdentityClient({
       baseUrl: 'http://identity:3501',
@@ -119,5 +128,68 @@ describe('the identity client of shipping records (CB-34)', () => {
     });
     const error = await failure(identity.standingOf(ORG));
     expect(error.statusCode).to.equal(502);
+  });
+
+  describe("an organisation's name (CB-42)", () => {
+    it('asks the same standing route and gives the name, with the token', async () => {
+      const fetchImpl = answering(200, {
+        id: ORG,
+        status: 'Active',
+        name: 'First Bank',
+      });
+      const identity = createIdentityClient({
+        baseUrl: 'http://identity:3501',
+        serviceToken,
+        fetchImpl,
+      });
+      expect(await identity.nameOf(ORG)).to.equal('First Bank');
+      expect(fetchImpl.calls[0].url).to.equal(
+        `http://identity:3501/organisations/${ORG}/standing`,
+      );
+      expect(fetchImpl.calls[0].init.headers.authorization).to.equal(
+        'Bearer the-token',
+      );
+    });
+
+    it('a suspended organisation keeps its name', async () => {
+      const identity = createIdentityClient({
+        baseUrl: 'http://identity:3501',
+        serviceToken,
+        fetchImpl: answering(200, {id: ORG, status: 'Suspended', name: 'B'}),
+      });
+      expect(await identity.nameOf(ORG)).to.equal('B');
+    });
+
+    it('null for an unknown organisation (404, 400) or an answer without a name', async () => {
+      for (const [status, body] of [
+        [404, {message: 'Organisation not found'}],
+        [400, {message: 'bad id'}],
+        [200, {id: ORG, status: 'Active'}],
+      ]) {
+        const identity = createIdentityClient({
+          baseUrl: 'http://identity:3501',
+          serviceToken,
+          fetchImpl: answering(status, body),
+        });
+        expect(await identity.nameOf(ORG), String(status)).to.equal(null);
+      }
+    });
+
+    it('rejects as standingOf does: 503 unreachable, 502 any other answer', async () => {
+      const down = createIdentityClient({
+        baseUrl: 'http://identity:3501',
+        serviceToken,
+        fetchImpl: async () => {
+          throw new Error('connect ECONNREFUSED');
+        },
+      });
+      expect((await failure(down.nameOf(ORG))).statusCode).to.equal(503);
+      const broken = createIdentityClient({
+        baseUrl: 'http://identity:3501',
+        serviceToken,
+        fetchImpl: answering(500, {message: 'boom'}),
+      });
+      expect((await failure(broken.nameOf(ORG))).statusCode).to.equal(502);
+    });
   });
 });

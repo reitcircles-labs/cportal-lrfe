@@ -29,7 +29,7 @@ Settings come from `services/identity/.env` (copy `backend/.env_example`):
 | `IDENTITY_INVITE_URL_BASE` | start of the link in invitation emails: the address users open the app at, e.g. `https://lr.example.com/#/invite` |
 | `IDENTITY_EXPOSE_INVITE_LINKS` | dev only: also show the invitation link to the admin (needed while email is not set up) |
 | `MAIL_TRANSPORT`, `MAIL_FROM`, `SMTP_*` | invitation email, see [Email](#email-invitations) |
-| `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | the organisation, as "name · subtitle" in invitation emails and as the authenticator app's entry; set but empty = left out; not set = "Deeds Registry · Republic of Namibia" (`orgFromEnv` in `@lrfe/common`). `LRFE_ORG_NAME` also names the default organisation when it is created, see [Organisations](#organisations) |
+| `LRFE_ORG_NAME`, `LRFE_ORG_SUBTITLE` | the organisation, as "name · subtitle" in invitation emails and as the authenticator app's entry; set but empty = left out; not set = the domain pack's texts (shipping: "Shipping Registry", CB-48), else "Deeds Registry · Republic of Namibia" (`orgFromEnv` and `orgDefaultsOf` in `@lrfe/common`). `LRFE_ORG_NAME` also names the default organisation when it is created, see [Organisations](#organisations) |
 | `IDENTITY_OFFICES` | the offices created on an empty database: `CODE=Name;CODE=Name`; set but empty = none; not set = the domain pack's (land: Namibia's two). The containers pass `LRFE_OFFICES` |
 
 ## First sign-in
@@ -44,7 +44,11 @@ get that password (existing users are never changed). For example `p.hamutenya@d
 (administrator), `d.garoeb@deeds.gov.na` (scan operator + reviewer), `a.mwandingi@deeds.gov.na`
 (reviewer), from the land pack; the full list is in `backend/domains/land/src/identity/demo-users.js`.
 They are fictitious and share one password, so
-never enable them where real staff can sign in.
+never enable them where real staff can sign in. A pack may also have **demo organisations**
+(`identity.demoOrganisations`, CB-48: the shipping pack's five, from the carrier to the buyer):
+with the demo users, each is created when no organisation has its code, with one office of its
+code and name (type external) when no office has that code, and a demo user that names it is put
+into it and its office; the others join the default organisation. Nothing is renamed on a restart.
 
 ## Offices
 
@@ -76,13 +80,20 @@ permission "Manage organisations" add, rename, suspend and reactivate them throu
 (`/organisations`); organisations are never deleted and their code never changes.
 
 - **Default organisation.** At every start, identity creates it when the database has none, named
-  after `LRFE_ORG_NAME` (not set: "Deeds Registry") with a code made of the name's initials (e.g.
+  after `LRFE_ORG_NAME` (not set: the domain pack's `identity.defaultOrganisation`, "Shipping
+  Registry" for shipping, else "Deeds Registry") with a code made of the name's initials (e.g.
   `DR`), and records its id in the setting `organisations.default`. Every office and user without an
   organisation is put into it, so an existing install is upgraded with its data kept. It is never
   renamed afterwards from the setting.
+- **The platform operator takes no part in a record (CB-48).** The default organisation is not
+  among the organisations the record service may name (`GET /organisations/active`), and its
+  standing (`GET /organisations/:id/standing`) says `operator: true`.
 - **New users and offices.** An invitation may name an organisation; otherwise the user joins the
   office's organisation, else the inviter's, else the default one. A new office joins the default
-  organisation unless one is given. A suspended organisation takes neither.
+  organisation unless one is given. A suspended organisation takes neither. The shipping app's
+  onboarding screens (CB-43) invite a person into the organisation's first active office, and
+  first add one (the organisation's name, type external) when it has none, with the organisation's
+  code, or, when another office has it, the first free code of the same letters (`NML` → `NMLA`).
 - **Suspended** organisations: their users cannot sign in (the same refusal as a suspended account)
   and their open sessions end; the users' own accounts are not changed, so reactivating the
   organisation lets them in again. The organisation of the last active administrators cannot be
@@ -93,8 +104,13 @@ permission "Manage organisations" add, rename, suspend and reactivate them throu
   `org` and keep working until they expire.
 - **Standing, for the record service (CB-34).** `GET /organisations/:id/standing` answers the
   domain pack's record service only (its service token: `land-records`, or `shipping-records` on a
-  shipping install) with `{id, status}` and nothing else; 404 for an organisation that does not
-  exist. The shipping record service asks it before a B/L goes to an organisation.
+  shipping install) with `{id, status, name}` and nothing else; 404 for an organisation that does
+  not exist. The shipping record service asks it before a B/L goes to an organisation, and for the
+  names of the organisations a B/L names, which its parties see (CB-42).
+- **Active organisations, for the record service (CB-44).** `GET /organisations/active` answers
+  the same service only with `{organisations: [{id, code, name}]}`, the Active organisations sorted
+  by name: on a shipping install, whom a carrier's clerk may name as the shipper or consignee of a
+  new B/L. The administrators' `GET /organisations` is unchanged.
 
 ## Roles and permissions from the domain pack
 

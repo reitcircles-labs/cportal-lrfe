@@ -21,6 +21,8 @@ import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+import {demoUsersFor} from './demo-users.mjs';
+
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEPLOY = join(REPO, 'deploy');
 const DOCUMENTS = join(REPO, 'demo', 'documents');
@@ -47,29 +49,6 @@ const composeCmd =
   project === 'lrfe' && envFile === join(DEPLOY, '.env')
     ? 'docker compose'
     : `docker compose -p ${project} --env-file ${envFile}`;
-
-/** The demo users identity creates with SEED_DEMO_PASSWORD (backend/services/identity/src/seed.js). */
-const DEMO_USERS = [
-  {email: 'e.shivute@deeds.gov.na', role: 'supervisor'},
-  {email: 'k.iipinge@deeds.gov.na', role: 'scan operator'},
-  {email: 'a.mwandingi@deeds.gov.na', role: 'reviewer'},
-  {email: 'j.gawaseb@deeds.gov.na', role: 'records officer'},
-  {email: 'm.nakale@oag.gov.na', role: 'auditor'},
-  {email: 'p.hamutenya@deeds.gov.na', role: 'administrator'},
-  {email: 's.nangolo@deeds.gov.na', role: 'scan operator'},
-  {email: 't.iita@deeds.gov.na', role: 'reviewer'},
-  {email: 'w.beukes@deeds.gov.na', role: 'reviewer, auditor'},
-  {email: 'h.haimbodi@deeds.gov.na', role: 'records officer'},
-  {email: 'd.garoeb@deeds.gov.na', role: 'scan operator, reviewer'},
-  // not active in the demo data, on purpose (Administration shows them)
-  {
-    email: 'f.katjiuongua@deeds.gov.na',
-    role: 'records officer',
-    status: 'Suspended',
-  },
-  {email: 's.uirab@oag.gov.na', role: 'auditor', status: 'Invited'},
-  {email: 'l.tjiueza@deeds.gov.na', role: 'reviewer', status: 'Invited'},
-];
 
 /** The containers that use the data volumes; OpenBao and the blockchain node are not among them. */
 const APP_SERVICES =
@@ -407,9 +386,11 @@ function checkUsersAndData(env) {
     ? `${composeCmd} rm -sf ${APP_SERVICES}, then docker volume rm ${project}_pgdata ${project}_edrms-files ${project}_intake-files ${project}_extracts-files ${project}_natsdata, ` +
       `then ${composeCmd} up -d. OpenBao and the blockchain node keep running and keep their data (not down -v: it deletes the services' OpenBao logins)`
     : 'the database is an existing server: empty it there (its administrator), and the edrms-files and intake-files volumes';
+  // the demo users of the install's product: a shipping install has the shipping pack's (CB-48)
+  const demoUsers = demoUsersFor(isShipping(env, profilesOf(env)));
   const answer = inContainer('identity', IDENTITY_PROGRAM, {
     DEMO_PW: env.SEED_DEMO_PASSWORD ?? '',
-    DEMO_EMAILS: JSON.stringify(DEMO_USERS.map(u => u.email)),
+    DEMO_EMAILS: JSON.stringify(demoUsers.map(u => u.email)),
   });
   if (answer.error) {
     report(
@@ -431,7 +412,7 @@ function checkUsersAndData(env) {
     );
   }
   const found = new Map(answer.users.map(u => [u.email, u]));
-  for (const {email, role, status = 'Active'} of DEMO_USERS) {
+  for (const {email, role, status = 'Active'} of demoUsers) {
     const user = found.get(email);
     if (!user) {
       report(

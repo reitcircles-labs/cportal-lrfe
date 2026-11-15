@@ -166,7 +166,7 @@ found" before any refusal that would tell the B/L's state.
 | `not-committed` | 409 | `issue` of a B/L with no committed version | This B/L has no committed version yet: it can be issued once a version is committed |
 | `in-review` | 409 | `issue` while a new version is in review | A new version of this B/L is in review: it can be issued once the review is decided |
 | `unregistered-organisation` | 422 | the shipper on `issue`, or `to` on `endorse`/`transfer`, is not a registered and active organisation | (the organisation and why) |
-| `organisations-unavailable` | 503 | the organisations cannot be checked now | The organisations cannot be checked now: try again later. |
+| `organisations-unavailable` | 503 | the organisations cannot be checked now, or listed for a new B/L (`GET /records/organisations`, CB-44) | The organisations cannot be checked now: try again later. |
 | `changed-meanwhile` | 409 | another command changed the title since it was read (of two at the same moment, one wins) | This B/L changed meanwhile: read it again |
 | `not-set-up` | 503 | the platform has no signing key (production without `TITLE_SIGNER`) | Title commands are not available yet: the platform signature is not set up. Tell the administrator. |
 | `draft-open` | 409 | `amend` or `split` while a version of the B/L is being drafted or in review | A new version of this B/L is being drafted or in review: finish or discard that draft before amending or splitting the B/L |
@@ -176,7 +176,9 @@ found" before any refusal that would tell the B/L's state.
 | `child-reference` | 400 | two children of a split, or a child and the parent, share a reference | Each new B/L needs its own transport document reference: … is used twice |
 | `cargo-mismatch` | 400 | the children's cargo does not add up to the parent's (`details.problems`) | The cargo of the new B/Ls must add up to the B/L's: … |
 | `reference-taken` | 409 | the carrier already has a B/L with a child's reference | The carrier already has a B/L with the reference … |
+| `own-draft` | 403 | `POST /records/:id/versions/:n/approve` (CB-44, before issue) by a person who created, changed or submitted that version: four eyes | You drafted this version, so a second person must approve it (four-eyes) |
 | `proof-unavailable` | 503 | `GET /records/:id/title/proof` while the proof on the blockchain cannot be read | The proof on the blockchain cannot be read now: try again later. |
+| `no-number` | 400 | `GET /records/title?number=` with a blank number (CB-47, "Check a B/L by number") | Give the number of the B/L to look for |
 
 An invalid document (`amend`, `split`) is refused 400 with every problem in `details.problems`,
 as when a B/L is drafted.
@@ -186,7 +188,7 @@ as when a B/L is drafted.
 Through the service (`POST /records/:id/title/:command`), each command needs a permission of the
 shipping pack, and the organisation of the session runs it (never one named in the request). The
 engine then checks that this organisation is the carrier or the holder the command needs (`Who`
-in the commands table). `bl.issue` is for the carrier's staff, `bl.endorse` for the holder's; the demo role `bld` has both. Reading a title and its proof
+in the commands table). `bl.issue` is for the carrier's staff, `bl.endorse` for the holder's; in the shipping pack the role `bld` (carrier staff) has `bl.issue` and `blt` (trade staff: shippers, banks, buyers) `bl.endorse` (CB-44). Reading a title and its proof
 needs `bl.read`, by the carrier, a current or past holder or the consignee.
 
 | Command | Permission |

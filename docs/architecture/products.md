@@ -14,7 +14,7 @@ and CB-5 (the lint guard and this guide).
 | --- | --- | --- |
 | `angular-app/projects/platform` | the web library `@lrfe/platform`: sign-in, API client, roles and permissions, site settings, toasts and dialogs, proofs and blockchain checks, the theme | shared |
 | `angular-app/projects/land-registry` | the land registry web app | land |
-| `angular-app/projects/shipping` | the shipping web app: the shared sign-in and an empty home page so far | shipping |
+| `angular-app/projects/shipping` | the shipping web app: the shared sign-in, the B/Ls of the user's organisation and a B/L's page (CB-42), and, for the platform administrator, the organisations and their staff (CB-43: add an organisation, invite people with the pack's roles; it needs "Manage organisations", "Manage users" and "Manage offices", anyone else is refused, and an administrator who reads no B/Ls lands there) | shipping |
 | `backend/packages/common` | `@lrfe/common`: settings, events, auth, database, app start; loads the domain pack | shared |
 | `backend/packages/domain-pack` | `@lrfe/domain-pack`: what a pack holds, and its check (`checkDomainPack`) | shared |
 | `backend/packages/record-contract` | `@lrfe/record-contract`: the calls a record service answers, their client and the contract test | shared |
@@ -89,7 +89,7 @@ What a pack holds (the check, section by section, is in `backend/packages/domain
 | --- | --- | --- | --- |
 | `name` | common | the pack's name | `land` |
 | `documents` | edrms, intake, search | document types and their fields (with each field's search role), the reference format, field types and their checks, the reading prompt and its version, checks and cross-checks, the stand-in reader's demo answers | `documents/`: six document types, deed and SG numbers, Namibian ID numbers |
-| `identity` | identity | permission groups and permissions, roles, separation-of-duty rules, default offices, demo users | `identity/`: the "Land records" group, the roles `sup`, `scan`, `rev`, `rec`, `aud`, the rules `sod2` and `sod3` |
+| `identity` | identity | permission groups and permissions, roles, separation-of-duty rules, default offices, demo users and demo organisations, the default organisation's texts when the site sets none | `identity/`: the "Land records" group, the roles `sup`, `scan`, `rev`, `rec`, `aud`, the rules `sod2` and `sod3` |
 | `workflows` | bpm | the product's workflow definitions; who acknowledges the audit workflows | `workflows/`: `land-record-review`; `rec` and `sup` acknowledge |
 | `recordKind` | audit, and (its `service`) identity, edrms, gateway, extracts, bpm | the record service (`service`), the source of its events, the commit event, the review process key, the linked documents of a record event, the commit permission, the lookup patterns; null when the product has no records | `record-kind.js` |
 | `wording` | edrms, identity, audit, extracts | texts per service: the EDRMS business function, the invitation, audit's messages and the evidence pack README, the extract PDF and its number prefix | `wording/` |
@@ -105,9 +105,15 @@ generic prompt), the extract PDF layout, and the trail, tree and proof formats.
 of `LRFE_BL_FORMATS`; `backend/domains/shipping/docs/`), and in its sections:
 
 - `identity`: the group "Bills of lading" with `bl.read`, `bl.draft`, `bl.issue` and `bl.endorse`
-  (issuing and moving B/Ls, CB-34), the role `bld` (B/L documentation, every one of them), and demo data: the office `HQ` and, with a demo password, an
-  administrator and two B/L clerks at `shipping.example` (fictitious; the shipping e2e run signs
-  them in).
+  (issuing and moving B/Ls, CB-34), the roles `bld` (B/L documentation of a carrier: read, draft, issue) and `blt` (B/L trade
+  of a shipper, bank or buyer: read, endorse; CB-44; an install seeded before keeps the stored
+  permissions of `bld` until an administrator changes them), and demo data: the office `HQ` and, with a demo password,
+  the five organisations of the demo's journey (a carrier, a shipper, the exporter's bank, the
+  buyer's bank, a buyer; each with an office of its code and name) and a demo user per persona in
+  them, with the platform administrator in the default organisation (CB-48; fictitious, at
+  `.example` addresses; the shipping e2e run and `demo/SHIPPING-STORYLINE.md` sign them in). Its
+  `defaultOrganisation` names the organisation running a shipping install "Shipping Registry" when
+  `LRFE_ORG_NAME` is not set (the land pack has none: "Deeds Registry", as before).
 - `recordKind`: the record service `shipping-records` (`SHIPPING_RECORDS_URL`, default
   `http://localhost:3509`), its source and the committed event `records.record.committed`. A
   committed B/L version is a tree leaf of type 1 and has a `record-version` proof, as a land
@@ -201,7 +207,9 @@ Every office and every user belongs to an **organisation**, kept by identity (it
 - **Audit.** Events carry the actor with its `org` when it has one, so the audit trail hashes and
   anchors who acted for which organisation (CB-21; audit README §1).
 - **Default organisation.** Identity creates it at start when there is none, named from
-  `LRFE_ORG_NAME`, and keeps its id in the setting `organisations.default`.
+  `LRFE_ORG_NAME`, else from the pack's `identity.defaultOrganisation` (`orgDefaultsOf(pack)` in
+  `@lrfe/common`, CB-48), else "Deeds Registry", and keeps its id in the setting
+  `organisations.default`.
 
 ## Fixed names: never renamed
 

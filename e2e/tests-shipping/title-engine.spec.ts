@@ -16,6 +16,7 @@ import {expect, test, type APIRequestContext} from '@playwright/test';
 import {unique} from '../support/admin';
 import {
   demoEmails,
+  TRADE_ROLE,
   organisationWithClerk,
   serviceToken,
   signIn,
@@ -124,10 +125,10 @@ test.describe('the title engine through the gateway (CB-34)', () => {
     const [first, second] = demoEmails('bld');
     carrier = await signIn(api, first);
     approver = await signIn(api, second);
-    shipper = await organisationWithClerk(api, admin, 'Shipper');
-    bank = await organisationWithClerk(api, admin, 'Bank');
-    buyer = await organisationWithClerk(api, admin, 'Buyer');
-    outsider = await organisationWithClerk(api, admin, 'Outsider');
+    shipper = await organisationWithClerk(api, admin, 'Shipper', TRADE_ROLE);
+    bank = await organisationWithClerk(api, admin, 'Bank', TRADE_ROLE);
+    buyer = await organisationWithClerk(api, admin, 'Buyer', TRADE_ROLE);
+    outsider = await organisationWithClerk(api, admin, 'Outsider', TRADE_ROLE);
     const organisations = [
       carrier.organisationId,
       shipper.id,

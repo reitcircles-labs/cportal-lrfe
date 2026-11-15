@@ -178,12 +178,19 @@ export const ENDPOINTS = {
       summary: 'Rename an organisation',
       description: '`{ name }`. The code cannot change.',
     },
+    'GET /organisations/active': {
+      tag: 'Organisations',
+      summary:
+        "The organisations registered and active (the product's record service only)",
+      description:
+        "For the service token of the domain pack's record service: `{ organisations: [{ id, code, name }] }`, the Active organisations sorted by name, nothing else about them. On a shipping install, the organisations a carrier's clerk may name as the shipper or consignee of a new B/L (CB-44). The administrators' list is `GET /organisations`.",
+    },
     'GET /organisations/{id}/standing': {
       tag: 'Organisations',
       summary:
         "Whether an organisation is registered and active (the product's record service only)",
       description:
-        "For the service token of the domain pack's record service (land-records, or shipping-records on a shipping install): `{ id, status }`, `status` `Active` or `Suspended`, nothing else about the organisation. A B/L goes only to an active organisation (CB-34). 404 for an organisation that does not exist, 400 for an id that is not one.",
+        "For the service token of the domain pack's record service (land-records, or shipping-records on a shipping install): `{ id, status, name }`, `status` `Active` or `Suspended`, and the name (CB-42: the parties of a B/L see each other's names), nothing else about the organisation. A B/L goes only to an active organisation (CB-34). 404 for an organisation that does not exist, 400 for an id that is not one.",
     },
     'POST /organisations/{id}/suspend': {
       tag: 'Organisations',

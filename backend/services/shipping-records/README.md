@@ -36,6 +36,30 @@ Each change of a version adds one to its `revision`. A change or a submission ma
 someone else changed or submitted since it was read is refused (409, reload and try again): the last
 writer never silently wins, and a submitted version is always the one its event names.
 
+## Approval on the platform: four eyes (CB-44)
+
+A shipping install runs no review workflow, so a person approves a B/L's version in review on
+the platform: `POST /records/:id/versions/:n/approve` (`{comment?}`), with `bl.issue`, by a person
+of the B/L's organisation (another's B/L is 404). Four eyes, decided on CB-11: **never one of the
+version's drafters**, anyone who created or opened it, changed it or submitted it (403,
+`details.code` `own-draft`); a reviewer who sent it back before is not a drafter. The version is
+then committed exactly as `commit` does it (sealed, chained, `records.record.committed` with the
+approver as actor; the change log's entry says `via: 'approval'`): a retry by the same approver
+answers it unchanged, a version no longer in review is 409, and of two approvals at the same moment
+one wins. The B/L is then issued with the title API (`issue`, below). In the shipping pack the role
+`bld` (the carrier's staff: `bl.read`, `bl.draft`, `bl.issue`) drafts, approves and issues: a
+second `bld` user approves what the first drafted. The staff of shippers, banks and buyers get
+`blt` (`bl.read`, `bl.endorse`).
+
+`GET /records/organisations` (`bl.draft` or `bl.endorse`) lists the organisations registered and
+active on the platform, `{items: [{id, code, name}]}` (only those three fields), as identity gives
+them (`GET /organisations/active`, asked with this service's token): whom a new B/L may name as its
+shipper or consignee (`partyOrganisations`), and whom its holder may endorse it to (`to`, CB-45:
+trade staff have `bl.endorse` but not `bl.draft`); 503 `organisations-unavailable` while identity
+cannot answer. **The platform operator takes no part in a B/L (CB-48):** its own organisation, the
+default organisation, is not in the list (identity leaves it out), and the title engine refuses a
+B/L that would go to it (below).
+
 ## The title (the holder ledger)
 
 An issued B/L has one **title** (table `bl_title`, CB-31): its kind (`negotiable`, `straight` or
@@ -58,7 +82,9 @@ command, actor)` with the modules on in the install:
   and active on the platform: the shipper on issue and `to` on endorse and transfer are checked
   with identity (`GET /organisations/:id/standing`, `IDENTITY_URL`) before anything is written;
   422 (`details.code` `unregistered-organisation`) when one is not, 503 while identity cannot
-  answer. Known limit: the consignee of a straight B/L or sea waybill is not checked.
+  answer. The platform operator's own organisation (identity's standing says `operator: true`,
+  CB-48) is refused the same way, with its own message. Known limit: the consignee of a straight
+  B/L or sea waybill is not checked.
   `TitleService` cannot be built without its identity client.
 - **Every command** writes the new title only if its revision is still the one read, in one
   transaction: of two commands at the same moment, exactly one wins, and the other gets 409 "This
@@ -110,14 +136,40 @@ caller may run now.
 session's organisation, never one named in the request; the body `{to?, inBlank?,
 confirmBearer?}`, an amendment's `{format, document, partyOrganisations?}` or a split's
 `{children}` gives the arguments, anything else in it is ignored (a release naming part of the
-cargo is refused). `GET /records/:id/title` reads it. Both answer `{recordId, title, allowedCommands,
-chain}`, `chain` being the chain-of-title entries (`[]` before issue). The command's name is
+cargo is refused). `GET /records/:id/title` reads it. Both answer `{recordId, record, title,
+allowedCommands, roles, chain}` (`record` and `roles` since CB-42), `chain` being the chain-of-title entries (`[]` before issue). The command's name is
 looked up in a Map (`OFFERED_COMMANDS` in `src/title.service.js`): an unknown one is 400
 `unknown-command`. Permissions (shipping pack): `bl.issue` for `issue`, `void`, `release`,
 `deliver`, `amend` and `split` (the carrier's staff), `bl.endorse` for `endorse`, `transfer`,
-`surrender`, `surrender-for-amendment` and `switch-to-paper` (the holder's); the demo role `bld`
-has both. The title proof of a B/L made by a split carries `parent`, the chain of the B/L it was
+`surrender`, `surrender-for-amendment` and `switch-to-paper` (the holder's); in the shipping pack
+the carrier's staff role `bld` has `bl.issue`, the trade role `blt` `bl.endorse` (CB-44). The title proof of a B/L made by a split carries `parent`, the chain of the B/L it was
 split from ([chain of title](../../domains/shipping/docs/chain-of-title.md)).
+
+### The B/Ls of an organisation (CB-42)
+
+`GET /records/title` lists, newest first, the B/Ls the session's organisation is party to: the
+ones it would read with `GET /records/:id/title` (before issue the B/Ls it owns, its drafts among
+them; after issue those of which it is the carrier, the current holder, a past holder or the
+consignee). It is the home list of the shipping app. The organisation is the session's; another
+named in the query is ignored, and a user of no organisation gets 403. Paged with `limit` (1 to
+200, 50 by default) and `offset`, as `GET /records`: `{items, total}`. With `number` (CB-47, the
+home's "Check a B/L by number"), only the B/Ls of that number among them: the whole transport
+document reference, whatever its case and the spaces around it (two carriers may use the same
+one). Another organisation's B/L of that number is never found, so the answer is the same as for a
+number nobody uses; a blank number is 400. Each item has the fields of
+`GET /records`, `title` (its kind, state, carrier, holder, endorsement and consignee; null before
+issue) and `roles`: the organisation's roles on the B/L, `carrier`, `holder`, `consignee`, or
+`past-holder` for an organisation the chain of title moved it from or to that has no other role
+now (the carrier holding a surrendered B/L is carrier and holder, never its own past holder). The
+title read, and every command's answer, also give `record` (the B/L's reference, carrier code,
+label, status and draft state) and the caller's `roles`, so a holder that cannot read the record
+itself can show which B/L it is. Both also give `organisationNames`, `{id: name}` of the
+organisations they name (the list: each item's owner, carrier, holder and consignee; the read: those
+of the title and of every chain entry): the parties of a B/L see each other's names. The names are
+asked of identity (`GET /organisations/:id/standing`, which answers the name too), once per
+organisation per answer; one identity gives no name for, or every one while identity cannot answer,
+is left out, and the screens show its id: a list or a title never fails for a name. On PostgreSQL the parties of the title and of the chain are
+indexed (`npm run db:setup` in `backend/` creates the indexes).
 
 ### The chain of title (CB-32)
 
@@ -183,7 +235,7 @@ be reached the route answers 503, never "pending".
 | `DB_SYNC` | `false` | `true`: create the schema and tables at start (development); otherwise `npm run db:setup` in `backend/` creates them |
 | `JWT_SECRET` | | the secret shared by every service, to check users' and services' tokens |
 | `AUDIT_URL` | `http://localhost:3506` | the audit service, which gives the proof of a chain-of-title entry on the blockchain (the title proof) |
-| `IDENTITY_URL` | `http://localhost:3501`; required in production (the start stops without it) | identity, which says whether an organisation a B/L goes to is registered and active (CB-34) |
+| `IDENTITY_URL` | `http://localhost:3501`; required in production (the start stops without it) | identity, which says whether an organisation a B/L goes to is registered and active (CB-34), gives the names of a B/L's organisations (CB-42) and lists the organisations a new B/L may name (CB-44) |
 | `EVENT_BUS_DRIVER` | `log` | `log`, `memory` or `nats` (`NATS_URL`); with PostgreSQL, events go through the outbox in the same transaction as the change |
 | `LRFE_BL_FORMATS` | `dcsa-3.0` | the B/L formats that are on, comma-separated; an unknown name stops the start ([formats](../../domains/shipping/docs/formats.md)) |
 | `LRFE_BL_MODULES` | all | the title modules that are on, comma-separated (`waybill`, always on, `negotiable`, `blank-endorsement`, `amendment`, `split`); an unknown name or a module without the one it needs stops the start ([title modules](../../domains/shipping/docs/title-states.md#modules-cb-38)) |
@@ -207,9 +259,12 @@ Users need a token with an organisation; a user of no organisation gets 403.
 | `GET /records`, `GET /records/:id`, `GET /records/:id/versions`, `GET /records/:id/versions/:n` | `bl.read` (own organisation); the audit service (all), extracts (a record, a version) | the record contract's reading calls |
 | `POST /records/lookup`, `GET /records/seals`, `GET /records/:id/verify` | the audit service | labels and committed versions (a B/L pins no documents: `documents` and `pinnedBy` are empty), the seals in pages, the seal chain recomputed |
 | `GET /records/title/keys` | anyone, no token | the platform's public keys of the chain of title, every key version (a JWK set), for checking a chain offline; through the gateway `/api/records/title/keys` |
+| `GET /records/title` | `bl.read` (own organisation) | the B/Ls the session's organisation is party to (CB-42, below), paged with `limit` and `offset`; `number` finds one by its number (CB-47) |
 | `GET /records/:id/title` | `bl.read`, of the carrier, a current or past holder or the consignee (before issue: the owner) | the title, the commands the caller may run now and the chain of title; 404 "B/L not found" for anyone else |
 | `POST /records/:id/title/:command` | `bl.issue` (issue, void, release, deliver, amend, split) or `bl.endorse` (endorse, transfer, surrender, surrender-for-amendment, switch-to-paper), of an organisation that sees the B/L | runs a title command (above); 404 for an organisation that does not see the B/L, before any other refusal; a refusal records nothing |
 | `GET /records/:id/title/proof` | `bl.read`, of the carrier, a current or past holder or the consignee | the B/L's title proof (`lrfe-title-proof/1`), `?seq=` for an older entry; 404 "B/L not found" for anyone else and before issue, 503 while the proof on the blockchain cannot be read |
+| `POST /records/:id/versions/:n/approve` | `bl.issue` (own organisation), never one of the version's drafters (CB-44) | approves the version in review, `{comment?}`: committed as by `commit`; 403 `own-draft` for a drafter |
+| `GET /records/organisations` | `bl.draft` or `bl.endorse` | the organisations registered and active (id, code, name), which a new B/L may name (CB-44) and its holder may endorse it to (CB-45) |
 | `POST /records/:id/versions/:n/commit`, `.../reject` | bpm | the review decision, `{by: {id, name}, comment}`: commit refuses the submitter (403, four-eyes, always on) and answers a retry by the same person the same; reject needs a comment |
 
 The generated API description is [`docs/openapi.yaml`](docs/openapi.yaml) (`npm run docs` in

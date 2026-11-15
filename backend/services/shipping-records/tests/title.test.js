@@ -278,8 +278,18 @@ for (const store of stores()) {
         const before = await ctx.titles.read(record.id, staffOf(CARRIER));
         expect(before).to.deep.equal({
           recordId: record.id,
+          // the reference and the caller's roles (CB-42)
+          record: {
+            recordNo: 'CB31-DRAFT',
+            carrierCode: 'MSC',
+            label: 'B/L CB31-DRAFT (MSC)',
+            status: 'draft',
+            draftState: 'draft',
+          },
           title: null,
           allowedCommands: [],
+          roles: ['carrier'],
+          organisationNames: {},
         });
         const error = await refused(
           ctx.titles.apply(record.id, {name: 'issue'}, staffOf(CARRIER)),
@@ -556,8 +566,18 @@ for (const store of stores()) {
         const unissued = await ctx.titles.read(id, staffOf(CARRIER));
         expect(unissued).to.deep.equal({
           recordId: id,
+          // the reference and the caller's roles (CB-42)
+          record: {
+            recordNo: 'CB31-READ',
+            carrierCode: 'MSC',
+            label: 'B/L CB31-READ (MSC)',
+            status: 'committed',
+            draftState: null,
+          },
           title: null,
           allowedCommands: ['issue'],
+          roles: ['carrier'],
+          organisationNames: {},
         });
         await ctx.titles.apply(id, {name: 'issue'}, staffOf(CARRIER));
         const holder = await ctx.titles.read(id, staffOf(SHIPPER));

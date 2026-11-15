@@ -200,6 +200,54 @@ export function createMemoryRepo() {
       };
     },
     /**
+     * A page of the B/Ls an organisation is party to (CB-42), newest first: before issue those it
+     * owns; after it those of which it is the carrier, the holder or the consignee, or that its
+     * chain of title moved from or to it. Each with its title (null before issue) and whether the
+     * chain names the organisation. With `number`, only those whose number (`recordNo`) is that
+     * one, whatever its case (CB-47).
+     * @param {{
+     *   organisationId: string,
+     *   limit?: number,
+     *   offset?: number,
+     *   number?: string,
+     * }} query
+     * @return {!Promise<{
+     *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
+     *   total: number,
+     * }>}
+     */
+    async listPartyRecords({organisationId, limit = 50, offset = 0, number}) {
+      const all = [];
+      for (const record of records.values()) {
+        const title = titles.get(record.id) ?? null;
+        const inChain = (entries.get(record.id) ?? []).some(
+          entry => entry.from === organisationId || entry.to === organisationId,
+        );
+        let party;
+        if (title === null) {
+          party = record.organisationId === organisationId;
+        } else {
+          const parties = [title.carrier, title.holder, title.consignee];
+          party = parties.includes(organisationId) || inChain;
+        }
+        const numbered =
+          number === undefined ||
+          record.recordNo.toLowerCase() === number.toLowerCase();
+        if (party && numbered) {
+          all.push({record, title, inChain});
+        }
+      }
+      all.sort(
+        (a, b) =>
+          compare(b.record.createdAt.getTime(), a.record.createdAt.getTime()) ||
+          compare(a.record.id, b.record.id),
+      );
+      return {
+        items: all.slice(offset, offset + limit).map(clone),
+        total: all.length,
+      };
+    },
+    /**
      * @param {string} id
      * @param {object} patch
      * @return {!Promise<?object>} the record, or null when there is none
@@ -266,14 +314,24 @@ export function createMemoryRepo() {
      * @param {{
      *   recordId: string,
      *   versionNumber: number,
+     *   expectedRevision?: number,
      *   versionPatch: object,
      *   recordPatch: object,
-     * }} commit
+     * }} commit `expectedRevision`: only while the version is still at that revision (CB-44), else 409
      * @return {!Promise<{record: object, version: object}>}
      */
-    async commit({recordId, versionNumber, versionPatch, recordPatch}) {
+    async commit({
+      recordId,
+      versionNumber,
+      expectedRevision,
+      versionPatch,
+      recordPatch,
+    }) {
       const version = findVersion(recordId, versionNumber);
-      if (!version || version.state !== 'in_review') {
+      const changed =
+        expectedRevision !== undefined &&
+        version?.revision !== expectedRevision;
+      if (!version || version.state !== 'in_review' || changed) {
         throw new ConflictError('The version is not in review');
       }
       Object.assign(version, clone(versionPatch), {state: 'committed'});

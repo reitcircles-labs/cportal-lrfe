@@ -19,6 +19,9 @@ export interface Me {
     name: string;
     email: string;
     office: string;
+    /** The user's organisation (CB-19): its name, '' before it has one, and its id. */
+    organisation?: string;
+    organisationId?: string | null;
     roles: string[];
     status: string;
     mfa: boolean;
