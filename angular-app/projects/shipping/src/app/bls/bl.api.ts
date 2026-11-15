@@ -146,6 +146,25 @@ export class BlApi {
   }
 
   /**
+   * Switches a B/L to paper (the holder) or voids it (the carrier) (CB-51); a blank-endorsed B/L
+   * switched to paper carries the bearer confirmation.
+   * @param id the B/L's id
+   * @param command the switch to paper or the void
+   * @param body the bearer confirmation, undefined when there is none
+   * @return the title view after it
+   */
+  close(
+    id: string,
+    command: string,
+    body: {confirmBearer: true} | undefined,
+  ): Promise<BlTitleView> {
+    return this.api.post<BlTitleView>(
+      `/records/${encodeURIComponent(id)}/title/${encodeURIComponent(command)}`,
+      body,
+    );
+  }
+
+  /**
    * Endorses a B/L the user's organisation holds to a named organisation, which becomes its
    * holder at once (CB-45).
    * @param id the B/L's id

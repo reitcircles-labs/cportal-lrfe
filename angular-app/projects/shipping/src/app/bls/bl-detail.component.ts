@@ -26,6 +26,13 @@ import {BlAmendComponent} from './bl-amend.component';
 import {BlCheckComponent} from './bl-check.component';
 import {approvalOf, issueCommands, maySubmit, versionNote} from './bl-actions';
 import {
+  type CloseCommand,
+  closeCommands,
+  closeConfirmation,
+  closeNote,
+  closeRequest,
+} from './bl-close';
+import {
   ASK_FOR_CHANGE,
   askForChangeQuestion,
   mayAmend,
@@ -154,6 +161,10 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             }
             @if (canSplit() && changing() === null) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openChange('split')">Split</button>
+            }
+            <!-- CB-51: the holder switches the B/L to paper; the carrier voids it -->
+            @for (c of closings(); track c.name) {
+              <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="close(c)">{{ c.label }}</button>
             }
           </section>
         </header>
@@ -492,10 +503,18 @@ export class BlDetailComponent {
   protected readonly settlements = computed(() =>
     settlementCommands(this.view()?.allowedCommands ?? []),
   );
-  /** Where the B/L stands once surrendered or accomplished, or held for a change; '' else. */
+  /** The switch to paper for the holder, the void for the carrier (CB-51). */
+  protected readonly closings = computed(() =>
+    closeCommands(this.view()?.allowedCommands ?? []),
+  );
+  /**
+   * Where the B/L stands once surrendered, accomplished, switched to paper or void, or held for
+   * a change; '' else.
+   */
   protected readonly titleNoteText = computed(() => {
     const v = this.view();
-    const ended = titleNote(v?.title?.state ?? null);
+    const state = v?.title?.state ?? null;
+    const ended = titleNote(state) || closeNote(state);
     if (ended !== '' || v === null) {
       return ended;
     }
@@ -678,6 +697,45 @@ export class BlDetailComponent {
     if (!done) {
       await this.load(this.id());
       return;
+    }
+    this.focusAfterRender(() => {
+      this.titleNoteRef()?.nativeElement.focus();
+    });
+  }
+
+  /**
+   * Switches the B/L to paper, or voids it, once the user confirms what happens (for a
+   * blank-endorsed B/L, that the paper is a bearer document); the focus then moves to the note on
+   * where the B/L stands. A refusal is shown in plain words, and the B/L is read again.
+   * @param command the switch to paper or the void
+   * @return when the page shows the B/L again
+   */
+  protected async close(command: CloseCommand): Promise<void> {
+    const endorsement = this.view()?.title?.endorsement ?? null;
+    const asked = closeConfirmation(
+      command.name,
+      this.view()?.record.label ?? '',
+      endorsement,
+    );
+    const confirmed = await this.confirm.ask({...asked, tone: 'danger'});
+    if (!confirmed) {
+      return;
+    }
+    this.busy.set(true);
+    this.actionError.set(null);
+    try {
+      await this.bls.close(
+        this.id(),
+        command.name,
+        closeRequest(command.name, endorsement),
+      );
+      this.toast.show('success', command.done, this.view()?.record.label ?? '');
+    } catch (e) {
+      this.actionError.set(refusalOf(toApiError(e)).message);
+      return;
+    } finally {
+      this.busy.set(false);
+      await this.load(this.id());
     }
     this.focusAfterRender(() => {
       this.titleNoteRef()?.nativeElement.focus();
