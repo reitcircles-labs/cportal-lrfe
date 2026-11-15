@@ -12,7 +12,7 @@
     "test:audit": "node --test projects/land-registry/src/app/features/audit/*.test.ts projects/land-registry/src/app/features/anchorings/*.test.ts projects/land-registry/src/app/features/admin/*.test.ts projects/platform/src/lib/shared/verify-wording.test.ts",
     "test:link": "node --test projects/land-registry/src/app/features/link/*.test.ts",
     "test:check-extract": "node --test projects/land-registry/src/app/features/check-extract/*.test.ts",
-    "test:shipping": "node --test projects/shipping/src/app/bls/*.test.ts projects/shipping/src/app/admin/*.test.ts",
+    "test:shipping": "node --test projects/shipping/src/app/bls/*.test.ts projects/shipping/src/app/admin/*.test.ts projects/platform/src/lib/sign-in/logo-place.test.ts projects/shipping/src/app/product.test.ts",
     "test:site-config": "node --test projects/platform/src/lib/state/site-config.test.ts docker/site-config.test.mjs"
   },
   "private": true,

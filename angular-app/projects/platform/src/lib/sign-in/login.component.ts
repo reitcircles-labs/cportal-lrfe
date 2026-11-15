@@ -12,6 +12,7 @@ import {ThemeService} from '../state/theme.service';
 import {IconComponent} from '../shared/icon.component';
 import {SiteConfigService} from '../state/site-config.service';
 import {PRODUCT_CONFIG} from '../product';
+import {hasLogoPlace} from './logo-place';
 
 /** Sign-in: password, then the authenticator code (enrolling one the first time). */
 @Component({
@@ -23,7 +24,9 @@ import {PRODUCT_CONFIG} from '../product';
         <div class="flag" aria-hidden="true"></div>
         <div class="hero-in">
           <div class="brand">
-            <span class="arms">@for (line of pitch.logoPlaceholder; track $index) {@if (!$first) {<br>}{{ line }}}</span>
+            @if (showLogoPlace) {
+              <span class="arms">@for (line of pitch.logoPlaceholder; track $index) {@if (!$first) {<br>}{{ line }}}</span>
+            }
             <span class="stack" style="gap:0"><b>{{ site.config().orgName }}</b>@if (site.config().orgParent) { <span>{{ site.config().orgParent }}</span> }</span>
           </div>
           <div class="pitch">
@@ -158,6 +161,8 @@ export class LoginComponent {
   site = inject(SiteConfigService);
   /** The product's presentation beside the form. */
   protected readonly pitch = inject(PRODUCT_CONFIG).signIn;
+  /** The logo place, only for a product with lines to show in it (CB-48). */
+  protected readonly showLogoPlace = hasLogoPlace(this.pitch);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   /** Whether the app has the public proof check page, which the form links to. */

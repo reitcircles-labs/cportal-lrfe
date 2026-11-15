@@ -71,16 +71,21 @@ export const DEFAULT_ORG_FULL_NAME = `${DEFAULT_ORG.name} · ${DEFAULT_ORG.subti
  * (angular-app/projects/platform/src/lib/state/site-config.ts). Unlike env(), a setting that is set but empty stays
  * empty (not shown); only one that is not set at all gets the default. The name is never empty.
  * `fullName` is the one-line form for emails and the authenticator app: "Deeds Registry · Republic
- * of Namibia", or only the name without a subtitle.
+ * of Namibia", or only the name without a subtitle. The defaults are the first site's, or the
+ * domain pack's own (orgDefaultsOf, CB-48: a shipping install is no deeds registry).
+ * @param {!Object<string, (string|undefined)>=} source the settings
+ * @param {{name: string, subtitle: string, parent: string, place: string}=} defaults the texts
+ *     of settings that are not set
+ * @return {{name: string, subtitle: string, parent: string, place: string, fullName: string}}
  */
-export function orgFromEnv(source = process.env) {
+export function orgFromEnv(source = process.env, defaults = DEFAULT_ORG) {
   const read = (name, fallback) =>
     source[name] === undefined ? fallback : source[name].trim();
   const org = {
-    name: read('LRFE_ORG_NAME', DEFAULT_ORG.name) || DEFAULT_ORG.name,
-    subtitle: read('LRFE_ORG_SUBTITLE', DEFAULT_ORG.subtitle),
-    parent: read('LRFE_ORG_PARENT', DEFAULT_ORG.parent),
-    place: read('LRFE_ORG_PLACE', DEFAULT_ORG.place),
+    name: read('LRFE_ORG_NAME', defaults.name) || defaults.name,
+    subtitle: read('LRFE_ORG_SUBTITLE', defaults.subtitle),
+    parent: read('LRFE_ORG_PARENT', defaults.parent),
+    place: read('LRFE_ORG_PLACE', defaults.place),
   };
   return {
     ...org,

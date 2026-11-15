@@ -47,6 +47,7 @@ export {createAnchoringClient} from './anchoring.js';
 export {
   domain,
   loadDomainPack,
+  orgDefaultsOf,
   recordServiceOf,
   DEFAULT_DOMAIN,
 } from './domain.js';

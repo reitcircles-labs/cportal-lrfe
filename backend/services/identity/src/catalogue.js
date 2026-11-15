@@ -1,4 +1,4 @@
-import {domain} from '@lrfe/common';
+import {domain, orgDefaultsOf} from '@lrfe/common';
 
 /**
  * Fixed catalogue: permissions, system roles, segregation-of-duties rules and default security
@@ -223,7 +223,9 @@ export const NATIONAL_ROLES = ['adm'];
  *   sodRules: !Array<{id: string, a: string, b: string, label: string, on: boolean}>,
  *   version: number,
  *   offices: !Array<{code: string, name: string, type: string, address: string, contact: string}>,
- *   demoUsers: !Array<{name: string, email: string, office: string, roles: !Array<string>, status: string}>,
+ *   demoUsers: !Array<{name: string, email: string, office: string, organisation: (string|undefined), roles: !Array<string>, status: string}>,
+ *   demoOrganisations: !Array<{code: string, name: string}>,
+ *   organisation: {name: string, subtitle: string, parent: string, place: string},
  * }}
  */
 export function catalogueOf(pack) {
@@ -318,6 +320,19 @@ export function catalogueOf(pack) {
   if (badUser) {
     throw problem(`the demo user ${badUser.email} has an unknown role`);
   }
+  const demoOrganisations = (section.demoOrganisations ?? []).map(o => ({
+    ...o,
+  }));
+  const homeless = demoUsers.find(
+    u =>
+      u.organisation !== undefined &&
+      !demoOrganisations.some(o => o.code === u.organisation),
+  );
+  if (homeless) {
+    throw problem(
+      `the demo user ${homeless.email} is in the unknown organisation ${homeless.organisation}`,
+    );
+  }
 
   const version = Math.max(
     PLATFORM_CATALOGUE_VERSION,
@@ -333,6 +348,8 @@ export function catalogueOf(pack) {
     version,
     offices,
     demoUsers,
+    demoOrganisations,
+    organisation: {...orgDefaultsOf(pack)},
   };
 }
 

@@ -718,13 +718,17 @@ export class IdentityService {
   /**
    * The organisations registered and active on the platform, sorted by name, with their id, code
    * and name only (CB-44): those a B/L may name as its shipper or consignee, for the record
-   * service.
+   * service. Never the default organisation, the platform operator's own (CB-48): it takes no
+   * part in a B/L.
    * @return {!Promise<!Array<{id: string, code: string, name: string}>>}
    */
   async activeOrganisations() {
-    const organisations = await this.repo.listOrganisations();
+    const [organisations, operatorId] = await Promise.all([
+      this.repo.listOrganisations(),
+      this.defaultOrganisationId(),
+    ]);
     return organisations
-      .filter(o => o.status === 'Active')
+      .filter(o => o.status === 'Active' && o.id !== operatorId)
       .map(o => ({id: o.id, code: o.code, name: o.name}))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -760,18 +764,24 @@ export class IdentityService {
 
   /**
    * Whether an organisation is registered and active, for the product's record service (CB-34):
-   * its id and status only, nothing else about it. 404 when there is no such organisation.
+   * its id, status and name, nothing else about it; `operator: true` for the default
+   * organisation, the platform operator's own, which takes no part in a B/L (CB-48). 404 when
+   * there is no such organisation.
    * @param {string} id
-   * @return {!Promise<{id: string, status: string}>}
+   * @return {!Promise<{id: string, status: string, name: string, operator: (boolean|undefined)}>}
    */
   async organisationStanding(id) {
     const organisation = await this.requireOrganisation(id);
     // the name too (CB-42): the parties of a B/L see each other's names
-    return {
+    const standing = {
       id: organisation.id,
       status: organisation.status,
       name: organisation.name,
     };
+    if (organisation.id === (await this.defaultOrganisationId())) {
+      standing.operator = true;
+    }
+    return standing;
   }
 
   /** The id of the default organisation (made by the seed), or null before the seed has run. */

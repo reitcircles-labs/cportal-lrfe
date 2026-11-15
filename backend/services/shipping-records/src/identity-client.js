@@ -8,8 +8,10 @@ const TIMEOUT_MS = 10_000;
  * registered and active, asked as the pack's record service, before a B/L goes to it.
  *
  *   standingOf(id)  'active' (identity answers its status Active), 'inactive' (any other
- *                   status), 'unknown' (identity knows no such organisation, 404, or the text
- *                   is no organisation id, 400); rejects with 503 when identity cannot be
+ *                   status), 'operator' (the platform operator's own organisation, which takes
+ *                   no part in a B/L, CB-48), 'unknown' (identity knows no such
+ *                   organisation, 404, or the text is no organisation id, 400); rejects
+ *                   with 503 when identity cannot be
  *                   reached, 502 for any other answer
  *   nameOf(id)      the organisation's name (CB-42, the same route), null when identity knows
  *                   none; rejects as standingOf does
@@ -80,12 +82,15 @@ export function createIdentityClient({
     /**
      * The standing of an organisation on the platform.
      * @param {string} id the organisation's id
-     * @return {!Promise<string>} 'active', 'inactive' or 'unknown'
+     * @return {!Promise<string>} 'active', 'inactive', 'operator' or 'unknown'
      */
     async standingOf(id) {
       const answer = await askStanding(id);
       if (answer === null) {
         return 'unknown';
+      }
+      if (answer.operator === true) {
+        return 'operator';
       }
       if (answer.status === 'Active') {
         return 'active';

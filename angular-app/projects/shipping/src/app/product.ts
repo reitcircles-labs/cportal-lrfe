@@ -15,7 +15,8 @@ export const SHIPPING: ProductConfig = {
   permGroups: [],
   perms: [],
   signIn: {
-    logoPlaceholder: ['Logo'],
+    // no coat of arms or logo to hold a place for (CB-48)
+    logoPlaceholder: [],
     eyebrow: 'Electronic bills of lading',
     title: 'Issue, transfer and surrender bills of lading.',
     text: 'Every step can be checked on the blockchain, without trusting the portal.',

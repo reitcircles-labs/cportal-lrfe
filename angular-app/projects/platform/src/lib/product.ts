@@ -30,7 +30,10 @@ export interface SignInPicture {
 
 /** The product's presentation on the sign-in page, beside the form. */
 export interface SignInPitch {
-  /** The lines shown in the logo place until the site has a logo, e.g. ["Coat of", "arms"]. */
+  /**
+   * The lines shown in the logo place until the site has a logo, e.g. ["Coat of", "arms"]; none:
+   * no logo place (CB-48).
+   */
   readonly logoPlaceholder: readonly string[];
   readonly eyebrow: string;
   readonly title: string;

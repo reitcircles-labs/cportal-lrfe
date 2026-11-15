@@ -64,6 +64,15 @@ describe('the identity client of shipping records (CB-34)', () => {
     expect(init.headers.authorization).to.equal('Bearer the-token');
   });
 
+  it("the platform operator's own organisation is the operator, never active (CB-48)", async () => {
+    const identity = createIdentityClient({
+      baseUrl: 'http://identity:3501',
+      serviceToken,
+      fetchImpl: answering(200, {id: ORG, status: 'Active', operator: true}),
+    });
+    expect(await identity.standingOf(ORG)).to.equal('operator');
+  });
+
   it('a suspended organisation is inactive', async () => {
     const identity = createIdentityClient({
       baseUrl: 'http://identity:3501',

@@ -25,8 +25,11 @@ export const DEMO_USERS = CATALOGUE.demoUsers;
  *                 (DEFAULT_OFFICES at start-up); once any office exists, never touched again
  *   catalogue:    the catalogue to seed (catalogueOf(pack)), this install's by default
  *   organisationName: the default organisation's name when it is created (CB-19): the site's
- *                 organisation name (LRFE_ORG_NAME) by default; never renamed afterwards
+ *                 organisation name (LRFE_ORG_NAME) by default, else the pack's (CB-48: on a
+ *                 shipping install not the deeds registry); never renamed afterwards
  *
+ * With the demo users come the catalogue's demo organisations (CB-48), each with one office of
+ * its code and name, created when missing; a demo user of one is put into it and its office.
  * Every office and user without an organisation is put into the default organisation, which is
  * created first when the database has none (an empty database, or one from before organisations).
  */
@@ -37,7 +40,7 @@ export async function seedIdentity(
     demoPassword,
     offices,
     catalogue = CATALOGUE,
-    organisationName = orgFromEnv().name,
+    organisationName = orgFromEnv(process.env, catalogue.organisation).name,
     log = () => {},
   } = {},
 ) {
@@ -105,13 +108,23 @@ export async function seedIdentity(
   }
 
   if (demoPassword) {
+    const homes = await ensureDemoOrganisations(
+      repo,
+      catalogue.demoOrganisations,
+      log,
+    );
     const passwordHash = await hashPassword(demoPassword);
     for (const u of catalogue.demoUsers) {
       if (await repo.getUserByEmail(u.email)) continue;
-      await repo.createUser({
-        ...u,
-        passwordHash: u.status === 'Invited' ? null : passwordHash,
-      });
+      const {organisation: code, ...user} = u;
+      user.passwordHash = u.status === 'Invited' ? null : passwordHash;
+      // a demo organisation's user goes into it and its office; the others into the default one
+      const home = homes.get(code);
+      if (home) {
+        user.organisationId = home.organisationId;
+        user.officeId = home.officeId;
+      }
+      await repo.createUser(user);
       log(`demo user ${u.email} created`);
     }
   }
@@ -150,4 +163,48 @@ async function ensureDefaultOrganisation(repo, name, log) {
   }
   await repo.setSetting(DEFAULT_ORGANISATION_KEY, organisation.id);
   return organisation.id;
+}
+
+/**
+ * The demo organisations, each created when no organisation has its code, with one office of its
+ * code and name (type external, as the onboarding screens add one) when no office has that code.
+ * Idempotent; never renames what an administrator changed. An office of that code that belongs to
+ * another organisation is never used: the organisation's demo users then have no office.
+ * @param {!Object} repo
+ * @param {!Array<{code: string, name: string}>} organisations
+ * @param {function(string)} log
+ * @return {!Promise<!Map<string, {organisationId: string, officeId: ?string}>>} by code
+ */
+async function ensureDemoOrganisations(repo, organisations, log) {
+  const homes = new Map();
+  for (const {code, name} of organisations) {
+    let organisation = await repo.getOrganisationByCode(code);
+    if (!organisation) {
+      organisation = await repo.createOrganisation({
+        code,
+        name,
+        status: 'Active',
+      });
+      log(`demo organisation ${code} · ${name} created`);
+    }
+    let office = await repo.getOfficeByCode(code);
+    if (!office) {
+      office = await repo.createOffice({
+        code,
+        name,
+        type: 'external',
+        address: '',
+        contact: '',
+        status: 'Active',
+        organisationId: organisation.id,
+      });
+      log(`office ${code} of ${name} created`);
+    }
+    const ownOffice = office.organisationId === organisation.id;
+    homes.set(code, {
+      organisationId: organisation.id,
+      officeId: ownOffice ? office.id : null,
+    });
+  }
+  return homes;
 }

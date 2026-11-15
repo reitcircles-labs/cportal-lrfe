@@ -95,7 +95,11 @@ Docker, in the folder the bundle is unpacked in.
    setting missing from `.env` altogether shows the first site's text. The web
    container reads them on every start (`docker compose up -d` after a change; users reload the
    page). These are display texts, readable by anyone who opens the portal: never a secret. A
-   change does not rename the entry already in users' authenticator apps.
+   change does not rename the entry already in users' authenticator apps. **A shipping install**
+   (`LRFE_DOMAIN=shipping`) has texts of its own when a setting is missing from `.env`: the name
+   "Shipping Registry", no subtitle, parent or place (the shipping pack's, CB-48). So for one,
+   remove the four `LRFE_ORG_*` lines of `.env.example` (they are the land registry's), or set
+   your own. The name is also the default organisation's, given when it is created.
 
    **The product** (`LRFE_DOMAIN`) chooses the domain pack every service reads its product's
    document types, roles, workflows, record kind and texts from (`backend/domains/<name>`,

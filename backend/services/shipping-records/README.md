@@ -56,7 +56,9 @@ active on the platform, `{items: [{id, code, name}]}` (only those three fields),
 them (`GET /organisations/active`, asked with this service's token): whom a new B/L may name as its
 shipper or consignee (`partyOrganisations`), and whom its holder may endorse it to (`to`, CB-45:
 trade staff have `bl.endorse` but not `bl.draft`); 503 `organisations-unavailable` while identity
-cannot answer.
+cannot answer. **The platform operator takes no part in a B/L (CB-48):** its own organisation, the
+default organisation, is not in the list (identity leaves it out), and the title engine refuses a
+B/L that would go to it (below).
 
 ## The title (the holder ledger)
 
@@ -80,7 +82,9 @@ command, actor)` with the modules on in the install:
   and active on the platform: the shipper on issue and `to` on endorse and transfer are checked
   with identity (`GET /organisations/:id/standing`, `IDENTITY_URL`) before anything is written;
   422 (`details.code` `unregistered-organisation`) when one is not, 503 while identity cannot
-  answer. Known limit: the consignee of a straight B/L or sea waybill is not checked.
+  answer. The platform operator's own organisation (identity's standing says `operator: true`,
+  CB-48) is refused the same way, with its own message. Known limit: the consignee of a straight
+  B/L or sea waybill is not checked.
   `TitleService` cannot be built without its identity client.
 - **Every command** writes the new title only if its revision is still the one read, in one
   transaction: of two commands at the same moment, exactly one wins, and the other gets 409 "This

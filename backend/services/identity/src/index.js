@@ -19,7 +19,7 @@ import {createMemoryRepo} from './repo/memory.js';
 import {createSequelizeRepo} from './repo/sequelize.js';
 import {SCHEMA} from './repo/models.js';
 import {seedIdentity} from './seed.js';
-import {DEFAULT_OFFICES, parseOffices} from './catalogue.js';
+import {CATALOGUE, DEFAULT_OFFICES, parseOffices} from './catalogue.js';
 
 const store = envOneOf('IDENTITY_STORE', ['postgres', 'memory'], 'postgres');
 const checks = [];
@@ -100,8 +100,8 @@ const service = new IdentityService({
   events,
   config: {
     accessTtlSeconds,
-    // in invitation emails and as the authenticator app's entry (API-712)
-    issuer: orgFromEnv().fullName,
+    // in invitation emails and as the authenticator app's entry (API-712), the pack's when unset
+    issuer: orgFromEnv(process.env, CATALOGUE.organisation).fullName,
     exposeInviteLinks: envBool('IDENTITY_EXPOSE_INVITE_LINKS', false),
     inviteUrlBase: env(
       'IDENTITY_INVITE_URL_BASE',

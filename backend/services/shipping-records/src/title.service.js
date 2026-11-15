@@ -572,8 +572,8 @@ export class TitleService {
 
   /**
    * Checks that the organisations a command hands the B/L to are registered and active (the
-   * shipper on issue, `to` on endorse and transfer): 422 when one is not, 503 while identity
-   * cannot answer.
+   * shipper on issue, `to` on endorse and transfer), and none is the platform operator's own
+   * (CB-48): 422 when one is, 503 while identity cannot answer.
    * @param {!Object} command the engine's command
    * @return {!Promise<void>}
    */
@@ -584,6 +584,11 @@ export class TitleService {
         standing = await this.organisations.standingOf(organisation);
       } catch (error) {
         throw organisationsUnavailable(error);
+      }
+      if (standing === 'operator') {
+        throw unregistered(
+          "That is the platform operator's own organisation, which takes no part in a B/L: the B/L cannot go to it",
+        );
       }
       if (standing !== 'active') {
         throw unregistered(message);
