@@ -13,6 +13,9 @@
  *   node lrfe-verify.mjs extract.pdf --address … --seal …  an ownership extract: the proof attached inside
  *                                                         it against the blockchain, and the registry's seal
  *                                                         against its published certificate fingerprint
+ *   node lrfe-verify.mjs proof.json --product shipping    a proof (or evidence pack) of a shipping install: its
+ *                                                         anchoring must say "product": "shipping" (a land
+ *                                                         proof's says none)
  *   node lrfe-verify.mjs title-proof.json --address … --title-key …
  *                                                         a B/L's title proof (lrfe-title-proof/1): its chain
  *                                                         of title, every signature against the platform's
@@ -302,6 +305,7 @@ export async function verifyProof(
     address,
     fetchImpl = globalThis.fetch,
     cache = null,
+    product,
   } = {},
 ) {
   const checks = [];
@@ -432,15 +436,17 @@ export async function verifyProof(
       : `${anchor.network} tx ${anchor.tx} is not on the chain (${source})`,
   );
   if (onChain.found) {
+    // the product the anchoring names (CB-49): none for the land registry, "shipping" for a
+    // shipping install; one product's proof never holds on the other's transaction
+    const sameProduct = (md?.product ?? undefined) === product;
     check(
       'root in the transaction',
       !!md &&
         md.sys === 'lrfe-audit' &&
         md.root === tree.root &&
-        Number(md.size) === tree.size,
-      md
-        ? `label ${LABEL}: root ${String(md.root).slice(0, 16)}…, size ${md.size}, batch ${md.batch}`
-        : `no label ${LABEL} metadata in the transaction`,
+        Number(md.size) === tree.size &&
+        sameProduct,
+      metadataDetail(md, product, sameProduct),
     );
     // anyone can write a root into a transaction; only the portal can pay from its wallet
     const wallet = anchor.address;
@@ -478,6 +484,29 @@ export async function verifyProof(
     notes,
     anchoring: {network: anchor.network, tx: anchor.tx, ...onChain},
   };
+}
+
+/**
+ * What the anchoring metadata says, for the check of the root in the transaction: as before for a
+ * land transaction, its product named when it has one, and why it does not fit when it does not.
+ * @param {?Object} md the label's metadata
+ * @param {(string|undefined)} product the product the proof is of (none: the land registry)
+ * @param {boolean} sameProduct whether the metadata names that product
+ * @return {string}
+ */
+function metadataDetail(md, product, sameProduct) {
+  if (!md) {
+    return `no label ${LABEL} metadata in the transaction`;
+  }
+  let detail = `label ${LABEL}: root ${String(md.root).slice(0, 16)}…, size ${md.size}, batch ${md.batch}`;
+  if (md.product !== undefined) {
+    detail += `, product ${md.product}`;
+  }
+  if (!sameProduct) {
+    const wanted = product === undefined ? 'no product' : `product ${product}`;
+    detail += ` (this proof needs ${wanted}: the transaction is another product's)`;
+  }
+  return detail;
 }
 
 // ------------------------------------------------------------------ evidence packs (API-660)
@@ -596,10 +625,12 @@ const STALE_MS = 10 * 60_000;
  *      anchored item pins it: a later version (previous seals), a version (its documents' seals), an
  *      anchored trail proof (the hashes of the entries up to its checkpoint). A placeholder that such a
  *      pin contradicts fails; items pinned by nothing are listed as unproven.
+ * `product` (CB-49): the product a shipping install's anchorings name (`shipping`); none for a land
+ * install's pack, as before.
  */
 export async function verifyPack(
   files,
-  {source = 'koios', key, address, fetchImpl = globalThis.fetch} = {},
+  {source = 'koios', key, address, fetchImpl = globalThis.fetch, product} = {},
 ) {
   const checks = [];
   const notes = [];
@@ -1015,12 +1046,14 @@ export async function verifyPack(
     }
     checks.pop(); // only failures are listed per proof
     if (!['anchored', 'confirmed'].includes(proof.status)) continue;
+    // a shipping install's pack: its anchorings name the product (CB-49, --product shipping)
     const r = await verifyProof(proof, {
       source,
       key,
       address,
       fetchImpl,
       cache,
+      product,
     });
     const failed = r.checks.filter(c => !c.ok);
     // sent but not yet confirmed at export: a transaction still on its way is not proven yet, not a failure
@@ -1900,6 +1933,9 @@ export function extractVerdict(result) {
 /** The format of a B/L's title proof bundle (shipping records, GET /records/:id/title/proof). */
 export const TITLE_PROOF_FORMAT = 'lrfe-title-proof/1';
 
+/** The product a title proof's anchoring names (CB-49): title proofs are the shipping product's. */
+export const TITLE_PROOF_PRODUCT = 'shipping';
+
 /** The JWS type of a chain-of-title entry's signature. */
 const TITLE_ENTRY_TYP = 'lrfe-title-entry';
 
@@ -2273,7 +2309,13 @@ export async function verifyTitleProof(
       ? `the anchored trail entry holds entry ${last.seq} (${last.command})`
       : 'there is no entry to compare',
   );
-  const proven = await verifyProof(anchor, {source, key, address, fetchImpl});
+  const proven = await verifyProof(anchor, {
+    source,
+    key,
+    address,
+    fetchImpl,
+    product: TITLE_PROOF_PRODUCT,
+  });
   checks.push(...proven.checks);
   return verdict({notes: proven.notes ?? [], anchoring: proven.anchoring});
 }
@@ -2344,10 +2386,11 @@ async function main(argv) {
   const address = flag('--address');
   const seal = flag('--seal');
   const titleKey = flag('--title-key');
+  const product = flag('--product');
   const file = args[0];
   if (!file || file === '--help' || file === '-h') {
     process.stdout.write(
-      'usage: node lrfe-verify.mjs <proof.json | title-proof.json | evidence pack .zip or folder | extract .pdf> [--address <anchoring wallet>] [--seal <seal fingerprint>, for an extract] [--title-key <key set fingerprint>, for a title proof] [--source koios|blockfrost] [--key-file <file>] [--json]\n',
+      'usage: node lrfe-verify.mjs <proof.json | title-proof.json | evidence pack .zip or folder | extract .pdf> [--address <anchoring wallet>] [--seal <seal fingerprint>, for an extract] [--title-key <key set fingerprint>, for a title proof] [--product <product>, for a proof or evidence pack of a shipping install] [--source koios|blockfrost] [--key-file <file>] [--json]\n',
     );
     return file ? 0 : 2;
   }
@@ -2363,7 +2406,7 @@ async function main(argv) {
   } catch {
     /* reported below */
   }
-  if (isPack) return checkPack(file, {source, key, address, json});
+  if (isPack) return checkPack(file, {source, key, address, json, product});
   if (file.toLowerCase().endsWith('.pdf')) {
     return checkExtract(file, {source, key, address, seal, json});
   }
@@ -2381,7 +2424,7 @@ async function main(argv) {
   if (proof?.proof?.format) proof = proof.proof;
   let result;
   try {
-    result = await verifyProof(proof, {source, key, address});
+    result = await verifyProof(proof, {source, key, address, product});
   } catch (err) {
     if (!(err instanceof Unreachable)) throw err;
     process.stderr.write(`Could not check against the chain: ${err.message}\n`);
@@ -2404,7 +2447,7 @@ async function main(argv) {
   return result.valid ? 0 : 1;
 }
 
-async function checkPack(path, {source, key, address, json}) {
+async function checkPack(path, {source, key, address, json, product}) {
   let files;
   try {
     files = readPack(path);
@@ -2416,7 +2459,7 @@ async function checkPack(path, {source, key, address, json}) {
   }
   let result;
   try {
-    result = await verifyPack(files, {source, key, address});
+    result = await verifyPack(files, {source, key, address, product});
   } catch (err) {
     if (!(err instanceof Unreachable)) throw err;
     process.stderr.write(`Could not check against the chain: ${err.message}\n`);

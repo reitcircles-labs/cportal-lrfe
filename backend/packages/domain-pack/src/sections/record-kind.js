@@ -34,6 +34,16 @@ export function checkRecordKind(pack, section) {
   if (section.service !== undefined) {
     checkService(pack, section.service);
   }
+  // the product named in the anchoring metadata (CB-49): a pack name, as it goes on chain
+  if (
+    section.anchorProduct !== undefined &&
+    !(
+      typeof section.anchorProduct === 'string' &&
+      /^[a-z][a-z0-9-]{0,30}$/.test(section.anchorProduct)
+    )
+  ) {
+    fail(pack, 'recordKind.anchorProduct is not a pack name');
+  }
   const processes = section.businessKeyProcesses;
   if (processes !== undefined) {
     if (!Array.isArray(processes) || !processes.every(isText)) {

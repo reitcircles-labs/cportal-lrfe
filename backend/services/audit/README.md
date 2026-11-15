@@ -185,6 +185,17 @@ anchoring to the one before, so the anchorings themselves form a chain on the ch
 the job's anchorings, including those given up (they never reached the chain), so the numbers on
 chain can have gaps: a checker follows `prev`, not the numbering.
 
+**The product (CB-49).** A shipping install anchors on the same blockchain, with the same label and
+object, and one more key, last: `"product": "shipping"`. It comes from the domain pack
+(`recordKind.anchorProduct`, a pack name); the land registry's pack names none, so a land install's
+metadata is byte for byte as before (no key means land). This follows the way CIP-25 shares one
+label among many issuers: one label, keys inside it that say whose the object is, and a version
+(`v`) for its shape. The offline verifier (`verifier/lrfe-verify.mjs`) requires the key's absence on
+a land proof, `"product": "shipping"` on a title proof (`lrfe-title-proof/1`), and the named product
+on an audit proof or evidence pack checked with `--product shipping` (a shipping install's): one product's proof
+never holds on the other's transaction. A shipping install pays from its own wallet, in its own
+OpenBao, so its anchorings are also told apart by the paying address.
+
 **How each value is arrived at** (API-728; `maybeAnchor` in `src/anchor.service.js`, `anchorMetadata`
 in `src/cardano/tx.js`):
 
@@ -194,6 +205,7 @@ in `src/cardano/tx.js`):
 | `batch` | The last anchoring's number + 1, whatever became of it (given-up ones included) |
 | `root`, `size` | Taken at the moment of the batch, **after** the batch's trail checkpoint (§1) was appended when there are trail entries after the last anchored checkpoint: `size` = every leaf since the first (land record versions, document versions, checkpoints), `root` = `SHA-256(0x02 ‖ size as u64 BE ‖ peaks, largest first)` over the tree of §2. A checkpoint is appended before `prepare`, so one from an attempt that is given up or fails to prepare stays in the tree |
 | `prev` | The root of the last anchoring that is confirmed or in flight (`ON_CHAIN_OR_GOING`), not of a given-up one; left out when there is none (the first anchoring, or every earlier one given up). Rare: if that anchoring was later rolled back and expired, `prev` names a root that never stayed on chain |
+| `product` | The pack's `recordKind.anchorProduct` (CB-49): `"shipping"` on a shipping install; left out on a land install |
 
 Each seal is the owning service's: a document version's from edrms (`src/seal.js`: SHA-256 of the
 canonical JSON of the document id and number, version number, the file's SHA-256, the fields, the

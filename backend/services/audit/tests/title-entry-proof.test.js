@@ -95,8 +95,10 @@ describe('the chain of title on the audit trail (CB-33)', () => {
         assert.equal(proof.status, 'confirmed');
         assert.deepEqual(proof, await c.proofOfEntry(i + 1));
         assert.deepEqual(proof.trail.entry.data.entry, c.entries[i]);
+        // a shipping install's anchoring names its product (CB-49)
         const offline = await verifyProof(structuredClone(proof), {
           fetchImpl: publicSource(c.audit.driver),
+          product: 'shipping',
         });
         assert.equal(offline.valid, true, JSON.stringify(offline.checks));
       }

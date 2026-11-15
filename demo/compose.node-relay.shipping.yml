@@ -1,0 +1,33 @@
+# The shipping demo install's way to the land demo's blockchain node (CB-49): it anchors on the same
+# public blockchain, its batches marked "product": "shipping" in the metadata, with a wallet of its
+# own in its own OpenBao. No land container is changed: one small relay of the shipping install,
+# under a name no land service has, joins the land demo's network (the one that holds `cardano`,
+# found by `node demo/release.mjs install-shipping` and written as LRFE_NODE_NETWORK), and passes
+# the shipping audit service's Ogmios calls to the node. No other shipping service joins it.
+#
+# Switched on in deploy/.env.shipping:
+#   COMPOSE_FILE=docker-compose.yml:../demo/compose.keep-volumes.shipping.yml:../demo/compose.node-relay.shipping.yml
+#   CARDANO_PROVIDER=ogmios, LRFE_NODE_NETWORK=<the land node's network>
+services:
+  shipping-node-relay:
+    # pinned by digest (the multi-platform index). To update: choose the tag, then
+    #   docker buildx imagetools inspect alpine/socat:<tag>     (the "Digest:" line)
+    # and put <tag>@<digest> here; rehearse (node demo/release.mjs rehearse --shipping) before a deploy
+    image: alpine/socat:1.8.0.3@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    # Ogmios (HTTP and websocket) on 1337, passed on to the land demo's node
+    command: ["TCP-LISTEN:1337,fork,reuseaddr", "TCP:cardano:1337"]
+    networks: [default, land-node]
+  audit:
+    environment:
+      OGMIOS_URL: http://shipping-node-relay:1337
+    depends_on:
+      shipping-node-relay: { condition: service_started }
+
+networks:
+  land-node:
+    external: true
+    name: ${LRFE_NODE_NETWORK:?set LRFE_NODE_NETWORK to the land demo network that holds its blockchain node}

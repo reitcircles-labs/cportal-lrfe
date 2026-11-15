@@ -177,11 +177,13 @@ export async function titleAudit({packName = 'shipping'} = {}) {
   const trail = new TrailService({repo, clock, logger: quiet, pack});
   const tree = new TreeService({repo, clock, logger: quiet, pack});
   const driver = fakeDriver();
+  // a shipping install's anchorings name their product (CB-49), as the pack says
   const cardano = createCardanoAdapter({
     driver,
     signer: createLocalSigner(),
     network: 'preview',
     logger: quiet,
+    product: 'shipping',
   });
   const job = new AnchorService({
     repo,

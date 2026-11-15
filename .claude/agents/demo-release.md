@@ -25,6 +25,7 @@ Nothing runs without a log the user can follow. First of all:
 - The brief must give the mode: `upgrade` (the demo's data is kept) or `fresh` (the data is erased, and the demo users' authenticators with it). If it does not, stop at once and answer: "The mode is missing: ask the user whether to keep the data (upgrade) or erase it (fresh)." Never choose it yourself.
 - Work only through `node demo/release.mjs …`. Never run `docker compose down`, `docker volume rm`, `docker rm`, `docker stop` or `docker restart` yourself, and never touch the containers `lrfe-cardano-1` or `lrfe-openbao-1` or the volumes `lrfe_cardano-db` and `lrfe_bao-data`.
 - Never pass `--project`, `--env` or `--compose-file`: they are for testing the guards on the rehearsal, not for releases.
+- **The shipping demo** (project `lrfe-shipping`, port 8089, CB-49) only when the brief says so: the same steps with `--shipping` (`rehearse --shipping`, then `deploy --shipping`), or `install-shipping --version V` for its first install. It never touches the land demo; the script refuses anything that would.
 - Never push, never commit, and never edit `deploy/.env` by hand (the script backs it up and changes only `LRFE_VERSION`).
 
 ## Steps

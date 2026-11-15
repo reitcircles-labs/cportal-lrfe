@@ -10,7 +10,9 @@ RUN npm ci --no-audit --no-fund
 COPY angular.json tsconfig.json ./
 COPY projects ./projects
 ENV NG_CLI_ANALYTICS=false
+# both apps (CB-49): the install's product (LRFE_DOMAIN) chooses the one served (docker/site-config.sh)
 RUN npx ng build land-registry --configuration production
+RUN npx ng build shipping --configuration production
 
 # ---- serve ----
 # nginx as a non-root user, listening on 8080
@@ -21,6 +23,7 @@ COPY docker/security-headers.conf /etc/nginx/lrfe-security-headers.conf
 # writes /config.json from the site's settings on every start, before nginx starts (API-712)
 COPY --chmod=0755 docker/site-config.sh /docker-entrypoint.d/40-lrfe-site-config.sh
 COPY --from=build /app/dist/land-registry/browser /usr/share/nginx/html
+COPY --from=build /app/dist/shipping/browser /usr/share/nginx/shipping
 
 ARG VERSION=dev
 ARG REVISION=unknown

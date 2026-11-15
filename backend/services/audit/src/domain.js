@@ -24,6 +24,7 @@ const DEFAULT_WORDING = Object.freeze({
  * @param {import('@lrfe/domain-pack').DomainPack=} pack
  * @return {?{source: ?string, committedEvent: ?string, businessKeyProcesses: !Array<string>,
  *     linkedSubjects: !Array<{kind: string, path: !Array<string>}>, commitPermission: ?string,
+ *     anchorProduct: ?string,
  *     lookup: {recordNumber: ?RegExp, instrumentNumber: ?RegExp}}}
  */
 export function recordKindOf(pack = domain) {
@@ -37,6 +38,7 @@ export function recordKindOf(pack = domain) {
     businessKeyProcesses: kind.businessKeyProcesses ?? [],
     linkedSubjects: kind.linkedSubjects ?? [],
     commitPermission: kind.commitPermission ?? null,
+    anchorProduct: kind.anchorProduct ?? null,
     lookup: {
       recordNumber: kind.lookup?.recordNumber ?? null,
       instrumentNumber: kind.lookup?.instrumentNumber ?? null,

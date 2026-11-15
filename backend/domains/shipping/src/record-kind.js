@@ -15,6 +15,12 @@ export const recordKind = {
   source: 'shipping-records',
 
   /**
+   * The product named in every anchoring of a shipping install (CB-49): its batches share the
+   * blockchain and the metadata label with the land registry's, and say `"product": "shipping"`.
+   */
+  anchorProduct: 'shipping',
+
+  /**
    * The service that answers the record contract (CB-4, `@lrfe/record-contract`): the name other
    * services know its token by, what error texts call it, and the setting holding its address.
    */

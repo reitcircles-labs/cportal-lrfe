@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the application's two images, tagged with one version:
 #   lrfe-backend:<version>   every backend service (backend/Dockerfile)
-#   lrfe-web:<version>       the web app with its nginx (angular-app/Dockerfile)
+#   lrfe-web:<version>       the web apps with their nginx (angular-app/Dockerfile): the land
+#                            registry's and the shipping app, served by LRFE_DOMAIN
 #
 #   deploy/scripts/build.sh                    a release: from the last commit only, version
 #                                              <backend package version>-<commit>, e.g. 0.1.0-5dc1dae

@@ -38,6 +38,7 @@ export function createCardanoAdapter({
   ttlSlots = 3600,
   logger = console,
   events = null,
+  product = null,
 }) {
   let address = null;
   const self = {
@@ -82,7 +83,7 @@ export function createCardanoAdapter({
     },
 
     async prepare({root, size, batch, prev, spend}) {
-      const metadata = anchorMetadata({root, size, batch, prev});
+      const metadata = anchorMetadata({root, size, batch, prev, product});
       if (!(await driver.synced())) {
         throw new CardanoError(
           `The Cardano node is still catching up with the chain: anchoring waits until it is in sync`,
@@ -162,10 +163,12 @@ export function createCardanoAdapter({
 }
 
 /** The adapter as the settings say (README.md section 10), or null when anchoring is off (no CARDANO_PROVIDER). */
-export function cardanoFromEnv(env, {logger, events, fetch} = {}) {
+export function cardanoFromEnv(env, {logger, events, fetch, product} = {}) {
   const provider = (env.CARDANO_PROVIDER || '').toLowerCase();
   if (!provider) return null;
-  if (provider === 'test') return testChainAdapter(env, {logger, events});
+  if (provider === 'test') {
+    return testChainAdapter(env, {logger, events, product});
+  }
   const network = (env.CARDANO_NETWORK || 'preview').toLowerCase();
   if (network === 'mainnet') {
     throw new CardanoError(
@@ -203,6 +206,7 @@ export function cardanoFromEnv(env, {logger, events, fetch} = {}) {
     minBalanceAda: Number(env.ANCHOR_MIN_BALANCE_ADA ?? 5),
     logger,
     events,
+    product,
   });
 }
 
@@ -211,7 +215,7 @@ export function cardanoFromEnv(env, {logger, events, fetch} = {}) {
  * tests and a key held in memory, on "preview". Refused unless NODE_ENV=test, so it can never stand
  * in for a real blockchain. `testDriver` lets the test-only routes act on the chain.
  */
-function testChainAdapter(env, {logger, events}) {
+function testChainAdapter(env, {logger, events, product}) {
   if (env.NODE_ENV !== 'test') {
     throw new CardanoError(
       'CARDANO_PROVIDER=test is only for the end-to-end tests (NODE_ENV=test)',
@@ -225,6 +229,7 @@ function testChainAdapter(env, {logger, events}) {
     network: 'preview',
     logger,
     events,
+    product,
   });
   adapter.testDriver = driver;
   return adapter;

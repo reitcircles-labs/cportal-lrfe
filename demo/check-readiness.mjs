@@ -21,6 +21,7 @@ import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+import {fundsVerdict} from './anchoring-funds.mjs';
 import {demoUsersFor} from './demo-users.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -939,7 +940,10 @@ async function checkAnchoring(env) {
       FAIL,
       'blockchain node',
       `not reachable from audit: ${chain.error}`,
-      `${composeCmd} logs --tail 50 cardano`,
+      // a shipping install reaches the land demo's node through its relay (CB-49)
+      env.LRFE_NODE_NETWORK
+        ? `${composeCmd} logs --tail 50 shipping-node-relay (the land demo's node is on ${env.LRFE_NODE_NETWORK})`
+        : `${composeCmd} logs --tail 50 cardano`,
     );
     return;
   }
@@ -956,24 +960,20 @@ async function checkAnchoring(env) {
   } else {
     report('Anchoring', OK, 'blockchain node', `synced (${chain.network})`);
   }
-  const minimum = Number(env.ANCHOR_MIN_BALANCE_ADA || 5);
-  const funds = `${chain.ada.toLocaleString('en', {maximumFractionDigits: 2})} ADA`;
-  if (chain.ada < minimum) {
-    report(
-      'Anchoring',
-      FAIL,
-      'funds',
-      `${funds}, at least ${minimum} needed`,
-      `Send test ADA (${chain.network}) to ${wallet.address}`,
-    );
-  } else {
-    report(
-      'Anchoring',
-      OK,
-      'funds',
-      `${funds} (at least ${minimum} needed; each batch costs about 0.2 ADA)`,
-    );
-  }
+  // a new wallet says plainly that it is not funded (CB-49: anchoring waits until it is)
+  const verdict = fundsVerdict({
+    ada: chain.ada,
+    minimum: Number(env.ANCHOR_MIN_BALANCE_ADA || 5),
+    address: wallet.address,
+    network: chain.network,
+  });
+  report(
+    'Anchoring',
+    verdict.status,
+    verdict.item,
+    verdict.detail,
+    verdict.fix,
+  );
 }
 
 /** Runs in the audit container: the node's sync state and the wallet's funds, from Ogmios. */
