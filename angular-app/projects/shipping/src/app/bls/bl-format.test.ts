@@ -220,6 +220,21 @@ describe('chainRows', () => {
     assert.equal(row.to, 'Volta Bank (your organisation)');
   });
 
+  it('names an endorsement in blank as such, and a named one as endorsed (CB-52)', () => {
+    const rows = chainRows(
+      [
+        entry({seq: 1, command: 'endorse', endorsement: 'blank'}),
+        entry({seq: 2, command: 'endorse', endorsement: 'named'}),
+        entry({seq: 3, command: 'transfer', endorsement: 'blank'}),
+      ],
+      ME,
+    );
+    assert.deepEqual(
+      rows.map(r => r.step),
+      ['Endorsed in blank', 'Endorsed', 'Transferred'],
+    );
+  });
+
   it('names every command of the title engine', () => {
     const steps: Array<[string, string]> = [
       ['issue', 'Issued'],

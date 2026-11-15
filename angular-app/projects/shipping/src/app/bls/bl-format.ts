@@ -218,6 +218,9 @@ function stepName(
   if (entry.command === 'issue-from-split' && links.splitFrom) {
     return `Issued from split of ${links.splitFrom.recordNo}`;
   }
+  if (entry.command === 'endorse' && entry.endorsement === 'blank') {
+    return 'Endorsed in blank';
+  }
   return name;
 }
 

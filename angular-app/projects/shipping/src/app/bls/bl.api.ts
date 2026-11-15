@@ -4,7 +4,7 @@ import type {AmendRequest} from './bl-amend';
 import type {DraftRequest} from './bl-draft';
 import type {SplitRequest} from './bl-split';
 import type {Jwks, TitleProof} from './bl-check';
-import {endorseRequest} from './bl-endorse';
+import {endorseRequest, type EndorseMode} from './bl-endorse';
 import type {
   BlLink,
   BlListItem,
@@ -166,15 +166,30 @@ export class BlApi {
 
   /**
    * Endorses a B/L the user's organisation holds to a named organisation, which becomes its
-   * holder at once (CB-45).
+   * holder at once (CB-45), by name or in blank (CB-52).
+   * @param id the B/L's id
+   * @param to the id of the organisation picked
+   * @param mode by name or in blank
+   * @return the title view after it
+   */
+  endorse(id: string, to: string, mode: EndorseMode): Promise<BlTitleView> {
+    return this.api.post<BlTitleView>(
+      `/records/${encodeURIComponent(id)}/title/endorse`,
+      endorseRequest(to, mode),
+    );
+  }
+
+  /**
+   * Transfers a blank-endorsed B/L the user's organisation holds to another organisation, which
+   * becomes its holder at once (CB-52).
    * @param id the B/L's id
    * @param to the id of the organisation picked
    * @return the title view after it
    */
-  endorse(id: string, to: string): Promise<BlTitleView> {
+  transfer(id: string, to: string): Promise<BlTitleView> {
     return this.api.post<BlTitleView>(
-      `/records/${encodeURIComponent(id)}/title/endorse`,
-      endorseRequest(to),
+      `/records/${encodeURIComponent(id)}/title/transfer`,
+      {to},
     );
   }
 

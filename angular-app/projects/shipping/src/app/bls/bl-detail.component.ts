@@ -43,10 +43,15 @@ import {
   seesVersions,
 } from './bl-change';
 import {
+  type EndorseMode,
+  type HandOver,
   endorseConfirmation,
   endorseStatus,
   endorseeChoices,
+  endorsementLabel,
+  handOverWords,
   mayEndorse,
+  mayTransfer,
 } from './bl-endorse';
 import {
   type SettlementCommand,
@@ -99,6 +104,8 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
  * The holder endorses the B/L to a named organisation (CB-45, from the CB-12 design): "Endorse
  * to…" opens the "Endorse" panel, where it picks a registered organisation (not its own, not the
  * holder) and confirms; that organisation becomes the holder at once and the chain gains the step.
+ * The holder may endorse in blank instead, still to the organisation picked; the holder of a
+ * blank-endorsed B/L then transfers it on with "Transfer to…", in the same panel (CB-52).
  * At the end of the journey (CB-46, from the CB-13 design, good weather) the holder surrenders the
  * B/L to the carrier, which then holds it, and the carrier releases the goods: the B/L is
  * accomplished, with no holder and nothing more to do. Both are confirmed first; a note in the
@@ -147,7 +154,11 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="run(c.name)">{{ c.label }}</button>
             }
             @if (canEndorse() && !endorsing()) {
-              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse()" #endorseOpen>Endorse to…</button>
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse('endorse')" #endorseOpen>Endorse to…</button>
+            }
+            <!-- CB-52: the holder of a blank-endorsed B/L transfers it on -->
+            @if (canTransfer() && !endorsing()) {
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse('transfer')" #transferOpen>Transfer to…</button>
             }
             @for (s of settlements(); track s.name) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="settle(s)">{{ s.label }}</button>
@@ -174,16 +185,16 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
         @if (commands().length > 0) {
           <p class="note info" role="note">Issuing signs the B/L for your organisation and cannot be undone: the shipper becomes its first holder.</p>
         }
-        @if (canEndorse() && endorsing()) {
-          <section class="panel" aria-label="Endorse" #endorsePanel>
-            <div class="panel-head"><h2 tabindex="-1">Endorse to a named organisation</h2></div>
+        @if (handOverOpen()) {
+          <section class="panel" [attr.aria-label]="panelWords().region" #endorsePanel>
+            <div class="panel-head"><h2 tabindex="-1">{{ panelWords().heading }}</h2></div>
             <div class="panel-body stack" style="gap:12px">
               @if (endorseeError(); as e) {
                 <div class="note danger" role="alert">{{ e }}</div>
               } @else if (endorsees(); as list) {
                 @if (list.length > 0) {
                   <div class="field" role="radiogroup" aria-labelledby="bl-endorsee-label" aria-describedby="bl-endorsee-hint">
-                    <span id="bl-endorsee-label" class="label">Endorse to</span>
+                    <span id="bl-endorsee-label" class="label">{{ panelWords().pickLabel }}</span>
                     @for (o of list; track o.id) {
                       <label class="choice">
                         <input type="radio" name="bl-endorsee" [value]="o.id" [checked]="o.id === endorsee()" (change)="pickEndorsee(o.id)" />
@@ -192,12 +203,26 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
                     }
                     <span id="bl-endorsee-hint" class="small muted">Organisations registered on the platform.</span>
                   </div>
+                  <!-- CB-52: by name or in blank, for an endorsement only -->
+                  @if (handOver() === 'endorse') {
+                    <div class="field" role="radiogroup" aria-labelledby="bl-endorse-mode-label">
+                      <span id="bl-endorse-mode-label" class="label">How</span>
+                      <label class="choice">
+                        <input type="radio" name="bl-endorse-mode" value="named" [checked]="endorseMode() === 'named'" (change)="pickMode('named')" />
+                        To this organisation by name
+                      </label>
+                      <label class="choice">
+                        <input type="radio" name="bl-endorse-mode" value="blank" [checked]="endorseMode() === 'blank'" (change)="pickMode('blank')" />
+                        In blank (the B/L names no holder by endorsement)
+                      </label>
+                    </div>
+                  }
                 }
               }
               <!-- present from the start, filled as the panel changes, so that it is read out -->
               <p [class]="endorseStatusClass()" role="status" aria-live="polite" style="margin:0">{{ endorseStatusText() }}</p>
               <div class="row" style="gap:8px">
-                <button type="button" class="btn btn-primary" [disabled]="busy() || endorsee() === ''" (click)="endorse()">Endorse</button>
+                <button type="button" class="btn btn-primary" [disabled]="busy() || endorsee() === ''" (click)="endorse()">{{ panelWords().send }}</button>
                 <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="cancelEndorse()">Cancel</button>
               </div>
             </div>
@@ -246,6 +271,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
               <dt>Your role</dt><dd>{{ roles() }}</dd>
               <dt>Carrier</dt><dd>{{ carrier() }}</dd>
               <dt>Holder</dt><dd>{{ holder() }}</dd>
+              @if (endorsementText(); as endorsed) {
+                <dt>Endorsement</dt><dd>{{ endorsed }}</dd>
+              }
               <dt>Consignee</dt><dd>{{ consignee() }}</dd>
               @if (latestVersion(); as latest) {
                 <dt>Version</dt>
@@ -344,6 +372,9 @@ export class BlDetailComponent {
   /** The "Endorse to…" button and the "Endorse" panel, to move the focus (CB-45 review). */
   private readonly endorseOpen =
     viewChild<ElementRef<HTMLButtonElement>>('endorseOpen');
+  /** The "Transfer to…" button, to give the focus back (CB-52). */
+  private readonly transferOpen =
+    viewChild<ElementRef<HTMLButtonElement>>('transferOpen');
   private readonly endorsePanel =
     viewChild<ElementRef<HTMLElement>>('endorsePanel');
   /** The note on where the B/L stands, which takes the focus after a surrender or release. */
@@ -367,6 +398,10 @@ export class BlDetailComponent {
   protected readonly endorseeError = signal<string | null>(null);
   /** The id of the organisation picked, '' for none. */
   protected readonly endorsee = signal('');
+  /** What the open panel does: endorse, or transfer a blank-endorsed B/L (CB-52). */
+  protected readonly handOver = signal<HandOver>('endorse');
+  /** How the holder endorses: by name or in blank (CB-52). */
+  protected readonly endorseMode = signal<EndorseMode>('named');
 
   /** The carrier's open panel of a change, null for none (CB-50). */
   protected readonly changing = signal<ChangePanel | null>(null);
@@ -425,15 +460,61 @@ export class BlDetailComponent {
     const picked = this.endorsees()?.find(o => o.id === this.endorsee());
     return picked?.name ?? '';
   });
+  /** Whether the user may transfer the blank-endorsed B/L (CB-52). */
+  protected readonly canTransfer = computed(() =>
+    mayTransfer(this.view()?.allowedCommands ?? []),
+  );
+  /** Whether the panel is open and what it does is still offered (CB-52). */
+  protected readonly handOverOpen = computed(() => {
+    if (!this.endorsing()) {
+      return false;
+    }
+    if (this.handOver() === 'transfer') {
+      return this.canTransfer();
+    }
+    return this.canEndorse();
+  });
+  /** The mode the confirmation speaks of: a transfer hands over like a named endorsement. */
+  private readonly confirmedMode = computed<EndorseMode>(() => {
+    if (this.handOver() === 'transfer') {
+      return 'named';
+    }
+    return this.endorseMode();
+  });
+  /** What the panel's region, heading, list and button say (CB-52). */
+  protected readonly panelWords = computed(() => {
+    if (this.handOver() === 'transfer') {
+      return {
+        region: 'Transfer',
+        heading: 'Transfer to another organisation',
+        pickLabel: 'Transfer to',
+        send: 'Transfer',
+      };
+    }
+    return {
+      region: 'Endorse',
+      heading: 'Endorse to an organisation',
+      pickLabel: 'Endorse to',
+      send: 'Endorse',
+    };
+  });
+  /** What the page says of the B/L's endorsement, '' before issue (CB-52). */
+  protected readonly endorsementText = computed(() =>
+    endorsementLabel(this.view()?.title?.endorsement ?? null),
+  );
   protected readonly confirmation = computed(() =>
-    endorseConfirmation(this.endorseeName()),
+    endorseConfirmation(this.endorseeName(), this.confirmedMode()),
   );
   /** What the panel announces: loading, nobody to pick, or what happens. */
   protected readonly endorseStatusText = computed(() => {
     if (this.endorseeError() !== null) {
       return '';
     }
-    return endorseStatus(this.endorsees(), this.endorseeName());
+    return endorseStatus(
+      this.endorsees(),
+      this.endorseeName(),
+      this.confirmedMode(),
+    );
   });
   protected readonly endorseStatusClass = computed(() => {
     if (this.endorseeName() !== '') {
@@ -822,10 +903,13 @@ export class BlDetailComponent {
   }
 
   /**
-   * Opens the "Endorse" panel and lists the organisations the holder may pick.
+   * Opens the "Endorse" or "Transfer" panel and lists the organisations the holder may pick.
+   * @param action endorse, or transfer a blank-endorsed B/L (CB-52)
    * @return when they are listed, or why they cannot be
    */
-  protected async openEndorse(): Promise<void> {
+  protected async openEndorse(action: HandOver): Promise<void> {
+    this.handOver.set(action);
+    this.endorseMode.set('named');
     this.endorsing.set(true);
     this.endorsee.set('');
     this.actionError.set(null);
@@ -883,11 +967,24 @@ export class BlDetailComponent {
     this.endorsee.set(id);
   }
 
-  /** Closes the "Endorse" panel without endorsing, the focus back on "Endorse to…". */
+  /**
+   * Keeps how the holder endorses (CB-52).
+   * @param mode by name or in blank
+   */
+  protected pickMode(mode: EndorseMode): void {
+    this.endorseMode.set(mode);
+  }
+
+  /** Closes the panel without acting, the focus back on the button that opened it. */
   protected cancelEndorse(): void {
+    const action = this.handOver();
     this.closeEndorse();
     this.focusAfterRender(() => {
-      this.endorseOpen()?.nativeElement.focus();
+      if (action === 'transfer') {
+        this.transferOpen()?.nativeElement.focus();
+      } else {
+        this.endorseOpen()?.nativeElement.focus();
+      }
     });
   }
 
@@ -895,15 +992,16 @@ export class BlDetailComponent {
   private closeEndorse(): void {
     this.endorsing.set(false);
     this.endorsee.set('');
+    this.endorseMode.set('named');
     // an answer still on its way is no longer shown
     this.latestEndorsees.begin();
   }
 
   /**
-   * Endorses the B/L to the organisation picked, once the user confirms what happens; the panel
-   * closes when it is done. A refusal is shown, and the B/L is read again (someone may have
-   * endorsed it first): the panel stays, its list read again, only while the user may still
-   * endorse it.
+   * Endorses the B/L to the organisation picked, by name or in blank, or transfers the
+   * blank-endorsed B/L to it (CB-52), once the user confirms what happens; the panel closes when
+   * it is done. A refusal is shown, and the B/L is read again (someone may have acted on it
+   * first): the panel stays, its list read again, only while the user may still act.
    * @return when the page shows the B/L again
    */
   protected async endorse(): Promise<void> {
@@ -912,24 +1010,30 @@ export class BlDetailComponent {
     if (to === '') {
       return;
     }
+    const action = this.handOver();
+    const mode = this.endorseMode();
     const label = this.view()?.record.label ?? 'this B/L';
+    const words = handOverWords(action, mode, label, name);
     const confirmed = await this.confirm.ask({
-      title: `Endorse ${label} to ${name}?`,
+      title: words.title,
       body: this.confirmation(),
-      confirmLabel: 'Endorse',
+      confirmLabel: words.confirmLabel,
     });
     if (!confirmed) {
       return;
     }
-    const done = await this.act(`B/L endorsed to ${name}`, () =>
-      this.bls.endorse(this.id(), to),
-    );
+    const done = await this.act(words.done, () => {
+      if (action === 'transfer') {
+        return this.bls.transfer(this.id(), to);
+      }
+      return this.bls.endorse(this.id(), to, mode);
+    });
     if (done) {
       this.closeEndorse();
       return;
     }
     await this.load(this.id());
-    if (this.canEndorse()) {
+    if (this.handOverOpen()) {
       await this.loadEndorsees();
     } else {
       this.closeEndorse();
@@ -954,7 +1058,12 @@ export class BlDetailComponent {
       await this.load(this.id());
       return true;
     } catch (e) {
-      this.actionError.set(toApiError(e).message);
+      const refusal = refusalOf(toApiError(e));
+      if (refusal.reload) {
+        // The B/L moved on: show it as it is now, then say why the action was refused.
+        await this.load(this.id());
+      }
+      this.actionError.set(refusal.message);
       return false;
     } finally {
       this.busy.set(false);

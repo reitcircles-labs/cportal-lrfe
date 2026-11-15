@@ -65,6 +65,8 @@ export interface ChainEntry {
   /** The organisations holding the B/L before and after the step. */
   from: string | null;
   to: string | null;
+  /** The title's endorsement after the step: none, named or blank (CB-52). */
+  endorsement?: string;
   actor: {id: string; name?: string | null; org: string | null};
   at: string;
 }
