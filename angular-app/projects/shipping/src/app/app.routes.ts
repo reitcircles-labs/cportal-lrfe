@@ -4,6 +4,7 @@ import {homeGuard, onboardingGuard} from './admin/admin.guards';
 import {OrganisationDetailComponent} from './admin/organisation-detail.component';
 import {OrganisationListComponent} from './admin/organisation-list.component';
 import {BlDetailComponent} from './bls/bl-detail.component';
+import {BlHistoryComponent} from './bls/bl-history.component';
 import {BlListComponent} from './bls/bl-list.component';
 import {BlNewComponent} from './bls/bl-new.component';
 import {draftGuard} from './bls/bl.guards';
@@ -26,6 +27,7 @@ export const routes: Routes = [
       {path: '', component: BlListComponent, canActivate: [homeGuard]},
       {path: 'bls/new', component: BlNewComponent, canActivate: [draftGuard]},
       {path: 'bls/:id', component: BlDetailComponent},
+      {path: 'bls/:id/history', component: BlHistoryComponent},
       {
         path: 'admin/organisations',
         component: OrganisationListComponent,

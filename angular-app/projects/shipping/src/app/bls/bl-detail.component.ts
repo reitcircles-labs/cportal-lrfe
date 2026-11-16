@@ -304,7 +304,12 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
           </div>
         </section>
         <section class="panel">
-          <div class="panel-head"><h2>Chain of title</h2></div>
+          <div class="panel-head row" style="justify-content:space-between;gap:8px">
+            <h2>Chain of title</h2>
+            @if (v.chain.length > 0) {
+              <a class="btn btn-secondary" [routerLink]="['/bls', v.recordId, 'history']">Full history and checks</a>
+            }
+          </div>
           <div style="overflow-x:auto">
             <table class="table" aria-label="Chain of title">
               <thead>
