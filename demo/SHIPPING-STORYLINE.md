@@ -171,3 +171,132 @@ says "not found" for one that is not, without saying whether it exists.
 
 The B/L stays accomplished in every party's list. For the next demo, start again from a fresh install (README.md,
 "A shipping install"): it removes the B/L and the authenticator set-ups.
+
+# Part 2 · R2: when a B/L does not go as planned (CB-40, CB-67)
+
+The second demo, on an install of R2 or later: the exceptions. Two B/Ls are used, both drafted and issued as in Acts 2
+and 3 above, with the ports picked from the port list (Act 10). Each act is short; together about 40 minutes. The cast
+is the same seven demo users; no other data is needed.
+
+| B/L | Number (example) | Used for |
+|---|---|---|
+| The main B/L | `BWML2611011` | the port list, blank endorsement, transfer, amendment, split, the full chain of title, switch to paper |
+| The second B/L | `BWML2611012` | the void, and a refusal on a stale page |
+
+*Say, at the start:* "In real trade, B/Ls change hands in blank, ports change, cargo is sold in parts, paper is
+asked for, and mistakes are cancelled. Every one of these is a step on the chain, signed and on the blockchain, and
+nobody can do one out of turn."
+
+## Act 10 · The carrier's clerk: ports from the list (5 min)
+
+Sign in as **`l.okafor@bluewater-lines.example`**. **New B/L**, filled in as in Act 2, with number `BWML2611011`.
+
+| # | Do | They see |
+|---|---|---|
+| 10.1 | In **Port of loading**, type `santos` | The list offers `BRSSZ`, Santos, Brazil; pick it. Under the field: "Santos, Brazil" |
+| 10.2 | In **Port of discharge**, type `ZZZZZ`, then **Save draft** | The draft is refused: "ZZZZZ is not a sea port of the UN/LOCODE list: pick the port of discharge from the list" |
+| 10.3 | Type `rotter`, pick `NLRTM`, **Save draft**, **Submit for approval** | The draft is saved and in review |
+
+Then **`r.menon@bluewater-lines.example`** approves it and **Issue to the shipper** (Act 3). Do the same for the
+second B/L, `BWML2611012` (drafted by Lena, issued by Ravi): it stays with the shipper for Act 15.
+
+*Say:* "Ports come from the official UN list of sea ports, so a typing mistake cannot reach a B/L."
+
+## Act 11 · The shipper: endorse in blank (3 min)
+
+Sign in as **`a.ribeiro@highland-coffee.example`**. Open `BWML2611011`.
+
+| # | Do | They see |
+|---|---|---|
+| 11.1 | **Endorse to…**, pick **Harbour Trust Bank**, choose **In blank** | Under the choice, what endorsing in blank means |
+| 11.2 | **Endorse** | "Endorse B/L BWML2611011 (BWML) in blank and hand it to Harbour Trust Bank?", with the same explanation |
+| 11.3 | **Endorse in blank** | **Endorsement** "Endorsed in blank"; the chain's row "Endorsed in blank"; her role *Past holder* |
+
+## Act 12 · The exporter's bank: transfer (2 min)
+
+Sign in as **`g.mensah@harbour-trust.example`**. Open `BWML2611011`.
+
+| # | Do | They see |
+|---|---|---|
+| 12.1 | **Transfer to…**, pick **Northgate Commercial Bank**, **Transfer**, **Transfer** in the confirmation | **Holder** Northgate Commercial Bank; the chain's row "Transferred" |
+
+*Say:* "A blank-endorsed B/L moves by transfer, without a new endorsement. Still one holder, still on the chain."
+
+## Act 13 · The buyer's bank and the carrier: a new port of discharge (5 min)
+
+Sign in as **`m.tanaka@northgate-bank.example`**. Open `BWML2611011`.
+
+| # | Do | They see |
+|---|---|---|
+| 13.1 | **Ask for a change**, **Send to the carrier** | State *Change requested*; **Holder** "Bluewater Meridian Lines, to go back to Northgate Commercial Bank (your organisation)"; her role "Asked for a change: the B/L comes back to you" |
+
+Sign in as **`r.menon@bluewater-lines.example`**. Open `BWML2611011`.
+
+| # | Do | They see |
+|---|---|---|
+| 13.2 | **Amend**; in **Port of discharge** type `hamburg`, pick `DEHAM` | Under **Changes**: NLRTM struck through, DEHAM highlighted |
+| 13.3 | **Amend and give back**, **Amend** in the confirmation | "B/L amended: version 2 is with Northgate Commercial Bank"; **Version** "Version 2 since …" |
+
+Sign in as **`a.ribeiro@highland-coffee.example`** (an earlier holder). Open `BWML2611011`.
+
+| # | Do | They see |
+|---|---|---|
+| 13.4 | Read the page | "Amended after you held it", and not the new port |
+
+*Say:* "The buyer's bank asked, the carrier changed it, the holder got it back. The shipper sees that it changed,
+not how: that is the holder's business now."
+
+## Act 14 · The buyer's bank and the carrier: split into two B/Ls (5 min)
+
+As **`m.tanaka@northgate-bank.example`**: **Ask for a change**, **Send to the carrier** (as 13.1).
+
+Sign in as **`r.menon@bluewater-lines.example`**. Open `BWML2611011`.
+
+| # | Do | They see |
+|---|---|---|
+| 14.1 | **Split** | Two new B/Ls, A and B, numbered `BWML2611011-A` and `-B`; A holds all the cargo, B none; the totals show what is still to share |
+| 14.2 | Give B/L A 160 packages and 9600 kg, B/L B 160 packages and 9600 kg | The totals add up to the B/L's 320 packages and 19200 kg |
+| 14.3 | **Split into 2 B/Ls**, **Split** in the confirmation | State *Split*; no buttons; **Replaced by** `BWML2611011-A` and `BWML2611011-B` |
+
+*Say:* "The buyer sold half the coffee on. Each half now has its own B/L and its own holder, and both trace back to
+the original."
+
+## Act 15 · The carrier: void a B/L (2 min)
+
+Before this act, in a **private window**, sign in as **`a.ribeiro@highland-coffee.example`** and open
+`BWML2611012`; leave it open.
+
+In the normal window, as **`r.menon@bluewater-lines.example`**, open `BWML2611012`.
+
+| # | Do | They see |
+|---|---|---|
+| 15.1 | **Void**, **Void the B/L** in the confirmation | "cancelled for good"; State *Void*; no buttons; the chain's row "Voided" |
+| 15.2 | In the private window (the shipper's page, not reloaded): **Endorse to…**, pick a bank, **Endorse**, confirm | The refusal in plain words: nothing more can be done with this B/L; the page now shows it as void. Nothing changed |
+
+*Say:* "The shipper's screen was out of date. The platform refused, said why in plain words, and changed nothing."
+
+## Act 16 · The buyer's bank: switch to paper (2 min)
+
+Sign in as **`m.tanaka@northgate-bank.example`**. Open `BWML2611011-B`.
+
+| # | Do | They see |
+|---|---|---|
+| 16.1 | **Switch to paper**, confirm | "the paper B/L takes over"; State *Switched to paper*; no buttons; the chain's row "Switched to paper" |
+
+## Act 17 · The buyer's bank: the full chain of title (5 min)
+
+Wait until the anchoring batch after Act 16 is out (up to 5 minutes). As **`m.tanaka@northgate-bank.example`**,
+open `BWML2611011-A`.
+
+| # | Do | They see |
+|---|---|---|
+| 17.1 | **Full history and checks** | "Chain of title: B/L BWML2611011-A (BWML)"; "All … steps carry the platform's signature, checked in your browser." |
+| 17.2 | Read the table | First the original B/L's steps (issued, endorsed in blank, transferred, the change request, amended, split), then this B/L's; the exceptions marked **Exception**; each signature checked; the latest step on the blockchain, every earlier one linked to it |
+| 17.3 | **Download the proof** | The proof file, to check offline as in Act 9 |
+
+*Say:* "An auditor or a court sees the whole life of these goods, across the split, and checks every step without
+asking us."
+
+## After the R2 demo
+
+The B/Ls stay in every party's list in their final states. For the next demo, start from a fresh install.
