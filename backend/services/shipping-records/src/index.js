@@ -16,6 +16,10 @@ import {
 import {formatsFromSettings} from '@lrfe/domain-shipping/bill-of-lading';
 import {modulesFromSettings} from '@lrfe/domain-shipping/title';
 import {buildApp} from './app.js';
+import {
+  DEFAULT_PORT_LIST_FILE,
+  loadPortList,
+} from '@lrfe/domain-shipping/ports';
 import {createAuditClient} from './audit-client.js';
 import {createIdentityClient} from './identity-client.js';
 import {ShippingRecordsService} from './records.service.js';
@@ -62,7 +66,9 @@ const events = createEventBus({
   outbox,
 });
 const jwtSecret = env('JWT_SECRET');
-const service = new ShippingRecordsService({repo, events, formats});
+// the port list (CB-63): the pack's UN/LOCODE sea ports, or the install's own file (PORT_LIST_FILE)
+const ports = loadPortList(env('PORT_LIST_FILE', '') || DEFAULT_PORT_LIST_FILE);
+const service = new ShippingRecordsService({repo, events, formats, ports});
 // the trail-entry proof of a chain entry's event, from the audit service (CB-33): title proofs
 const audit = createAuditClient({
   baseUrl: env('AUDIT_URL', 'http://localhost:3506'),
@@ -95,6 +101,7 @@ const titles = new TitleService({
   signer,
   audit,
   organisations,
+  ports,
 });
 
 const app = await buildApp({

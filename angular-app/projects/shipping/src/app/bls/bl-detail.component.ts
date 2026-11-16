@@ -22,13 +22,36 @@ import {
 } from '@lrfe/platform';
 
 import {BlApi} from './bl.api';
+import {BlAmendComponent} from './bl-amend.component';
 import {BlCheckComponent} from './bl-check.component';
 import {approvalOf, issueCommands, maySubmit, versionNote} from './bl-actions';
 import {
+  type CloseCommand,
+  closeCommands,
+  closeConfirmation,
+  closeNote,
+  closeRequest,
+} from './bl-close';
+import {
+  ASK_FOR_CHANGE,
+  askForChangeQuestion,
+  mayAmend,
+  mayAskForChange,
+  maySplit,
+  pastHolderNote,
+  refusalOf,
+  seesVersions,
+} from './bl-change';
+import {
+  type EndorseMode,
+  type HandOver,
   endorseConfirmation,
   endorseStatus,
   endorseeChoices,
+  endorsementLabel,
+  handOverWords,
   mayEndorse,
+  mayTransfer,
 } from './bl-endorse';
 import {
   type SettlementCommand,
@@ -39,6 +62,8 @@ import {
 import {
   carrierOf,
   chainRows,
+  changeHolderLabel,
+  changeRequestNote,
   consigneeLabel,
   draftFacts,
   kindLabel,
@@ -47,8 +72,10 @@ import {
   stateLabel,
   stateTone,
   toneTagClass,
+  versionHistory,
 } from './bl-format';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
+import {BlSplitComponent} from './bl-split.component';
 import type {BlRecord, BlTitleView, PartyOrganisation} from './bl.model';
 import {LatestRequest} from './latest';
 import {injectViewer} from './viewer';
@@ -57,6 +84,9 @@ import {injectViewer} from './viewer';
 const COMMAND_LABELS: ReadonlyMap<string, string> = new Map([
   ['issue', 'Issue to the shipper'],
 ]);
+
+/** The carrier's panels of a change (CB-50): amend the B/L, or split it into new B/Ls. */
+type ChangePanel = 'amend' | 'split';
 
 /** What a toast says once a title command is done. */
 const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
@@ -74,16 +104,31 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
  * The holder endorses the B/L to a named organisation (CB-45, from the CB-12 design): "Endorse
  * to…" opens the "Endorse" panel, where it picks a registered organisation (not its own, not the
  * holder) and confirms; that organisation becomes the holder at once and the chain gains the step.
+ * The holder may endorse in blank instead, still to the organisation picked; the holder of a
+ * blank-endorsed B/L then transfers it on with "Transfer to…", in the same panel (CB-52).
  * At the end of the journey (CB-46, from the CB-13 design, good weather) the holder surrenders the
  * B/L to the carrier, which then holds it, and the carrier releases the goods: the B/L is
  * accomplished, with no holder and nothing more to do. Both are confirmed first; a note in the
  * B/L box says where it stands, read out as it changes.
  * Once issued, "Check this B/L" (CB-47, bl-check.component.ts) checks the chain of title in the
  * browser, says whether its latest step is on the blockchain and gives the proof to check offline.
+ * A change of the B/L (CB-50, first version, from the CB-14 design): the holder asks the carrier
+ * for a change ("Ask for a change", confirmed first); the carrier, which then holds the B/L, opens
+ * "Amend" (bl-amend.component.ts: the next version, same number) or "Split" (bl-split.component.ts:
+ * new B/Ls, the cargo shared out), and the B/L, or its new B/Ls, go back to the holder. The B/L
+ * box shows the version and the versions to those who hold it, "Split from" and "Replaced by"
+ * with links; an earlier holder is told it was amended or split after it held it, never the new
+ * values (the record service gives it none).
  */
 @Component({
   selector: 'app-bl-detail',
-  imports: [RouterLink, DatePipe, BlCheckComponent],
+  imports: [
+    RouterLink,
+    DatePipe,
+    BlAmendComponent,
+    BlCheckComponent,
+    BlSplitComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -109,10 +154,28 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="run(c.name)">{{ c.label }}</button>
             }
             @if (canEndorse() && !endorsing()) {
-              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse()" #endorseOpen>Endorse to…</button>
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse('endorse')" #endorseOpen>Endorse to…</button>
+            }
+            <!-- CB-52: the holder of a blank-endorsed B/L transfers it on -->
+            @if (canTransfer() && !endorsing()) {
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse('transfer')" #transferOpen>Transfer to…</button>
             }
             @for (s of settlements(); track s.name) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="settle(s)">{{ s.label }}</button>
+            }
+            <!-- CB-50: the holder asks for a change; the carrier amends or splits the B/L -->
+            @if (canAskForChange()) {
+              <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="askForChange()">{{ askLabel }}</button>
+            }
+            @if (canAmend() && changing() === null) {
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openChange('amend')">Amend</button>
+            }
+            @if (canSplit() && changing() === null) {
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openChange('split')">Split</button>
+            }
+            <!-- CB-51: the holder switches the B/L to paper; the carrier voids it -->
+            @for (c of closings(); track c.name) {
+              <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="close(c)">{{ c.label }}</button>
             }
           </section>
         </header>
@@ -122,16 +185,16 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
         @if (commands().length > 0) {
           <p class="note info" role="note">Issuing signs the B/L for your organisation and cannot be undone: the shipper becomes its first holder.</p>
         }
-        @if (canEndorse() && endorsing()) {
-          <section class="panel" aria-label="Endorse" #endorsePanel>
-            <div class="panel-head"><h2 tabindex="-1">Endorse to a named organisation</h2></div>
+        @if (handOverOpen()) {
+          <section class="panel" [attr.aria-label]="panelWords().region" #endorsePanel>
+            <div class="panel-head"><h2 tabindex="-1">{{ panelWords().heading }}</h2></div>
             <div class="panel-body stack" style="gap:12px">
               @if (endorseeError(); as e) {
                 <div class="note danger" role="alert">{{ e }}</div>
               } @else if (endorsees(); as list) {
                 @if (list.length > 0) {
                   <div class="field" role="radiogroup" aria-labelledby="bl-endorsee-label" aria-describedby="bl-endorsee-hint">
-                    <span id="bl-endorsee-label" class="label">Endorse to</span>
+                    <span id="bl-endorsee-label" class="label">{{ panelWords().pickLabel }}</span>
                     @for (o of list; track o.id) {
                       <label class="choice">
                         <input type="radio" name="bl-endorsee" [value]="o.id" [checked]="o.id === endorsee()" (change)="pickEndorsee(o.id)" />
@@ -140,16 +203,38 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
                     }
                     <span id="bl-endorsee-hint" class="small muted">Organisations registered on the platform.</span>
                   </div>
+                  <!-- CB-52: by name or in blank, for an endorsement only -->
+                  @if (handOver() === 'endorse') {
+                    <div class="field" role="radiogroup" aria-labelledby="bl-endorse-mode-label">
+                      <span id="bl-endorse-mode-label" class="label">How</span>
+                      <label class="choice">
+                        <input type="radio" name="bl-endorse-mode" value="named" [checked]="endorseMode() === 'named'" (change)="pickMode('named')" />
+                        To this organisation by name
+                      </label>
+                      <label class="choice">
+                        <input type="radio" name="bl-endorse-mode" value="blank" [checked]="endorseMode() === 'blank'" (change)="pickMode('blank')" />
+                        In blank (the B/L names no holder by endorsement)
+                      </label>
+                    </div>
+                  }
                 }
               }
               <!-- present from the start, filled as the panel changes, so that it is read out -->
               <p [class]="endorseStatusClass()" role="status" aria-live="polite" style="margin:0">{{ endorseStatusText() }}</p>
               <div class="row" style="gap:8px">
-                <button type="button" class="btn btn-primary" [disabled]="busy() || endorsee() === ''" (click)="endorse()">Endorse</button>
+                <button type="button" class="btn btn-primary" [disabled]="busy() || endorsee() === ''" (click)="endorse()">{{ panelWords().send }}</button>
                 <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="cancelEndorse()">Cancel</button>
               </div>
             </div>
           </section>
+        }
+        @if (changeDocument(); as document) {
+          @if (changing() === 'amend' && canAmend()) {
+            <app-bl-amend [recordId]="v.recordId" [recordNo]="v.record.recordNo" [carrierCode]="v.record.carrierCode" [version]="currentVersion()" [document]="document" [holderName]="returnToName()" (amended)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
+          }
+          @if (changing() === 'split' && canSplit()) {
+            <app-bl-split [recordId]="v.recordId" [recordNo]="v.record.recordNo" [document]="document" [holderName]="returnToName()" (split)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
+          }
         }
         @if (shown()) {
           <section class="panel" aria-label="Approval">
@@ -175,6 +260,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
           <div class="panel-body">
             <!-- present from the start, filled once the B/L is surrendered, so that it is read out -->
             <p [class]="titleNoteClass()" role="status" aria-live="polite" tabindex="-1" #titleNote>{{ titleNoteText() }}</p>
+            @if (pastNote(); as n) {
+              <p class="title-note note" role="note">{{ n.message }} ({{ n.at | date: 'd MMM y' }}).</p>
+            }
             <dl class="kv facts">
               <dt>Reference</dt><dd class="mono">{{ v.record.recordNo }}</dd>
               <dt>Carrier code</dt><dd class="mono">{{ v.record.carrierCode }}</dd>
@@ -183,12 +271,45 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
               <dt>Your role</dt><dd>{{ roles() }}</dd>
               <dt>Carrier</dt><dd>{{ carrier() }}</dd>
               <dt>Holder</dt><dd>{{ holder() }}</dd>
+              @if (endorsementText(); as endorsed) {
+                <dt>Endorsement</dt><dd>{{ endorsed }}</dd>
+              }
               <dt>Consignee</dt><dd>{{ consignee() }}</dd>
+              @if (latestVersion(); as latest) {
+                <dt>Version</dt>
+                <dd>
+                  Version {{ latest.version }} since {{ latest.at | date: 'd MMM y, HH:mm' }}
+                  @if (versions().length > 1) {
+                    <ul class="versions" aria-label="Versions">
+                      @for (line of versions(); track line.version) {
+                        <li>Version {{ line.version }}, {{ line.at | date: 'd MMM y, HH:mm' }}</li>
+                      }
+                    </ul>
+                  }
+                </dd>
+              }
+              @if (v.splitFrom; as parent) {
+                <dt>Split from</dt>
+                <dd><a class="mono" [routerLink]="['/bls', parent.recordId]">{{ parent.recordNo }}</a></dd>
+              }
+              @if (splitInto().length > 0) {
+                <dt>Replaced by</dt>
+                <dd>
+                  @for (child of splitInto(); track child.recordId; let last = $last) {
+                    <a class="mono" [routerLink]="['/bls', child.recordId]">{{ child.recordNo }}</a>@if (!last) {<span>, </span>}
+                  }
+                </dd>
+              }
             </dl>
           </div>
         </section>
         <section class="panel">
-          <div class="panel-head"><h2>Chain of title</h2></div>
+          <div class="panel-head row" style="justify-content:space-between;gap:8px">
+            <h2>Chain of title</h2>
+            @if (v.chain.length > 0) {
+              <a class="btn btn-secondary" [routerLink]="['/bls', v.recordId, 'history']">Full history and checks</a>
+            }
+          </div>
           <div style="overflow-x:auto">
             <table class="table" aria-label="Chain of title">
               <thead>
@@ -236,6 +357,7 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
     .choice { display: flex; gap: 8px; align-items: center; cursor: pointer; }
     .title-note { margin: 0 0 12px; }
     .warn { display: block; margin-top: 2px; font-size: 13px; color: var(--danger-fg); }
+    .versions { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
   `,
   ],
 })
@@ -255,11 +377,16 @@ export class BlDetailComponent {
   /** The "Endorse to…" button and the "Endorse" panel, to move the focus (CB-45 review). */
   private readonly endorseOpen =
     viewChild<ElementRef<HTMLButtonElement>>('endorseOpen');
+  /** The "Transfer to…" button, to give the focus back (CB-52). */
+  private readonly transferOpen =
+    viewChild<ElementRef<HTMLButtonElement>>('transferOpen');
   private readonly endorsePanel =
     viewChild<ElementRef<HTMLElement>>('endorsePanel');
   /** The note on where the B/L stands, which takes the focus after a surrender or release. */
   private readonly titleNoteRef =
     viewChild<ElementRef<HTMLElement>>('titleNote');
+  /** The page, to move the focus into a panel of a change (CB-50). */
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly view = signal<BlTitleView | null>(null);
   /** The B/L's record with its open draft, before issue and for its own organisation only. */
@@ -276,16 +403,32 @@ export class BlDetailComponent {
   protected readonly endorseeError = signal<string | null>(null);
   /** The id of the organisation picked, '' for none. */
   protected readonly endorsee = signal('');
+  /** What the open panel does: endorse, or transfer a blank-endorsed B/L (CB-52). */
+  protected readonly handOver = signal<HandOver>('endorse');
+  /** How the holder endorses: by name or in blank (CB-52). */
+  protected readonly endorseMode = signal<EndorseMode>('named');
+
+  /** The carrier's open panel of a change, null for none (CB-50). */
+  protected readonly changing = signal<ChangePanel | null>(null);
+  /** The holder's button that asks for a change. */
+  protected readonly askLabel = ASK_FOR_CHANGE.label;
 
   /** The organisations' names by id, for the parties the version is linked to. */
   private readonly names = signal<Record<string, string>>({});
 
+  /** Whether the B/L is issued: its record, if read, is then for a change only (CB-50). */
+  private readonly issued = computed(() => !!this.view()?.title);
   /** The open draft, when the user's organisation drafts this B/L. */
-  private readonly draft = computed(() => this.record()?.draft ?? null);
-  /** The version the panel shows before issue: the open draft, else the approved one. */
-  protected readonly shown = computed(
-    () => this.record()?.draft ?? this.record()?.current ?? null,
+  private readonly draft = computed(() =>
+    this.issued() ? null : (this.record()?.draft ?? null),
   );
+  /** The version the panel shows before issue: the open draft, else the approved one. */
+  protected readonly shown = computed(() => {
+    if (this.issued()) {
+      return null;
+    }
+    return this.record()?.draft ?? this.record()?.current ?? null;
+  });
   /** Who looks at the B/L: their id and permissions. */
   private readonly user = computed(() => ({
     id: this.auth.me()?.user.id ?? '',
@@ -322,15 +465,61 @@ export class BlDetailComponent {
     const picked = this.endorsees()?.find(o => o.id === this.endorsee());
     return picked?.name ?? '';
   });
+  /** Whether the user may transfer the blank-endorsed B/L (CB-52). */
+  protected readonly canTransfer = computed(() =>
+    mayTransfer(this.view()?.allowedCommands ?? []),
+  );
+  /** Whether the panel is open and what it does is still offered (CB-52). */
+  protected readonly handOverOpen = computed(() => {
+    if (!this.endorsing()) {
+      return false;
+    }
+    if (this.handOver() === 'transfer') {
+      return this.canTransfer();
+    }
+    return this.canEndorse();
+  });
+  /** The mode the confirmation speaks of: a transfer hands over like a named endorsement. */
+  private readonly confirmedMode = computed<EndorseMode>(() => {
+    if (this.handOver() === 'transfer') {
+      return 'named';
+    }
+    return this.endorseMode();
+  });
+  /** What the panel's region, heading, list and button say (CB-52). */
+  protected readonly panelWords = computed(() => {
+    if (this.handOver() === 'transfer') {
+      return {
+        region: 'Transfer',
+        heading: 'Transfer to another organisation',
+        pickLabel: 'Transfer to',
+        send: 'Transfer',
+      };
+    }
+    return {
+      region: 'Endorse',
+      heading: 'Endorse to an organisation',
+      pickLabel: 'Endorse to',
+      send: 'Endorse',
+    };
+  });
+  /** What the page says of the B/L's endorsement, '' before issue (CB-52). */
+  protected readonly endorsementText = computed(() =>
+    endorsementLabel(this.view()?.title?.endorsement ?? null),
+  );
   protected readonly confirmation = computed(() =>
-    endorseConfirmation(this.endorseeName()),
+    endorseConfirmation(this.endorseeName(), this.confirmedMode()),
   );
   /** What the panel announces: loading, nobody to pick, or what happens. */
   protected readonly endorseStatusText = computed(() => {
     if (this.endorseeError() !== null) {
       return '';
     }
-    return endorseStatus(this.endorsees(), this.endorseeName());
+    return endorseStatus(
+      this.endorsees(),
+      this.endorseeName(),
+      this.confirmedMode(),
+    );
   });
   protected readonly endorseStatusClass = computed(() => {
     if (this.endorseeName() !== '') {
@@ -345,14 +534,78 @@ export class BlDetailComponent {
     })),
   );
 
+  /** The holder may ask for a change; the carrier may then amend or split the B/L (CB-50). */
+  protected readonly canAskForChange = computed(() =>
+    mayAskForChange(this.view()?.allowedCommands ?? []),
+  );
+  protected readonly canAmend = computed(() =>
+    mayAmend(this.view()?.allowedCommands ?? []),
+  );
+  protected readonly canSplit = computed(() =>
+    maySplit(this.view()?.allowedCommands ?? []),
+  );
+  /** The current version's document, for the carrier's panels of a change; null without one. */
+  protected readonly changeDocument = computed(() => {
+    if (!this.issued()) {
+      return null;
+    }
+    return this.record()?.current?.data?.document ?? null;
+  });
+  /** The current version's number. */
+  protected readonly currentVersion = computed(
+    () => this.record()?.current?.versionNumber ?? 1,
+  );
+  /** The name of the holder the B/L goes back to after a change. */
+  protected readonly returnToName = computed(() =>
+    partyLabel(
+      this.view()?.title?.returnTo,
+      this.viewer(),
+      this.view()?.organisationNames,
+    ),
+  );
+  /** The versions of the B/L, for those who hold it; none for the others. */
+  protected readonly versions = computed(() => {
+    const v = this.view();
+    if (v === null || !seesVersions(v.roles, v.title, this.viewer())) {
+      return [];
+    }
+    return versionHistory(v.chain, v.title?.issuedVersion ?? 1);
+  });
+  protected readonly latestVersion = computed(
+    () => this.versions().at(-1) ?? null,
+  );
+  /** The B/Ls the B/L was split into. */
+  protected readonly splitInto = computed(() => this.view()?.splitInto ?? []);
+  /** What an earlier holder is told of a change after it held the B/L. */
+  protected readonly pastNote = computed(() => {
+    const v = this.view();
+    if (v === null) {
+      return null;
+    }
+    return pastHolderNote(v.chain, v.roles, this.viewer(), this.splitInto());
+  });
+
   /** The surrender for the holder, the release for the carrier of a surrendered B/L (CB-46). */
   protected readonly settlements = computed(() =>
     settlementCommands(this.view()?.allowedCommands ?? []),
   );
-  /** Where the B/L stands once surrendered or accomplished, '' before. */
-  protected readonly titleNoteText = computed(() =>
-    titleNote(this.view()?.title?.state ?? null),
+  /** The switch to paper for the holder, the void for the carrier (CB-51). */
+  protected readonly closings = computed(() =>
+    closeCommands(this.view()?.allowedCommands ?? []),
   );
+  /**
+   * Where the B/L stands once surrendered, accomplished, switched to paper or void, or held for
+   * a change; '' else.
+   */
+  protected readonly titleNoteText = computed(() => {
+    const v = this.view();
+    const state = v?.title?.state ?? null;
+    const ended = titleNote(state) || closeNote(state);
+    if (ended !== '' || v === null) {
+      return ended;
+    }
+    return changeRequestNote(v.title, this.viewer(), v.organisationNames);
+  });
   /** The note's look: an information note once there is something to say, else none. */
   protected readonly titleNoteClass = computed(() => {
     if (this.titleNoteText() === '') {
@@ -398,9 +651,19 @@ export class BlDetailComponent {
     }
     return this.factOf('Kind') ?? kindLabel(null);
   });
-  protected readonly roles = computed(() =>
-    rolesLabel(this.view()?.roles ?? []),
-  );
+  /** The viewer's role; the holder who asked for a change is told the B/L comes back to it. */
+  protected readonly roles = computed(() => {
+    const v = this.view();
+    const roles = v?.roles ?? [];
+    const organisationId = this.viewer().organisationId;
+    const waitsForIt =
+      !!organisationId &&
+      v?.title?.returnTo === organisationId &&
+      !roles.includes('holder');
+    return waitsForIt
+      ? 'Asked for a change: the B/L comes back to you'
+      : rolesLabel(roles);
+  });
   protected readonly carrier = computed(() => {
     const v = this.view();
     if (v === null) {
@@ -412,13 +675,18 @@ export class BlDetailComponent {
       v.organisationNames,
     );
   });
-  protected readonly holder = computed(() =>
-    partyLabel(
-      this.view()?.title?.holder,
+  protected readonly holder = computed(() => {
+    const v = this.view();
+    const held = changeHolderLabel(
+      v?.title ?? null,
       this.viewer(),
-      this.view()?.organisationNames,
-    ),
-  );
+      v?.organisationNames,
+    );
+    if (held !== null) {
+      return held;
+    }
+    return partyLabel(v?.title?.holder, this.viewer(), v?.organisationNames);
+  });
   protected readonly consignee = computed(() => {
     const title = this.view()?.title;
     if (!title) {
@@ -433,13 +701,14 @@ export class BlDetailComponent {
       this.view()?.organisationNames,
     );
   });
-  protected readonly chain = computed(() =>
-    chainRows(
-      this.view()?.chain ?? [],
-      this.viewer(),
-      this.view()?.organisationNames,
-    ),
-  );
+  protected readonly chain = computed(() => {
+    const v = this.view();
+    return chainRows(v?.chain ?? [], this.viewer(), v?.organisationNames, {
+      issuedVersion: v?.title?.issuedVersion,
+      splitInto: v?.splitInto,
+      splitFrom: v?.splitFrom,
+    });
+  });
 
   constructor() {
     effect(() => {
@@ -521,10 +790,136 @@ export class BlDetailComponent {
   }
 
   /**
-   * Opens the "Endorse" panel and lists the organisations the holder may pick.
+   * Switches the B/L to paper, or voids it, once the user confirms what happens (for a
+   * blank-endorsed B/L, that the paper is a bearer document); the focus then moves to the note on
+   * where the B/L stands. A refusal is shown in plain words, and the B/L is read again.
+   * @param command the switch to paper or the void
+   * @return when the page shows the B/L again
+   */
+  protected async close(command: CloseCommand): Promise<void> {
+    const endorsement = this.view()?.title?.endorsement ?? null;
+    const asked = closeConfirmation(
+      command.name,
+      this.view()?.record.label ?? '',
+      endorsement,
+    );
+    const confirmed = await this.confirm.ask({...asked, tone: 'danger'});
+    if (!confirmed) {
+      return;
+    }
+    this.busy.set(true);
+    this.actionError.set(null);
+    try {
+      await this.bls.close(
+        this.id(),
+        command.name,
+        closeRequest(command.name, endorsement),
+      );
+      this.toast.show('success', command.done, this.view()?.record.label ?? '');
+    } catch (e) {
+      this.actionError.set(refusalOf(toApiError(e)).message);
+      return;
+    } finally {
+      this.busy.set(false);
+      await this.load(this.id());
+    }
+    this.focusAfterRender(() => {
+      this.titleNoteRef()?.nativeElement.focus();
+    });
+  }
+
+  /**
+   * Asks the carrier for a change once the holder confirms what happens: the carrier then holds
+   * the B/L; the focus moves to the note on where it stands. A refusal is shown in plain words,
+   * and the B/L is read again (someone may have acted first).
+   * @return when the page shows the B/L again
+   */
+  protected async askForChange(): Promise<void> {
+    const confirmed = await this.confirm.ask({
+      title: askForChangeQuestion(this.view()?.record.label ?? ''),
+      body: ASK_FOR_CHANGE.body,
+      confirmLabel: ASK_FOR_CHANGE.confirmLabel,
+    });
+    if (!confirmed) {
+      return;
+    }
+    this.busy.set(true);
+    this.actionError.set(null);
+    try {
+      await this.bls.command(this.id(), 'surrender-for-amendment');
+      this.toast.show(
+        'success',
+        ASK_FOR_CHANGE.done,
+        this.view()?.record.label ?? '',
+      );
+    } catch (e) {
+      const refusal = refusalOf(toApiError(e));
+      this.actionError.set(refusal.message);
+      return;
+    } finally {
+      this.busy.set(false);
+      await this.load(this.id());
+    }
+    this.focusAfterRender(() => {
+      this.titleNoteRef()?.nativeElement.focus();
+    });
+  }
+
+  /**
+   * Opens the carrier's panel to amend or split the B/L; the focus moves to its heading.
+   * @param panel which one
+   */
+  protected openChange(panel: ChangePanel): void {
+    this.changing.set(panel);
+    this.actionError.set(null);
+    const label = panel === 'amend' ? 'Amend' : 'Split';
+    this.focusAfterRender(() => {
+      const heading = this.host.nativeElement.querySelector<HTMLElement>(
+        `section[aria-label="${label}"] h2`,
+      );
+      heading?.focus();
+    });
+  }
+
+  /** Closes the carrier's panel of a change. */
+  protected closeChange(): void {
+    this.changing.set(null);
+  }
+
+  /**
+   * The B/L is amended or split: the panel closes and the page shows the B/L as it is now; the
+   * focus moves to the note on where it stands.
+   * @return when the page shows it
+   */
+  protected async changeDone(): Promise<void> {
+    this.closeChange();
+    await this.load(this.id());
+    this.focusAfterRender(() => {
+      this.titleNoteRef()?.nativeElement.focus();
+    });
+  }
+
+  /**
+   * Reads the B/L again, after a refusal of an amendment or a split that says it moved on; when
+   * the B/L may no longer be changed, its panel closes and the page says why (CB-54).
+   * @param reason the refusal, in plain words
+   * @return when the page shows it
+   */
+  protected async changeStale(reason: string): Promise<void> {
+    await this.load(this.id());
+    if (this.changing() === null) {
+      this.actionError.set(reason);
+    }
+  }
+
+  /**
+   * Opens the "Endorse" or "Transfer" panel and lists the organisations the holder may pick.
+   * @param action endorse, or transfer a blank-endorsed B/L (CB-52)
    * @return when they are listed, or why they cannot be
    */
-  protected async openEndorse(): Promise<void> {
+  protected async openEndorse(action: HandOver): Promise<void> {
+    this.handOver.set(action);
+    this.endorseMode.set('named');
     this.endorsing.set(true);
     this.endorsee.set('');
     this.actionError.set(null);
@@ -582,11 +977,24 @@ export class BlDetailComponent {
     this.endorsee.set(id);
   }
 
-  /** Closes the "Endorse" panel without endorsing, the focus back on "Endorse to…". */
+  /**
+   * Keeps how the holder endorses (CB-52).
+   * @param mode by name or in blank
+   */
+  protected pickMode(mode: EndorseMode): void {
+    this.endorseMode.set(mode);
+  }
+
+  /** Closes the panel without acting, the focus back on the button that opened it. */
   protected cancelEndorse(): void {
+    const action = this.handOver();
     this.closeEndorse();
     this.focusAfterRender(() => {
-      this.endorseOpen()?.nativeElement.focus();
+      if (action === 'transfer') {
+        this.transferOpen()?.nativeElement.focus();
+      } else {
+        this.endorseOpen()?.nativeElement.focus();
+      }
     });
   }
 
@@ -594,15 +1002,16 @@ export class BlDetailComponent {
   private closeEndorse(): void {
     this.endorsing.set(false);
     this.endorsee.set('');
+    this.endorseMode.set('named');
     // an answer still on its way is no longer shown
     this.latestEndorsees.begin();
   }
 
   /**
-   * Endorses the B/L to the organisation picked, once the user confirms what happens; the panel
-   * closes when it is done. A refusal is shown, and the B/L is read again (someone may have
-   * endorsed it first): the panel stays, its list read again, only while the user may still
-   * endorse it.
+   * Endorses the B/L to the organisation picked, by name or in blank, or transfers the
+   * blank-endorsed B/L to it (CB-52), once the user confirms what happens; the panel closes when
+   * it is done. A refusal is shown, and the B/L is read again (someone may have acted on it
+   * first): the panel stays, its list read again, only while the user may still act.
    * @return when the page shows the B/L again
    */
   protected async endorse(): Promise<void> {
@@ -611,24 +1020,30 @@ export class BlDetailComponent {
     if (to === '') {
       return;
     }
+    const action = this.handOver();
+    const mode = this.endorseMode();
     const label = this.view()?.record.label ?? 'this B/L';
+    const words = handOverWords(action, mode, label, name);
     const confirmed = await this.confirm.ask({
-      title: `Endorse ${label} to ${name}?`,
+      title: words.title,
       body: this.confirmation(),
-      confirmLabel: 'Endorse',
+      confirmLabel: words.confirmLabel,
     });
     if (!confirmed) {
       return;
     }
-    const done = await this.act(`B/L endorsed to ${name}`, () =>
-      this.bls.endorse(this.id(), to),
-    );
+    const done = await this.act(words.done, () => {
+      if (action === 'transfer') {
+        return this.bls.transfer(this.id(), to);
+      }
+      return this.bls.endorse(this.id(), to, mode);
+    });
     if (done) {
       this.closeEndorse();
       return;
     }
     await this.load(this.id());
-    if (this.canEndorse()) {
+    if (this.handOverOpen()) {
       await this.loadEndorsees();
     } else {
       this.closeEndorse();
@@ -653,7 +1068,12 @@ export class BlDetailComponent {
       await this.load(this.id());
       return true;
     } catch (e) {
-      this.actionError.set(toApiError(e).message);
+      const refusal = refusalOf(toApiError(e));
+      if (refusal.reload) {
+        // The B/L moved on: show it as it is now, then say why the action was refused.
+        await this.load(this.id());
+      }
+      this.actionError.set(refusal.message);
       return false;
     } finally {
       this.busy.set(false);
@@ -690,18 +1110,26 @@ export class BlDetailComponent {
       this.view.set(null);
       this.record.set(null);
       this.closeEndorse();
+      this.closeChange();
     }
     try {
       const view = await this.bls.title(id);
+      // before issue, its record and draft; while the carrier may amend or split it (CB-50), its
+      // current version, which only the carrier reads
+      const allowed = view.allowedCommands;
+      const changing = mayAmend(allowed) || maySplit(allowed);
       let record: BlRecord | null = null;
-      if (view.title === null) {
+      if (view.title === null || changing) {
         record = await this.bls.record(id);
       }
       if (this.latest.isCurrent(request)) {
         this.view.set(view);
         this.record.set(record);
+        if (!changing) {
+          this.closeChange();
+        }
       }
-      if (record !== null) {
+      if (record !== null && view.title === null) {
         void this.loadNames();
       }
     } catch (e) {

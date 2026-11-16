@@ -9,7 +9,16 @@
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git push origin main:*)",
-      "Bash(gh pr merge:*)"
+      "Bash(gh pr merge:*)",
+      "Read(**/node_modules/**)",
+      "Read(**/dist/**)",
+      "Read(**/.angular/**)",
+      "Read(**/out-tsc/**)",
+      "Read(**/coverage/**)",
+      "Read(**/.cache/**)",
+      "Read(**/test-results/**)",
+      "Read(**/playwright-report/**)",
+      "Read(**/security/.reports/**)"
     ]
   }
 }

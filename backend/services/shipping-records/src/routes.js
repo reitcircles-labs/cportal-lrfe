@@ -358,6 +358,36 @@ export async function recordsRoutes(app, {service}) {
   // the organisations registered and active on the platform, whom a new B/L may name as its
   // shipper or consignee (CB-44) and whom its holder may endorse it to (CB-45: trade staff have
   // bl.endorse, not bl.draft); only the id, code and name of each
+  // the port list (CB-63): the ports a B/L may name, searched by code or name
+  app.get(
+    '/records/ports',
+    {
+      onRequest: app.requireAnyPerm('bl.draft', 'bl.issue'),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            q: {type: 'string', maxLength: 100},
+            code: {type: 'string', maxLength: 5},
+            limit: {type: 'integer', minimum: 1, maximum: 50},
+          },
+        },
+      },
+    },
+    async req => {
+      const ports = service.ports;
+      if (!ports) {
+        return {items: [], release: null};
+      }
+      const {q = '', code, limit = 20} = req.query;
+      const items = code
+        ? [ports.get(code)].filter(port => port !== null)
+        : ports.search(q, limit);
+      return {items, release: ports.release};
+    },
+  );
+
   app.get(
     '/records/organisations',
     {onRequest: app.requireAnyPerm('bl.draft', 'bl.endorse')},

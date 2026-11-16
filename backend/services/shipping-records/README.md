@@ -120,6 +120,11 @@ caller may run now.
   the carrier with version 1 committed by the engine and its event, a first title held by the
   organisation the parent was to go back to, and its first entry `issue-from-split` following the
   parent's `split` entry. The answer adds `children: [{recordId, recordNo}]`, in the order given.
+  The title read (and every command's answer) links them (CB-50): a child has `splitFrom:
+  {recordId, recordNo}`, a split parent `splitInto: [{recordId, recordNo}]`, by number; numbers
+  only. Earlier holders never get an amended version's values: records and versions are read by
+  their carrier alone (404 for every other organisation, past holders included), and the title
+  read gives a version number and hash, never a document.
 - **Release** is of the whole B/L: a release body naming part of its cargo is refused (400
   `partial-release`).
 - **Known limit of the memory store** (`RECORDS_STORE=memory`, development and tests only): it
@@ -242,6 +247,7 @@ be reached the route answers 503, never "pending".
 | `TITLE_SIGNER` | not set | the platform key that signs the chain of title: `bao`, the key in OpenBao's transit engine (below); not set, an in-process key made at start outside production (development, tests, e2e: its entries do not verify after a restart) and **none in production**, where title commands are then refused (503); any other value stops the start |
 | `TITLE_SIGNING_KEY` | | with `TITLE_SIGNER=bao`: the transit key's name, type `ecdsa-p256`; the `kid` of a signature is `<key>:v<version>`, and after a rotation the older versions keep verifying |
 | `BAO_ADDR`, `BAO_ROLE_ID`, `BAO_SECRET_ID_FILE` | | with `TITLE_SIGNER=bao`: OpenBao's address and the service's AppRole (its role ID, and the file holding its secret ID); the AppRole needs `transit/sign/<key>` and read on `transit/keys/<key>`. In `deploy/` (CB-36): key `bl-title`, the AppRole prepared by `docker compose run --rm openbao-setup-shipping`, profile `shipping` only, then `TITLE_SIGNER=bao` in `.env` (not set by default: title commands refused, the rest works; `deploy/README.md`, part D, step 7) |
+| `PORT_LIST_FILE` | the pack's list | the port list a new or changed port of loading or discharge must be on (CB-63): a JSON file built from a UN/LOCODE release with `node backend/domains/shipping/scripts/build-port-list.mjs <code-list.csv> --out <file>`; not set or empty, the list shipped in `backend/domains/shipping/data/` (17,643 sea ports). A file that cannot be read, or holds no ports, stops the start |
 | `LOG_LEVEL` | `info` | the log level |
 
 Run it alone with `npm run dev:shipping-records` in `backend/`, or with the others:

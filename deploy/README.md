@@ -442,6 +442,18 @@ openbao`, have three key holders unseal it (part D, step 3), and only then run `
 | Stop / start everything | `docker compose stop` / `docker compose up -d` |
 | Which version runs | `docker image inspect lrfe-backend:<version> --format '{{index .Config.Labels "org.opencontainers.image.version"}}'` |
 
+**The port list of a shipping install** (CB-63). A new or changed port of loading or discharge of a B/L must be a
+sea port of the UN/LOCODE list; B/Ls that already name a port not on it keep it. Each release ships the list it
+was built with. To use a newer UN/LOCODE release without a new version:
+
+1. On a machine with the repository: download UNECE's UN/LOCODE code list in CSV (the columns `Change`, `Country`,
+   `Location`, `Name`, `Function`), then
+   `node backend/domains/shipping/scripts/build-port-list.mjs code-list.csv --release <name> --out un-locode-ports.json`
+   (it prints the number of ports).
+2. Copy `un-locode-ports.json` into the bundle's folder `ports/`, set `PORT_LIST_FILE=/run/lrfe/ports/un-locode-ports.json`
+   in `.env`, and `docker compose up -d shipping-records`. A file that cannot be read stops shipping-records at
+   start (`docker compose logs shipping-records`); remove the setting to go back to the shipped list.
+
 **Before a demo** (on the development server): `node demo/check-readiness.mjs` checks the containers, the apps,
 the demo users, the AI, the demo documents and the data, and says what is not ready (`demo/README.md`).
 

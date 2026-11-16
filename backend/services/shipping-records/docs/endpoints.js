@@ -36,6 +36,12 @@ export const ENDPOINTS = {
       description:
         "`{ comment? }`. For a person with `bl.issue` of the B/L's organisation (CB-44): commits the version as `commit` does (sealed, chained, `records.record.committed` published), with you as its approver. Never one of its drafters: whoever created, changed or submitted that version gets 403 (`details.code` `own-draft`). 403 without `bl.issue` or for a user of no organisation; 404 for another organisation's B/L. 409 when the version is not in review (still a draft, or committed by someone else; of two approvals at the same moment one wins). A retry by the same approver answers the record unchanged. The B/L is then issued with `POST /records/{id}/title/issue`.",
     },
+    'GET /records/ports': {
+      tag: 'Records',
+      summary: 'Search the port list (UN/LOCODE sea ports)',
+      description:
+        "`?q=` part of a code or a name (accents ignored), `?limit=` at most 50 (20 by default); or `?code=` one code. Answers `{ items: [{ code, name, country }], release }`. A new or changed port of loading or discharge must be on this list (400, `details.code` `unknown-port`); ports a B/L already named are not checked again. The list comes from `PORT_LIST_FILE` (the shipping pack's list by default). For people with `bl.draft` or `bl.issue`.",
+    },
     'GET /records/organisations': {
       tag: 'Records',
       summary:
@@ -98,7 +104,7 @@ export const ENDPOINTS = {
       summary:
         "A B/L's title: its state, holder, the commands you may run now and its chain of title",
       description:
-        '`{ recordId, record, title, allowedCommands, roles, chain, organisationNames }`. `organisationNames`: `{ id: name }` of the organisations the title and its chain name, as identity gives them; one without a name, or every one while identity cannot answer, is left out (the read never fails for a name). `record`: `{ recordNo, carrierCode, label, status, draftState }`, the reference and drafting state of the B/L. `roles`: the roles of your organisation on it (`carrier`, `holder`, `past-holder`, `consignee`). `title`: `{ kind, state, carrier, holder, endorsement, consignee, returnTo, issuedVersion, documentHash, revision, createdAt, updatedAt }`, null before issue. `allowedCommands`: the commands your organisation may run on it now (before issue: `issue` for the carrier that owns a B/L with a committed version and none in review). `chain`: the chain-of-title entries, signed, oldest first; `[]` before issue. Before issue only the organisation that owns the B/L sees it; after it the carrier, the current holder, past holders and the consignee. 404 "B/L not found" for anyone else, as for a B/L that does not exist. 403 for a user of no organisation.',
+        '`{ recordId, record, title, allowedCommands, roles, chain, organisationNames }`. `organisationNames`: `{ id: name }` of the organisations the title and its chain name, as identity gives them; one without a name, or every one while identity cannot answer, is left out (the read never fails for a name). `record`: `{ recordNo, carrierCode, label, status, draftState }`, the reference and drafting state of the B/L. `roles`: the roles of your organisation on it (`carrier`, `holder`, `past-holder`, `consignee`). `title`: `{ kind, state, carrier, holder, endorsement, consignee, returnTo, issuedVersion, documentHash, revision, createdAt, updatedAt }`, null before issue. `allowedCommands`: the commands your organisation may run on it now (before issue: `issue` for the carrier that owns a B/L with a committed version and none in review). `chain`: the chain-of-title entries, signed, oldest first; `[]` before issue. `splitFrom`: `{ recordId, recordNo }` of the B/L it was split from, only for a B/L made by a split; `splitInto`: `[{ recordId, recordNo }]` of the B/Ls it was split into, by number, only once split (numbers only, never their documents). Before issue only the organisation that owns the B/L sees it; after it the carrier, the current holder, past holders and the consignee. 404 "B/L not found" for anyone else, as for a B/L that does not exist. 403 for a user of no organisation.',
     },
     'POST /records/{id}/title/{command}': {
       tag: 'Records',

@@ -14,10 +14,12 @@ needs it. Creating and transitioning return the whole issue: don't echo it back 
 
 - **Start:** transition 11; read "Agreed design" and "Done when" comments, not the whole history.
 - **Before closing:**
-  1. "What changed" (commit hash, branch, not pushed) and "Test results" comments, in markdown;
-  2. for UI or e2e work, the screenshots embedded in one captioned comment (below), never only local
-     files: "otherwise there is no proof of you having done any frontend test";
-  3. transition 21.
+  1. **One comment** with three sections: "What changed" (commit hash, branch, not pushed), "Test
+     results", and for UI or e2e work "Screenshots", captioned and embedded (below), never only local
+     files: "otherwise there is no proof of you having done any frontend test". Jira echoes every
+     comment back in full, so one comment instead of three saves about a third of the tokens. It is
+     html when it embeds pictures, markdown otherwise;
+  2. transition 21 (in project CB, by name: "Done"; "In Progress" to start).
 - **Style:** plain English, short bullets with bold lead-ins, no internal jargon; say what is still
   open and whose decision it is. A ticket whose "Done when" needs the user's agreement (targets, legal
   standing) stays In Progress with that stated.
@@ -31,9 +33,11 @@ command, because it carries a token. The jira-reporter agent then posts the comm
 
 1. `executeWrite` with name `uploadAttachmentToJiraIssue`, inputs `{issueIdOrKey, filePath}` → an
    upload command with a short-lived token (about 20 min).
-2. The token covers the whole media collection: one token can upload every file of a run, each with
-   its own `name=` and `--data-binary @file`; take `data.id` from each answer.
-3. One `addOrEditJiraIssueComment`, `contentFormat: "html"`, a caption per picture and
+2. The token covers the whole media collection: upload every file of the run with **one** shell loop
+   (`for f in *.png; do curl … name=$f … --data-binary "@$f"; done`), printing only `<file> <data.id>`
+   per line, never the token or the full answers. One upload call and one loop, whatever the count.
+3. One `addOrEditJiraIssueComment` (the single comment of "Before closing"), `contentFormat:
+   "html"`: "What changed" and "Test results" as `<h2>` sections with `<ul>`, then a caption per picture and
    `<figure data-type="media-single"><div data-type="media" data-id="<id>"
    data-collection="upload-user-collection--1796169761" data-media-type="file"></div></figure>`.
 

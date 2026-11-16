@@ -10,6 +10,7 @@ import {
   billOfLadingHash,
   formatNamed,
 } from '@lrfe/domain-shipping/bill-of-lading';
+import {portProblems} from '@lrfe/domain-shipping/ports';
 import {sealOf, verifyChain} from '@lrfe/record-contract/seal';
 
 /** The list's status filters: the record's own status, or a draft waiting in review. */
@@ -165,11 +166,31 @@ export class ShippingRecordsService {
    *   clock?: function(): Date,
    * }} options `formats`: the B/L formats on in this install (formatsFromSettings)
    */
-  constructor({repo, events, formats, clock = () => new Date()}) {
+  constructor({repo, events, formats, clock = () => new Date(), ports = null}) {
     this.repo = repo;
     this.events = events;
     this.formats = formats;
     this.clock = clock;
+    this.ports = ports;
+  }
+
+  /**
+   * Refuses (400) a B/L that names a port not in the port list (CB-63); a port its previous
+   * version already named is not checked again.
+   * @param {object} document the new document
+   * @param {?object} previous the B/L's current document, null for a new B/L
+   */
+  requirePorts(document, previous) {
+    const problems = portProblems(document, previous, this.ports);
+    if (problems.length > 0) {
+      throw new BadRequestError(
+        `This B/L is not valid: ${problems[0].message}`,
+        {
+          code: 'unknown-port',
+          problems,
+        },
+      );
+    }
   }
 
   /**
@@ -263,6 +284,7 @@ export class ShippingRecordsService {
    */
   async createRecord(body, actor, organisationId) {
     const data = this.billOfLadingOf(body);
+    this.requirePorts(data.document, null);
     const {carrierCode, transportDocumentReference: recordNo} = data.document;
     if (await this.repo.findRecord({organisationId, carrierCode, recordNo})) {
       throw new ConflictError(
@@ -339,6 +361,10 @@ export class ShippingRecordsService {
     const record = await this.requireRecord(id, organisationId);
     const data = this.billOfLadingOf(body);
     assertSameDocument(record, data.document);
+    const current = record.currentVersion
+      ? await this.requireVersion(record, record.currentVersion)
+      : null;
+    this.requirePorts(data.document, current?.data.document ?? null);
     // the draft as read now: it is replaced only if nobody changes it meanwhile
     const draft = record.draftVersion
       ? await this.requireVersion(record, record.draftVersion)

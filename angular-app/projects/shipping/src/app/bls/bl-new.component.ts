@@ -19,6 +19,7 @@ import {
   type DraftProblem,
 } from './bl-draft';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
+import {NO_PORTS, PortOptions, portLabel} from './bl-ports';
 import type {PartyOrganisation} from './bl.model';
 import {injectViewer} from './viewer';
 
@@ -31,6 +32,8 @@ interface FieldSpec {
   mono?: boolean;
   maxlength?: number;
   hint?: string;
+  /** A port: offered from the port list as it is typed (CB-63). */
+  port?: boolean;
 }
 
 /** The fields of each section, in order. */
@@ -85,7 +88,8 @@ const VOYAGE_FIELDS: readonly FieldSpec[] = [
     type: 'text',
     mono: true,
     maxlength: 5,
-    hint: 'UN/LOCODE, five characters.',
+    hint: 'Type a port name or its UN/LOCODE, e.g. Rotterdam or NLRTM.',
+    port: true,
   },
   {
     field: 'portOfDischarge',
@@ -93,7 +97,8 @@ const VOYAGE_FIELDS: readonly FieldSpec[] = [
     type: 'text',
     mono: true,
     maxlength: 5,
-    hint: 'UN/LOCODE, five characters.',
+    hint: 'Type a port name or its UN/LOCODE, e.g. Rotterdam or NLRTM.',
+    port: true,
   },
   {field: 'departureDate', label: 'Planned departure', type: 'date'},
   {field: 'arrivalDate', label: 'Planned arrival', type: 'date'},
@@ -247,7 +252,17 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
     <ng-template #input let-f>
       <div class="field">
         <label [for]="'bl-' + f.field">{{ f.label }}</label>
-        <input [id]="'bl-' + f.field" [type]="f.type" [class]="f.mono ? 'input mono' : 'input'" autocomplete="off" [attr.maxlength]="f.maxlength ?? null" [attr.min]="f.type === 'number' ? 0 : null" [value]="valueOf(f.field)" (input)="setFrom(f, $any($event.target).value)" [attr.aria-invalid]="isInvalid(f.field) ? 'true' : null" [attr.aria-describedby]="f.hint ? 'bl-' + f.field + '-hint' : null">
+        <input [id]="'bl-' + f.field" [type]="f.type" [class]="f.mono ? 'input mono' : 'input'" autocomplete="off" [attr.maxlength]="f.maxlength ?? null" [attr.min]="f.type === 'number' ? 0 : null" [value]="valueOf(f.field)" (input)="setFrom(f, $any($event.target).value)" [attr.aria-invalid]="isInvalid(f.field) ? 'true' : null" [attr.aria-describedby]="f.hint ? 'bl-' + f.field + '-hint' : null" [attr.list]="f.port ? 'bl-' + f.field + '-ports' : null">
+        @if (f.port) {
+          <datalist [id]="'bl-' + f.field + '-ports'">
+            @for (p of ports.options(f.field); track p.code) {
+              <option [value]="p.code">{{ portName(p) }}</option>
+            }
+          </datalist>
+          @if (ports.nameOf(valueOf(f.field)); as picked) {
+            <span class="small" [attr.data-testid]="'bl-' + f.field + '-name'">{{ picked }}</span>
+          }
+        }
         @if (f.hint) {
           <span class="small muted" [id]="'bl-' + f.field + '-hint'">{{ f.hint }}</span>
         }
@@ -270,6 +285,12 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
 })
 export class BlNewComponent {
   private readonly bls = inject(BlApi);
+  /** The ports offered in the port fields (CB-63). */
+  protected readonly ports = new PortOptions(
+    query => this.bls.ports(query),
+    signal(NO_PORTS),
+  );
+  protected readonly portName = portLabel;
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly toast = inject(ToastService);
@@ -342,6 +363,9 @@ export class BlNewComponent {
    * @param value the input's text
    */
   protected setFrom(spec: FieldSpec, value: string): void {
+    if (spec.port) {
+      void this.ports.search(spec.field, value);
+    }
     if (spec.type !== 'number') {
       this.setText(spec.field, value);
       return;
