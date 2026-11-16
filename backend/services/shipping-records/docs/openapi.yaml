@@ -387,6 +387,70 @@ paths:
       x-access:
         allOf:
           - bl.issue
+  /records/ports:
+    get:
+      tags:
+        - Records
+      summary: Search the port list (UN/LOCODE sea ports)
+      description: >-
+        `?q=` part of a code or a name (accents ignored), `?limit=` at most 50 (20 by default); or `?code=` one code. Answers `{ items: [{
+        code, name, country }], release }`. A new or changed port of loading or discharge must be on this list (400, `details.code`
+        `unknown-port`); ports a B/L already named are not checked again. The list comes from `PORT_LIST_FILE` (the shipping pack's list by
+        default). For people with `bl.draft` or `bl.issue`.
+
+
+        **Access:** Signed-in user with any of `bl.draft`, `bl.issue`.
+      operationId: getRecordsPorts
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 5
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - bl.draft
+          - bl.issue
   /records/organisations:
     get:
       tags:

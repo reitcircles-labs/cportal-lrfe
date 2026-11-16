@@ -36,6 +36,12 @@ export const ENDPOINTS = {
       description:
         "`{ comment? }`. For a person with `bl.issue` of the B/L's organisation (CB-44): commits the version as `commit` does (sealed, chained, `records.record.committed` published), with you as its approver. Never one of its drafters: whoever created, changed or submitted that version gets 403 (`details.code` `own-draft`). 403 without `bl.issue` or for a user of no organisation; 404 for another organisation's B/L. 409 when the version is not in review (still a draft, or committed by someone else; of two approvals at the same moment one wins). A retry by the same approver answers the record unchanged. The B/L is then issued with `POST /records/{id}/title/issue`.",
     },
+    'GET /records/ports': {
+      tag: 'Records',
+      summary: 'Search the port list (UN/LOCODE sea ports)',
+      description:
+        "`?q=` part of a code or a name (accents ignored), `?limit=` at most 50 (20 by default); or `?code=` one code. Answers `{ items: [{ code, name, country }], release }`. A new or changed port of loading or discharge must be on this list (400, `details.code` `unknown-port`); ports a B/L already named are not checked again. The list comes from `PORT_LIST_FILE` (the shipping pack's list by default). For people with `bl.draft` or `bl.issue`.",
+    },
     'GET /records/organisations': {
       tag: 'Records',
       summary:

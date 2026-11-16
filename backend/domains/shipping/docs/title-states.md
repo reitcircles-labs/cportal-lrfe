@@ -179,6 +179,7 @@ found" before any refusal that would tell the B/L's state.
 | `own-draft` | 403 | `POST /records/:id/versions/:n/approve` (CB-44, before issue) by a person who created, changed or submitted that version: four eyes | You drafted this version, so a second person must approve it (four-eyes) |
 | `proof-unavailable` | 503 | `GET /records/:id/title/proof` while the proof on the blockchain cannot be read | The proof on the blockchain cannot be read now: try again later. |
 | `no-number` | 400 | `GET /records/title?number=` with a blank number (CB-47, "Check a B/L by number") | Give the number of the B/L to look for |
+| `unknown-port` | 400 | a new or changed port of loading or discharge (`POST /records`, `PUT /records/:id/draft`, `amend`) is not a sea port of the port list (CB-63; `details.problems`) | This B/L is not valid: XXAAA is not a sea port of the UN/LOCODE list: pick the port of discharge from the list |
 
 An invalid document (`amend`, `split`) is refused 400 with every problem in `details.problems`,
 as when a B/L is drafted.

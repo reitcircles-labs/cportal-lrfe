@@ -20,6 +20,7 @@ import {
   applyTitleCommand,
   kindOf,
 } from '@lrfe/domain-shipping/title';
+import {portProblems} from '@lrfe/domain-shipping/ports';
 
 import {TITLE_ENTRY_TYP, entryHashOf} from './chain.js';
 import {summaryOf} from './records.service.js';
@@ -458,6 +459,7 @@ export class TitleService {
     audit = null,
     organisations,
     formats = formatsFromSettings({}),
+    ports = null,
   }) {
     if (typeof organisations?.standingOf !== 'function') {
       throw new Error(
@@ -472,6 +474,7 @@ export class TitleService {
     this.audit = audit;
     this.organisations = organisations;
     this.formats = formats;
+    this.ports = ports;
   }
 
   /**
@@ -749,6 +752,21 @@ export class TitleService {
       convertedDocument(this.formats, command, current.data.partyOrganisations),
       {carrierCode: record.carrierCode, reference: record.recordNo},
     );
+    // a changed port must be on the port list (CB-63)
+    const problems = portProblems(
+      data.document,
+      current.data.document,
+      this.ports,
+    );
+    if (problems.length > 0) {
+      throw new BadRequestError(
+        `This B/L is not valid: ${problems[0].message}`,
+        {
+          code: 'unknown-port',
+          problems,
+        },
+      );
+    }
     const version = engineCommittedVersion({
       record,
       versionNumber: current.versionNumber + 1,

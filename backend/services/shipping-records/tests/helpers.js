@@ -145,7 +145,8 @@ export const ACTIVE_ORGANISATIONS = Object.freeze({
  *   audit?: object,
  *   organisations?: object,
  *   modules?: ReadonlyArray<string>,
- * }} [options]
+ *   ports?: object,
+ * }} [options] `ports`: the port list (CB-63); none: ports are not checked
  * @return {Promise<object>}
  */
 export async function makeHttp(
@@ -156,6 +157,7 @@ export async function makeHttp(
     audit,
     organisations = ACTIVE_ORGANISATIONS,
     modules = modulesFromSettings({}),
+    ports = null,
   } = {},
 ) {
   const {repo, atomic, close, sequelize} = await store.open();
@@ -168,6 +170,7 @@ export async function makeHttp(
     events,
     formats: formats ?? formatsFromSettings({}),
     clock: makeClock(),
+    ports,
   });
   let titles = null;
   if (signer) {
@@ -179,6 +182,7 @@ export async function makeHttp(
       signer,
       audit,
       organisations,
+      ports,
     });
   }
   const app = await buildApp({service, titles, jwtSecret: SECRET});

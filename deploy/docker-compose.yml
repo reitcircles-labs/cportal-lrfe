@@ -303,11 +303,15 @@ services:
       # OpenBao, its login prepared by openbao-setup-shipping (README.md, part D, step 7); empty (the
       # default) = none: title commands are refused (503), drafting and reading work
       TITLE_SIGNER: ${TITLE_SIGNER:-}
+      # the port list a B/L's ports are checked against (CB-63): empty (the default) = the list
+      # shipped with the release; a newer UN/LOCODE list = a file in deploy/ports/ (README.md, part G)
+      PORT_LIST_FILE: ${PORT_LIST_FILE:-}
       TITLE_SIGNING_KEY: bl-title
       BAO_ADDR: http://openbao:8200
       BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
     volumes:
       - bao-shipping-records:/run/lrfe/bao:ro
+      - ./ports:/run/lrfe/ports:ro
     networks: [default, bao]
     healthcheck: *healthcheck
     depends_on:

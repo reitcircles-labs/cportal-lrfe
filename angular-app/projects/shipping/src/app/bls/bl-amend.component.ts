@@ -27,6 +27,7 @@ import {
 import {type Refusal, refusalOf} from './bl-change';
 import {DRAFT_FORMAT} from './bl-draft';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
+import {NO_PORTS, PortOptions, portLabel} from './bl-ports';
 
 /**
  * The "Amend" panel of a B/L's page (CB-50, first version, from the CB-14 design): the carrier of
@@ -74,7 +75,17 @@ import {BL_SHARED_STYLES} from './bl-shared.styles';
                   @if (f.kind === 'long') {
                     <textarea [id]="'amend-' + f.key" class="input" rows="2" [value]="form()[f.key]" (input)="set(f.key, $any($event.target).value)"></textarea>
                   } @else {
-                    <input [id]="'amend-' + f.key" [type]="f.kind === 'date' ? 'date' : 'text'" [class]="f.kind === 'code' ? 'input mono' : 'input'" autocomplete="off" [value]="form()[f.key]" (input)="set(f.key, $any($event.target).value)" />
+                    <input [id]="'amend-' + f.key" [type]="f.kind === 'date' ? 'date' : 'text'" [class]="f.kind === 'code' ? 'input mono' : 'input'" autocomplete="off" [value]="form()[f.key]" (input)="set(f.key, $any($event.target).value)" [attr.list]="isPort(f.key) ? 'amend-' + f.key + '-ports' : null" />
+                    @if (isPort(f.key)) {
+                      <datalist [id]="'amend-' + f.key + '-ports'">
+                        @for (p of ports.options(f.key); track p.code) {
+                          <option [value]="p.code">{{ portName(p) }}</option>
+                        }
+                      </datalist>
+                      @if (ports.nameOf(form()[f.key]); as picked) {
+                        <span class="small">{{ picked }}</span>
+                      }
+                    }
                   }
                 </td>
               </tr>
@@ -156,6 +167,12 @@ export class BlAmendComponent {
   readonly cancelled = output<void>();
 
   private readonly bls = inject(BlApi);
+  /** The ports offered in the port fields (CB-63). */
+  protected readonly ports = new PortOptions(
+    query => this.bls.ports(query),
+    signal(NO_PORTS),
+  );
+  protected readonly portName = portLabel;
   private readonly confirm = inject(ConfirmService);
   private readonly toast = inject(ToastService);
 
@@ -200,6 +217,18 @@ export class BlAmendComponent {
    */
   protected set(key: string, value: string): void {
     this.form.update(form => ({...form, [key]: value}));
+    if (this.isPort(key)) {
+      void this.ports.search(key, value);
+    }
+  }
+
+  /**
+   * Whether a field names a port, offered from the port list (CB-63).
+   * @param key the field
+   * @return true for the ports of loading and discharge
+   */
+  protected isPort(key: string): boolean {
+    return key === 'portOfLoading' || key === 'portOfDischarge';
   }
 
   /**

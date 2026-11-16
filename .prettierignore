@@ -11,6 +11,8 @@ backend/.tools/
 backend/services/*/docs/openapi.json
 # DCSA's published files and examples, copied unchanged (checksums in each SOURCE.md)
 backend/domains/shipping/dcsa/
+# the port list, built from UN/LOCODE by backend/domains/shipping/scripts/build-port-list.mjs (CB-63)
+backend/domains/shipping/data/
 e2e/.stack/
 e2e/.auth/
 **/coverage/

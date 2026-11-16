@@ -1,4 +1,5 @@
 import {Injectable, inject} from '@angular/core';
+import type {Port} from './bl-ports';
 import {ApiService} from '@lrfe/platform';
 import type {AmendRequest} from './bl-amend';
 import type {DraftRequest} from './bl-draft';
@@ -95,6 +96,18 @@ export class BlApi {
   async organisations(): Promise<PartyOrganisation[]> {
     const answer = await this.api.get<{items: PartyOrganisation[]}>(
       '/records/organisations',
+    );
+    return answer.items;
+  }
+
+  /**
+   * Searches the port list by code or name (CB-63).
+   * @param query part of a code or a port's name
+   * @return the matching ports, at most 20
+   */
+  async ports(query: string): Promise<Port[]> {
+    const answer = await this.api.get<{items: Port[]}>(
+      `/records/ports?q=${encodeURIComponent(query)}`,
     );
     return answer.items;
   }
