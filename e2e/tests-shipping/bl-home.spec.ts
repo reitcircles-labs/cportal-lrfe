@@ -252,5 +252,102 @@ test.describe(
       await expect(page.getByRole('alert')).toContainText('B/L not found');
       await evidence(page, 'CB-42', 'Outsider: a B/L of others is not found');
     });
+
+    test(
+      'the list shows latest ports (code and name), shipper and receiver (CB-72)',
+      {tag: '@CB-72'},
+      async ({page}) => {
+        // Straight B/L naming bank as receiver
+        const straight = await committedBl(api, carrier.clerk, admin, {
+          document: {
+            ...negotiableBl(reference()),
+            isToOrder: false,
+            documentParties: {
+              ...(negotiableBl('X')['documentParties'] as Record<
+                string,
+                unknown
+              >),
+              consignee: {
+                partyName: bank.name,
+                identifyingCodes: [
+                  {
+                    codeListProvider: 'ZZZ',
+                    codeListName: 'organisation',
+                    partyCode: bank.code,
+                  },
+                ],
+              },
+            },
+          },
+          partyOrganisations: {shipper: shipper.id, consignee: bank.id},
+          issue: true,
+        });
+
+        // Amend the negotiable B/L's discharge port to NLRTM; past holder (shipper) sees latest
+        await run(issued.id, 'surrender-for-amendment', bank.clerk);
+        const doc = negotiableBl(
+          issued.label.replace(/^B\/L /, '').replace(/ \([^)]+\)$/, ''),
+        );
+        const transports = doc['transports'] as Record<string, unknown>;
+        await run(issued.id, 'amend', carrier.clerk, {
+          format: 'dcsa-3.0',
+          document: {
+            ...doc,
+            transports: {
+              ...transports,
+              portOfDischarge: {UNLocationCode: 'NLRTM'},
+            },
+          },
+          partyOrganisations: {shipper: shipper.id},
+        });
+
+        await page.setViewportSize({width: 1440, height: 900});
+        await signInOnScreen(page, carrier.clerk.email, INVITED_PASSWORD);
+        const table = page.getByRole('table', {name: 'Bills of lading'});
+        for (const header of [
+          'Port of loading',
+          'Port of discharge',
+          'Shipper',
+          'Receiver',
+        ]) {
+          await expect(
+            table.getByRole('columnheader', {name: header}),
+          ).toBeVisible();
+        }
+        const issuedRow = table
+          .locator('tbody tr')
+          .filter({hasText: issued.label});
+        await expect(issuedRow.locator('td').nth(5)).toHaveText(
+          'DKAAR · Aarhus, Denmark',
+        );
+        await expect(issuedRow.locator('td').nth(6)).toHaveText(
+          'NLRTM · Rotterdam, Netherlands',
+        );
+        await expect(issuedRow.locator('td').nth(7)).toHaveText(shipper.name);
+        await expect(issuedRow.locator('td').nth(8)).toHaveText(
+          'None: to order',
+        );
+
+        const straightRow = table
+          .locator('tbody tr')
+          .filter({hasText: straight.label});
+        await expect(straightRow.locator('td').nth(8)).toHaveText(bank.name);
+        await evidence(
+          page,
+          'CB-72',
+          'Bills of lading list with ports, shipper and receiver',
+        );
+
+        // Past holder (shipper) sees the latest amended discharge port in the list too
+        await page.getByRole('button', {name: 'Sign out'}).click();
+        await signInOnScreen(page, shipper.clerk.email, INVITED_PASSWORD);
+        const pastRow = table
+          .locator('tbody tr')
+          .filter({hasText: issued.label});
+        await expect(pastRow.locator('td').nth(6)).toHaveText(
+          'NLRTM · Rotterdam, Netherlands',
+        );
+      },
+    );
   },
 );

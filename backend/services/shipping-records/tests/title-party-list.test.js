@@ -386,6 +386,7 @@ for (const store of stores()) {
           items: [],
           total: 0,
           organisationNames: {},
+          ports: {},
         });
       });
 
@@ -433,6 +434,7 @@ for (const store of stores()) {
             items: [],
             total: 0,
             organisationNames: {},
+            ports: {},
           });
         }
       });
@@ -543,6 +545,7 @@ for (const store of stores()) {
         const page = await listOf(ctx, CARRIER);
         expect(page.organisationNames).to.deep.equal({
           [CARRIER]: 'Ocean Carrier Line',
+          [SHIPPER]: 'Coffee Exporters',
           [BANK]: 'Volta Bank',
           [CONSIGNEE]: 'Buyer Trading',
         });
@@ -550,6 +553,7 @@ for (const store of stores()) {
           items: [],
           total: 0,
           organisationNames: {},
+          ports: {},
         });
       });
 
@@ -578,7 +582,64 @@ for (const store of stores()) {
         }
         identity.asked.length = 0;
         await listOf(ctx, CARRIER);
-        expect(identity.asked).to.deep.equal([CARRIER]);
+        expect(identity.asked).to.deep.equal([CARRIER, SHIPPER]);
+      });
+
+      it('includes latest ports, shipper and consignee on each list item with port names (CB-72)', async () => {
+        const {DEFAULT_PORT_LIST_FILE, loadPortList} =
+          await import('@lrfe/domain-shipping/ports');
+        ctx.titles.ports = loadPortList(DEFAULT_PORT_LIST_FILE);
+        const negId = await committedBl(ctx, CARRIER, nextReference('PL1'));
+        await run(ctx, negId, 'issue', CARRIER);
+        await run(ctx, negId, 'endorse', SHIPPER, {to: BANK, inBlank: false});
+
+        // Straight B/L: names its consignee too
+        const straightId = await draftBl(ctx, CARRIER, nextReference('PL2'), {
+          straight: true,
+        });
+
+        // Amend negId so its discharge port changes to NLRTM; past holder (SHIPPER) still sees latest
+        await run(ctx, negId, 'surrender-for-amendment', BANK);
+        const amendedDoc = documentOf(
+          (await ctx.service.getRecord(negId, CARRIER)).recordNo,
+          false,
+        );
+        amendedDoc.transports.portOfDischarge = {UNLocationCode: 'NLRTM'};
+        await run(ctx, negId, 'amend', CARRIER, {
+          format: 'dcsa-3.0',
+          document: amendedDoc,
+          partyOrganisations: {shipper: SHIPPER},
+        });
+
+        const page = await listOf(ctx, SHIPPER);
+        const neg = page.items.find(i => i.id === negId);
+        expect(neg).to.include({
+          portOfLoading: 'DKAAR',
+          portOfDischarge: 'NLRTM',
+          shipper: SHIPPER,
+          consignee: null,
+          draftKind: 'negotiable',
+        });
+        expect(page.ports.DKAAR).to.deep.include({
+          code: 'DKAAR',
+          name: 'Aarhus',
+          country: 'DK',
+        });
+        expect(page.ports.NLRTM).to.deep.include({
+          code: 'NLRTM',
+          name: 'Rotterdam',
+          country: 'NL',
+        });
+
+        const carrierPage = await listOf(ctx, CARRIER);
+        const straight = carrierPage.items.find(i => i.id === straightId);
+        expect(straight).to.include({
+          portOfLoading: 'DKAAR',
+          portOfDischarge: 'DEBRV',
+          shipper: SHIPPER,
+          consignee: CONSIGNEE,
+          draftKind: 'straight',
+        });
       });
 
       it('leaves archived drafts out of the party list and number search (CB-71)', async () => {
@@ -617,6 +678,7 @@ for (const store of stores()) {
         const page = await listOf(ctx, CARRIER);
         expect(page.organisationNames).to.deep.equal({
           [CARRIER]: 'Ocean Carrier Line',
+          [SHIPPER]: 'Coffee Exporters',
         });
       });
 

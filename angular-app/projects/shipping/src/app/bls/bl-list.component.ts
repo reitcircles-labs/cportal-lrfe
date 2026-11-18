@@ -15,13 +15,16 @@ import {BlLookupComponent} from './bl-lookup.component';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
 import {
   kindLabel,
+  listPortLabel,
+  listReceiverLabel,
+  listShipperLabel,
   partyLabel,
   rolesLabel,
   stateLabel,
   stateTone,
   toneTagClass,
 } from './bl-format';
-import type {BlListItem} from './bl.model';
+import type {BlListItem, BlListPort} from './bl.model';
 import {LatestRequest} from './latest';
 import {injectViewer} from './viewer';
 
@@ -36,6 +39,10 @@ interface Row {
   tagClass: string;
   holder: string;
   roles: string;
+  portOfLoading: string;
+  portOfDischarge: string;
+  shipper: string;
+  receiver: string;
 }
 
 /**
@@ -66,7 +73,7 @@ interface Row {
         }
         <p class="sr-only" role="status">{{ loading() ? 'Loading…' : '' }}</p>
         <div style="overflow-x:auto">
-          <table class="table" style="min-width:860px" aria-label="Bills of lading">
+          <table class="table bl-table" aria-label="Bills of lading">
             <thead>
               <tr>
                 <th>B/L</th>
@@ -74,6 +81,10 @@ interface Row {
                 <th>State</th>
                 <th>Holder</th>
                 <th>Your role</th>
+                <th>Port of loading</th>
+                <th>Port of discharge</th>
+                <th>Shipper</th>
+                <th>Receiver</th>
                 <th><span class="sr-only">Open</span></th>
               </tr>
             </thead>
@@ -89,12 +100,16 @@ interface Row {
                   <td><span [class]="'tag ' + r.tagClass">{{ r.state }}</span></td>
                   <td class="ell">{{ r.holder }}</td>
                   <td>{{ r.roles }}</td>
+                  <td class="ell">{{ r.portOfLoading }}</td>
+                  <td class="ell">{{ r.portOfDischarge }}</td>
+                  <td class="ell">{{ r.shipper }}</td>
+                  <td class="ell">{{ r.receiver }}</td>
                   <td style="text-align:right">
                     <a class="btn btn-secondary" [routerLink]="['/bls', r.item.id]" [attr.aria-label]="'Open ' + r.item.label">Open</a>
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="6" class="muted" style="padding:22px 16px">{{ loading() ? 'Loading…' : 'Your organisation is not party to any B/L yet.' }}</td></tr>
+                <tr><td colspan="10" class="muted" style="padding:22px 16px">{{ loading() ? 'Loading…' : 'Your organisation is not party to any B/L yet.' }}</td></tr>
               }
             </tbody>
           </table>
@@ -112,8 +127,10 @@ interface Row {
   styles: [
     BL_SHARED_STYLES,
     `
+    .bl-table th, .bl-table td { padding: 10px 8px; font-size: 13px; white-space: normal; }
+    .bl-table th { vertical-align: bottom; }
     .rec { display: flex; flex-direction: column; min-height: 44px; justify-content: center; text-decoration: none; }
-    .ell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ell { max-width: 190px; overflow-wrap: anywhere; }
     .pager { padding: 12px 16px; border-top: 1px solid var(--color-divider); justify-content: space-between; gap: 10px; }
   `,
   ],
@@ -131,6 +148,7 @@ export class BlListComponent {
   protected readonly items = signal<BlListItem[]>([]);
   protected readonly total = signal(0);
   private readonly names = signal<Record<string, string>>({});
+  private readonly ports = signal<Record<string, BlListPort>>({});
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
 
@@ -142,6 +160,10 @@ export class BlListComponent {
       tagClass: toneTagClass(stateTone(item)),
       holder: partyLabel(item.title?.holder, this.viewer(), this.names()),
       roles: rolesLabel(item.roles),
+      portOfLoading: listPortLabel(item.portOfLoading, this.ports()),
+      portOfDischarge: listPortLabel(item.portOfDischarge, this.ports()),
+      shipper: listShipperLabel(item, this.viewer(), this.names()),
+      receiver: listReceiverLabel(item, this.viewer(), this.names()),
     })),
   );
 
@@ -188,6 +210,7 @@ export class BlListComponent {
       this.items.set(page.items);
       this.total.set(page.total);
       this.names.set(page.organisationNames ?? {});
+      this.ports.set(page.ports ?? {});
     } catch (e) {
       if (!this.latest.isCurrent(request)) {
         return;

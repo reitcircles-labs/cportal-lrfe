@@ -228,7 +228,7 @@ export function createSequelizeRepo(sequelize) {
      *   number?: string,
      * }} query
      * @return {!Promise<{
-     *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
+     *   items: !Array<{record: object, title: ?object, inChain: boolean, version: ?object}>,
      *   total: number,
      * }>}
      */
@@ -266,12 +266,25 @@ export function createSequelizeRepo(sequelize) {
       const ids = rows.map(row => row.id);
       const records = await models.Record.findAll({where: {id: ids}});
       const titles = await models.Title.findAll({where: {recordId: ids}});
+      const targetVersions = records
+        .map(row => ({
+          recordId: row.id,
+          versionNumber: row.currentVersion ?? row.draftVersion,
+        }))
+        .filter(v => v.versionNumber !== null && v.versionNumber !== undefined);
+      const latestVersions = targetVersions.length
+        ? await models.Version.findAll({where: {[Op.or]: targetVersions}})
+        : [];
       const recordById = new Map(records.map(row => [row.id, plain(row)]));
       const titleById = new Map(titles.map(row => [row.recordId, plain(row)]));
+      const versionByRecord = new Map(
+        latestVersions.map(row => [row.recordId, plain(row)]),
+      );
       const items = rows.map(row => ({
         record: recordById.get(row.id),
         title: titleById.get(row.id) ?? null,
         inChain: row.inChain,
+        version: versionByRecord.get(row.id) ?? null,
       }));
       return {items, total};
     },

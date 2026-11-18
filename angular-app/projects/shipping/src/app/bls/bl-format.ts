@@ -6,6 +6,8 @@
  */
 import type {
   BlLink,
+  BlListItem,
+  BlListPort,
   BlState,
   ChainEntry,
   DraftVersion,
@@ -559,4 +561,77 @@ export function consigneeLabel(
     return NO_CONSIGNEE;
   }
   return partyLabel(title?.consignee, viewer, names);
+}
+
+/** Country names in English, from ISO 3166 alpha-2 codes (CB-72). */
+const LIST_COUNTRIES = new Intl.DisplayNames(['en'], {type: 'region'});
+
+/**
+ * Formats a port in the B/L list as `<CODE> · <Name, Country>` (CB-72), or the code alone when
+ * its name is not known, or a dash when missing.
+ * @param code UN/LOCODE port code
+ * @param ports ports map from the list response
+ * @return formatted port label
+ */
+export function listPortLabel(
+  code: string | null | undefined,
+  ports: Readonly<Record<string, BlListPort>> = {},
+): string {
+  if (!code) {
+    return NONE;
+  }
+  const port = ports[code];
+  if (!port) {
+    return code;
+  }
+  let country = port.country;
+  try {
+    country = LIST_COUNTRIES.of(port.country) ?? port.country;
+  } catch {
+    /* keep raw code when not a standard ISO region */
+  }
+  return `${code} · ${port.name}, ${country}`;
+}
+
+/**
+ * Formats the shipper on a B/L list row (CB-72): organisation name when linked, falling back to
+ * the document's shipper name or a dash.
+ * @param item list item
+ * @param viewer signed-in viewer
+ * @param names organisation names map
+ * @return formatted shipper label
+ */
+export function listShipperLabel(
+  item: Pick<BlListItem, 'shipper' | 'shipperName'>,
+  viewer: Viewer,
+  names: OrganisationNames = {},
+): string {
+  if (item.shipper) {
+    return partyLabel(item.shipper, viewer, names);
+  }
+  return item.shipperName || NONE;
+}
+
+/**
+ * Formats the receiver / consignee on a B/L list row (CB-72): "None: to order" for negotiable
+ * B/Ls, organisation name or document consignee name otherwise.
+ * @param item list item
+ * @param viewer signed-in viewer
+ * @param names organisation names map
+ * @return formatted receiver label
+ */
+export function listReceiverLabel(
+  item: Pick<BlListItem, 'title' | 'draftKind' | 'consignee' | 'consigneeName'>,
+  viewer: Viewer,
+  names: OrganisationNames = {},
+): string {
+  const kind = item.title?.kind ?? item.draftKind ?? null;
+  if (kind === 'negotiable') {
+    return NO_CONSIGNEE;
+  }
+  const orgId = item.consignee ?? item.title?.consignee ?? null;
+  if (orgId) {
+    return partyLabel(orgId, viewer, names);
+  }
+  return item.consigneeName || NONE;
 }

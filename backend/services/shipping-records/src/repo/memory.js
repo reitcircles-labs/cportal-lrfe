@@ -213,7 +213,7 @@ export function createMemoryRepo() {
      *   number?: string,
      * }} query
      * @return {!Promise<{
-     *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
+     *   items: !Array<{record: object, title: ?object, inChain: boolean, version: ?object}>,
      *   total: number,
      * }>}
      */
@@ -238,7 +238,12 @@ export function createMemoryRepo() {
           number === undefined ||
           record.recordNo.toLowerCase() === number.toLowerCase();
         if (party && numbered) {
-          all.push({record, title, inChain});
+          const latestVersion = record.currentVersion ?? record.draftVersion;
+          const version =
+            latestVersion === null || latestVersion === undefined
+              ? null
+              : (findVersion(record.id, latestVersion) ?? null);
+          all.push({record, title, inChain, version});
         }
       }
       all.sort(

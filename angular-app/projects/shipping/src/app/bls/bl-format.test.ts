@@ -7,6 +7,9 @@ import {
   carrierOf,
   chainRows,
   kindLabel,
+  listPortLabel,
+  listReceiverLabel,
+  listShipperLabel,
   NO_CONSIGNEE,
   consigneeLabel,
   partyLabel,
@@ -378,5 +381,65 @@ describe('consigneeLabel (added: an issued B/L to order names no consignee, as b
   it('no title, or no consignee named: a dash', () => {
     assert.equal(consigneeLabel(null, ME), '—');
     assert.equal(consigneeLabel(title('straight', null), ME), '—');
+  });
+});
+
+describe('list columns: ports, shipper and receiver (CB-72)', () => {
+  it('formats a port with its code and full name, or the code alone, or a dash', () => {
+    const ports = {
+      NLRTM: {code: 'NLRTM', name: 'Rotterdam', country: 'NL'},
+    };
+    assert.equal(
+      listPortLabel('NLRTM', ports),
+      'NLRTM · Rotterdam, Netherlands',
+    );
+    assert.equal(listPortLabel('NAWVB', ports), 'NAWVB');
+    assert.equal(listPortLabel(null, ports), '—');
+  });
+
+  it('names the shipper and receiver for each row, with "(your organisation)" for the viewer', () => {
+    const names = {
+      'org-shipper': 'Coffee Exporters',
+      'org-bank': 'Volta Bank',
+      'org-buyer': 'Buyer Trading',
+    };
+    const item = {
+      id: 'r1',
+      recordNo: 'BL-1',
+      carrierCode: 'MSC',
+      label: 'B/L BL-1 (MSC)',
+      status: 'draft',
+      draftState: 'draft',
+      createdAt: '2026-11-14T08:00:00.000Z',
+      updatedAt: '2026-11-14T08:00:00.000Z',
+      title: null,
+      roles: ['carrier' as const],
+      shipper: 'org-shipper',
+      shipperName: 'Fallback Shipper',
+      consignee: 'org-bank',
+      consigneeName: null,
+      draftKind: 'straight',
+    };
+    assert.equal(listShipperLabel(item, ME, names), 'Coffee Exporters');
+    assert.equal(
+      listReceiverLabel(item, ME, names),
+      'Volta Bank (your organisation)',
+    );
+    assert.equal(
+      listReceiverLabel(
+        {...item, draftKind: 'negotiable', consignee: null},
+        ME,
+        names,
+      ),
+      NO_CONSIGNEE,
+    );
+    assert.equal(
+      listShipperLabel({...item, shipper: null}, ME, names),
+      'Fallback Shipper',
+    );
+    assert.equal(
+      listShipperLabel({...item, shipper: null, shipperName: null}, ME, names),
+      '—',
+    );
   });
 });
