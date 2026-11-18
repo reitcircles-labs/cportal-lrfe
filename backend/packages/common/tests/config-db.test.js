@@ -103,12 +103,31 @@ describe('orgFromEnv', () => {
     });
   });
 
-  it('a setting set but empty stays empty; an empty name and unset settings get the defaults', () => {
+  it('a setting set but empty stays empty; an empty name and unset settings get the defaults (including pack defaults)', () => {
     expect(
       orgFromEnv({LRFE_ORG_NAME: '', LRFE_ORG_SUBTITLE: ''}),
     ).to.deep.equal({...DEFAULT_ORG, subtitle: '', fullName: 'Deeds Registry'});
     expect(orgFromEnv({}).fullName).to.equal(
       'Deeds Registry · Republic of Namibia',
     );
+    const packDefaults = {
+      name: 'Shipping Registry',
+      subtitle: '',
+      parent: '',
+      place: '',
+    };
+    expect(orgFromEnv({}, packDefaults)).to.deep.equal({
+      ...packDefaults,
+      fullName: 'Shipping Registry',
+    });
+    expect(orgFromEnv({LRFE_ORG_NAME: ' '}, packDefaults).name).to.equal(
+      'Shipping Registry',
+    );
+    expect(
+      orgFromEnv(
+        {LRFE_ORG_NAME: 'Harbour Platform', LRFE_ORG_SUBTITLE: 'Test'},
+        packDefaults,
+      ).fullName,
+    ).to.equal('Harbour Platform · Test');
   });
 });

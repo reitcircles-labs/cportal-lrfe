@@ -8,11 +8,18 @@
  * user in again. The shipping run has one worker, so the file is never written twice at once.
  */
 import {createHmac} from 'node:crypto';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {expect, type APIRequestContext, type Page} from '@playwright/test';
 import {appPath, invitationEmail, officeCode, unique} from './admin';
 import {codeFor, readSecrets, saveSecrets} from './auth';
 import {identity} from '../../backend/domains/shipping/src/identity.js';
-import {DEMO_PASSWORD, JWT_SECRET} from '../stack/config.mjs';
+import {
+  DEMO_PASSWORD,
+  GATEWAY_URL,
+  JWT_SECRET,
+  REPO_DIR,
+} from '../stack/config.mjs';
 
 /** A demo user of the shipping pack, as far as the specs read it. */
 interface DemoUser {
@@ -221,4 +228,110 @@ export async function signInOnScreen(
   await page.getByRole('button', {name: 'Sign in', exact: true}).click();
   await page.getByLabel('6-digit code').fill(codeFor(secret));
   await page.getByRole('button', {name: 'Verify and sign in'}).click();
+}
+
+/**
+ * DCSA's example transport document (a B/L to order) with its own reference.
+ * @param reference the transport document reference
+ * @return the document
+ */
+export function negotiableBl(reference: string): Record<string, unknown> {
+  const path = join(
+    REPO_DIR,
+    'backend',
+    'domains',
+    'shipping',
+    'dcsa',
+    '3.0.3',
+    'examples',
+    'td-regular.json',
+  );
+  const example = JSON.parse(readFileSync(path, 'utf8'));
+  return {...example, transportDocumentReference: reference};
+}
+
+/**
+ * Closes the toasts on the screen, so that a screenshot shows the page alone.
+ * @param page the page
+ */
+export async function dismissToasts(page: Page): Promise<void> {
+  const dismiss = page.getByRole('button', {name: 'Dismiss'});
+  while ((await dismiss.count()) > 0) {
+    // a toast may close by itself between the count and the click
+    await dismiss
+      .first()
+      .click({timeout: 2_000})
+      .catch(() => undefined);
+  }
+  await expect(dismiss).toHaveCount(0);
+}
+
+/**
+ * Creates a B/L record, submits it, commits version 1 with four eyes (via bpm), and optionally
+ * issues it to the shipper.
+ * @param api the request context, on the gateway
+ * @param carrier the carrier's signed-in clerk
+ * @param approver the second person (four eyes) recorded as approver
+ * @param options the document, linked parties, and whether to issue it
+ * @param options.document the B/L document
+ * @param options.partyOrganisations linked party organisation IDs
+ * @param options.issue whether to issue the B/L after commit
+ * @return the created B/L's id, label, and recordNo
+ */
+export async function committedBl(
+  api: APIRequestContext,
+  carrier: SignedIn,
+  approver: {id: string; name: string},
+  options: {
+    document: object;
+    partyOrganisations: Record<string, string>;
+    issue?: boolean;
+  },
+): Promise<{id: string; label: string; recordNo: string}> {
+  const created = await api.post('/api/records', {
+    headers: carrier.headers,
+    data: {
+      format: 'dcsa-3.0',
+      document: options.document,
+      partyOrganisations: options.partyOrganisations,
+    },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const record = await created.json();
+  const submitted = await api.post(
+    `/api/records/${record.id}/versions/1/submit`,
+    {headers: carrier.headers},
+  );
+  expect(submitted.status(), await submitted.text()).toBe(200);
+  const committed = await api.post(
+    `/api/records/${record.id}/versions/1/commit`,
+    {
+      headers: {authorization: `Bearer ${serviceToken('bpm')}`},
+      data: {by: {id: approver.id, name: approver.name}},
+    },
+  );
+  expect(committed.status(), await committed.text()).toBe(200);
+  if (options.issue) {
+    const issued = await api.post(`/api/records/${record.id}/title/issue`, {
+      headers: carrier.headers,
+      data: {},
+    });
+    expect(issued.status(), await issued.text()).toBe(200);
+  }
+  return {id: record.id, label: record.label, recordNo: record.recordNo};
+}
+
+/**
+ * The verifier's blockchain queries, sent to the test chain behind the gateway instead: the
+ * query's name (the last part of its path) is kept, the host is the gateway's.
+ * @param url the address the verifier asks
+ * @param init the request's options
+ * @return the test chain's answer
+ */
+export function testChainFetch(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const query = new URL(url).pathname.split('/').pop();
+  return fetch(`${GATEWAY_URL}/api/audit/test/koios/${query}`, init);
 }

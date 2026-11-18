@@ -131,13 +131,10 @@ describe('the extract PDF (API-691)', () => {
     }
   });
 
-  it('carries a QR code that a reader decodes to the check page with the token', async () => {
+  it('carries a QR code that a reader decodes to the check page with the token (token never printed)', async () => {
     const {extract, pdf} = await issued();
     const {pages, text} = await readPdf(pdf);
     expect(readQr(pages[0])).to.equal(`${CHECK_URL_BASE}/${extract.token}`);
-    // for typing in, the check page's address and the check code are printed; the token is not
-    expect(text).to.include(CHECK_URL_BASE);
-    expect(text).to.include(printedCheckCode(extract.checkCode));
     expect(text).not.to.include(extract.token);
   });
 

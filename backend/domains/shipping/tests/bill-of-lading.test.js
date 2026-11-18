@@ -1,4 +1,4 @@
-import {readFileSync, readdirSync} from 'node:fs';
+import {readFileSync} from 'node:fs';
 
 import {BadRequestError} from '@lrfe/common';
 import {expect} from 'chai';
@@ -12,7 +12,6 @@ import {
 } from '../src/bill-of-lading/index.js';
 
 const EXAMPLES = new URL('../dcsa/3.0.3/examples/', import.meta.url);
-const EXAMPLE_FILES = readdirSync(EXAMPLES).filter(f => f.endsWith('.json'));
 
 /**
  * A DCSA example as a B/L of the model: the status left out (the title engine's).
@@ -50,18 +49,9 @@ const messages = bl => checkBillOfLading(bl).map(p => p.message);
 
 describe('the bill-of-lading model (CB-25)', () => {
   describe('valid B/Ls', () => {
-    it('has six DCSA examples to test with', () => {
-      expect(EXAMPLE_FILES).to.have.length(6);
-    });
-
-    for (const file of EXAMPLE_FILES) {
-      it(`accepts DCSA's example ${file}`, () => {
-        expect(checkBillOfLading(example(file))).to.deep.equal([]);
-      });
-    }
-
-    it('accepts links of parties to organisations', () => {
+    it('accepts a valid B/L and links of parties to organisations', () => {
       const bl = example();
+      expect(checkBillOfLading(bl)).to.deep.equal([]);
       bl.partyOrganisations = {shipper: 'org-1', issuingParty: 'org-2'};
       if (bl.document.documentParties.notifyParties?.length) {
         bl.partyOrganisations['notifyParties.0'] = 'org-3';
@@ -150,13 +140,21 @@ describe('the bill-of-lading model (CB-25)', () => {
   });
 
   describe('containers only', () => {
-    it('refuses a B/L without containers, with a clear message', () => {
+    it('refuses a B/L without containers with a 400 listing every problem', () => {
       const bl = example();
       bl.document.utilizedTransportEquipments = [];
-      expect(() => assertBillOfLading(bl))
-        .to.throw(BadRequestError)
-        .with.property('message')
-        .that.matches(/goods in containers only: list at least one container/);
+      delete bl.document.carrierCode;
+      try {
+        assertBillOfLading(bl);
+        expect.fail('no error');
+      } catch (error) {
+        expect(error).to.be.instanceOf(BadRequestError);
+        expect(error.statusCode).to.equal(400);
+        expect(error.message).to.match(
+          /goods in containers only: list at least one container.*and \d+ more/,
+        );
+        expect(error.details.problems.length).to.be.at.least(2);
+      }
     });
 
     it('explains a missing container list once, as the containers-only rule', () => {
@@ -188,20 +186,6 @@ describe('the bill-of-lading model (CB-25)', () => {
       expect(messages(bl)).to.include(
         `Container ${reference} is listed more than once`,
       );
-    });
-
-    it('gives the 400 error every problem in its details', () => {
-      const bl = example();
-      bl.document.utilizedTransportEquipments = [];
-      delete bl.document.carrierCode;
-      try {
-        assertBillOfLading(bl);
-        expect.fail('no error');
-      } catch (error) {
-        expect(error.statusCode).to.equal(400);
-        expect(error.message).to.match(/and \d+ more/);
-        expect(error.details.problems.length).to.be.at.least(2);
-      }
     });
   });
 

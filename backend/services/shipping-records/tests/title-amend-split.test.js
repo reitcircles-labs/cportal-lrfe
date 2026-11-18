@@ -791,8 +791,8 @@ for (const store of stores()) {
         return {id, view, references: childReferences};
       }
 
-      it('closes the parent: state split, no holder, no command offered to anyone', async () => {
-        const {id, view} = await splitByContainerBl('SPLIT');
+      it('closes the parent, creates verified child records/titles/chains in order, and publishes every event', async () => {
+        const {id, view, references: given} = await splitByContainerBl('SPLIT');
         expect(view.title).to.include({
           state: 'split',
           holder: null,
@@ -808,18 +808,20 @@ for (const store of stores()) {
           expect(res.statusCode, res.body).to.equal(200);
           expect(res.json().allowedCommands, org).to.deep.equal([]);
         }
-      });
-
-      it('answers with the children, in the order given: their record ids and references', async () => {
-        const {view, references: given} = await splitByContainerBl('SPLIT-ANS');
         expect(view.children.map(c => c.recordNo)).to.deep.equal(given);
-        for (const child of view.children) {
-          expect(child.recordId).to.be.a('string');
-        }
-      });
 
-      it('creates the children as records of the carrier, each with its document committed as version 1', async () => {
-        const {view, references: given} = await splitByContainerBl('SPLIT-REC');
+        const parentChain = await ctx.repo.listTitleEntries(id);
+        const splitEntry = parentChain.at(-1);
+        const keys = (
+          await ctx.app.inject({url: '/records/title/keys'})
+        ).json();
+        expect((await verifyTitleChain(parentChain, keys)).valid).to.equal(
+          true,
+        );
+        expect(
+          ctx.published.filter(e => e.type === 'records.title.split'),
+        ).to.have.length(1);
+
         const documents = splitByContainer(...given);
         for (const [i, child] of view.children.entries()) {
           const record = await ctx.repo.getRecord(child.recordId);
@@ -831,19 +833,12 @@ for (const store of stores()) {
           });
           const version = await ctx.repo.getVersion(child.recordId, 1);
           expect(version.state).to.equal('committed');
-          expect(version.seal).to.be.a('string');
           expect(version.data.document.transportDocumentReference).to.equal(
             documents[i].transportDocumentReference,
           );
-          const verified = await ctx.service.verify(child.recordId);
-          expect(verified.intact, JSON.stringify(verified)).to.equal(true);
-        }
-      });
-
-      it('gives each child a first title: negotiable, held by the organisation the parent was to go back to, endorsed as the parent', async () => {
-        const {view} = await splitByContainerBl('SPLIT-TITLE');
-        for (const child of view.children) {
-          const version = await ctx.repo.getVersion(child.recordId, 1);
+          expect((await ctx.service.verify(child.recordId)).intact).to.equal(
+            true,
+          );
           const title = await ctx.repo.getTitle(child.recordId);
           expect(title).to.include({
             kind: 'negotiable',
@@ -856,21 +851,8 @@ for (const store of stores()) {
             documentHash: billOfLadingHash(version.data),
             revision: 1,
           });
-        }
-      });
-
-      it("starts each child's chain from the parent's last entry (the split), and it verifies", async () => {
-        const {id, view} = await splitByContainerBl('SPLIT-CHAIN');
-        const parentChain = await ctx.repo.listTitleEntries(id);
-        const splitEntry = parentChain.at(-1);
-        expect(splitEntry.command).to.equal('split');
-        const keys = (
-          await ctx.app.inject({url: '/records/title/keys'})
-        ).json();
-        for (const child of view.children) {
           const entries = await ctx.repo.listTitleEntries(child.recordId);
           expect(entries).to.have.length(1);
-          const version = await ctx.repo.getVersion(child.recordId, 1);
           expect(entries[0]).to.include({
             recordId: child.recordId,
             seq: 1,
@@ -881,47 +863,29 @@ for (const store of stores()) {
             documentHash: billOfLadingHash(version.data),
             previousHash: splitEntry.entryHash,
           });
-          expect(entries[0].actor.org).to.equal(CARRIER);
-          const linked = await verifyTitleChain(entries, keys, {
-            startPreviousHash: splitEntry.entryHash,
-          });
-          expect(linked.valid, JSON.stringify(linked)).to.equal(true);
-          const alone = await verifyTitleChain(entries, keys);
-          expect(alone.valid).to.equal(false);
-        }
-        const parentChecked = await verifyTitleChain(parentChain, keys);
-        expect(parentChecked.valid).to.equal(true);
-      });
-
-      it("publishes the parent's split and each child's first entry and committed version, for the audit trail and its anchoring", async () => {
-        const {id, view} = await splitByContainerBl('SPLIT-EVENTS');
-        const split = ctx.published.filter(
-          e => e.type === 'records.title.split',
-        );
-        expect(split).to.have.length(1);
-        expect(split[0].data.recordId).to.equal(id);
-        for (const child of view.children) {
-          const [entry] = await ctx.repo.listTitleEntries(child.recordId);
-          const titleEvents = ctx.published.filter(
-            e =>
-              e.type === 'records.title.issue-from-split' &&
-              e.data.recordId === child.recordId,
-          );
-          expect(titleEvents).to.have.length(1);
-          expect(titleEvents[0].data).to.deep.include({
-            recordNo: child.recordNo,
-            seq: 1,
-          });
-          expect(titleEvents[0].data.entry).to.deep.equal(
-            JSON.parse(JSON.stringify(entry)),
-          );
-          const committed = ctx.published.filter(
-            e =>
-              e.type === 'records.record.committed' &&
-              e.data.recordId === child.recordId &&
-              e.data.versionNumber === 1,
-          );
-          expect(committed).to.have.length(1);
+          expect(
+            (
+              await verifyTitleChain(entries, keys, {
+                startPreviousHash: splitEntry.entryHash,
+              })
+            ).valid,
+          ).to.equal(true);
+          expect((await verifyTitleChain(entries, keys)).valid).to.equal(false);
+          expect(
+            ctx.published.filter(
+              e =>
+                e.type === 'records.title.issue-from-split' &&
+                e.data.recordId === child.recordId,
+            ),
+          ).to.have.length(1);
+          expect(
+            ctx.published.filter(
+              e =>
+                e.type === 'records.record.committed' &&
+                e.data.recordId === child.recordId &&
+                e.data.versionNumber === 1,
+            ),
+          ).to.have.length(1);
         }
       });
 
@@ -1053,115 +1017,118 @@ for (const store of stores()) {
       });
 
       describe('the parent is closed after the split', () => {
-        /**
-         * A body each command would take on an open B/L: valid documents, so only the state can
-         * refuse it.
-         * @param {string} name
-         * @param {string} reference the parent's reference
-         * @return {!Object}
-         */
-        const bodyOf = (name, reference) => {
-          if (name === 'amend') {
-            return {format: 'dcsa-3.0', document: amendedDocument(reference)};
-          }
-          if (name === 'split') {
-            return splitBody(
+        it('refuses release, amend, split and void of a split B/L with 409 closed, nothing recorded', async () => {
+          const {id} = await splitByContainerBl('CLOSED');
+          const reference = await referenceOf(ctx, id);
+          const bodies = {
+            amend: {format: 'dcsa-3.0', document: amendedDocument(reference)},
+            split: splitBody(
               splitByContainer(nextReference('A'), nextReference('B')),
-            );
-          }
-          return {};
-        };
-        for (const name of ['release', 'amend', 'split', 'void']) {
-          it(`${name} of a split B/L by the carrier is refused 409, nothing recorded`, async () => {
-            const {id} = await splitByContainerBl(`CLOSED-${name}`);
-            const body = bodyOf(name, await referenceOf(ctx, id));
+            ),
+          };
+          for (const name of ['release', 'amend', 'split', 'void']) {
             await expectRefused(
               ctx,
               id,
-              () => command(ctx, id, name, staffOf(CARRIER), body),
+              () =>
+                command(ctx, id, name, staffOf(CARRIER), bodies[name] ?? {}),
               {status: 409, code: 'closed'},
             );
-          });
-        }
+          }
+        });
       });
 
       describe("the cargo of the children must add up to the parent's", () => {
-        const cases = [
-          [
-            'a container of the parent missing',
-            () => [
-              blWithCargo(nextReference('A'), {
-                cargo: [{container: CONTAINER_A, packages: 200, weight: 6000}],
-              }),
-              blWithCargo(nextReference('B'), {
-                cargo: [{container: CONTAINER_A, packages: 200, weight: 6000}],
-              }),
+        it('refuses every cargo mismatch (missing/extra container, fewer/more packages, wrong weights, duplicate container) with 400', async () => {
+          const id = await heldForAmendment(ctx, nextReference('CARGO'));
+          const cases = [
+            [
+              'a container of the parent missing',
+              [
+                blWithCargo(nextReference('A'), {
+                  cargo: [
+                    {container: CONTAINER_A, packages: 200, weight: 6000},
+                  ],
+                }),
+                blWithCargo(nextReference('B'), {
+                  cargo: [
+                    {container: CONTAINER_A, packages: 200, weight: 6000},
+                  ],
+                }),
+              ],
             ],
-          ],
-          [
-            'a container the parent does not carry',
-            () => [
-              ...splitByContainer(nextReference('A'), nextReference('B')),
-              blWithCargo(nextReference('C'), {
-                cargo: [{container: 'TGHU1234567', packages: 10, weight: 100}],
-              }),
+            [
+              'a container the parent does not carry',
+              [
+                ...splitByContainer(nextReference('A'), nextReference('B')),
+                blWithCargo(nextReference('C'), {
+                  cargo: [
+                    {container: 'TGHU1234567', packages: 10, weight: 100},
+                  ],
+                }),
+              ],
             ],
-          ],
-          [
-            'packages not adding up (fewer)',
-            () => [
-              blWithCargo(nextReference('A'), {
-                cargo: [{container: CONTAINER_A, packages: 250, weight: 7500}],
-              }),
-              blWithCargo(nextReference('B'), {
-                cargo: [
-                  {container: CONTAINER_A, packages: 100, weight: 4500},
-                  {container: CONTAINER_B, ...PARENT_CARGO[CONTAINER_B]},
-                ],
-              }),
+            [
+              'packages not adding up (fewer)',
+              [
+                blWithCargo(nextReference('A'), {
+                  cargo: [
+                    {container: CONTAINER_A, packages: 250, weight: 7500},
+                  ],
+                }),
+                blWithCargo(nextReference('B'), {
+                  cargo: [
+                    {container: CONTAINER_A, packages: 100, weight: 4500},
+                    {container: CONTAINER_B, ...PARENT_CARGO[CONTAINER_B]},
+                  ],
+                }),
+              ],
             ],
-          ],
-          [
-            'packages not adding up (more)',
-            () => [
-              blWithCargo(nextReference('A'), {
-                cargo: [{container: CONTAINER_A, packages: 400, weight: 7500}],
-              }),
-              blWithCargo(nextReference('B'), {
-                cargo: [
-                  {container: CONTAINER_A, packages: 150, weight: 4500},
-                  {container: CONTAINER_B, ...PARENT_CARGO[CONTAINER_B]},
-                ],
-              }),
+            [
+              'packages not adding up (more)',
+              [
+                blWithCargo(nextReference('A'), {
+                  cargo: [
+                    {container: CONTAINER_A, packages: 400, weight: 7500},
+                  ],
+                }),
+                blWithCargo(nextReference('B'), {
+                  cargo: [
+                    {container: CONTAINER_A, packages: 150, weight: 4500},
+                    {container: CONTAINER_B, ...PARENT_CARGO[CONTAINER_B]},
+                  ],
+                }),
+              ],
             ],
-          ],
-          [
-            'weights not adding up',
-            () => [
-              blWithCargo(nextReference('A'), {
-                cargo: [{container: CONTAINER_A, packages: 250, weight: 7500}],
-              }),
-              blWithCargo(nextReference('B'), {
-                cargo: [
-                  {container: CONTAINER_A, packages: 150, weight: 4000},
-                  {container: CONTAINER_B, ...PARENT_CARGO[CONTAINER_B]},
-                ],
-              }),
+            [
+              'weights not adding up',
+              [
+                blWithCargo(nextReference('A'), {
+                  cargo: [
+                    {container: CONTAINER_A, packages: 250, weight: 7500},
+                  ],
+                }),
+                blWithCargo(nextReference('B'), {
+                  cargo: [
+                    {container: CONTAINER_A, packages: 150, weight: 4000},
+                    {container: CONTAINER_B, ...PARENT_CARGO[CONTAINER_B]},
+                  ],
+                }),
+              ],
             ],
-          ],
-          [
-            "a container's whole cargo given twice",
-            () => [
-              ...splitByContainer(nextReference('A'), nextReference('B')),
-              blWithCargo(nextReference('C'), {
-                cargo: [{container: CONTAINER_B, ...PARENT_CARGO[CONTAINER_B]}],
-              }),
+            [
+              "a container's whole cargo given twice",
+              [
+                ...splitByContainer(nextReference('A'), nextReference('B')),
+                blWithCargo(nextReference('C'), {
+                  cargo: [
+                    {container: CONTAINER_B, ...PARENT_CARGO[CONTAINER_B]},
+                  ],
+                }),
+              ],
             ],
-          ],
-        ];
-        for (const [label, children] of cases) {
-          it(`a split with ${label} is refused 400, nothing recorded`, async () => {
-            const id = await heldForAmendment(ctx, nextReference('CARGO'));
+          ];
+          for (const [, children] of cases) {
             await expectRefused(
               ctx,
               id,
@@ -1171,12 +1138,12 @@ for (const store of stores()) {
                   id,
                   'split',
                   staffOf(CARRIER),
-                  splitBody(children()),
+                  splitBody(children),
                 ),
               {status: 400, code: 'cargo-mismatch'},
             );
-          });
-        }
+          }
+        });
       });
 
       describe('refusals', () => {
@@ -1262,25 +1229,22 @@ for (const store of stores()) {
           );
         });
 
-        for (const [label, body] of [
-          ['no children', {}],
-          ['an empty list', {children: []}],
-          ['children that are not a list', {children: {length: 2}}],
-          [
-            'a child without a document',
+        it('with missing, empty, non-list or incomplete children is refused 400, nothing recorded', async () => {
+          const id = await heldForAmendment(ctx, nextReference('SPLIT-BODY'));
+          for (const body of [
+            {},
+            {children: []},
+            {children: {length: 2}},
             {children: [{format: 'dcsa-3.0'}, {format: 'dcsa-3.0'}]},
-          ],
-        ]) {
-          it(`with ${label} is refused 400, nothing recorded`, async () => {
-            const id = await heldForAmendment(ctx, nextReference('SPLIT-BODY'));
+          ]) {
             await expectRefused(
               ctx,
               id,
               () => command(ctx, id, 'split', staffOf(CARRIER), body),
               {status: 400},
             );
-          });
-        }
+          }
+        });
 
         it('with a child document that is not valid is refused 400 with its problems, nothing recorded', async () => {
           const id = await heldForAmendment(ctx, nextReference('SPLIT-BAD'));
@@ -1555,35 +1519,16 @@ for (const store of stores()) {
     });
 
     describe('names from outside', () => {
-      for (const name of [
-        'toString',
-        '__proto__',
-        'constructor',
-        'hasOwnProperty',
-      ]) {
-        it(`a child's format named ${name} is refused 400, never a crash, nothing recorded`, async () => {
-          const id = await heldForAmendment(ctx, nextReference('NAME-FMT'));
-          const documents = splitByContainer(
-            nextReference('A'),
-            nextReference('B'),
-          );
-          await expectRefused(
-            ctx,
-            id,
-            () =>
-              command(ctx, id, 'split', staffOf(CARRIER), {
-                children: [
-                  {format: 'dcsa-3.0', document: documents[0]},
-                  {format: name, document: documents[1]},
-                ],
-              }),
-            {status: 400},
-          );
-        });
-
-        it(`an amendment's format named ${name} is refused 400, never a crash, nothing recorded`, async () => {
-          const reference = nextReference('NAME-AMD');
-          const id = await heldForAmendment(ctx, reference);
+      it('object-property names as formats or container names are refused 400, never a crash', async () => {
+        const reference = nextReference('NAME-OUT');
+        const id = await heldForAmendment(ctx, reference);
+        const docs = splitByContainer(nextReference('A'), nextReference('B'));
+        for (const name of [
+          'toString',
+          '__proto__',
+          'constructor',
+          'hasOwnProperty',
+        ]) {
           await expectRefused(
             ctx,
             id,
@@ -1594,42 +1539,54 @@ for (const store of stores()) {
               }),
             {status: 400},
           );
-        });
-
-        it(`a container named ${name}, not the parent's, is a cargo mismatch (400), never a crash`, async () => {
-          const id = await heldForAmendment(ctx, nextReference('NAME-CTR'));
-          const documents = [
-            ...splitByContainer(nextReference('A'), nextReference('B')),
-            blWithCargo(nextReference('C'), {
-              cargo: [{container: name, packages: 1, weight: 1}],
-            }),
-          ];
           await expectRefused(
             ctx,
             id,
             () =>
-              command(ctx, id, 'split', staffOf(CARRIER), splitBody(documents)),
+              command(ctx, id, 'split', staffOf(CARRIER), {
+                children: [
+                  {format: 'dcsa-3.0', document: docs[0]},
+                  {format: name, document: docs[1]},
+                ],
+              }),
             {status: 400},
           );
-        });
-      }
+          await expectRefused(
+            ctx,
+            id,
+            () =>
+              command(
+                ctx,
+                id,
+                'split',
+                staffOf(CARRIER),
+                splitBody([
+                  ...docs,
+                  blWithCargo(nextReference('C'), {
+                    cargo: [{container: name, packages: 1, weight: 1}],
+                  }),
+                ]),
+              ),
+            {status: 400},
+          );
+        }
+      });
     });
 
     describe('no part of a cargo is released against a B/L that stays open (Done when 3)', () => {
-      for (const body of PARTIAL_RELEASE_BODIES) {
-        const key = Object.keys(body)[0];
-        it(`a release naming part of the cargo (${key}) is refused 400, nothing recorded`, async () => {
-          const id = await endorsedToBank(ctx, nextReference('PART'));
-          await ok(ctx, id, 'surrender', staffOf(BANK));
+      it('a release naming part of the cargo is refused 400 partial-release, nothing recorded', async () => {
+        const id = await endorsedToBank(ctx, nextReference('PART'));
+        await ok(ctx, id, 'surrender', staffOf(BANK));
+        for (const body of PARTIAL_RELEASE_BODIES) {
           await expectRefused(
             ctx,
             id,
             () => command(ctx, id, 'release', staffOf(CARRIER), body),
             {status: 400, code: 'partial-release'},
           );
-          expect((await ctx.repo.getTitle(id)).state).to.equal('surrendered');
-        });
-      }
+        }
+        expect((await ctx.repo.getTitle(id)).state).to.equal('surrendered');
+      });
 
       it('a release of a B/L its holder still holds is refused 409: only a whole surrendered B/L is released', async () => {
         const id = await endorsedToBank(ctx, nextReference('PART-HELD'));

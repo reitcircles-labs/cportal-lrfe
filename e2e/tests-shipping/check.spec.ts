@@ -24,10 +24,13 @@ import {unique} from '../support/admin';
 import {evidence} from '../support/evidence';
 import {
   INVITED_PASSWORD,
+  committedBl,
   demoEmails,
+  dismissToasts,
+  negotiableBl,
+  testChainFetch,
   TRADE_ROLE,
   organisationWithClerk,
-  serviceToken,
   signIn,
   signInOnScreen,
   type Organisation,
@@ -52,54 +55,6 @@ interface TitleProof {
   recordNo: string;
   entries: Array<{seq: number; command: string}>;
   anchor: {pending?: boolean; status?: string};
-}
-
-/**
- * DCSA's example transport document (a B/L to order) with its own reference.
- * @param reference the transport document reference
- * @return the document
- */
-function negotiableBl(reference: string): Record<string, unknown> {
-  const path = join(
-    REPO_DIR,
-    'backend',
-    'domains',
-    'shipping',
-    'dcsa',
-    '3.0.3',
-    'examples',
-    'td-regular.json',
-  );
-  const example = JSON.parse(readFileSync(path, 'utf8'));
-  return {...example, transportDocumentReference: reference};
-}
-
-/**
- * The verifier's blockchain queries, sent to the test chain behind the gateway instead: the
- * query's name (the last part of its path) is kept, the host is the gateway's.
- * @param url the address the verifier asks
- * @param init the request's options
- * @return the test chain's answer
- */
-function testChainFetch(url: string, init: RequestInit): Promise<Response> {
-  const query = new URL(url).pathname.split('/').pop();
-  return fetch(`${GATEWAY_URL}/api/audit/test/koios/${query}`, init);
-}
-
-/**
- * Closes the toasts on the screen, so that a screenshot shows the page alone.
- * @param page the page
- */
-async function dismissToasts(page: Page): Promise<void> {
-  const dismiss = page.getByRole('button', {name: 'Dismiss'});
-  while ((await dismiss.count()) > 0) {
-    // a toast may close by itself between the count and the click
-    await dismiss
-      .first()
-      .click({timeout: 2_000})
-      .catch(() => undefined);
-  }
-  await expect(dismiss).toHaveCount(0);
 }
 
 test.describe.configure({mode: 'serial'});
@@ -160,36 +115,11 @@ test.describe(
         TRADE_ROLE,
       );
 
-      const created = await api.post('/api/records', {
-        headers: carrier.clerk.headers,
-        data: {
-          format: 'dcsa-3.0',
-          document: negotiableBl(`CB47${unique().toUpperCase()}`.slice(0, 20)),
-          partyOrganisations: {shipper: shipper.id},
-        },
+      bl = await committedBl(api, carrier.clerk, admin, {
+        document: negotiableBl(`CB47${unique().toUpperCase()}`.slice(0, 20)),
+        partyOrganisations: {shipper: shipper.id},
+        issue: true,
       });
-      expect(created.status(), await created.text()).toBe(201);
-      const record = await created.json();
-      bl = {id: record.id, label: record.label, recordNo: record.recordNo};
-      const submitted = await api.post(
-        `/api/records/${bl.id}/versions/1/submit`,
-        {headers: carrier.clerk.headers},
-      );
-      expect(submitted.status(), await submitted.text()).toBe(200);
-      // the second pair of eyes: a decision reported by bpm, by someone other than the submitter
-      const committed = await api.post(
-        `/api/records/${bl.id}/versions/1/commit`,
-        {
-          headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-          data: {by: {id: admin.id, name: admin.name}},
-        },
-      );
-      expect(committed.status(), await committed.text()).toBe(200);
-      const issued = await api.post(`/api/records/${bl.id}/title/issue`, {
-        headers: carrier.clerk.headers,
-        data: {},
-      });
-      expect(issued.status(), await issued.text()).toBe(200);
       const endorsed = await api.post(`/api/records/${bl.id}/title/endorse`, {
         headers: shipper.clerk.headers,
         data: {to: bank.id, inBlank: false},

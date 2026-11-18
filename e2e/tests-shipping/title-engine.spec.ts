@@ -10,20 +10,19 @@
  * the buyer and an outsider are organisations made here by the administrator, each with a B/L
  * clerk invited through the API.
  */
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
 import {expect, test, type APIRequestContext} from '@playwright/test';
 import {unique} from '../support/admin';
 import {
+  committedBl,
   demoEmails,
+  negotiableBl,
   TRADE_ROLE,
   organisationWithClerk,
-  serviceToken,
   signIn,
   type Organisation,
   type SignedIn,
 } from '../support/shipping';
-import {GATEWAY_URL, REPO_DIR} from '../stack/config.mjs';
+import {GATEWAY_URL} from '../stack/config.mjs';
 
 /** The title of a B/L, as GET /records/:id/title answers it (the fields read here). */
 interface TitleView {
@@ -43,26 +42,6 @@ interface TitleView {
     to: string | null;
     actor: {id: string; org: string};
   }>;
-}
-
-/**
- * DCSA's example transport document (a B/L to order) with its own reference.
- * @param reference the transport document reference
- * @return the document
- */
-function negotiableBl(reference: string): Record<string, unknown> {
-  const path = join(
-    REPO_DIR,
-    'backend',
-    'domains',
-    'shipping',
-    'dcsa',
-    '3.0.3',
-    'examples',
-    'td-regular.json',
-  );
-  const example = JSON.parse(readFileSync(path, 'utf8'));
-  return {...example, transportDocumentReference: reference};
 }
 
 test.describe.configure({mode: 'serial'});
@@ -144,29 +123,11 @@ test.describe('the title engine through the gateway (CB-34)', () => {
   });
 
   test("the carrier's B/L to order, its shipper linked, is committed with four eyes and not issued yet", async () => {
-    const created = await api.post('/api/records', {
-      headers: carrier.headers,
-      data: {
-        format: 'dcsa-3.0',
-        document: negotiableBl(`CB34${unique().toUpperCase()}`.slice(0, 20)),
-        partyOrganisations: {shipper: shipper.id},
-      },
+    const bl = await committedBl(api, carrier, approver, {
+      document: negotiableBl(`CB34${unique().toUpperCase()}`.slice(0, 20)),
+      partyOrganisations: {shipper: shipper.id},
     });
-    expect(created.status(), await created.text()).toBe(201);
-    recordId = (await created.json()).id;
-    const submitted = await api.post(
-      `/api/records/${recordId}/versions/1/submit`,
-      {headers: carrier.headers},
-    );
-    expect(submitted.status(), await submitted.text()).toBe(200);
-    const committed = await api.post(
-      `/api/records/${recordId}/versions/1/commit`,
-      {
-        headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-        data: {by: {id: approver.id, name: approver.name}},
-      },
-    );
-    expect(committed.status(), await committed.text()).toBe(200);
+    recordId = bl.id;
 
     const res = await read(carrier);
     expect(res.status(), await res.text()).toBe(200);

@@ -3,9 +3,20 @@ import {expect} from 'chai';
 import Fastify from 'fastify';
 import {buildApp} from '../src/app.js';
 
+const UPSTREAMS = url => ({
+  identity: url,
+  edrms: url,
+  bpm: url,
+  intake: url,
+  'land-records': url,
+  audit: url,
+  extracts: url,
+});
+
 describe('gateway', () => {
   let upstream;
   let gateway;
+  let upstreamUrl;
 
   before(async () => {
     upstream = Fastify();
@@ -22,17 +33,9 @@ describe('gateway', () => {
       expect: req.headers.expect ?? null,
     }));
     await upstream.listen({port: 0, host: '127.0.0.1'});
-    const url = `http://127.0.0.1:${upstream.server.address().port}`;
+    upstreamUrl = `http://127.0.0.1:${upstream.server.address().port}`;
     gateway = await buildApp({
-      upstreams: {
-        identity: url,
-        edrms: url,
-        bpm: url,
-        intake: url,
-        'land-records': url,
-        audit: url,
-        extracts: url,
-      },
+      upstreams: UPSTREAMS(upstreamUrl),
       corsOrigins: ['http://localhost:4200'],
     });
     await gateway.ready();
@@ -43,55 +46,65 @@ describe('gateway', () => {
     await upstream.close();
   });
 
-  it('proxies /api/auth/* to identity /auth/* with headers intact', async () => {
-    const res = await gateway.inject({
-      method: 'POST',
-      url: '/api/auth/login',
-      headers: {authorization: 'Bearer abc'},
-      payload: {},
-    });
-    expect(res.json()).to.deep.equal({
-      path: '/auth/login',
-      auth: 'Bearer abc',
-      cookie: null,
-      method: 'POST',
-      expect: null,
-    });
-  });
-
-  it('proxies /api/audit/* to audit /audit/*', async () => {
-    expect(
-      (await gateway.inject({url: '/api/audit/trail?subject=record:r1'})).json()
-        .path,
-    ).to.equal('/audit/trail?subject=record:r1');
-  });
-
-  it('proxies /api/extracts/* to extracts /extracts/*', async () => {
-    expect(
-      (await gateway.inject({url: '/api/extracts?recordId=r1'})).json().path,
-    ).to.equal('/extracts?recordId=r1');
-  });
-
-  it('proxies /api/records/* to land-records /records/*', async () => {
-    expect(
-      (await gateway.inject({url: '/api/records?q=1873'})).json().path,
-    ).to.equal('/records?q=1873');
-    expect(
-      (await gateway.inject({url: '/api/records/catalogue'})).json().path,
-    ).to.equal('/records/catalogue');
-  });
-
-  it('keeps sub-paths and query strings', async () => {
-    const res = await gateway.inject({
-      url: '/api/access-log?kind=denied&limit=5',
-    });
-    expect(res.json().path).to.equal('/access-log?kind=denied&limit=5');
-    const users = await gateway.inject({
-      method: 'PUT',
-      url: '/api/users/123/roles',
-      payload: {roles: []},
-    });
-    expect(users.json().path).to.equal('/users/123/roles');
+  it('proxies each API prefix to its service with path, query, method and auth intact', async () => {
+    const cases = [
+      [
+        'POST',
+        '/api/auth/login',
+        '/auth/login',
+        {authorization: 'Bearer abc'},
+        {},
+      ],
+      [
+        'GET',
+        '/api/audit/trail?subject=record:r1',
+        '/audit/trail?subject=record:r1',
+      ],
+      ['GET', '/api/extracts?recordId=r1', '/extracts?recordId=r1'],
+      ['GET', '/api/records?q=1873', '/records?q=1873'],
+      ['GET', '/api/records/catalogue', '/records/catalogue'],
+      [
+        'GET',
+        '/api/access-log?kind=denied&limit=5',
+        '/access-log?kind=denied&limit=5',
+      ],
+      ['PUT', '/api/users/123/roles', '/users/123/roles', {}, {roles: []}],
+      [
+        'GET',
+        '/api/documents/abc/content?version=2',
+        '/documents/abc/content?version=2',
+      ],
+      [
+        'GET',
+        '/api/document-content/abc/1?exp=1&sig=x',
+        '/content/abc/1?exp=1&sig=x',
+      ],
+      ['GET', '/api/tasks', '/tasks'],
+      [
+        'POST',
+        '/api/process-instances/abc/cancel',
+        '/instances/abc/cancel',
+        {},
+        {},
+      ],
+      [
+        'POST',
+        '/api/processes/document-amendment/instances',
+        '/processes/document-amendment/instances',
+        {},
+        {},
+      ],
+      ['GET', '/api/intake/documents?status=ready', '/documents?status=ready'],
+      ['GET', '/api/intake/files/abc?exp=1&sig=x', '/files/abc?exp=1&sig=x'],
+    ];
+    for (const [method, url, expectedPath, headers, payload] of cases) {
+      const res = await gateway.inject({method, url, headers, payload});
+      expect(res.statusCode, url).to.equal(200);
+      expect(res.json(), url).to.include({method, path: expectedPath});
+      if (headers?.authorization) {
+        expect(res.json().auth).to.equal(headers.authorization);
+      }
+    }
   });
 
   it('does not forward Expect: 100-continue (large uploads)', async () => {
@@ -106,52 +119,6 @@ describe('gateway', () => {
     });
     expect(res.statusCode, res.body).to.equal(200);
     expect(res.json().expect).to.equal(null);
-  });
-
-  it('routes document paths to edrms', async () => {
-    const doc = await gateway.inject({
-      url: '/api/documents/abc/content?version=2',
-    });
-    expect(doc.json().path).to.equal('/documents/abc/content?version=2');
-    const content = await gateway.inject({
-      url: '/api/document-content/abc/1?exp=1&sig=x',
-    });
-    expect(content.json().path).to.equal('/content/abc/1?exp=1&sig=x');
-  });
-
-  it('routes workflow paths to bpm', async () => {
-    expect((await gateway.inject({url: '/api/tasks'})).json().path).to.equal(
-      '/tasks',
-    );
-    expect(
-      (
-        await gateway.inject({
-          method: 'POST',
-          url: '/api/process-instances/abc/cancel',
-          payload: {},
-        })
-      ).json().path,
-    ).to.equal('/instances/abc/cancel');
-    expect(
-      (
-        await gateway.inject({
-          method: 'POST',
-          url: '/api/processes/document-amendment/instances',
-          payload: {},
-        })
-      ).json().path,
-    ).to.equal('/processes/document-amendment/instances');
-  });
-
-  it('routes /api/intake/* to intake without the prefix', async () => {
-    expect(
-      (await gateway.inject({url: '/api/intake/documents?status=ready'})).json()
-        .path,
-    ).to.equal('/documents?status=ready');
-    expect(
-      (await gateway.inject({url: '/api/intake/files/abc?exp=1&sig=x'})).json()
-        .path,
-    ).to.equal('/files/abc?exp=1&sig=x');
   });
 
   it('answers CORS preflight for the configured origin, with credentials', async () => {
@@ -196,19 +163,8 @@ describe('gateway', () => {
       limited.inject({url, remoteAddress});
 
     before(async () => {
-      const url = `http://127.0.0.1:${upstream.server.address().port}`;
       limited = await buildApp({
-        upstreams: Object.fromEntries(
-          [
-            'identity',
-            'edrms',
-            'bpm',
-            'intake',
-            'land-records',
-            'audit',
-            'extracts',
-          ].map(name => [name, url]),
-        ),
+        upstreams: UPSTREAMS(upstreamUrl),
         publicRateLimit: {max: 3, timeWindow: 60_000},
       });
       await limited.ready();
@@ -286,19 +242,8 @@ describe('gateway', () => {
 
     it('logs the public path without the token', async () => {
       const lines = [];
-      const url = `http://127.0.0.1:${upstream.server.address().port}`;
       const logged = await buildApp({
-        upstreams: Object.fromEntries(
-          [
-            'identity',
-            'edrms',
-            'bpm',
-            'intake',
-            'land-records',
-            'audit',
-            'extracts',
-          ].map(name => [name, url]),
-        ),
+        upstreams: UPSTREAMS(upstreamUrl),
         logger: {
           level: 'info',
           stream: {write: line => lines.push(JSON.parse(line))},

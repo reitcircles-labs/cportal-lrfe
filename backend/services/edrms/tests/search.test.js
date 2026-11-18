@@ -89,6 +89,13 @@ describe('document search', () => {
         await refs({q: 'Nghishidi', props: {priorTitle: 'T 1502/1996'}}),
       ).to.deep.equal(['T 2210/2008']);
       expect(await refs({docType: 'sg_diagram'})).to.deep.equal(['A 412/2007']);
+      expect(
+        (await service.searchDocuments({batchId: 'WDH-B017'})).total,
+      ).to.equal(6);
+      const badType = await service
+        .searchDocuments({docType: 'lease'})
+        .catch(e => e);
+      expect(badType.statusCode).to.equal(400);
     });
 
     it('finds nothing for words that are not there, and never returns the search text', async () => {

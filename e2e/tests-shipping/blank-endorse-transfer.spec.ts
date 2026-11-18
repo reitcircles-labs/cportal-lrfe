@@ -9,8 +9,6 @@
  * `npm run evidence -- CB-52 --spec tests-shipping/blank-endorse-transfer.spec.ts`
  * (support/evidence.ts).
  */
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
 import {
   expect,
   test,
@@ -21,57 +19,23 @@ import {unique} from '../support/admin';
 import {evidence} from '../support/evidence';
 import {
   INVITED_PASSWORD,
+  committedBl,
   demoEmails,
+  dismissToasts,
+  negotiableBl,
   TRADE_ROLE,
   organisationWithClerk,
-  serviceToken,
   signIn,
   signInOnScreen,
   type Organisation,
 } from '../support/shipping';
-import {GATEWAY_URL, REPO_DIR, SHIPPING_URL} from '../stack/config.mjs';
+import {GATEWAY_URL, SHIPPING_URL} from '../stack/config.mjs';
 
 /** The ticket the screenshots are for. */
 const TICKET = 'CB-52';
 
 /** What a blank endorsement means, as the confirmation and the panel say it. */
 const BLANK_MEANING = 'no longer names a holder by endorsement';
-
-/**
- * DCSA's example transport document (a B/L to order) with its own reference.
- * @param reference the transport document reference
- * @return the document
- */
-function negotiableBl(reference: string): Record<string, unknown> {
-  const path = join(
-    REPO_DIR,
-    'backend',
-    'domains',
-    'shipping',
-    'dcsa',
-    '3.0.3',
-    'examples',
-    'td-regular.json',
-  );
-  const example = JSON.parse(readFileSync(path, 'utf8'));
-  return {...example, transportDocumentReference: reference};
-}
-
-/**
- * Closes the toasts on the screen, so that a screenshot shows the page alone.
- * @param page the page
- */
-async function dismissToasts(page: Page): Promise<void> {
-  const dismiss = page.getByRole('button', {name: 'Dismiss'});
-  while ((await dismiss.count()) > 0) {
-    // a toast may close by itself between the count and the click
-    await dismiss
-      .first()
-      .click({timeout: 2_000})
-      .catch(() => undefined);
-  }
-  await expect(dismiss).toHaveCount(0);
-}
 
 /**
  * A screenshot of the whole page: the window made tall enough, then set back.
@@ -140,35 +104,11 @@ test.describe(
       shipper = await organisationWithClerk(api, admin, 'Shipper', TRADE_ROLE);
       bankA = await organisationWithClerk(api, admin, 'BankA', TRADE_ROLE);
       bankB = await organisationWithClerk(api, admin, 'BankB', TRADE_ROLE);
-      const created = await api.post('/api/records', {
-        headers: carrier.clerk.headers,
-        data: {
-          format: 'dcsa-3.0',
-          document: negotiableBl(`CB52${unique().toUpperCase()}`.slice(0, 20)),
-          partyOrganisations: {shipper: shipper.id},
-        },
+      bl = await committedBl(api, carrier.clerk, admin, {
+        document: negotiableBl(`CB52${unique().toUpperCase()}`.slice(0, 20)),
+        partyOrganisations: {shipper: shipper.id},
+        issue: true,
       });
-      expect(created.status(), await created.text()).toBe(201);
-      const record = await created.json();
-      const submitted = await api.post(
-        `/api/records/${record.id}/versions/1/submit`,
-        {headers: carrier.clerk.headers},
-      );
-      expect(submitted.status(), await submitted.text()).toBe(200);
-      const committed = await api.post(
-        `/api/records/${record.id}/versions/1/commit`,
-        {
-          headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-          data: {by: {id: admin.id, name: admin.name}},
-        },
-      );
-      expect(committed.status(), await committed.text()).toBe(200);
-      const issued = await api.post(`/api/records/${record.id}/title/issue`, {
-        headers: carrier.clerk.headers,
-        data: {},
-      });
-      expect(issued.status(), await issued.text()).toBe(200);
-      bl = {id: record.id, label: record.label};
     });
 
     test.afterAll(async () => {

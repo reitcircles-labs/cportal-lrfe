@@ -27,7 +27,7 @@ import {
 import {identity} from '../../backend/domains/shipping/src/identity.js';
 import {codeFor, readSecrets, saveSecrets} from '../support/auth';
 import {evidence} from '../support/evidence';
-import {signIn} from '../support/shipping';
+import {dismissToasts, signIn, testChainFetch} from '../support/shipping';
 import {
   DEMO_PASSWORD,
   GATEWAY_URL,
@@ -89,34 +89,6 @@ const CARRIER_CODE = CARRIER.code;
 /** What the check says of the whole journey: six steps, each signed. */
 const ALL_CHECKED =
   "All 6 steps carry the platform's signature, checked in your browser.";
-
-/**
- * The verifier's blockchain queries, sent to the test chain behind the gateway instead, as
- * check.spec.ts does.
- * @param url the address the verifier asks
- * @param init the request's options
- * @return the test chain's answer
- */
-function testChainFetch(url: string, init: RequestInit): Promise<Response> {
-  const query = new URL(url).pathname.split('/').pop();
-  return fetch(`${GATEWAY_URL}/api/audit/test/koios/${query}`, init);
-}
-
-/**
- * Closes the toasts on the screen, so that a screenshot shows the page alone.
- * @param page the page
- */
-async function dismissToasts(page: Page): Promise<void> {
-  const dismiss = page.getByRole('button', {name: 'Dismiss'});
-  while ((await dismiss.count()) > 0) {
-    // a toast may close by itself between the count and the click
-    await dismiss
-      .first()
-      .click({timeout: 2_000})
-      .catch(() => undefined);
-  }
-  await expect(dismiss).toHaveCount(0);
-}
 
 /**
  * Signs a demo user in on the screen with the demo password, as the storyline does: at their first

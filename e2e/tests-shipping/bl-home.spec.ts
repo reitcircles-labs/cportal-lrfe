@@ -8,49 +8,28 @@
  * its name. Screenshots for the ticket
  * with `npm run evidence -- CB-42` conventions (support/evidence.ts).
  */
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
 import {expect, test, type APIRequestContext} from '@playwright/test';
 import {unique} from '../support/admin';
 import {evidence} from '../support/evidence';
 import {
   INVITED_PASSWORD,
+  committedBl,
   demoEmails,
+  negotiableBl,
   TRADE_ROLE,
   organisationWithClerk,
-  serviceToken,
   signIn,
   signInOnScreen,
   type Organisation,
   type SignedIn,
 } from '../support/shipping';
-import {GATEWAY_URL, REPO_DIR, SHIPPING_URL} from '../stack/config.mjs';
+import {GATEWAY_URL, SHIPPING_URL} from '../stack/config.mjs';
 
 /** An item of GET /records/title (the fields read here). */
 interface ListItem {
   id: string;
   label: string;
   roles: string[];
-}
-
-/**
- * DCSA's example transport document (a B/L to order) with its own reference.
- * @param reference the transport document reference
- * @return the document
- */
-function negotiableBl(reference: string): Record<string, unknown> {
-  const path = join(
-    REPO_DIR,
-    'backend',
-    'domains',
-    'shipping',
-    'dcsa',
-    '3.0.3',
-    'examples',
-    'td-regular.json',
-  );
-  const example = JSON.parse(readFileSync(path, 'utf8'));
-  return {...example, transportDocumentReference: reference};
 }
 
 /**
@@ -135,22 +114,11 @@ test.describe(
         TRADE_ROLE,
       );
 
-      issued = await createBl();
-      const submitted = await api.post(
-        `/api/records/${issued.id}/versions/1/submit`,
-        {headers: carrier.clerk.headers},
-      );
-      expect(submitted.status(), await submitted.text()).toBe(200);
-      // the second pair of eyes: a decision reported by bpm, by someone other than the submitter
-      const committed = await api.post(
-        `/api/records/${issued.id}/versions/1/commit`,
-        {
-          headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-          data: {by: {id: admin.id, name: admin.name}},
-        },
-      );
-      expect(committed.status(), await committed.text()).toBe(200);
-      await run(issued.id, 'issue', carrier.clerk);
+      issued = await committedBl(api, carrier.clerk, admin, {
+        document: negotiableBl(reference()),
+        partyOrganisations: {shipper: shipper.id},
+        issue: true,
+      });
       await run(issued.id, 'endorse', shipper.clerk, {
         to: bank.id,
         inBlank: false,

@@ -124,28 +124,7 @@ describe('the public check of an extract (API-693)', () => {
     );
   });
 
-  it('replaced: matches, but the record has a newer version since it was committed', async () => {
-    const ctx = await makeExtracts();
-    const {record, extract} = await issued(ctx);
-    await ctx.records.service.openDraft(record.id, rec);
-    const data = erf1873Data();
-    data.owners.reverse();
-    await commitVersion(ctx.records, record.id, 2, data);
-    const v2 = (await ctx.records.service.getRecord(record.id)).current;
-    const {body, raw} = await checkOver(ctx.app, extract.token);
-    expect(body).to.include({
-      state: 'replaced',
-      versionNumber: 1,
-      fingerprintEnd: record.current.seal.slice(-8),
-      batch: 7,
-      transactionId: TX,
-      revokedAt: null,
-    });
-    expect(body.replacedAt).to.equal(new Date(v2.committedAt).toISOString());
-    expectNoPersonalData(raw);
-  });
-
-  it('replaced: v1 with v3 current is replaced since v2 was committed', async () => {
+  it('replaced: v1 with v3 current is replaced since v2 was committed, or unavailable if v2 cannot be read', async () => {
     const ctx = await makeExtracts();
     const {record, extract} = await issued(ctx);
     for (const n of [2, 3]) {
@@ -160,9 +139,17 @@ describe('the public check of an extract (API-693)', () => {
     const v3 = (await ctx.records.service.getRecord(record.id)).current;
     expect(v3.versionNumber).to.equal(3);
     expect(v3.committedAt).to.not.deep.equal(v2.committedAt);
-    const {body} = await checkOver(ctx.app, extract.token);
-    expect(body).to.include({state: 'replaced', versionNumber: 1});
+    const {body, raw} = await checkOver(ctx.app, extract.token);
+    expect(body).to.include({
+      state: 'replaced',
+      versionNumber: 1,
+      fingerprintEnd: record.current.seal.slice(-8),
+      batch: 7,
+      transactionId: TX,
+      revokedAt: null,
+    });
     expect(body.replacedAt).to.equal(new Date(v2.committedAt).toISOString());
+    expectNoPersonalData(raw);
 
     // the next version cannot be read now: unavailable, not a guessed date
     ctx.check.records = {

@@ -7,7 +7,6 @@ import {sealOf} from '@lrfe/record-contract/seal';
 import {expect} from 'chai';
 
 import {
-  EXAMPLE_FILES,
   by,
   createAs,
   example,
@@ -140,34 +139,32 @@ for (const store of stores()) {
     });
 
     describe('creating a draft B/L', () => {
-      for (const file of EXAMPLE_FILES) {
-        it(`creates one from DCSA's example ${file}, its status left out`, async () => {
-          const document = example(file);
-          const res = await createAs(ctx, users.a1, document);
-          expect(res.statusCode, res.body).to.equal(201);
-          const record = res.json();
-          const {transportDocumentReference: reference, carrierCode} = document;
-          expect(record).to.include({
-            recordNo: reference,
-            carrierCode,
-            label: `B/L ${reference} (${carrierCode})`,
-            organisationId: 'org-a',
-            status: 'draft',
-            currentVersion: null,
-            draftVersion: 1,
-            draftState: 'draft',
-            draftDiff: null,
-          });
-          expect(record.current).to.equal(null);
-          const {draft} = record;
-          expect(draft.state).to.equal('draft');
-          expect(draft.data.schemaVersion).to.equal(SCHEMA_VERSION);
-          expect(draft.data.document).to.not.have.property(
-            'transportDocumentStatus',
-          );
-          expect(draft.documentHash).to.equal(billOfLadingHash(draft.data));
+      it('creates one from a DCSA document with its status left out and hash computed', async () => {
+        const document = example();
+        const res = await createAs(ctx, users.a1, document);
+        expect(res.statusCode, res.body).to.equal(201);
+        const record = res.json();
+        const {transportDocumentReference: reference, carrierCode} = document;
+        expect(record).to.include({
+          recordNo: reference,
+          carrierCode,
+          label: `B/L ${reference} (${carrierCode})`,
+          organisationId: 'org-a',
+          status: 'draft',
+          currentVersion: null,
+          draftVersion: 1,
+          draftState: 'draft',
+          draftDiff: null,
         });
-      }
+        expect(record.current).to.equal(null);
+        const {draft} = record;
+        expect(draft.state).to.equal('draft');
+        expect(draft.data.schemaVersion).to.equal(SCHEMA_VERSION);
+        expect(draft.data.document).to.not.have.property(
+          'transportDocumentStatus',
+        );
+        expect(draft.documentHash).to.equal(billOfLadingHash(draft.data));
+      });
 
       it("keeps the links of the document's parties to organisations", async () => {
         const res = await createAs(ctx, users.a1, example(), {

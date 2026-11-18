@@ -117,8 +117,13 @@ async function auditedAndAnchored() {
 }
 
 describe('evidence pack (API-660)', () => {
+  let shared;
+  before(async () => {
+    shared = await auditedAndAnchored();
+  });
+
   it('the export of Erf 1873 holds every version, document, file, trail entry, sign-off, finding and proof; the offline verifier checks all of it', async () => {
-    const a = await auditedAndAnchored();
+    const a = shared;
     const res = await download(a);
     assert.equal(res.statusCode, 200);
     assert.equal(res.headers['content-type'], 'application/zip');
@@ -239,7 +244,7 @@ describe('evidence pack (API-660)', () => {
   });
 
   it('changing any file in the pack makes its check fail, also when the forger rewrites the manifest', async () => {
-    const a = await auditedAndAnchored();
+    const a = shared;
     const files = filesOf(await download(a));
     const check = f => verifyPack(f, {fetchImpl: publicSource(a.driver)});
     assert.equal((await check(files)).valid, true);

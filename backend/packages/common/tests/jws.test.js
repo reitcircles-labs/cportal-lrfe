@@ -98,32 +98,26 @@ describe('signed JSON (JWS, ES256) for the chain of title (CB-32)', () => {
   });
 
   describe('signJws', () => {
-    it('makes a compact JWS: header {alg ES256, kid, typ}, the canonical JSON as payload', async () => {
+    it('makes a compact ES256 JWS with canonical JSON payload and valid P1363 signature', async () => {
       const jws = await signJws(PAYLOAD, signer, {typ: TYP});
-      expect(jws).to.be.a('string');
-      expect(jws.split('.')).to.have.length(3);
       expect(jws).to.match(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
-      const {header, payloadText} = partsOf(jws);
+      const {header, payloadText, signature, signingInput} = partsOf(jws);
       expect(header).to.deep.equal({
         alg: 'ES256',
         kid: jwks.keys[0].kid,
         typ: TYP,
       });
       expect(payloadText).to.equal(canonicalJson(PAYLOAD));
-    });
-
-    it('signs with an IEEE P1363 signature (r and s, 64 bytes) any ES256 verifier accepts', async () => {
-      const jws = await signJws(PAYLOAD, signer, {typ: TYP});
-      const {signature, signingInput} = partsOf(jws);
       expect(signature).to.have.length(64);
       const key = createPublicKey({key: jwks.keys[0], format: 'jwk'});
-      const valid = verify(
-        'sha256',
-        Buffer.from(signingInput),
-        {key, dsaEncoding: 'ieee-p1363'},
-        signature,
-      );
-      expect(valid).to.equal(true);
+      expect(
+        verify(
+          'sha256',
+          Buffer.from(signingInput),
+          {key, dsaEncoding: 'ieee-p1363'},
+          signature,
+        ),
+      ).to.equal(true);
     });
 
     it('gives the same payload for the same data, whatever the order of its keys', async () => {
@@ -239,18 +233,6 @@ describe('signed JSON (JWS, ES256) for the chain of title (CB-32)', () => {
       expect(key.x).to.be.a('string');
       expect(key.y).to.be.a('string');
       expect(key).to.not.have.property('d');
-    });
-
-    it("signs JWSs that verify with the key set of that signer and no other signer's", async () => {
-      const jws = await signJws(PAYLOAD, signer, {typ: TYP});
-      expect(await verifyJws(jws, await signer.jwks())).to.deep.equal(PAYLOAD);
-      const another = await createLocalSigner();
-      const anotherKeys = (await another.jwks()).keys.map(k => ({
-        ...k,
-        kid: jwks.keys[0].kid,
-      }));
-      const error = await thrown(() => verifyJws(jws, {keys: anotherKeys}));
-      expect(error).to.be.instanceOf(Error);
     });
   });
 

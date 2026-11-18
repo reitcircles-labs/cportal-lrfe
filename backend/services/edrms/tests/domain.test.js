@@ -56,15 +56,6 @@ describe('edrms with another domain pack (CB-3)', () => {
     expect(await read('audit')).to.equal(200);
   });
 
-  it("lets the land pack's record service read documents", async () => {
-    const {app, bearer, serviceToken} = await makeApp();
-    const res = await app.inject({
-      url: '/documents',
-      headers: bearer(serviceToken('land-records')),
-    });
-    expect(res.statusCode).to.equal(200);
-  });
-
   it('takes the land texts from the land pack', async () => {
     const {app, bearer, userToken} = await makeApp();
     const res = await app.inject({

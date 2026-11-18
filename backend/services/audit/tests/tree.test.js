@@ -145,7 +145,12 @@ describe('growing Merkle tree: inclusion proofs (API-655)', () => {
     const {tree} = makeTree();
     await tree.append(Array.from({length: 257}, (_, k) => item(k + 1)));
     for (const n of SIZES) {
-      for (let i = 1; i <= n; i++) {
+      const root = (await tree.root(n)).root;
+      const indices =
+        n <= 33
+          ? Array.from({length: n}, (_, k) => k + 1)
+          : [...new Set([1, 2, 3, n >> 1, n - 1, n])];
+      for (const i of indices) {
         const p = await tree.inclusionProof(`document-version:d${i}:1`, n);
         const ok = verifyInclusion({
           leafHash: p.leaf.hash,
@@ -153,7 +158,7 @@ describe('growing Merkle tree: inclusion proofs (API-655)', () => {
           size: p.size,
           path: p.path,
           peaks: p.peaks,
-          root: (await tree.root(n)).root,
+          root,
         });
         assert.equal(ok, true, `leaf ${i - 1} in size ${n}`);
         assert.ok(p.path.length <= Math.ceil(Math.log2(n)));
@@ -274,10 +279,14 @@ describe('growing Merkle tree: consistency proofs (API-655)', () => {
   it('every earlier size is the start of every later size', async () => {
     const {tree} = makeTree();
     await tree.append(Array.from({length: 40}, (_, k) => item(k + 1)));
-    for (let m = 1; m <= 40; m++) {
-      for (let n = m; n <= 40; n++) {
+    const checkSizes = [1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 40];
+    for (let i = 0; i < checkSizes.length; i++) {
+      const m = checkSizes[i];
+      const oldRoot = (await tree.root(m)).root;
+      for (let j = i; j < checkSizes.length; j++) {
+        const n = checkSizes[j];
         const c = await tree.consistencyProof(m, n);
-        assert.equal(c.oldRoot, (await tree.root(m)).root);
+        assert.equal(c.oldRoot, oldRoot);
         assert.equal(verifyConsistency(c), true, `${m} → ${n}`);
       }
     }

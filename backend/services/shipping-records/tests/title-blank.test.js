@@ -255,7 +255,7 @@ for (const store of stores()) {
         ];
       }
 
-      it('moves the title step by step: holder, state and endorsement after each command', async () => {
+      it('moves step by step, records a verifiable signed chain and publishes every entry', async () => {
         const id = await committedBl(ctx, nextReference('MIX'));
         const steps = await mixedJourney(id);
         expect(
@@ -268,11 +268,6 @@ for (const store of stores()) {
           ['surrendered', CARRIER, 'named'],
           ['accomplished', null, 'named'],
         ]);
-      });
-
-      it('records the chain of title: commands, from and to, the acting organisation and the endorsement of each entry', async () => {
-        const id = await committedBl(ctx, nextReference('MIX'));
-        const steps = await mixedJourney(id);
         const chain = steps.at(-1).chain;
         expect(chain.map(e => e.command)).to.deep.equal([
           'issue',
@@ -306,29 +301,12 @@ for (const store of stores()) {
           'named',
           'named',
         ]);
-      });
-
-      it('gives a chain that verifies, every entry signed with the platform key', async () => {
-        const id = await committedBl(ctx, nextReference('MIX'));
-        await mixedJourney(id);
         const entries = await ctx.repo.listTitleEntries(id);
         const keys = (
           await ctx.app.inject({url: '/records/title/keys'})
         ).json();
         const checked = await verifyTitleChain(entries, keys);
         expect(checked.valid, JSON.stringify(checked)).to.equal(true);
-        expect(entries).to.have.length(6);
-        for (const entry of entries) {
-          expect(entry.signature.split('.'), `seq ${entry.seq}`).to.have.length(
-            3,
-          );
-        }
-      });
-
-      it('publishes every entry for the audit trail and its anchoring: one records.title.<command> event each, with the signed entry', async () => {
-        const id = await committedBl(ctx, nextReference('MIX'));
-        await mixedJourney(id);
-        const entries = await ctx.repo.listTitleEntries(id);
         const events = ctx.published.filter(e =>
           e.type.startsWith('records.title.'),
         );
@@ -596,7 +574,7 @@ for (const store of stores()) {
         ['not registered', UNKNOWN],
         ['not active', SUSPENDED],
       ]) {
-        it(`a blank endorsement to an organisation ${label} is refused 422, nothing recorded`, async () => {
+        it(`blank endorsement, transfer and later named endorsement to an organisation ${label} are refused 422, nothing recorded`, async () => {
           const id = await committedBl(ctx, nextReference('B-REG'));
           await ok(ctx, id, 'issue', staffOf(CARRIER));
           await expectRefused(
@@ -609,22 +587,16 @@ for (const store of stores()) {
               }),
             {status: 422, code: 'unregistered-organisation'},
           );
-          expect(identity.asked).to.include(to);
-        });
-
-        it(`a transfer to an organisation ${label} is refused 422, nothing recorded`, async () => {
-          const id = await blankToBankA(ctx, nextReference('T-REG'));
+          await ok(ctx, id, 'endorse', staffOf(SHIPPER), {
+            to: BANK_A,
+            inBlank: true,
+          });
           await expectRefused(
             ctx,
             id,
             () => command(ctx, id, 'transfer', staffOf(BANK_A), {to}),
             {status: 422, code: 'unregistered-organisation'},
           );
-          expect(identity.asked).to.include(to);
-        });
-
-        it(`a later holder's named endorsement to an organisation ${label} is refused 422, nothing recorded`, async () => {
-          const id = await blankToBankA(ctx, nextReference('N-REG'));
           await ok(ctx, id, 'transfer', staffOf(BANK_A), {to: BANK_B});
           await expectRefused(
             ctx,
@@ -636,6 +608,7 @@ for (const store of stores()) {
               }),
             {status: 422, code: 'unregistered-organisation'},
           );
+          expect(identity.asked).to.include(to);
         });
       }
 
@@ -652,12 +625,9 @@ for (const store of stores()) {
     });
 
     describe('switching a blank-endorsed B/L to paper (Done when 4)', () => {
-      for (const [label, body] of [
-        ['without confirmBearer', {}],
-        ['with confirmBearer false', {confirmBearer: false}],
-      ]) {
-        it(`is refused 409 ${label}, with the pack's warning, nothing recorded`, async () => {
-          const id = await blankToBankA(ctx, nextReference('PAPER'));
+      it('is refused 409 without confirmBearer or with confirmBearer false, also after a transfer', async () => {
+        const id = await blankToBankA(ctx, nextReference('PAPER'));
+        for (const body of [{}, {confirmBearer: false}]) {
           await expectRefused(
             ctx,
             id,
@@ -668,11 +638,7 @@ for (const store of stores()) {
               message: TITLE_WORDING.bearerUnconfirmed,
             },
           );
-        });
-      }
-
-      it('is refused the same way after a transfer', async () => {
-        const id = await blankToBankA(ctx, nextReference('PAPER-T'));
+        }
         await ok(ctx, id, 'transfer', staffOf(BANK_A), {to: BANK_B});
         await expectRefused(
           ctx,

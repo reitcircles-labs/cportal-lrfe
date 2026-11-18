@@ -3,10 +3,10 @@
  * The reports are small samples in each scanner's format, one of them with a seeded high finding.
  */
 import assert from 'node:assert/strict';
-import {mkdtempSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {test} from 'node:test';
+import {after, test} from 'node:test';
 import {
   applyAccepted,
   readNuclei,
@@ -18,6 +18,7 @@ import {
 } from './findings.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'lrfe-findings-'));
+after(() => rmSync(dir, {recursive: true, force: true}));
 const write = (name, text) => {
   const file = join(dir, name);
   writeFileSync(file, text);

@@ -1,6 +1,7 @@
 import {signServiceToken} from '@lrfe/common';
 import {expect} from 'chai';
 
+import {DEFAULT_ORGANISATION_KEY} from '../src/seed.js';
 import {makeApp} from './helpers.js';
 
 /**
@@ -58,8 +59,9 @@ async function setup() {
 }
 
 describe('the active organisations, for the record service (CB-44)', () => {
-  it('answers the active organisations, sorted by name, with their id, code and name only', async () => {
-    const {bank, exporter, buyer, active, asService, app} = await setup();
+  it('answers the active organisations, sorted by name, excluding suspended and the operator organisation (CB-48)', async () => {
+    const {bank, exporter, buyer, active, asService, repo, app} = await setup();
+    const operatorId = await repo.getSetting(DEFAULT_ORGANISATION_KEY);
     // the land pack's record service in these tests (the default pack)
     const res = await active(asService('land-records'));
     expect(res.statusCode, res.body).to.equal(200);
@@ -67,7 +69,10 @@ describe('the active organisations, for the record service (CB-44)', () => {
     const names = organisations.map(o => o.name);
     expect(names).to.include.members(['First Bank', 'Coffee Exporters']);
     expect(names).not.to.include('Buyer Trading');
-    expect(organisations.map(o => o.id)).not.to.include(buyer.id);
+    expect(organisations.map(o => o.id)).not.to.include.members([
+      buyer.id,
+      operatorId,
+    ]);
     expect([...names].sort((a, b) => a.localeCompare(b))).to.deep.equal(names);
     for (const o of organisations) {
       expect(Object.keys(o).sort()).to.deep.equal(['code', 'id', 'name']);

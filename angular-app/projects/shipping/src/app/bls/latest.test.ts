@@ -18,20 +18,31 @@ describe('LatestRequest', () => {
   it('a slower older answer arriving after a newer one is ignored', async () => {
     const latest = new LatestRequest();
     const shown: string[] = [];
+    let releaseOlder: () => void = () => undefined;
+    const olderGate = new Promise<void>(resolve => {
+      releaseOlder = resolve;
+    });
+
     /**
-     * Loads after a delay, showing the answer only while it is current.
+     * Loads behind a gate, showing the answer only while it is current.
      * @param answer what the request answers
-     * @param ms how long it takes
+     * @param wait optional promise that delays completion
      * @return when it is done
      */
-    async function load(answer: string, ms: number): Promise<void> {
+    async function load(answer: string, wait?: Promise<void>): Promise<void> {
       const request = latest.begin();
-      await new Promise(resolve => setTimeout(resolve, ms));
+      if (wait) {
+        await wait;
+      }
       if (latest.isCurrent(request)) {
         shown.push(answer);
       }
     }
-    await Promise.all([load('older', 30), load('newer', 5)]);
+
+    const older = load('older', olderGate);
+    await load('newer');
+    releaseOlder();
+    await older;
     assert.deepEqual(shown, ['newer']);
   });
 });

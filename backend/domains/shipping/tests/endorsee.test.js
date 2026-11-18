@@ -85,44 +85,28 @@ const MIXED = Object.freeze([
 
 describe('the endorsee of a B/L written out (CB-37)', () => {
   describe('endorseeOf: the latest named endorsement in the chain of title', () => {
-    it('is null for no chain and for an issued B/L not endorsed yet', () => {
+    it('tracks the latest named endorsee across blank endorsements, transfers, surrender and release', () => {
       expect(endorseeOf([])).to.equal(null);
-      expect(endorseeOf(MIXED.slice(0, 1))).to.equal(null);
-    });
-
-    it('is null after a blank endorsement', () => {
-      expect(endorseeOf(MIXED.slice(0, 2))).to.equal(null);
-    });
-
-    it('stays null after a transfer of the blank-endorsed B/L', () => {
-      expect(endorseeOf(MIXED.slice(0, 3))).to.equal(null);
-    });
-
-    it('is the organisation of a later named endorsement', () => {
-      expect(endorseeOf(MIXED.slice(0, 4))).to.equal(BUYER);
-    });
-
-    it('keeps the named endorsee through surrender and release', () => {
-      expect(endorseeOf(MIXED.slice(0, 5))).to.equal(BUYER);
-      expect(endorseeOf(MIXED)).to.equal(BUYER);
-    });
-
-    it('is the latest of several named endorsements', () => {
-      const chain = [
-        entry(1, 'issue', null, SHIPPER, 'none'),
-        entry(2, 'endorse', SHIPPER, BANK_A, 'named'),
-        entry(3, 'endorse', BANK_A, BUYER, 'named'),
-      ];
-      expect(endorseeOf(chain)).to.equal(BUYER);
-    });
-
-    it('is null when a named endorsee endorses the B/L on in blank', () => {
-      const chain = [
-        entry(1, 'issue', null, SHIPPER, 'none'),
-        entry(2, 'endorse', SHIPPER, BANK_A, 'named'),
-        entry(3, 'endorse', BANK_A, BANK_B, 'blank'),
-      ];
-      expect(endorseeOf(chain)).to.equal(null);
+      expect(endorseeOf(MIXED.slice(0, 1))).to.equal(null); // issued only
+      expect(endorseeOf(MIXED.slice(0, 2))).to.equal(null); // blank endorsed
+      expect(endorseeOf(MIXED.slice(0, 3))).to.equal(null); // transferred
+      expect(endorseeOf(MIXED.slice(0, 4))).to.equal(BUYER); // named endorsement
+      expect(endorseeOf(MIXED.slice(0, 5))).to.equal(BUYER); // surrendered
+      expect(endorseeOf(MIXED)).to.equal(BUYER); // released
+      expect(
+        endorseeOf([
+          entry(1, 'issue', null, SHIPPER, 'none'),
+          entry(2, 'endorse', SHIPPER, BANK_A, 'named'),
+          entry(3, 'endorse', BANK_A, BUYER, 'named'),
+        ]),
+      ).to.equal(BUYER);
+      expect(
+        endorseeOf([
+          entry(1, 'issue', null, SHIPPER, 'none'),
+          entry(2, 'endorse', SHIPPER, BANK_A, 'named'),
+          entry(3, 'endorse', BANK_A, BANK_B, 'blank'),
+        ]),
+      ).to.equal(null);
     });
 
     it('never changes the chain it reads', () => {
@@ -142,15 +126,7 @@ describe('the endorsee of a B/L written out (CB-37)', () => {
       });
     });
 
-    it('writes a named endorsement’s organisation as documentParties.endorsee', () => {
-      const out = dcsa.fromModel(negotiableBl(), {
-        status: 'ISSUED',
-        endorsee: BUYER_PARTY,
-      });
-      expect(out.documentParties.endorsee).to.deep.equal(BUYER_PARTY);
-    });
-
-    it('keeps every other party and field as stored', () => {
+    it('writes a named endorsement’s organisation as documentParties.endorsee without changing other fields', () => {
       const billOfLading = negotiableBl();
       const out = dcsa.fromModel(billOfLading, {
         status: 'ISSUED',
@@ -162,6 +138,9 @@ describe('the endorsee of a B/L written out (CB-37)', () => {
         transportDocumentStatus: 'ISSUED',
         ...expected,
       });
+      expect(assertBillOfLading(dcsa.toModel(out).billOfLading)).to.be.an(
+        'object',
+      );
     });
 
     it('writes no endorsee for a blank-endorsed B/L (endorsee null), even one stored in the document', () => {
@@ -189,15 +168,6 @@ describe('the endorsee of a B/L written out (CB-37)', () => {
         endorsee: BUYER_PARTY,
       });
       expect(out.documentParties.endorsee).to.deep.equal(BUYER_PARTY);
-    });
-
-    it('writes a DCSA document that is still a valid B/L of the model', () => {
-      const out = dcsa.fromModel(negotiableBl(), {
-        status: 'ISSUED',
-        endorsee: BUYER_PARTY,
-      });
-      const {billOfLading} = dcsa.toModel(out);
-      expect(assertBillOfLading(billOfLading)).to.equal(billOfLading);
     });
 
     it('never changes the stored B/L or its hash', () => {
@@ -234,20 +204,6 @@ describe('the endorsee of a B/L written out (CB-37)', () => {
         dcsa.fromModel(billOfLading, {status: 'ISSUED', endorsee: BUYER_PARTY}),
       ).to.throw(/consignee/);
       expect(billOfLading).to.deep.equal(copy);
-    });
-
-    it('follows the mixed journey: no endorsee after the blank endorsement and the transfer, the buyer after the named one', () => {
-      const billOfLading = negotiableBl();
-      const endorseeAfter = n => {
-        const org = endorseeOf(MIXED.slice(0, n));
-        const party = org === BUYER ? BUYER_PARTY : null;
-        return dcsa.fromModel(billOfLading, {status: 'ISSUED', endorsee: party})
-          .documentParties.endorsee;
-      };
-      expect(endorseeAfter(2)).to.equal(undefined);
-      expect(endorseeAfter(3)).to.equal(undefined);
-      expect(endorseeAfter(4)).to.deep.equal(BUYER_PARTY);
-      expect(endorseeAfter(6)).to.deep.equal(BUYER_PARTY);
     });
   });
 });

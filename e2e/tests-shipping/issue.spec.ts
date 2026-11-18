@@ -20,6 +20,7 @@ import {
   INVITED_PASSWORD,
   acceptInvitation,
   demoEmails,
+  dismissToasts,
   TRADE_ROLE,
   organisationWithClerk,
   signIn,
@@ -28,22 +29,6 @@ import {
   type SignedIn,
 } from '../support/shipping';
 import {GATEWAY_URL, SHIPPING_URL} from '../stack/config.mjs';
-
-/**
- * Closes the toasts on the screen, so that a screenshot shows the page alone.
- * @param page the page
- */
-async function dismissToasts(page: Page): Promise<void> {
-  const dismiss = page.getByRole('button', {name: 'Dismiss'});
-  while ((await dismiss.count()) > 0) {
-    // a toast may close by itself between the count and the click
-    await dismiss
-      .first()
-      .click({timeout: 2_000})
-      .catch(() => undefined);
-  }
-  await expect(dismiss).toHaveCount(0);
-}
 
 /**
  * Invites a second person with the B/L role into an organisation, through the API as the

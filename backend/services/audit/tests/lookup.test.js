@@ -55,7 +55,7 @@ describe('"Is it on the blockchain?" (API-697)', () => {
     );
   });
 
-  it('a document by number or deed number: its versions, and the land record versions made of it', async () => {
+  it('a document by number or deed number: its versions, and the land record versions made of it; missing or invalid queries', async () => {
     const a = await audited();
     await a.anchor();
     const byNumber = await search(a, a.docs.t2008.edrmsNo);
@@ -94,6 +94,22 @@ describe('"Is it on the blockchain?" (API-697)', () => {
     assert.deepEqual(
       [loose.kind, loose.history.filter(h => h.kind === 'usedIn')],
       ['document', []],
+    );
+    for (const q of [
+      'no such place',
+      'EDR-NA-2026-999999',
+      'LR-NA-2026-999999',
+    ]) {
+      assert.deepEqual(await search(a, q), {query: q, kind: 'none'}, q);
+    }
+    assert.equal(
+      (await a.api(viewer, 'GET', '/audit/anchors/lookup')).statusCode,
+      400,
+    );
+    assert.equal(
+      (await a.api(people.rec, 'GET', '/audit/anchors/lookup?q=Erf'))
+        .statusCode,
+      403,
     );
   });
 
@@ -134,31 +150,6 @@ describe('"Is it on the blockchain?" (API-697)', () => {
     await a.service.createRecord({parcel: {...erf1873(), number: '1874'}}, rec);
     const r = await search(a, 'Erf');
     assert.deepEqual([r.kind, r.record?.id], ['record', a.record.id]);
-  });
-
-  it('nothing found; the query is required; only with anchors.view', async () => {
-    const a = await audited();
-    assert.deepEqual(await search(a, 'no such place'), {
-      query: 'no such place',
-      kind: 'none',
-    });
-    assert.deepEqual(await search(a, 'EDR-NA-2026-999999'), {
-      query: 'EDR-NA-2026-999999',
-      kind: 'none',
-    });
-    assert.deepEqual(await search(a, 'LR-NA-2026-999999'), {
-      query: 'LR-NA-2026-999999',
-      kind: 'none',
-    });
-    assert.equal(
-      (await a.api(viewer, 'GET', '/audit/anchors/lookup')).statusCode,
-      400,
-    );
-    assert.equal(
-      (await a.api(people.rec, 'GET', '/audit/anchors/lookup?q=Erf'))
-        .statusCode,
-      403,
-    );
   });
 });
 

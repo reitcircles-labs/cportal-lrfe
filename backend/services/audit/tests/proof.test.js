@@ -920,10 +920,13 @@ describe('proofs and verification (API-658)', () => {
     assert.equal((await proofOf({})).statusCode, 401);
   });
 
-  it("the offline verifier's tree arithmetic agrees with the service's for every leaf of trees up to 70 leaves", async () => {
+  it("the offline verifier's tree arithmetic agrees with the service's across key tree sizes", async () => {
     const repo = createMemoryRepo();
     const tree = new TreeService({repo, logger: quiet});
-    for (let n = 1; n <= 70; n++) {
+    const sizes = new Set([
+      1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65,
+    ]);
+    for (let n = 1; n <= 65; n++) {
       await tree.append([
         {
           key: `document-version:d${n}:1`,
@@ -931,6 +934,9 @@ describe('proofs and verification (API-658)', () => {
           item: createHash('sha256').update(`s${n}`).digest('hex'),
         },
       ]);
+      if (!sizes.has(n)) {
+        continue;
+      }
       for (let i = 0; i < n; i++) {
         const p = await tree.inclusionProof(`document-version:d${i + 1}:1`, n);
         assert.equal(

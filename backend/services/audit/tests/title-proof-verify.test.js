@@ -151,81 +151,78 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
     });
   });
 
-  /**
-   * Checks a tampered bundle, once the genuine bundle is known to verify (so that a verifier
-   * refusing everything does not pass these tests).
-   * @param {object} bundle
-   * @param {object} [options]
-   * @return {!Promise<object>} the result of the tampered bundle
-   */
-  async function tampered(bundle, options) {
-    const genuine = await verifyTitleProof(bundleOf(c, anchor), offline);
-    assert.equal(genuine.valid, true, JSON.stringify(genuine.checks));
-    return verifyTitleProof(bundle, options);
-  }
-
   describe('tampering', () => {
-    it('fails a changed entry', async () => {
-      const entries = clone(c.entries);
-      entries[1].to = 'org-thief';
-      const r = await tampered(bundleOf(c, anchor, {entries}), offline);
-      assert.equal(r.valid, false);
+    before(async () => {
+      const genuine = await verifyTitleProof(bundleOf(c, anchor), offline);
+      assert.equal(genuine.valid, true, JSON.stringify(genuine.checks));
     });
 
-    it('fails a changed entry hashed again (its signature no longer matches)', async () => {
-      const entries = clone(c.entries);
-      const content = {...entries[1], to: 'org-thief'};
+    it('fails changed, rehashed, removed, reordered or empty entries, even with a matching forged anchor proof', async () => {
+      const changed = clone(c.entries);
+      changed[1].to = 'org-thief';
+      assert.equal(
+        (
+          await verifyTitleProof(
+            bundleOf(c, anchor, {entries: changed}),
+            offline,
+          )
+        ).valid,
+        false,
+      );
+
+      const rehashed = clone(c.entries);
+      const content = {...rehashed[1], to: 'org-thief'};
       delete content.entryHash;
       delete content.signature;
-      entries[1] = {
-        ...entries[1],
+      rehashed[1] = {
+        ...rehashed[1],
         to: 'org-thief',
         entryHash: entryHashOf(content),
       };
-      const r = await tampered(bundleOf(c, anchor, {entries}), offline);
-      assert.equal(r.valid, false);
-    });
-
-    it('fails a changed last entry, even one equal to a changed anchor proof', async () => {
-      const entries = clone(c.entries);
-      entries.at(-1).to = 'org-thief';
-      const forged = clone(anchor);
-      forged.trail.entry.data.entry.to = 'org-thief';
-      const r = await tampered(bundleOf(c, forged, {entries}), offline);
-      assert.equal(r.valid, false);
-    });
-
-    it('fails a bundle whose last entry was removed (the last entry is not the anchored one)', async () => {
-      const r = await tampered(
-        bundleOf(c, anchor, {entries: c.entries.slice(0, -1)}),
-        offline,
+      assert.equal(
+        (
+          await verifyTitleProof(
+            bundleOf(c, anchor, {entries: rehashed}),
+            offline,
+          )
+        ).valid,
+        false,
       );
-      assert.equal(r.valid, false);
-    });
 
-    it('fails a bundle with an entry removed in the middle, or the entries reordered', async () => {
-      const middle = [c.entries[0], c.entries[2]];
-      const reordered = [c.entries[1], c.entries[0], c.entries[2]];
-      for (const entries of [middle, reordered]) {
-        const r = await tampered(bundleOf(c, anchor, {entries}), offline);
-        assert.equal(r.valid, false);
+      const forgedEntries = clone(c.entries);
+      forgedEntries.at(-1).to = 'org-thief';
+      const forgedAnchor = clone(anchor);
+      forgedAnchor.trail.entry.data.entry.to = 'org-thief';
+      assert.equal(
+        (
+          await verifyTitleProof(
+            bundleOf(c, forgedAnchor, {entries: forgedEntries}),
+            offline,
+          )
+        ).valid,
+        false,
+      );
+
+      for (const entries of [
+        c.entries.slice(0, -1),
+        [c.entries[0], c.entries[2]],
+        [c.entries[1], c.entries[0], c.entries[2]],
+        [],
+      ]) {
+        assert.equal(
+          (await verifyTitleProof(bundleOf(c, anchor, {entries}), offline))
+            .valid,
+          false,
+        );
       }
     });
 
-    it('fails a bundle with no entries', async () => {
-      const r = await tampered(bundleOf(c, anchor, {entries: []}), offline);
-      assert.equal(r.valid, false);
-    });
-
-    it('fails a signature against other keys (a key set that is not the platform’s)', async () => {
+    it('fails wrong keys, forged chains, or a wrong --title-key fingerprint', async () => {
       const other = await createLocalSigner();
-      const bundle = bundleOf(c, anchor);
-      bundle.jwks = await other.jwks();
-      const r = await tampered(bundle, offline);
-      assert.equal(r.valid, false);
-    });
+      const wrongKeys = bundleOf(c, anchor);
+      wrongKeys.jwks = await other.jwks();
+      assert.equal((await verifyTitleProof(wrongKeys, offline)).valid, false);
 
-    it("fails a chain re-signed with a forger's key and keys, whatever the pinned key", async () => {
       const forger = await createLocalSigner();
       const entries = [];
       for (const entry of c.entries) {
@@ -237,57 +234,68 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
           ),
         );
       }
-      const bundle = bundleOf(c, anchor, {entries});
-      bundle.jwks = await forger.jwks();
-      // the chain is the forger's own, but its last entry is not the anchored one
-      assert.equal((await tampered(bundle, offline)).valid, false);
-      // pinned to the platform's key, the forger's keys are refused too
-      const pinned = await tampered(bundle, {
-        ...offline,
-        titleKey: fingerprintOf(c.jwks),
-      });
-      assert.equal(pinned.valid, false);
+      const forgedChain = bundleOf(c, anchor, {entries});
+      forgedChain.jwks = await forger.jwks();
+      assert.equal((await verifyTitleProof(forgedChain, offline)).valid, false);
+      assert.equal(
+        (
+          await verifyTitleProof(forgedChain, {
+            ...offline,
+            titleKey: fingerprintOf(c.jwks),
+          })
+        ).valid,
+        false,
+      );
+
+      assert.equal(
+        (
+          await verifyTitleProof(bundleOf(c, anchor), {
+            ...offline,
+            titleKey: 'ab'.repeat(32),
+          })
+        ).valid,
+        false,
+      );
     });
 
-    it('fails a genuine bundle checked against another key fingerprint (--title-key)', async () => {
-      const r = await tampered(bundleOf(c, anchor), {
-        ...offline,
-        titleKey: 'ab'.repeat(32),
-      });
-      assert.equal(r.valid, false);
-    });
+    it('fails anchors for another entry/B/L, rewritten trail proofs, or another paying wallet', async () => {
+      assert.equal(
+        (await verifyTitleProof(bundleOf(c, await c.proofOfEntry(1)), offline))
+          .valid,
+        false,
+      );
 
-    it('fails an anchor that is the proof of another event: an older entry of the B/L', async () => {
-      const r = await tampered(bundleOf(c, await c.proofOfEntry(1)), offline);
-      assert.equal(r.valid, false);
-    });
-
-    it('fails an anchor that is the proof of another B/L’s entry', async () => {
       const other = await auditedChain({reference: 'CB33-OTHER'});
       try {
-        const r = await tampered(
-          bundleOf(c, await other.proofOfEntry(other.entries.length)),
-          {fetchImpl: publicSource(other.audit.driver)},
+        assert.equal(
+          (
+            await verifyTitleProof(
+              bundleOf(c, await other.proofOfEntry(other.entries.length)),
+              {fetchImpl: publicSource(other.audit.driver)},
+            )
+          ).valid,
+          false,
         );
-        assert.equal(r.valid, false);
       } finally {
         await other.audit.close();
       }
-    });
 
-    it('fails an anchor proof that does not check as today (its trail entry rewritten)', async () => {
       const forged = clone(anchor);
       forged.trail.entry.time = '2030-01-01T00:00:00.000Z';
-      const r = await tampered(bundleOf(c, forged), offline);
-      assert.equal(r.valid, false);
-    });
+      assert.equal(
+        (await verifyTitleProof(bundleOf(c, forged), offline)).valid,
+        false,
+      );
 
-    it('fails an anchor paid by another wallet than the given address (--address), as today', async () => {
-      const r = await tampered(bundleOf(c, anchor), {
-        ...offline,
-        address: 'addr_test1qqnotthewallet',
-      });
-      assert.equal(r.valid, false);
+      assert.equal(
+        (
+          await verifyTitleProof(bundleOf(c, anchor), {
+            ...offline,
+            address: 'addr_test1qqnotthewallet',
+          })
+        ).valid,
+        false,
+      );
     });
 
     it('refuses what is not a title proof bundle', async () => {
@@ -296,37 +304,34 @@ describe('the offline verifier and the title proof (lrfe-title-proof/1, CB-33)',
         {},
         {...bundleOf(c, anchor), format: 'lrfe-title-proof/2'},
       ]) {
-        const r = await tampered(bundle, offline);
-        assert.equal(r.valid, false);
+        assert.equal((await verifyTitleProof(bundle, offline)).valid, false);
       }
     });
   });
 
   describe('the command line', () => {
-    it('reads a title proof bundle: a pending anchor checks the chain and says not anchored (exit 1)', () => {
-      const run = cli(bundleOf(c, {pending: true}));
-      assert.equal(run.status, 1, run.stderr);
-      assert.match(run.stdout, /not anchored/i);
-      assert.doesNotMatch(run.stdout, /not an audit proof/);
-    });
+    it('reads a title proof bundle: pending anchor (exit 1), --json, and rejects a wrong --title-key', () => {
+      const text = cli(bundleOf(c, {pending: true}));
+      assert.equal(text.status, 1, text.stderr);
+      assert.match(text.stdout, /not anchored/i);
+      assert.doesNotMatch(text.stdout, /not an audit proof/);
 
-    it('gives the holder and the checks as JSON (--json)', () => {
-      const run = cli(bundleOf(c, {pending: true}), ['--json']);
-      const result = JSON.parse(run.stdout);
+      const json = cli(bundleOf(c, {pending: true}), ['--json']);
+      const result = JSON.parse(json.stdout);
       assert.equal(result.valid, false);
       assert.equal(result.title.holder, BUYER);
       assert.deepEqual(failedChecks(result), ['anchored']);
-    });
 
-    it('takes --title-key: another fingerprint fails (exit 1)', () => {
-      const run = cli(bundleOf(c, {pending: true}), [
+      const badKey = cli(bundleOf(c, {pending: true}), [
         '--title-key',
         'ab'.repeat(32),
         '--json',
       ]);
-      assert.equal(run.status, 1);
-      const result = JSON.parse(run.stdout);
-      assert.ok(failedChecks(result).length > 1, run.stdout);
+      assert.equal(badKey.status, 1);
+      assert.ok(
+        failedChecks(JSON.parse(badKey.stdout)).length > 1,
+        badKey.stdout,
+      );
     });
 
     it('names --title-key in its usage', () => {

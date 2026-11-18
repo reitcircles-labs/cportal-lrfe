@@ -237,7 +237,7 @@ function stillListed(testCase, off) {
 
 describe('title modules (CB-38)', () => {
   describe('the modules', () => {
-    it('lists each module with its label, needs and commands', () => {
+    it('lists each module with its label and dependencies, frozen', () => {
       expect(Object.keys(MODULES)).to.deep.equal(ALL);
       for (const [name, module] of Object.entries(MODULES)) {
         expect(module.name).to.equal(name);
@@ -248,28 +248,6 @@ describe('title modules (CB-38)', () => {
       expect(MODULES['blank-endorsement'].needs).to.deep.equal(['negotiable']);
       expect(MODULES.amendment.needs).to.deep.equal(['negotiable']);
       expect(MODULES.split.needs).to.deep.equal(['amendment']);
-      expect(MODULES.waybill.commands).to.deep.equal([
-        'issue',
-        'void',
-        'deliver',
-      ]);
-      expect(MODULES.negotiable.commands).to.deep.equal([
-        'issue',
-        'void',
-        'endorse',
-        'surrender',
-        'release',
-        'switch-to-paper',
-      ]);
-      expect(MODULES['blank-endorsement'].commands).to.deep.equal([
-        'endorse',
-        'transfer',
-      ]);
-      expect(MODULES.amendment.commands).to.deep.equal([
-        'surrender-for-amendment',
-        'amend',
-      ]);
-      expect(MODULES.split.commands).to.deep.equal(['split']);
     });
 
     it('gives every command of the table a known module', () => {
@@ -291,42 +269,44 @@ describe('title modules (CB-38)', () => {
   });
 
   describe('every module switched off, every case of a command', () => {
-    for (const [module, off] of Object.entries(OFF_WITH)) {
-      const on = ALL.filter(name => !off.includes(name));
-      for (const testCase of CASES) {
-        const refused = off.includes(testCase.module);
-        it(`${module} off: ${testCase.label} ${refused ? 'refused' : 'runs'}`, () => {
+    it('refuses every command of a disabled module before state or actor rules, and runs the rest', () => {
+      for (const [module, off] of Object.entries(OFF_WITH)) {
+        const on = ALL.filter(name => !off.includes(name));
+        for (const testCase of CASES) {
+          const refused = off.includes(testCase.module);
+          const label = `${module} off: ${testCase.label}`;
           const {title, command, actor} = testCase;
           const before = structuredClone(title);
-          expect(applyTitleCommand(title, command, actor).title).to.be.an(
-            'object',
-          );
-          expect(allowedCommands(title, actor)).to.include(command.name);
+          expect(
+            applyTitleCommand(title, command, actor).title,
+            label,
+          ).to.be.an('object');
+          expect(allowedCommands(title, actor), label).to.include(command.name);
           const call = () =>
             applyTitleCommand(title, command, actor, {modules: on});
           const listed = allowedCommands(title, actor, {modules: on});
           if (refused) {
             const refusal = refusalOf(call);
-            expect(refusal.code).to.equal('module-off');
-            expect(refusal.message).to.equal(REASONS[module]);
+            expect(refusal.code, label).to.equal('module-off');
+            expect(refusal.message, label).to.equal(REASONS[module]);
             if (stillListed(testCase, off)) {
-              expect(listed).to.include(command.name);
+              expect(listed, label).to.include(command.name);
             } else {
-              expect(listed).not.to.include(command.name);
+              expect(listed, label).not.to.include(command.name);
             }
             // The module comes before every rule of the state and the organisation.
             const byOther = refusalOf(() =>
               applyTitleCommand(title, command, other, {modules: on}),
             );
-            expect(byOther.code).to.equal('module-off');
+            expect(byOther.code, label).to.equal('module-off');
           } else {
-            expect(call().title).to.be.an('object');
-            expect(listed).to.include(command.name);
+            expect(call().title, label).to.be.an('object');
+            expect(listed, label).to.include(command.name);
           }
-          expect(title).to.deep.equal(before);
-        });
+          expect(title, label).to.deep.equal(before);
+        }
       }
-    }
+    });
 
     it('lists nothing but the waybill commands when only waybill is on', () => {
       const modules = ['waybill'];

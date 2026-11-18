@@ -2,8 +2,10 @@ import {expect} from 'chai';
 
 import {
   DEFAULT_DOMAIN,
+  DEFAULT_ORG,
   domain,
   loadDomainPack,
+  orgDefaultsOf,
   recordServiceOf,
 } from '../src/index.js';
 
@@ -22,6 +24,19 @@ describe('the domain pack (CB-3)', () => {
       name: 'shipping-records',
       label: 'shipping records',
       url: process.env.SHIPPING_RECORDS_URL ?? 'http://localhost:3509',
+    });
+  });
+
+  it("reads each pack's default organisation texts (CB-48)", async () => {
+    expect(orgDefaultsOf(await loadDomainPack('land'))).to.deep.equal(
+      DEFAULT_ORG,
+    );
+    const shipping = orgDefaultsOf(await loadDomainPack('shipping'));
+    expect(shipping).to.deep.equal({
+      name: 'Shipping Registry',
+      subtitle: '',
+      parent: '',
+      place: '',
     });
   });
 

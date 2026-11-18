@@ -1,6 +1,6 @@
 import {strict as assert} from 'node:assert';
 import {createHash, verify as edVerify} from 'node:crypto';
-import {mkdtempSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import C from '@emurgo/cardano-serialization-lib-nodejs';
@@ -97,9 +97,6 @@ describe('Cardano: the anchoring transaction (API-656)', () => {
       ),
     );
     assert.equal(driver.chain.submitted[0].id, r.txHash);
-    console.log(
-      `      anchoring transaction: ${r.bytes} bytes, fee ${r.fee} lovelace`,
-    );
   });
 
   it('the next anchoring spends the change of the previous one', async () => {
@@ -502,22 +499,26 @@ describe('Cardano: the Blockfrost driver (API-656)', () => {
 
   it("the project key is read from its file, which only the service's user may read", () => {
     const dir = mkdtempSync(join(tmpdir(), 'bf-'));
-    writeFileSync(join(dir, 'key'), 'previewFROMFILE\n', {mode: 0o600});
-    assert.equal(
-      createBlockfrostDriver({
-        projectIdFile: join(dir, 'key'),
-        fetch: async () => reply(200, {}),
-      }).name,
-      'blockfrost',
-    );
-    writeFileSync(join(dir, 'open'), 'previewOPEN\n', {mode: 0o644});
-    assert.throws(
-      () => createBlockfrostDriver({projectIdFile: join(dir, 'open')}),
-      e =>
-        e.code === 'ECONFIG' &&
-        /chmod 600/.test(e.message) &&
-        !/OPEN/.test(e.message),
-    );
+    try {
+      writeFileSync(join(dir, 'key'), 'previewFROMFILE\n', {mode: 0o600});
+      assert.equal(
+        createBlockfrostDriver({
+          projectIdFile: join(dir, 'key'),
+          fetch: async () => reply(200, {}),
+        }).name,
+        'blockfrost',
+      );
+      writeFileSync(join(dir, 'open'), 'previewOPEN\n', {mode: 0o644});
+      assert.throws(
+        () => createBlockfrostDriver({projectIdFile: join(dir, 'open')}),
+        e =>
+          e.code === 'ECONFIG' &&
+          /chmod 600/.test(e.message) &&
+          !/OPEN/.test(e.message),
+      );
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
   });
 });
 
@@ -526,105 +527,113 @@ describe('Cardano: the wallet key in OpenBao (API-656)', () => {
     const local = createLocalSigner();
     const pub = await local.publicKey();
     const dir = mkdtempSync(join(tmpdir(), 'bao-'));
-    writeFileSync(join(dir, 'secret'), 'the-secret-id\n');
-    const calls = [];
-    const fetch = async (url, init) => {
-      const path = url.replace('http://127.0.0.1:8200/v1/', '');
-      calls.push({
-        path,
-        token: init.headers['X-Vault-Token'],
-        body: init.body && JSON.parse(init.body),
+    try {
+      writeFileSync(join(dir, 'secret'), 'the-secret-id\n');
+      const calls = [];
+      const fetch = async (url, init) => {
+        const path = url.replace('http://127.0.0.1:8200/v1/', '');
+        calls.push({
+          path,
+          token: init.headers['X-Vault-Token'],
+          body: init.body && JSON.parse(init.body),
+        });
+        if (path === 'auth/approle/login') {
+          return reply(200, {auth: {client_token: 't1', lease_duration: 3600}});
+        }
+        if (path === 'transit/keys/audit-anchor') {
+          return reply(200, {
+            data: {
+              type: 'ed25519',
+              latest_version: 1,
+              keys: {1: {public_key: pub.toString('base64')}},
+            },
+          });
+        }
+        if (path === 'transit/sign/audit-anchor') {
+          const sig = await local.sign(
+            Buffer.from(JSON.parse(init.body).input, 'base64'),
+          );
+          return reply(200, {
+            data: {signature: `vault:v1:${sig.toString('base64')}`},
+          });
+        }
+        return reply(404, {});
+      };
+      const signer = createTransitSigner({
+        addr: 'http://127.0.0.1:8200',
+        roleId: 'role',
+        secretIdFile: join(dir, 'secret'),
+        fetch,
       });
-      if (path === 'auth/approle/login') {
-        return reply(200, {auth: {client_token: 't1', lease_duration: 3600}});
-      }
-      if (path === 'transit/keys/audit-anchor') {
-        return reply(200, {
-          data: {
-            type: 'ed25519',
-            latest_version: 1,
-            keys: {1: {public_key: pub.toString('base64')}},
-          },
-        });
-      }
-      if (path === 'transit/sign/audit-anchor') {
-        const sig = await local.sign(
-          Buffer.from(JSON.parse(init.body).input, 'base64'),
-        );
-        return reply(200, {
-          data: {signature: `vault:v1:${sig.toString('base64')}`},
-        });
-      }
-      return reply(404, {});
-    };
-    const signer = createTransitSigner({
-      addr: 'http://127.0.0.1:8200',
-      roleId: 'role',
-      secretIdFile: join(dir, 'secret'),
-      fetch,
-    });
-    assert.deepEqual(await signer.publicKey(), pub);
-    const hash = createHash('sha256').update('body').digest();
-    const sig = await signer.sign(hash);
-    assert.ok(edVerify(null, hash, local.nodePublicKey, sig));
-    assert.deepEqual(calls[0].body, {
-      role_id: 'role',
-      secret_id: 'the-secret-id',
-    });
-    assert.ok(calls.slice(1).every(c => c.token === 't1'));
+      assert.deepEqual(await signer.publicKey(), pub);
+      const hash = createHash('sha256').update('body').digest();
+      const sig = await signer.sign(hash);
+      assert.ok(edVerify(null, hash, local.nodePublicKey, sig));
+      assert.deepEqual(calls[0].body, {
+        role_id: 'role',
+        secret_id: 'the-secret-id',
+      });
+      assert.ok(calls.slice(1).every(c => c.token === 't1'));
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
   });
 
   it('a key of the wrong type or OpenBao unreachable is reported', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'bao-'));
-    writeFileSync(join(dir, 'secret'), 's');
-    const wrong = createTransitSigner({
-      addr: 'http://b',
-      roleId: 'r',
-      secretIdFile: join(dir, 'secret'),
-      fetch: async url =>
-        url.endsWith('login')
-          ? reply(200, {auth: {client_token: 't', lease_duration: 60}})
-          : reply(200, {data: {type: 'aes256-gcm96'}}),
-    });
-    await assert.rejects(
-      wrong.publicKey(),
-      e => e.code === 'ECONFIG' && /not ed25519/.test(e.message),
-    );
-    const down = createTransitSigner({
-      addr: 'http://b',
-      roleId: 'r',
-      secretIdFile: join(dir, 'secret'),
-      fetch: async () => {
-        throw new TypeError('fetch failed');
-      },
-    });
-    await assert.rejects(
-      down.sign(Buffer.alloc(32)),
-      e => e.code === 'ESIGN' && e.retryable,
-    );
-    const refused = createTransitSigner({
-      addr: 'http://b',
-      roleId: 'r',
-      secretIdFile: join(dir, 'secret'),
-      fetch: async () => reply(400, {errors: ['invalid role or secret ID']}),
-    });
-    await assert.rejects(
-      refused.publicKey(),
-      e =>
-        e.code === 'ECONFIG' && !e.retryable && /BAO_ROLE_ID/.test(e.message),
-    );
-    const noFile = createTransitSigner({
-      addr: 'http://b',
-      roleId: 'r',
-      secretIdFile: join(dir, 'missing'),
-    });
-    await assert.rejects(
-      noFile.publicKey(),
-      e => e.code === 'ECONFIG' && /ENOENT/.test(e.message),
-    );
-    assert.throws(
-      () => createBlockfrostDriver({projectIdFile: join(dir, 'missing-key')}),
-      e => e.code === 'ECONFIG' && /ENOENT/.test(e.message),
-    );
+    try {
+      writeFileSync(join(dir, 'secret'), 's');
+      const wrong = createTransitSigner({
+        addr: 'http://b',
+        roleId: 'r',
+        secretIdFile: join(dir, 'secret'),
+        fetch: async url =>
+          url.endsWith('login')
+            ? reply(200, {auth: {client_token: 't', lease_duration: 60}})
+            : reply(200, {data: {type: 'aes256-gcm96'}}),
+      });
+      await assert.rejects(
+        wrong.publicKey(),
+        e => e.code === 'ECONFIG' && /not ed25519/.test(e.message),
+      );
+      const down = createTransitSigner({
+        addr: 'http://b',
+        roleId: 'r',
+        secretIdFile: join(dir, 'secret'),
+        fetch: async () => {
+          throw new TypeError('fetch failed');
+        },
+      });
+      await assert.rejects(
+        down.sign(Buffer.alloc(32)),
+        e => e.code === 'ESIGN' && e.retryable,
+      );
+      const refused = createTransitSigner({
+        addr: 'http://b',
+        roleId: 'r',
+        secretIdFile: join(dir, 'secret'),
+        fetch: async () => reply(400, {errors: ['invalid role or secret ID']}),
+      });
+      await assert.rejects(
+        refused.publicKey(),
+        e =>
+          e.code === 'ECONFIG' && !e.retryable && /BAO_ROLE_ID/.test(e.message),
+      );
+      const noFile = createTransitSigner({
+        addr: 'http://b',
+        roleId: 'r',
+        secretIdFile: join(dir, 'missing'),
+      });
+      await assert.rejects(
+        noFile.publicKey(),
+        e => e.code === 'ECONFIG' && /ENOENT/.test(e.message),
+      );
+      assert.throws(
+        () => createBlockfrostDriver({projectIdFile: join(dir, 'missing-key')}),
+        e => e.code === 'ECONFIG' && /ENOENT/.test(e.message),
+      );
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
   });
 });

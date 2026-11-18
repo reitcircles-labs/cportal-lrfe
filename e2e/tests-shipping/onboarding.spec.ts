@@ -7,31 +7,21 @@
  * and finds it on the home, held by their organisation. Screenshots for the ticket with
  * `npm run evidence -- CB-43 --shipping` (support/evidence.ts).
  */
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
-import {
-  expect,
-  test,
-  type APIRequestContext,
-  type Page,
-} from '@playwright/test';
+import {expect, test, type APIRequestContext} from '@playwright/test';
 import {officeCode, unique} from '../support/admin';
 import {evidence} from '../support/evidence';
 import {
   INVITED_PASSWORD,
   acceptInvitation,
+  committedBl,
   demoEmails,
-  serviceToken,
+  dismissToasts,
+  negotiableBl,
   signIn,
   signInOnScreen,
   type SignedIn,
 } from '../support/shipping';
-import {
-  DEMO_PASSWORD,
-  GATEWAY_URL,
-  REPO_DIR,
-  SHIPPING_URL,
-} from '../stack/config.mjs';
+import {DEMO_PASSWORD, GATEWAY_URL, SHIPPING_URL} from '../stack/config.mjs';
 
 /** An organisation onboarded on the screens, and the person invited into it. */
 interface Onboarded {
@@ -57,42 +47,6 @@ const TRADE_STAFF = {id: 'blt', label: 'B/L trade (shipper, bank, buyer)'};
  */
 function roleOf(label: string): {id: string; label: string} {
   return label === 'Carrier' ? CARRIER_STAFF : TRADE_STAFF;
-}
-
-/**
- * DCSA's example transport document (a B/L to order) with its own reference.
- * @param reference the transport document reference
- * @return the document
- */
-function negotiableBl(reference: string): Record<string, unknown> {
-  const path = join(
-    REPO_DIR,
-    'backend',
-    'domains',
-    'shipping',
-    'dcsa',
-    '3.0.3',
-    'examples',
-    'td-regular.json',
-  );
-  const example = JSON.parse(readFileSync(path, 'utf8'));
-  return {...example, transportDocumentReference: reference};
-}
-
-/**
- * Closes the toasts on the screen, so that a screenshot shows the page alone.
- * @param page the page
- */
-async function dismissToasts(page: Page): Promise<void> {
-  const dismiss = page.getByRole('button', {name: 'Dismiss'});
-  while ((await dismiss.count()) > 0) {
-    // a toast may close by itself between the count and the click
-    await dismiss
-      .first()
-      .click({timeout: 2_000})
-      .catch(() => undefined);
-  }
-  await expect(dismiss).toHaveCount(0);
 }
 
 test.describe.configure({mode: 'serial'});
@@ -271,37 +225,11 @@ test.describe(
       expect(shipperClerk.organisationId).toBe(shipper.id);
 
       // the carrier issues a B/L to order to the shipper, as on the CB-42 home
-      const created = await api.post('/api/records', {
-        headers: carrierClerk.headers,
-        data: {
-          format: 'dcsa-3.0',
-          document: negotiableBl(`CB43${unique().toUpperCase()}`.slice(0, 20)),
-          partyOrganisations: {shipper: shipper.id},
-        },
+      const bl = await committedBl(api, carrierClerk, admin, {
+        document: negotiableBl(`CB43${unique().toUpperCase()}`.slice(0, 20)),
+        partyOrganisations: {shipper: shipper.id},
+        issue: true,
       });
-      expect(created.status(), await created.text()).toBe(201);
-      const bl = await created.json();
-      const submitted = await api.post(
-        `/api/records/${bl.id}/versions/1/submit`,
-        {
-          headers: carrierClerk.headers,
-        },
-      );
-      expect(submitted.status(), await submitted.text()).toBe(200);
-      // the second pair of eyes: a decision reported by bpm, by someone other than the submitter
-      const committed = await api.post(
-        `/api/records/${bl.id}/versions/1/commit`,
-        {
-          headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-          data: {by: {id: admin.id, name: admin.name}},
-        },
-      );
-      expect(committed.status(), await committed.text()).toBe(200);
-      const issued = await api.post(`/api/records/${bl.id}/title/issue`, {
-        headers: carrierClerk.headers,
-        data: {},
-      });
-      expect(issued.status(), await issued.text()).toBe(200);
 
       await page.setViewportSize({width: 1440, height: 900});
       await signInOnScreen(page, shipper.person.email, INVITED_PASSWORD);
