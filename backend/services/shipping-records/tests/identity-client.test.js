@@ -1,6 +1,8 @@
+import {AppError, createLocalSigner} from '@lrfe/common';
 import {expect} from 'chai';
 
 import {createIdentityClient} from '../src/identity-client.js';
+import {makeHttp, stores} from './helpers.js';
 
 /**
  * CB-34: the shipping records service's client of identity, which says whether an organisation is
@@ -192,4 +194,131 @@ describe('the identity client of shipping records (CB-34)', () => {
       expect((await failure(broken.nameOf(ORG))).statusCode).to.equal(502);
     });
   });
+
+  describe('activeOrganisations (CB-44)', () => {
+    const ACTIVE = [
+      {id: 'org-exporter', code: 'EXP', name: 'Coffee Exporters'},
+      {id: 'org-bank', code: 'BNK', name: 'First Bank'},
+    ];
+
+    it('asks GET /organisations/active, strips extra fields, and maps 503/502', async () => {
+      const fetchImpl = answering(200, {
+        organisations: [{...ACTIVE[0], status: 'Active', users: 3}, ACTIVE[1]],
+      });
+      const identity = createIdentityClient({
+        baseUrl: 'http://identity:3501',
+        serviceToken,
+        fetchImpl,
+      });
+      expect(await identity.activeOrganisations()).to.deep.equal(ACTIVE);
+      expect(fetchImpl.calls[0].url).to.equal(
+        'http://identity:3501/organisations/active',
+      );
+      expect(fetchImpl.calls[0].init.headers.authorization).to.equal(
+        'Bearer the-token',
+      );
+      const down = createIdentityClient({
+        baseUrl: 'http://identity:3501',
+        serviceToken,
+        fetchImpl: async () => {
+          throw new Error('connect ECONNREFUSED');
+        },
+      });
+      expect((await failure(down.activeOrganisations())).statusCode).to.equal(
+        503,
+      );
+      const broken = createIdentityClient({
+        baseUrl: 'http://identity:3501',
+        serviceToken,
+        fetchImpl: answering(500, {message: 'boom'}),
+      });
+      expect((await failure(broken.activeOrganisations())).statusCode).to.equal(
+        502,
+      );
+    });
+  });
+});
+
+describe('GET /records/organisations (CB-44, CB-45)', () => {
+  const ACTIVE = [
+    {
+      id: 'org-exporter',
+      code: 'EXP',
+      name: 'Coffee Exporters',
+      status: 'Active',
+      users: 4,
+    },
+    {id: 'org-bank', code: 'BNK', name: 'First Bank', contact: 'ops@bank.test'},
+  ];
+  const LISTED = [
+    {id: 'org-exporter', code: 'EXP', name: 'Coffee Exporters'},
+    {id: 'org-bank', code: 'BNK', name: 'First Bank'},
+  ];
+
+  for (const store of stores()) {
+    describe(`on ${store.name}`, () => {
+      let ctx;
+      let identity;
+
+      beforeEach(async () => {
+        identity = {
+          down: false,
+          async standingOf() {
+            return 'active';
+          },
+          async activeOrganisations() {
+            if (identity.down) {
+              throw new AppError(503, 'The identity service cannot be reached');
+            }
+            return ACTIVE;
+          },
+        };
+        ctx = await makeHttp(store, {
+          signer: await createLocalSigner(),
+          organisations: identity,
+        });
+      });
+
+      afterEach(async () => {
+        await ctx.close();
+      });
+
+      const list = user =>
+        ctx.app.inject({
+          url: '/records/organisations',
+          headers: user ? ctx.as(user) : {},
+        });
+
+      const drafter = {
+        id: 'u-clerk',
+        name: 'Lena Okafor',
+        org: 'org-carrier',
+        perms: ['bl.read', 'bl.draft'],
+      };
+      const endorser = {
+        id: 'u-trade',
+        name: 'Ana Ribeiro',
+        org: 'org-exporter',
+        perms: ['bl.read', 'bl.endorse'],
+      };
+
+      it('lets bl.draft and bl.endorse read {id, code, name}; 403 otherwise; 401 without token; 503 if identity is down', async () => {
+        for (const user of [drafter, endorser]) {
+          const res = await list(user);
+          expect(res.statusCode, res.body).to.equal(200);
+          expect(res.json()).to.deep.equal({items: LISTED});
+        }
+        expect(
+          (await list({...drafter, id: 'u-r', perms: ['bl.read']})).statusCode,
+        ).to.equal(403);
+        expect(
+          (await list({id: 'u-none', name: 'Nobody', perms: ['bl.endorse']}))
+            .statusCode,
+        ).to.equal(403);
+        expect((await list(null)).statusCode).to.equal(401);
+        identity.down = true;
+        expect((await list(drafter)).statusCode).to.equal(503);
+      });
+    });
+  }
 });

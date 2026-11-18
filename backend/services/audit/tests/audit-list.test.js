@@ -146,7 +146,6 @@ describe('every proof status names its batch (API-699)', () => {
       await a.proofs.anchoringOf([key, 'record-version:nope:1']),
       {[key]: {status: 'confirmed', batch: 1}, 'record-version:nope:1': null},
     );
-    assert.equal((await a.proofs.statusOf([key]))[key].batch, 1);
 
     // the sign-off: waiting until the next batch, then in batch 2, on the checkpoint and in the list
     assert.equal(

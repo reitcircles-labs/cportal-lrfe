@@ -1,11 +1,8 @@
-import {execFile} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
-import {promisify} from 'node:util';
-
 import {loadDomainPack, signServiceToken} from '@lrfe/common';
 import {expect} from 'chai';
 
 import {catalogueOf} from '../src/catalogue.js';
+import {DEFAULT_ORGANISATION_KEY} from '../src/seed.js';
 import {makeApp} from './helpers.js';
 
 /**
@@ -23,8 +20,6 @@ import {makeApp} from './helpers.js';
  * the roles (CB-44: issuing to the carrier's staff role bld, endorsing to the trade role blt).
  */
 
-const run = promisify(execFile);
-const SERVICE_DIR = fileURLToPath(new URL('..', import.meta.url));
 const ADMIN = 'p.hamutenya@deeds.gov.na';
 
 /**
@@ -64,8 +59,9 @@ async function setup() {
 }
 
 describe("an organisation's standing, for the record service (CB-34)", () => {
-  it('answers an active organisation: its id, status and name, nothing more (changed: CB-42 adds the name)', async () => {
-    const {bank, standing, asService, app} = await setup();
+  it('answers an active organisation, marking the operator organisation (CB-48)', async () => {
+    const {bank, standing, asService, repo, app} = await setup();
+    const operatorId = await repo.getSetting(DEFAULT_ORGANISATION_KEY);
     // the land pack's record service in these tests (the default pack)
     const res = await standing(bank.id, asService('land-records'));
     expect(res.statusCode, res.body).to.equal(200);
@@ -73,6 +69,13 @@ describe("an organisation's standing, for the record service (CB-34)", () => {
       id: bank.id,
       status: 'Active',
       name: 'First Bank',
+    });
+    const op = await standing(operatorId, asService('land-records'));
+    expect(op.statusCode, op.body).to.equal(200);
+    expect(op.json()).to.include({
+      id: operatorId,
+      status: 'Active',
+      operator: true,
     });
     await app.close();
   });
@@ -112,45 +115,6 @@ describe("an organisation's standing, for the record service (CB-34)", () => {
     expect((await standing(bank.id, auth(token))).statusCode).to.equal(401);
     expect((await standing(bank.id, {})).statusCode).to.equal(401);
     await app.close();
-  });
-
-  it('on a shipping install, shipping-records may ask and land-records may not (LRFE_DOMAIN=shipping)', async () => {
-    // the install's pack is loaded once per process: this runs in its own
-    const script = `
-      import {createEventBus} from '@lrfe/common';
-      import {buildApp} from './src/app.js';
-      import {IdentityService} from './src/identity.service.js';
-      import {createMemoryRepo} from './src/repo/memory.js';
-      import {seedIdentity} from './src/seed.js';
-      const repo = createMemoryRepo();
-      await seedIdentity(repo, {demoPassword: 'x'.repeat(12)});
-      const service = new IdentityService({
-        repo,
-        events: createEventBus({driver: 'memory', source: 'identity'}),
-      });
-      const app = await buildApp({service, jwtSecret: 'x'.repeat(40), logger: false});
-      await app.ready();
-      const [organisation] = await repo.listOrganisations();
-      const standingFor = async sub => (await app.inject({
-        url: '/organisations/' + organisation.id + '/standing',
-        headers: {
-          authorization: 'Bearer ' + app.jwt.sign({typ: 'service', sub}),
-        },
-      })).statusCode;
-      console.log(JSON.stringify([
-        await standingFor('shipping-records'),
-        await standingFor('land-records'),
-      ]));
-      await app.close();
-    `;
-    const {stdout} = await run(
-      process.execPath,
-      ['--input-type=module', '-e', script],
-      {cwd: SERVICE_DIR, env: {...process.env, LRFE_DOMAIN: 'shipping'}},
-    );
-    expect(JSON.parse(stdout.trim().split('\n').pop())).to.deep.equal([
-      200, 403,
-    ]);
   });
 });
 

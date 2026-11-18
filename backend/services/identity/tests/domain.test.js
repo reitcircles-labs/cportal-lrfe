@@ -7,8 +7,6 @@ import {expect} from 'chai';
 
 import {catalogueOf} from '../src/catalogue.js';
 import {invitationEmail} from '../src/mailer.js';
-import {createMemoryRepo} from '../src/repo/memory.js';
-import {seedIdentity} from '../src/seed.js';
 
 const run = promisify(execFile);
 const SERVICE_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -41,32 +39,6 @@ describe('the catalogue from the domain pack (CB-3)', () => {
     expect(catalogue.roles[1].id).to.equal('blt');
     expect(catalogue.roles[1].perms).to.deep.equal(['bl.read', 'bl.endorse']);
     expect(catalogue.offices.map(o => o.code)).to.deep.equal(['HQ']);
-    // changed (CB-48): a demo user per persona, the carrier's two and four trade clerks
-    expect(catalogue.demoUsers.map(u => u.roles)).to.deep.equal([
-      ['adm'],
-      ['bld'],
-      ['bld'],
-      ['blt'],
-      ['blt'],
-      ['blt'],
-      ['blt'],
-    ]);
-
-    const repo = createMemoryRepo();
-    await seedIdentity(repo, {catalogue, demoPassword: 'x'.repeat(12)});
-    expect((await repo.listRoles()).map(r => r.id)).to.deep.equal([
-      'bld',
-      'blt',
-      'adm',
-    ]);
-    const users = await repo.listUsers();
-    expect(users.map(u => u.email)).to.deep.equal(
-      catalogue.demoUsers.map(u => u.email),
-    );
-    expect(users.every(u => u.status === 'Active')).to.equal(true);
-    // changed (CB-48): the administrator in the default organisation, the others in the five
-    // demo organisations
-    expect(new Set(users.map(u => u.organisationId)).size).to.equal(6);
   });
 
   it("adds the land pack's groups, roles and rules in the platform's order", () => {
@@ -175,8 +147,9 @@ describe('the catalogue from the domain pack (CB-3)', () => {
       const app = await buildApp({service, jwtSecret: 'x'.repeat(40), logger: false});
       await app.ready();
       const catalogue = await service.catalogue();
-      const policiesFor = async sub => (await app.inject({
-        url: '/policies/effective',
+      const [organisation] = await repo.listOrganisations();
+      const getAs = async (sub, url) => (await app.inject({
+        url,
         headers: {
           authorization: 'Bearer ' + app.jwt.sign({typ: 'service', sub}),
         },
@@ -185,7 +158,14 @@ describe('the catalogue from the domain pack (CB-3)', () => {
         groups: catalogue.groups,
         roles: catalogue.roles.map(r => r.id),
         users: (await repo.listUsers()).length,
-        policies: [await policiesFor('land-records'), await policiesFor('shipping-records')],
+        policies: [
+          await getAs('land-records', '/policies/effective'),
+          await getAs('shipping-records', '/policies/effective'),
+        ],
+        standing: [
+          await getAs('land-records', '/organisations/' + organisation.id + '/standing'),
+          await getAs('shipping-records', '/organisations/' + organisation.id + '/standing'),
+        ],
       }));
       await app.close();
     `;
@@ -206,8 +186,9 @@ describe('the catalogue from the domain pack (CB-3)', () => {
       roles: ['bld', 'blt', 'adm'],
       // changed (CB-48): a demo user per persona
       users: 7,
-      // only the pack's record service may read the effective policies (CB-4)
+      // only the pack's record service may read effective policies or standing (CB-4, CB-34)
       policies: [403, 200],
+      standing: [403, 200],
     });
   });
 });

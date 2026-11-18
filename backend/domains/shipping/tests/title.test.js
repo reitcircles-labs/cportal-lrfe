@@ -5,7 +5,6 @@ import {
   KINDS,
   STATES,
   TITLE_COMMANDS,
-  TITLE_WORDING,
   TitleRefusal,
   allowedCommands,
   applyTitleCommand,
@@ -236,56 +235,61 @@ describe('title engine (CB-30)', () => {
   });
 
   describe('every command, state, kind and organisation', () => {
-    for (const kind of Object.values(KINDS)) {
-      for (const name of Object.keys(TITLE_COMMANDS)) {
-        const allowed = ALLOWED.has(`${kind} none anyone ${name}`);
-        it(`${kind}, before issue, ${name}: ${allowed ? 'runs' : 'refused'}`, () => {
+    it('before issue, only issue runs for every kind and actor', () => {
+      for (const kind of Object.values(KINDS)) {
+        for (const name of Object.keys(TITLE_COMMANDS)) {
+          const allowed = ALLOWED.has(`${kind} none anyone ${name}`);
           const command = commandFor(name, kind);
           for (const actor of [carrier, other]) {
+            const label = `${kind} before-issue ${name} (${actor.organisation})`;
             if (allowed) {
               const {title} = applyTitleCommand(null, command, actor);
-              expect(title.state).to.equal('issued');
-              expect(title.carrier).to.equal(actor.organisation);
+              expect(title.state, label).to.equal('issued');
+              expect(title.carrier, label).to.equal(actor.organisation);
             } else {
               const refusal = refusalOf(() =>
                 applyTitleCommand(null, command, actor),
               );
-              expect(refusal.code).to.equal('not-issued');
+              expect(refusal.code, label).to.equal('not-issued');
             }
           }
           expect(allowedCommands(null, carrier)).to.deep.equal(['issue']);
-        });
+        }
       }
+    });
 
-      for (const state of STATES[kind]) {
-        const title = titleIn(kind, state);
-        for (const [role, actor] of actorsOf(title)) {
-          for (const name of Object.keys(TITLE_COMMANDS)) {
-            const cell = `${kind} ${state} ${role} ${name}`;
-            const allowed = ALLOWED.has(cell);
-            it(`${cell}: ${allowed ? 'runs' : 'refused'}`, () => {
+    it('after issue, every (kind, state, role, command) cell matches the state table', () => {
+      for (const kind of Object.values(KINDS)) {
+        for (const state of STATES[kind]) {
+          const title = titleIn(kind, state);
+          for (const [role, actor] of actorsOf(title)) {
+            for (const name of Object.keys(TITLE_COMMANDS)) {
+              const cell = `${kind} ${state} ${role} ${name}`;
+              const allowed = ALLOWED.has(cell);
               const before = structuredClone(title);
               const call = () =>
                 applyTitleCommand(title, commandFor(name, kind), actor);
               if (name === 'issue') {
-                expect(refusalOf(call).code).to.equal('already-issued');
+                expect(refusalOf(call).code, cell).to.equal('already-issued');
               } else if (allowed) {
                 const {title: next} = call();
-                expect(next.state).to.equal(TITLE_COMMANDS[name].to);
-                expect(allowedCommands(title, actor)).to.include(name);
+                expect(next.state, cell).to.equal(TITLE_COMMANDS[name].to);
+                expect(allowedCommands(title, actor), cell).to.include(name);
               } else {
                 const refusal = refusalOf(call);
-                expect(refusal.code).to.equal(
+                expect(refusal.code, cell).to.equal(
                   expectedCode(kind, state, role, name),
                 );
-                expect(allowedCommands(title, actor)).not.to.include(name);
+                expect(allowedCommands(title, actor), cell).not.to.include(
+                  name,
+                );
               }
-              expect(title).to.deep.equal(before);
-            });
+              expect(title, cell).to.deep.equal(before);
+            }
           }
         }
       }
-    }
+    });
   });
 
   describe('refusals', () => {
@@ -352,13 +356,6 @@ describe('title engine (CB-30)', () => {
       for (const [call, reason] of cases) {
         expect(refusalOf(call).message).to.equal(reason);
       }
-    });
-
-    it('keeps every reason in the wording object', () => {
-      expect(TITLE_WORDING.notHolder('endorse')).to.equal(
-        'Only the current holder may endorse this B/L',
-      );
-      expect(Object.isFrozen(TITLE_WORDING)).to.equal(true);
     });
 
     it('refuses to split or endorse a sea waybill: it has no holder', () => {

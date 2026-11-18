@@ -676,36 +676,36 @@ for (const store of stores()) {
     });
 
     describe('the permissions of the shipping pack', () => {
-      for (const [name, body] of [
-        ['issue', {}],
-        ['void', {}],
-        ['release', {}],
-        ['deliver', {}],
-      ]) {
-        it(`${name} needs bl.issue: 403 without it`, async () => {
-          const id = await committedBl(ctx, nextReference('PERM'));
-          const user = staffOf(CARRIER, ['bl.read', 'bl.draft', 'bl.endorse']);
+      it('carrier commands (issue, void, release, deliver) need bl.issue: 403 without it', async () => {
+        const id = await committedBl(ctx, nextReference('PERM-I'));
+        const user = staffOf(CARRIER, ['bl.read', 'bl.draft', 'bl.endorse']);
+        for (const [name, body] of [
+          ['issue', {}],
+          ['void', {}],
+          ['release', {}],
+          ['deliver', {}],
+        ]) {
           const res = await command(ctx, id, name, user, body);
-          expect(res.statusCode, res.body).to.equal(403);
-          expect(await ctx.repo.getTitle(id)).to.equal(null);
-        });
-      }
+          expect(res.statusCode, `${name}: ${res.body}`).to.equal(403);
+        }
+        expect(await ctx.repo.getTitle(id)).to.equal(null);
+      });
 
-      for (const [name, body] of [
-        ['endorse', {to: BUYER, inBlank: false}],
-        ['transfer', {to: BUYER}],
-        ['surrender', {}],
-        ['switch-to-paper', {confirmBearer: true}],
-      ]) {
-        it(`${name} needs bl.endorse: 403 without it`, async () => {
-          const id = await endorsedToBank(ctx, nextReference('PERM'));
-          const before = await footprint(ctx, id);
-          const user = staffOf(BANK, ['bl.read', 'bl.draft', 'bl.issue']);
+      it('holder commands (endorse, transfer, surrender, switch-to-paper) need bl.endorse: 403 without it', async () => {
+        const id = await endorsedToBank(ctx, nextReference('PERM-E'));
+        const before = await footprint(ctx, id);
+        const user = staffOf(BANK, ['bl.read', 'bl.draft', 'bl.issue']);
+        for (const [name, body] of [
+          ['endorse', {to: BUYER, inBlank: false}],
+          ['transfer', {to: BUYER}],
+          ['surrender', {}],
+          ['switch-to-paper', {confirmBearer: true}],
+        ]) {
           const res = await command(ctx, id, name, user, body);
-          expect(res.statusCode, res.body).to.equal(403);
-          expect(await footprint(ctx, id)).to.deep.equal(before);
-        });
-      }
+          expect(res.statusCode, `${name}: ${res.body}`).to.equal(403);
+        }
+        expect(await footprint(ctx, id)).to.deep.equal(before);
+      });
     });
 
     describe('the organisation comes from the session, never from the request', () => {
@@ -758,22 +758,22 @@ for (const store of stores()) {
         expect(await footprint(ctx, id)).to.deep.equal(before);
       });
 
-      for (const name of [
-        'toString',
-        '__proto__',
-        'constructor',
-        'hasOwnProperty',
-        'valueOf',
-      ]) {
-        it(`the name of an object property, ${name}, is an unknown command (400), never a crash`, async () => {
-          const id = await endorsedToBank(ctx, nextReference('NAME'));
-          const before = await footprint(ctx, id);
+      it('names of object properties are unknown commands (400), never a crash', async () => {
+        const id = await endorsedToBank(ctx, nextReference('NAME'));
+        const before = await footprint(ctx, id);
+        for (const name of [
+          'toString',
+          '__proto__',
+          'constructor',
+          'hasOwnProperty',
+          'valueOf',
+        ]) {
           const res = await command(ctx, id, name, staffOf(BANK));
-          expect(res.statusCode, res.body).to.equal(400);
-          expect(res.json().details.code).to.equal('unknown-command');
-          expect(await footprint(ctx, id)).to.deep.equal(before);
-        });
-      }
+          expect(res.statusCode, `${name}: ${res.body}`).to.equal(400);
+          expect(res.json().details.code, name).to.equal('unknown-command');
+        }
+        expect(await footprint(ctx, id)).to.deep.equal(before);
+      });
 
       // (changed: CB-35) amend, split and surrender-for-amendment are no longer 400
       // not-available: title-amend-split.test.js.

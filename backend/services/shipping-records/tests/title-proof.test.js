@@ -7,7 +7,7 @@ import {expect} from 'chai';
 
 import {verifyTitleChain} from '../src/chain.js';
 import {ShippingRecordsService} from '../src/records.service.js';
-import {TitleService} from '../src/title.service.js';
+import {TitleService, titleEventIdOf} from '../src/title.service.js';
 import {
   ACTIVE_ORGANISATIONS,
   exampleWithReference,
@@ -336,6 +336,11 @@ for (const store of stores()) {
           staffOf(SHIPPER).id,
           staffOf(BANK).id,
         ]);
+        expect(events[0].id).to.equal(titleEventIdOf(id, 1));
+        expect(events[0].id).to.match(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+        expect(titleEventIdOf(id, 2)).not.to.equal(events[0].id);
       });
 
       it('never puts the document in the event: only the record, its number, the seq and the entry', async () => {
@@ -601,6 +606,34 @@ for (const store of stores()) {
         const id = await journey(ctx, 'CB33-NO-TOKEN');
         const res = await ctx.app.inject({url: `/records/${id}/title/proof`});
         expect(res.statusCode).to.equal(401);
+      });
+
+      it('answers 404 for a B/L not issued yet, even to its owner', async () => {
+        const id = await committedBl(ctx, 'CB33-NOT-ISSUED');
+        const res = await proofAs(id, staffOf(CARRIER));
+        expect(res.statusCode).to.equal(404);
+        expect(res.json().message).to.equal('B/L not found');
+      });
+
+      it('answers 503 with a plain reason while the audit service cannot answer, never pending', async () => {
+        const id = await committedBl(ctx, 'CB33-AUDIT-DOWN');
+        await ctx.titles.apply(id, {name: 'issue'}, staffOf(CARRIER));
+        for (const err of [
+          new AppError(503, 'The audit service cannot be reached'),
+          new AppError(502, 'Bad gateway'),
+          new AppError(500, 'Internal'),
+          new TypeError('fetch failed'),
+        ]) {
+          audit.entryProof = async () => {
+            throw err;
+          };
+          const res = await proofAs(id, staffOf(CARRIER));
+          expect(res.statusCode).to.equal(503);
+          expect(res.json().message).to.equal(
+            'The proof on the blockchain cannot be read now: try again later.',
+          );
+          expect(res.body).not.to.include('pending');
+        }
       });
     });
   });

@@ -1,6 +1,7 @@
 import {readFileSync, readdirSync} from 'node:fs';
 
 import {
+  AppError,
   createEventBus,
   createSequelize,
   ensureSchema,
@@ -8,6 +9,7 @@ import {
 } from '@lrfe/common';
 import {formatsFromSettings} from '@lrfe/domain-shipping/bill-of-lading';
 import {modulesFromSettings} from '@lrfe/domain-shipping/title';
+import {expect} from 'chai';
 
 import {buildApp} from '../src/app.js';
 import {ShippingRecordsService} from '../src/records.service.js';
@@ -249,4 +251,100 @@ export async function submittedDraft(ctx, user, reference) {
     throw new Error(`Submitting the B/L failed: ${submitted.body}`);
   }
   return id;
+}
+
+const ALL_TITLE_PERMS = ['bl.read', 'bl.draft', 'bl.issue', 'bl.endorse'];
+
+/**
+ * A person of an organisation with B/L permissions (`ALL_TITLE_PERMS` by default).
+ * @param {string} org
+ * @param {!Array<string>} [perms]
+ * @return {{id: string, name: string, org: string, perms: !Array<string>}}
+ */
+export function staffOf(org, perms = ALL_TITLE_PERMS) {
+  return {id: `u-${org}`, name: `Staff of ${org}`, org, perms};
+}
+
+/**
+ * The audit stand-in with nothing anchored yet (404 on every entry proof).
+ */
+export const NOTHING_ANCHORED = Object.freeze({
+  /** @return {!Promise<object>} */
+  async entryProof() {
+    throw new AppError(404, 'There is no trail entry for this event');
+  },
+});
+
+/**
+ * Identity stand-in with a fixed set of active organisations (plus optional suspended/operator).
+ * @param {!Array<string>} active
+ * @param {{suspended?: !Array<string>, operator?: ?string}} [extra]
+ * @return {object}
+ */
+export function standInIdentity(
+  active = [
+    'org-carrier',
+    'org-shipper',
+    'org-bank',
+    'org-buyer',
+    'org-stranger',
+  ],
+  {suspended = [], operator = null} = {},
+) {
+  const standings = new Map([
+    ...active.map(id => [id, 'active']),
+    ...suspended.map(id => [id, 'inactive']),
+    ...(operator ? [[operator, 'operator']] : []),
+  ]);
+  const identity = {
+    asked: [],
+    down: false,
+    meanwhile: null,
+    async standingOf(id) {
+      identity.asked.push(id);
+      if (identity.meanwhile !== null) {
+        const run = identity.meanwhile;
+        identity.meanwhile = null;
+        await run();
+      }
+      if (identity.down) {
+        throw new AppError(503, 'The identity service cannot be reached');
+      }
+      return standings.get(id) ?? 'unknown';
+    },
+  };
+  return identity;
+}
+
+/**
+ * Runs a title command over HTTP: the raw Fastify inject response.
+ * @param {object} ctx
+ * @param {string} id
+ * @param {string} name
+ * @param {?object} user
+ * @param {object} [body]
+ * @return {!Promise<object>}
+ */
+export function titleCommand(ctx, id, name, user, body = {}) {
+  return ctx.app.inject({
+    method: 'POST',
+    url: `/records/${id}/title/${name}`,
+    headers: user ? ctx.as(user) : {},
+    payload: body,
+  });
+}
+
+/**
+ * Runs a title command over HTTP expecting 200 and returning its parsed JSON body.
+ * @param {object} ctx
+ * @param {string} id
+ * @param {string} name
+ * @param {object} user
+ * @param {object} [body]
+ * @return {!Promise<object>}
+ */
+export async function titleOk(ctx, id, name, user, body = {}) {
+  const res = await titleCommand(ctx, id, name, user, body);
+  expect(res.statusCode, `${name}: ${res.body}`).to.equal(200);
+  return res.json();
 }

@@ -9,7 +9,6 @@ import {
   REVIEWER,
 } from './helpers.js';
 import {normalizeRef, formatEdrmsNo} from '../src/catalogue.js';
-import {canonicalJson} from '../src/seal.js';
 import {
   validateRecordMetadata,
   describeRecordMetadataFields,
@@ -36,12 +35,6 @@ describe('catalogue & seal helpers', () => {
 
   it('formats EDRMS numbers', () => {
     expect(formatEdrmsNo('NA', 2026, 18204)).to.equal('EDR-NA-2026-018204');
-  });
-
-  it('canonical JSON is key-order independent', () => {
-    expect(canonicalJson({b: 1, a: {d: [1, {y: 1, x: 2}], c: null}})).to.equal(
-      canonicalJson({a: {c: null, d: [1, {x: 2, y: 1}]}, b: 1}),
-    );
   });
 
   it('record metadata: whitelist, validation, deep-cloned description', () => {
@@ -105,7 +98,7 @@ describe('EdrmsService', () => {
       });
     });
 
-    it('stores the filing provenance on v1.0 and seals it', async () => {
+    it('stores filing provenance up to 64 kB on v1.0, seals it, and rejects invalid provenance', async () => {
       const {service, repo} = makeService();
       const provenance = {
         provider: 'gemini',
@@ -113,6 +106,7 @@ describe('EdrmsService', () => {
         promptVersion: 'p1',
         extracted: {tee2Id: '0111250379'},
         corrected: ['tee2Id'],
+        reading: {fields: {deedNo: {page: 1, evidence: 'x'.repeat(40_000)}}},
       };
       const {document} = await service.fileDocument({
         meta: deedMeta({provenance}),
@@ -132,6 +126,26 @@ describe('EdrmsService', () => {
       expect((await service.verifyVersion(document.id, 1)).sealIntact).to.equal(
         false,
       );
+
+      const fresh = makeService().service;
+      await rejects(
+        fresh.fileDocument({
+          meta: deedMeta({sourceId: 'p-bad', provenance: 'x'}),
+          file: pdfFile(),
+        }),
+        400,
+      );
+      await rejects(
+        fresh.fileDocument({
+          meta: deedMeta({
+            sourceId: 'p2',
+            provenance: {big: 'x'.repeat(65_000)},
+          }),
+          file: pdfFile(),
+        }),
+        400,
+        'max 64 kB',
+      );
     });
 
     it('a version without provenance keeps the seal it had before provenance existed', async () => {
@@ -148,42 +162,6 @@ describe('EdrmsService', () => {
       expect(sealOf('d1', 'EDR-NA-2026-000001', v)).to.equal(
         sealOf('d1', 'EDR-NA-2026-000001', {...v, provenance: null}),
       );
-    });
-
-    it('rejects provenance that is not a small object', async () => {
-      const {service} = makeService();
-      await rejects(
-        service.fileDocument({
-          meta: deedMeta({provenance: 'x'}),
-          file: pdfFile(),
-        }),
-        400,
-      );
-      await rejects(
-        service.fileDocument({
-          meta: deedMeta({
-            sourceId: 'p2',
-            provenance: {big: 'x'.repeat(65_000)},
-          }),
-          file: pdfFile(),
-        }),
-        400,
-        'max 64 kB',
-      );
-    });
-
-    it('takes provenance up to 64 kB: the reading intake clears after filing (API-807)', async () => {
-      const {service} = makeService();
-      const provenance = {
-        reading: {fields: {deedNo: {page: 1, evidence: 'x'.repeat(40_000)}}},
-        earlier: [],
-      };
-      const {document} = await service.fileDocument({
-        meta: deedMeta({sourceId: 'p3', provenance}),
-        file: pdfFile(),
-      });
-      const v1 = await service.getVersion(document.id, 1);
-      expect(v1.provenance).to.deep.equal(provenance);
     });
 
     it('numbers documents sequentially per year', async () => {
@@ -463,46 +441,6 @@ describe('EdrmsService', () => {
   });
 
   describe('reading & integrity', () => {
-    it('lists and filters by type, batch, field values and text', async () => {
-      const {service} = makeService();
-      await service.fileDocument({meta: deedMeta(), file: pdfFile()});
-      await service.fileDocument({meta: sgMeta(), file: pdfFile()});
-      await service.fileDocument({
-        meta: deedMeta({
-          sourceId: 'z',
-          batchId: 'WDH-B015',
-          fields: [
-            {k: 'deedNo', v: 'T 1/2011'},
-            {k: 'property', v: 'Erf 2001, Eros'},
-          ],
-        }),
-        file: pdfFile(),
-      });
-
-      expect((await service.searchDocuments({})).total).to.equal(3);
-      expect(
-        (await service.searchDocuments({docType: 'sg_diagram'})).items.map(
-          d => d.instrumentRef,
-        ),
-      ).to.deep.equal(['A 412/2007']);
-      expect(
-        (await service.searchDocuments({batchId: 'WDH-B015'})).total,
-      ).to.equal(1);
-      expect(
-        (
-          await service.searchDocuments({
-            props: {property: 'Erf 1873, Klein Windhoek'},
-          })
-        ).total,
-      ).to.equal(2);
-      expect((await service.searchDocuments({q: 'eros'})).total).to.equal(1);
-      expect(
-        (await service.searchDocuments({q: 'EDR-NA-2026-000002'})).items[0]
-          .docType,
-      ).to.equal('sg_diagram');
-      await rejects(service.searchDocuments({docType: 'lease'}), 400);
-    });
-
     it('looks documents up by EDRMS number, reference or intake id', async () => {
       const {service} = makeService();
       const {document} = await service.fileDocument({

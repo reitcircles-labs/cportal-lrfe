@@ -37,11 +37,22 @@ function section() {
     offices: [
       {code: 'WVB', name: 'Port', type: 'registry', address: '', contact: ''},
     ],
+    defaultOrganisation: {
+      name: 'Cargo Platform',
+      subtitle: '',
+      parent: '',
+      place: '',
+    },
+    demoOrganisations: [
+      {code: 'ACME', name: 'Acme Lines'},
+      {code: 'BNK', name: 'Example Bank'},
+    ],
     demoUsers: [
       {
         name: 'A. Agent',
         email: 'a@example.test',
         office: 'Port',
+        organisation: 'ACME',
         roles: ['agent'],
         status: 'Active',
       },
@@ -91,6 +102,39 @@ describe('the identity section check (CB-3)', () => {
       [s => (s.demoUsers[0].email = 'agent'), /demoUsers\[0\].email/],
       [s => (s.demoUsers[0].roles = []), /demoUsers\[0\] has no role/],
       [s => (s.demoUsers[0].status = 'Gone'), /demoUsers\[0\].status/],
+      [s => (s.demoUsers[0].organisation = ''), /demoUsers\[0\].organisation/],
+      [s => (s.demoUsers[0].organisation = 7), /demoUsers\[0\].organisation/],
+      [s => (s.demoOrganisations = {}), /"demoOrganisations" is not a list/],
+      [s => (s.demoOrganisations[0] = 'ACME'), /demoOrganisations\[0\] is not/],
+      [s => delete s.demoOrganisations[0].name, /demoOrganisations\[0\].name/],
+      [s => (s.demoOrganisations[0].name = ' '), /demoOrganisations\[0\].name/],
+      [
+        s => (s.demoOrganisations[1].code = 'bank'),
+        /demoOrganisations\[1\].code "bank"/,
+      ],
+      [
+        s => (s.demoOrganisations[1].code = 'TOOLONG'),
+        /demoOrganisations\[1\].code "TOOLONG"/,
+      ],
+      [
+        s => (s.demoOrganisations[1].code = 'ACME'),
+        /demoOrganisations has "ACME" twice/,
+      ],
+      [
+        s => (s.demoOrganisations[0].kind = 'carrier'),
+        /demoOrganisations\[0\] has unknown field\(s\) kind/,
+      ],
+      [s => (s.defaultOrganisation = 'Cargo'), /defaultOrganisation is not/],
+      [s => (s.defaultOrganisation.name = ''), /defaultOrganisation.name/],
+      [
+        s => delete s.defaultOrganisation.subtitle,
+        /defaultOrganisation.subtitle/,
+      ],
+      [s => (s.defaultOrganisation.place = 3), /defaultOrganisation.place/],
+      [
+        s => (s.defaultOrganisation.motto = 'x'),
+        /defaultOrganisation has unknown field\(s\) motto/,
+      ],
     ];
     for (const [spoil, error] of cases) {
       const spoilt = section();

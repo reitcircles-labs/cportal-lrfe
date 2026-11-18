@@ -204,8 +204,13 @@ function shadowed(genuine, proofJson) {
 }
 
 describe('checking an ownership extract offline (API-694)', () => {
+  let shared;
+  before(async () => {
+    shared = await anchoredExtract();
+  });
+
   it('a valid extract: its attached proof is on the blockchain, sent from the published address, and the registry seal holds', async () => {
-    const {a, proof, fingerprint, pinned, pdf} = await anchoredExtract();
+    const {a, proof, fingerprint, pinned, pdf} = shared;
     // the attachment as the verifier reads it, without a PDF library, is the proof byte for byte
     assert.equal(
       pdfAttachments(pdf).get('record-v1.proof.json').toString('utf8'),
@@ -260,7 +265,7 @@ describe('checking an ownership extract offline (API-694)', () => {
   });
 
   it('a changed field in the attached proof fails, even when the PDF is sealed again', async () => {
-    const {a, proof, pinned} = await anchoredExtract();
+    const {a, proof, pinned} = shared;
     const changes = {
       'the fingerprint': p => {
         p.item.seal = 'ee'.repeat(32);
@@ -293,7 +298,7 @@ describe('checking an ownership extract offline (API-694)', () => {
   });
 
   it('a wrong proof attached fails: another item’s, or another version’s', async () => {
-    const {a, pinned} = await anchoredExtract();
+    const {a, pinned} = shared;
     const documentProof = await proofOf(a, 'document-version', a.docs.t2019.id);
     const r = await verifyExtract(await extractPdf(a, documentProof), pinned);
     assert.deepEqual(
@@ -317,7 +322,7 @@ describe('checking an ownership extract offline (API-694)', () => {
   });
 
   it('a transaction sent from another address fails against the published address', async () => {
-    const {a, proof, wallet, pinned} = await anchoredExtract();
+    const {a, proof, wallet, pinned} = shared;
     // a forger's own tree holding the version's real fingerprint, its root sent from their wallet
     const forger = createLocalSigner();
     const forgerAddress = addressOf(await forger.publicKey(), 'preview');
@@ -416,7 +421,7 @@ describe('checking an ownership extract offline (API-694)', () => {
   });
 
   it('a PDF changed after it was sealed fails on its seal, and says the blockchain checks passed', async () => {
-    const {pinned, pdf} = await anchoredExtract();
+    const {pinned, pdf} = shared;
     assert.equal(checkPdfSeal(pdf).status, 'valid');
     // one character of the signature's reason changed: inside what the seal covers
     const text = pdf.toString('latin1');
@@ -444,7 +449,7 @@ describe('checking an ownership extract offline (API-694)', () => {
   });
 
   it('a forged extract sealed with a self-made certificate of the same name is not valid (forgery A)', async () => {
-    const {a, proof, pinned, fingerprint} = await anchoredExtract();
+    const {a, proof, pinned, fingerprint} = shared;
     // another owner printed, the genuine proof attached, sealed with the forger's own certificate
     const forger = await createTestSealer({name: 'Land Titles Office'});
     const forged = await extractPdf(a, proof, {
@@ -478,7 +483,7 @@ describe('checking an ownership extract offline (API-694)', () => {
   });
 
   it('a seal this checker cannot verify never vouches for the PDF: changed bytes behind a patched algorithm are not valid (forgery B)', async () => {
-    const {pinned, pdf} = await anchoredExtract();
+    const {pinned, pdf} = shared;
     const changed = Buffer.from(pdf);
     const text = changed.toString('latin1');
     changed[text.indexOf('Ownership extract')] = 'o'.charCodeAt(0);
@@ -521,7 +526,7 @@ describe('checking an ownership extract offline (API-694)', () => {
     const started = Date.now();
     assert.equal(pdfAttachments(looped).size, 0);
     assert.ok(Date.now() - started < 1000);
-    const {pinned} = await anchoredExtract();
+    const {pinned} = shared;
     const r = await verifyExtract(looped, {
       ...pinned,
       fetchImpl: () => assert.fail('no blockchain call without a proof'),
@@ -546,7 +551,7 @@ describe('checking an ownership extract offline (API-694)', () => {
   });
 
   it('a genuine extract with a shadow catalog hidden next to its signature is not valid (the review’s shadow forgery)', async () => {
-    const {proof, pinned, pdf} = await anchoredExtract();
+    const {proof, pinned, pdf} = shared;
     const forged = shadowed(pdf, `${JSON.stringify(proof, null, 2)}\n`);
     const seal = checkPdfSeal(forged, {fingerprint: pinned.seal});
     assert.equal(seal.status, 'invalid');
@@ -574,7 +579,7 @@ describe('checking an ownership extract offline (API-694)', () => {
   });
 
   it('a proof attached twice is not valid, with exit code 1', async () => {
-    const {proof} = await anchoredExtract();
+    const {proof} = shared;
     const {sealer, fingerprint} = await registrySeal();
     const pdfDoc = await PDFDocument.create();
     pdfDoc.addPage();

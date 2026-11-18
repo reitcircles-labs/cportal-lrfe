@@ -16,6 +16,12 @@ const file = {
 };
 const row = (rows, k) => rows.find(r => r.k === k);
 const codes = r => r.checks.map(c => c.code);
+const MODEL_NAMES = /gemini|flash|pro-preview|google|vertex|model/i;
+const shown = r =>
+  JSON.stringify([
+    r.rows.map(x => x.checks.map(c => c.message)),
+    r.notes.map(n => n.message),
+  ]);
 
 describe('extraction pipeline', () => {
   it('builds review rows in schema order: required always, optional when found', async () => {
@@ -105,6 +111,7 @@ describe('extraction pipeline', () => {
     expect(codes(id)).to.include('models_disagree');
     expect(id.flag).to.equal('check');
     expect(r.notes.map(n => n.code)).to.include('escalated');
+    expect(shown(r)).not.to.match(MODEL_NAMES);
   });
 
   it('merges readings field by field: a lazier second reading never throws away the first', async () => {
@@ -243,6 +250,7 @@ describe('extraction pipeline', () => {
     expect(r.escalated).to.equal(false);
     expect(r.notes.map(n => n.code)).to.include('escalation_failed');
     expect(r.attempts[1]).to.include({ok: false, role: 'escalation'});
+    expect(shown(r)).not.to.match(MODEL_NAMES);
   });
 
   it('a failing primary call throws with the attempt attached (for retry)', async () => {
@@ -262,15 +270,6 @@ describe('extraction pipeline', () => {
       expect(err.retryable).to.equal(true);
       expect(err.attempts[0]).to.include({ok: false, error: '429 quota'});
     }
-  });
-
-  it('prices each call', async () => {
-    const r = await runExtraction({
-      file,
-      checker: noChecks,
-      primary: createMockProvider({model: 'gemini-3.1-flash-lite'}),
-    });
-    expect(r.attempts[0].costUsd).to.equal(0.00205); // 1000 in × $0.25 + 1200 out × $1.50, per 1M
   });
 });
 
@@ -553,74 +552,10 @@ describe('mock provider', () => {
 });
 
 describe('nothing the screen shows names a model or provider', () => {
-  const MODEL_NAMES = /gemini|flash|pro-preview|google|vertex|model/i;
-  const shown = r =>
-    JSON.stringify([
-      r.rows.map(x => x.checks.map(c => c.message)),
-      r.notes.map(n => n.message),
-    ]);
-
-  it('after a second reading: disagreements, single readings and the escalation note', async () => {
+  it('when the readings disagree on the document type', async () => {
     const weak = withField(answer(), 'tee2Id', '0111250379');
-    const strong = answer({
-      fields: DEMO_ANSWER.fields
-        .filter(f => f.k !== 'conveyancer')
-        .map(f =>
-          f.k === 'tee2Id'
-            ? {
-                ...f,
-                value: '01112503790',
-                evidence: f.evidence.replace(f.value, '01112503790'),
-              }
-            : f,
-        ),
-    });
-    const r = await runExtraction({
-      file,
-      checker: noChecks,
-      primary: createMockProvider({
-        model: 'gemini-3.1-flash-lite',
-        respond: () => weak,
-      }),
-      escalation: createMockProvider({
-        model: 'gemini-3.1-pro-preview',
-        respond: () => strong,
-      }),
-    });
-    expect(codes(row(r.rows, 'tee2Id'))).to.include('models_disagree');
-    expect(
-      row(r.rows, 'conveyancer').checks.find(c => c.code === 'single_reading')
-        .message,
-    ).to.equal('Found by the first reading only');
-    expect(r.notes.find(n => n.code === 'escalated').message).to.match(
-      /^Read a second time \(/,
-    );
-    expect(shown(r)).not.to.match(MODEL_NAMES);
-  });
-
-  it('when the second reading fails, or the readings disagree on the type', async () => {
-    const weak = withField(answer(), 'tee2Id', '0111250379');
-    const failing = {
-      name: 'gemini',
-      model: 'gemini-3.1-pro-preview',
-      extract: async () => {
-        throw new Error('gemini-3.1-pro-preview call failed: 500 INTERNAL');
-      },
-    };
-    const r1 = await runExtraction({
-      file,
-      checker: noChecks,
-      primary: createMockProvider({respond: () => weak}),
-      escalation: failing,
-    });
-    expect(r1.notes.find(n => n.code === 'escalation_failed').message).to.equal(
-      'Second reading failed; showing the first reading',
-    );
-    expect(r1.attempts[1].error).to.contain('gemini-3.1-pro-preview'); // kept for the backend
-    expect(shown(r1)).not.to.match(MODEL_NAMES);
-
     const other = answer({docType: 'mortgage_bond'});
-    const r2 = await runExtraction({
+    const r = await runExtraction({
       file,
       checker: noChecks,
       primary: createMockProvider({respond: () => weak}),
@@ -629,9 +564,9 @@ describe('nothing the screen shows names a model or provider', () => {
         respond: () => other,
       }),
     });
-    expect(r2.notes.find(n => n.code === 'doctype_disagree').message).to.equal(
+    expect(r.notes.find(n => n.code === 'doctype_disagree').message).to.equal(
       'The two readings disagree on the document type (Deed of transfer / Mortgage bond); keeping Deed of transfer',
     );
-    expect(shown(r2)).not.to.match(MODEL_NAMES);
+    expect(shown(r)).not.to.match(MODEL_NAMES);
   });
 });

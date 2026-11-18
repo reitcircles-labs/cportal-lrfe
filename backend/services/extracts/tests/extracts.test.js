@@ -205,13 +205,11 @@ describe('ownership extracts (API-692)', () => {
     it('gives every extract its own random token', async () => {
       const {records, service} = await makeExtracts();
       const record = await committedErf1873(records);
-      const tokens = new Set();
-      for (let i = 0; i < 20; i++) {
-        tokens.add((await service.issue(forMaria(record), rec)).token);
-      }
-      expect(tokens.size).to.equal(20);
-      expect(newToken()).to.not.equal(newToken());
-      expect(newToken()).to.match(/^[A-Za-z0-9_-]{43}$/); // 32 random bytes
+      const a = await service.issue(forMaria(record), rec);
+      const b = await service.issue(forMaria(record), rec);
+      expect(a.token).to.match(/^[A-Za-z0-9_-]{43}$/);
+      expect(b.token).to.not.equal(a.token);
+      expect(new Set(Array.from({length: 50}, newToken)).size).to.equal(50);
     });
   });
 

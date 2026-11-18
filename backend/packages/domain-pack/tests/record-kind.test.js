@@ -76,4 +76,15 @@ describe('the recordKind section (CB-3)', () => {
       checkDomainPack(packWith({lookup: {instrumentNumber: /x/g}})),
     ).to.throw(/lookup.instrumentNumber must be neither global nor sticky/);
   });
+
+  it('takes none or a pack name for anchorProduct, and refuses anything else (CB-49)', () => {
+    expect(() =>
+      checkDomainPack(packWith({anchorProduct: 'shipping'})),
+    ).not.to.throw();
+    for (const anchorProduct of ['Shipping', 'a b', '', 7, {}]) {
+      expect(() => checkDomainPack(packWith({anchorProduct}))).to.throw(
+        /anchorProduct/,
+      );
+    }
+  });
 });

@@ -21,6 +21,7 @@ const PAGES = [
 ];
 const withPages = () => answer({pages: structuredClone(PAGES)});
 const intakeKeys = () => createFakeKeyring({keyName: 'intake-files'});
+const edrmsKeys = () => createFakeKeyring({keyName: 'edrms-files'});
 
 /** Accept every field and file the document; returns the intake summary. */
 async function reviewAndFile(service, id) {
@@ -93,8 +94,12 @@ describe('clearing filed documents (API-807)', () => {
     expect(first.fields.deedNo.evidence).to.contain('T 2210/2008');
   });
 
-  it('right after filing, intake clears its copy: the EDRMS keeps everything', async () => {
-    const ctx = await makeIntake({keyring: intakeKeys(), respond: withPages});
+  it('right after filing, intake clears its copy: the EDRMS keeps scan, encrypted text and provenance', async () => {
+    const ctx = await makeIntake({
+      keyring: intakeKeys(),
+      edrmsKeyring: edrmsKeys(),
+      respond: withPages,
+    });
     const doc = await ctx.captureAndExtract(pdf('to clear'));
     const before = await ctx.repo.getDocument(doc.id);
     expect(before.encryption).to.not.equal(undefined);
@@ -126,9 +131,16 @@ describe('clearing filed documents (API-807)', () => {
     // the history stays
     const events = (await ctx.service.listEvents(doc.id)).map(e => e.action);
     expect(events).to.include.members(['captured', 'extracted', 'filed']);
-    // the EDRMS has the scan, its page text and the reading
+    // the EDRMS has the scan, its encrypted page text and the reading
     const v1 = await versionOne(ctx, filed);
     expect(v1.sha256).to.equal(before.sha256);
+    const edrmsText = await ctx.edrmsService.repo.getText(
+      filed.filedDocumentId,
+    );
+    expect(edrmsText.encryption.keyName).to.equal('edrms-files');
+    const rawText = ctx.edrmsPlainStore.blobs.get(edrmsText.storageKey).data;
+    expect(rawText.subarray(0, 4).toString()).to.equal('LRFE');
+    expect(rawText.toString('utf8')).to.not.include('T 2210/2008');
     expect(
       await ctx.edrmsService.readText(filed.filedDocumentId),
     ).to.deep.equal(PAGES);

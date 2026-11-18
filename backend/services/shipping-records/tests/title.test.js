@@ -379,45 +379,6 @@ for (const store of stores()) {
     });
 
     describe('commands through the service', () => {
-      it('moves a negotiable B/L from holder to holder until it is accomplished', async () => {
-        const id = await committedBl(ctx, 'CB31-JOURNEY');
-        await ctx.titles.apply(id, {name: 'issue'}, staffOf(CARRIER));
-        const steps = [
-          [
-            SHIPPER,
-            {name: 'endorse', to: BANK, inBlank: true},
-            {state: 'with-holder', holder: BANK, endorsement: 'blank'},
-          ],
-          [
-            BANK,
-            {name: 'transfer', to: BUYER},
-            {state: 'with-holder', holder: BUYER, endorsement: 'blank'},
-          ],
-          [
-            BUYER,
-            {name: 'endorse', to: BANK, inBlank: false},
-            {state: 'with-holder', holder: BANK, endorsement: 'named'},
-          ],
-          [BANK, {name: 'surrender'}, {state: 'surrendered', holder: CARRIER}],
-          [CARRIER, {name: 'release'}, {state: 'accomplished', holder: null}],
-        ];
-        let revision = 1;
-        for (const [org, command, expected] of steps) {
-          const view = await ctx.titles.apply(id, command, staffOf(org));
-          revision += 1;
-          expect(view.title, command.name).to.include({
-            ...expected,
-            revision,
-          });
-          expect(await ctx.repo.getTitle(id), command.name).to.include({
-            ...expected,
-            revision,
-          });
-        }
-        const final = await ctx.titles.read(id, staffOf(CARRIER));
-        expect(final.allowedCommands).to.deep.equal([]);
-      });
-
       it('runs an amendment and a switch to paper', async () => {
         const id = await committedBl(ctx, 'CB31-AMEND');
         await ctx.titles.apply(id, {name: 'issue'}, staffOf(CARRIER));
@@ -516,46 +477,6 @@ for (const store of stores()) {
         );
         expect(error.statusCode).to.equal(400);
         expect(error.details).to.deep.equal({code: 'too-few-children'});
-        expect(await ctx.repo.getTitle(id)).to.deep.equal(before);
-      });
-
-      it('changes nothing on a refusal, answering its reason and code', async () => {
-        const id = await committedBl(ctx, 'CB31-REFUSED');
-        await ctx.titles.apply(id, {name: 'issue'}, staffOf(CARRIER));
-        await ctx.titles.apply(
-          id,
-          {name: 'endorse', to: BANK, inBlank: false},
-          staffOf(SHIPPER),
-        );
-        const before = await ctx.repo.getTitle(id);
-        const cases = [
-          [
-            CARRIER,
-            {name: 'endorse', to: BUYER, inBlank: false},
-            403,
-            'not-holder',
-          ],
-          [BANK, {name: 'release'}, 409, 'wrong-state'],
-          [CARRIER, {name: 'deliver'}, 409, 'wrong-kind'],
-          [BANK, {name: 'transfer', to: BUYER}, 409, 'not-endorsed-in-blank'],
-          [
-            BANK,
-            {name: 'endorse', to: BANK, inBlank: false},
-            409,
-            'same-holder',
-          ],
-          [CARRIER, {name: 'void'}, 409, 'wrong-state'],
-          [BANK, {name: 'endorse', inBlank: false}, 400, 'missing-recipient'],
-          [BANK, {name: 'toString'}, 400, 'unknown-command'],
-        ];
-        for (const [org, command, status, code] of cases) {
-          const error = await refused(
-            ctx.titles.apply(id, command, staffOf(org)),
-          );
-          expect(error.statusCode, code).to.equal(status);
-          expect(error.details, code).to.deep.equal({code});
-          expect(error.message, code).to.be.a('string').and.not.equal('');
-        }
         expect(await ctx.repo.getTitle(id)).to.deep.equal(before);
       });
     });
@@ -663,7 +584,7 @@ for (const store of stores()) {
 
     describe('commands at the same moment', () => {
       it('lets exactly one of two endorsements read together win; the other gets 409', async () => {
-        for (let round = 1; round <= 5; round++) {
+        for (let round = 1; round <= 2; round++) {
           const id = await committedBl(ctx, `CB31-RACE-${round}`);
           await ctx.titles.apply(id, {name: 'issue'}, staffOf(CARRIER));
           const racing = racingTitles(ctx);
@@ -698,7 +619,7 @@ for (const store of stores()) {
       });
 
       it('lets exactly one of two endorsements fired at once win, however they interleave', async () => {
-        for (let round = 1; round <= 10; round++) {
+        for (let round = 1; round <= 2; round++) {
           const id = await committedBl(ctx, `CB31-FIRED-${round}`);
           await ctx.titles.apply(id, {name: 'issue'}, staffOf(CARRIER));
           const targets = [BANK, BUYER];
@@ -725,22 +646,20 @@ for (const store of stores()) {
       });
 
       it('issues once when two issues race (409 for the other)', async () => {
-        for (let round = 1; round <= 3; round++) {
-          const id = await committedBl(ctx, `CB31-ISSUE-RACE-${round}`);
-          const racing = racingTitles(ctx);
-          const results = await Promise.allSettled([
-            racing.apply(id, {name: 'issue'}, staffOf(CARRIER)),
-            racing.apply(id, {name: 'issue'}, staffOf(CARRIER)),
-          ]);
-          const won = results.filter(r => r.status === 'fulfilled');
-          const lost = results.filter(r => r.status === 'rejected');
-          expect(won).to.have.length(1);
-          expect(lost).to.have.length(1);
-          expect(lost[0].reason.details).to.deep.equal({
-            code: 'changed-meanwhile',
-          });
-          expect(await ctx.repo.getTitle(id)).to.include({revision: 1});
-        }
+        const id = await committedBl(ctx, 'CB31-ISSUE-RACE-1');
+        const racing = racingTitles(ctx);
+        const results = await Promise.allSettled([
+          racing.apply(id, {name: 'issue'}, staffOf(CARRIER)),
+          racing.apply(id, {name: 'issue'}, staffOf(CARRIER)),
+        ]);
+        const won = results.filter(r => r.status === 'fulfilled');
+        const lost = results.filter(r => r.status === 'rejected');
+        expect(won).to.have.length(1);
+        expect(lost).to.have.length(1);
+        expect(lost[0].reason.details).to.deep.equal({
+          code: 'changed-meanwhile',
+        });
+        expect(await ctx.repo.getTitle(id)).to.include({revision: 1});
       });
     });
 

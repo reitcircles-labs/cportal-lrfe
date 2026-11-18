@@ -71,38 +71,16 @@ async function usersByEmail(repo) {
 }
 
 describe('the shipping demo data (CB-48)', () => {
-  it('has five demo organisations with fictitious names, no country and no registry in them', async () => {
+  it('has fictitious demo organisations and demo emails', async () => {
     const catalogue = await shipping();
     expect(catalogue.demoOrganisations).to.have.length(5);
-    const codes = catalogue.demoOrganisations.map(o => o.code);
-    expect(new Set(codes).size).to.equal(5);
+    expect(new Set(catalogue.demoOrganisations.map(o => o.code)).size).to.equal(
+      5,
+    );
     for (const o of catalogue.demoOrganisations) {
       expect(o.code).to.match(/^[A-Z]{2,5}$/);
       expect(o.name).not.to.match(/deeds|registry|namibia|republic/i);
     }
-  });
-
-  it('has a demo user per persona: the carrier clerk and approver, a trade clerk in each other organisation, the administrator', async () => {
-    const catalogue = await shipping();
-    const [carrier, shipper, exporterBank, buyerBank, buyer] =
-      catalogue.demoOrganisations;
-    const inOrganisation = code =>
-      catalogue.demoUsers.filter(u => u.organisation === code);
-    expect(inOrganisation(carrier.code).map(u => u.roles)).to.deep.equal([
-      ['bld'],
-      ['bld'],
-    ]);
-    for (const party of [shipper, exporterBank, buyerBank, buyer]) {
-      expect(
-        inOrganisation(party.code).map(u => u.roles),
-        party.name,
-      ).to.deep.equal([['blt']]);
-    }
-    const admins = catalogue.demoUsers.filter(u => u.roles.includes('adm'));
-    expect(admins).to.have.length(1);
-    expect(admins[0].organisation).to.equal(undefined);
-    expect(catalogue.demoUsers).to.have.length(7);
-    // fictitious addresses only, and every demo user can sign in
     for (const user of catalogue.demoUsers) {
       expect(user.email).to.match(/@[a-z0-9.-]+\.example$/);
       expect(user.status).to.equal('Active');

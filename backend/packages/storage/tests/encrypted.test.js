@@ -129,66 +129,70 @@ describe('encrypting store (chunked AES-256-GCM)', () => {
     );
   });
 
-  describe('fails instead of returning altered content', () => {
+  it('fails with DecryptionError instead of returning altered content', async () => {
     const plain = randomBytes(56); // 4 chunks of 16 (the last one 8)
     const H = 20;
     const F = 16 + 16; // header size, ciphertext chunk size
-    let ctx;
-    let r;
-    beforeEach(async () => {
-      ctx = setup();
-      r = await ctx.store.put({key: 'k', body: plain});
-    });
-    const expectFailure = async change => {
+    const cases = [
+      [
+        'one changed byte in a chunk',
+        b => {
+          b[H + F + 3] ^= 1;
+          return b;
+        },
+      ],
+      [
+        'one changed byte in a tag',
+        b => {
+          b[b.length - 1] ^= 1;
+          return b;
+        },
+      ],
+      [
+        'two chunks swapped',
+        b =>
+          Buffer.concat([
+            b.subarray(0, H),
+            b.subarray(H + F, H + 2 * F),
+            b.subarray(H, H + F),
+            b.subarray(H + 2 * F),
+          ]),
+      ],
+      ['last chunk cut off', b => b.subarray(0, H + 3 * F)],
+      ['cut off mid-chunk', b => b.subarray(0, H + F + 5)],
+      ['bytes appended', b => Buffer.concat([b, randomBytes(20)])],
+      [
+        'chunk size in header changed',
+        b => {
+          b.writeUInt32BE(32, 8);
+          return b;
+        },
+      ],
+      [
+        'nonce prefix in header changed',
+        b => {
+          b[15] ^= 1;
+          return b;
+        },
+      ],
+      ['only the header left', b => b.subarray(0, H)],
+      [
+        'not an encrypted file',
+        () => Buffer.from('%PDF-1.7 plain'),
+        /no LRFE header/,
+      ],
+    ];
+    for (const [label, change, message] of cases) {
+      const ctx = setup();
+      const r = await ctx.store.put({key: 'k', body: plain});
       const err = await readTampered(ctx, 'k', r.encryption, change).catch(
         e => e,
       );
-      expect(err).to.be.instanceOf(DecryptionError);
-    };
-
-    it('one changed byte in a chunk', () =>
-      expectFailure(b => {
-        b[H + F + 3] ^= 1;
-        return b;
-      }));
-    it('one changed byte in a tag', () =>
-      expectFailure(b => {
-        b[b.length - 1] ^= 1;
-        return b;
-      }));
-    it('two chunks swapped', () =>
-      expectFailure(b =>
-        Buffer.concat([
-          b.subarray(0, H),
-          b.subarray(H + F, H + 2 * F),
-          b.subarray(H, H + F),
-          b.subarray(H + 2 * F),
-        ]),
-      ));
-    it('the last chunk cut off (at a chunk boundary)', () =>
-      expectFailure(b => b.subarray(0, H + 3 * F)));
-    it('cut off in the middle of a chunk', () =>
-      expectFailure(b => b.subarray(0, H + F + 5)));
-    it('bytes appended', () =>
-      expectFailure(b => Buffer.concat([b, randomBytes(20)])));
-    it('the chunk size in the header changed', () =>
-      expectFailure(b => {
-        b.writeUInt32BE(32, 8);
-        return b;
-      }));
-    it('the nonce prefix in the header changed', () =>
-      expectFailure(b => {
-        b[15] ^= 1;
-        return b;
-      }));
-    it('only the header left', () => expectFailure(b => b.subarray(0, H)));
-    it('not an encrypted file at all', async () => {
-      const err = await readTampered(ctx, 'k', r.encryption, () =>
-        Buffer.from('%PDF-1.7 plain'),
-      ).catch(e => e);
-      expect(err).to.be.instanceOf(DecryptionError);
-      expect(err.message).to.contain('no LRFE header');
-    });
+      expect(err, label).to.be.instanceOf(DecryptionError);
+      if (message) {
+        expect(err.message, label).to.match(message);
+      }
+    }
   });
 
   it('a wrapped key from another keyring, or for another KEK, is refused', async () => {

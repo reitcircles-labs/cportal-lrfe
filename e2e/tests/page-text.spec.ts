@@ -4,26 +4,17 @@
  * is stored encrypted beside the filed scan. Once filed, intake clears its copy (API-807): the
  * search service then reads the text from the EDRMS, again with its own token only.
  */
-import {createHmac} from 'node:crypto';
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {expect, test} from '@playwright/test';
-import {E2E_BAO, JWT_SECRET, STACK_DIR} from '../stack/config.mjs';
+import {E2E_BAO, STACK_DIR} from '../stack/config.mjs';
 import {userByRole} from '../support/catalogue';
 import {apiAs, filedDocument} from '../support/intake';
+import {serviceToken} from '../support/shipping';
 
 const tag = {tag: ['@API-798', '@API-807']};
 /** Words of the mock reading's page text (backend/services/intake/src/extraction/providers.js). */
 const PAGE_WORDS = 'BE IT HEREBY MADE KNOWN';
-
-/** A service token as the services sign it (HS256 with the shared secret). */
-function serviceToken(service: string): string {
-  const b64 = (o: object) =>
-    Buffer.from(JSON.stringify(o)).toString('base64url');
-  const now = Math.floor(Date.now() / 1000);
-  const data = `${b64({alg: 'HS256', typ: 'JWT'})}.${b64({typ: 'service', sub: service, iat: now, exp: now + 300})}`;
-  return `${data}.${createHmac('sha256', JWT_SECRET).update(data).digest('base64url')}`;
-}
 
 test(
   'the search service reads the AI output from intake, and from the EDRMS once filed; a browser cannot; filing carries the text into the EDRMS',

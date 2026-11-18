@@ -17,11 +17,12 @@ import {pathToFileURL} from 'node:url';
 import {expect, test, type APIRequestContext} from '@playwright/test';
 import {unique} from '../support/admin';
 import {
+  committedBl,
   demoEmails,
   TRADE_ROLE,
   organisationWithClerk,
-  serviceToken,
   signIn,
+  testChainFetch,
   type Organisation,
   type SignedIn,
 } from '../support/shipping';
@@ -68,17 +69,6 @@ interface TitleProof {
   entries: ChainEntry[];
   anchor: {pending?: boolean; status?: string};
   parent?: {recordId: string; entries: ChainEntry[]};
-}
-
-/**
- * The verifier's blockchain queries, sent to the test chain behind the gateway instead.
- * @param url the address the verifier asks
- * @param init the request's options
- * @return the test chain's answer
- */
-function testChainFetch(url: string, init: RequestInit): Promise<Response> {
-  const query = new URL(url).pathname.split('/').pop();
-  return fetch(`${GATEWAY_URL}/api/audit/test/koios/${query}`, init);
 }
 
 test.describe.configure({mode: 'serial'});
@@ -150,30 +140,12 @@ test.describe('amendment and split through the gateway (CB-35)', () => {
   });
 
   test('the B/L with two containers is committed, issued to the shipper and endorsed to the bank', async () => {
-    const created = await api.post('/api/records', {
-      headers: carrier.headers,
-      data: {
-        format: 'dcsa-3.0',
-        document: twoContainerBl(reference),
-        partyOrganisations: {shipper: shipper.id},
-      },
+    const bl = await committedBl(api, carrier, approver, {
+      document: twoContainerBl(reference),
+      partyOrganisations: {shipper: shipper.id},
+      issue: true,
     });
-    expect(created.status(), await created.text()).toBe(201);
-    recordId = (await created.json()).id;
-    const submitted = await api.post(
-      `/api/records/${recordId}/versions/1/submit`,
-      {headers: carrier.headers},
-    );
-    expect(submitted.status(), await submitted.text()).toBe(200);
-    const committed = await api.post(
-      `/api/records/${recordId}/versions/1/commit`,
-      {
-        headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-        data: {by: {id: approver.id, name: approver.name}},
-      },
-    );
-    expect(committed.status(), await committed.text()).toBe(200);
-    await run(recordId, 'issue', carrier);
+    recordId = bl.id;
     const endorsed = await run(recordId, 'endorse', shipper.clerk, {
       to: bank.id,
       inBlank: false,

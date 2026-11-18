@@ -20,10 +20,11 @@ import {unique} from '../support/admin';
 import {evidence} from '../support/evidence';
 import {
   INVITED_PASSWORD,
+  committedBl as createCommittedBl,
   demoEmails,
+  dismissToasts,
   TRADE_ROLE,
   organisationWithClerk,
-  serviceToken,
   signIn,
   signInOnScreen,
   type Organisation,
@@ -43,22 +44,6 @@ const TICKET = 'CB-50';
 /** What the holder's confirmation says happens. */
 const ASK_BODY =
   'The carrier will hold the B/L to change it and give it back to you. You cannot endorse or surrender it until then.';
-
-/**
- * Closes the toasts on the screen, so that a screenshot shows the page alone.
- * @param page the page
- */
-async function dismissToasts(page: Page): Promise<void> {
-  const dismiss = page.getByRole('button', {name: 'Dismiss'});
-  while ((await dismiss.count()) > 0) {
-    // a toast may close by itself between the count and the click
-    await dismiss
-      .first()
-      .click({timeout: 2_000})
-      .catch(() => undefined);
-  }
-  await expect(dismiss).toHaveCount(0);
-}
 
 /**
  * The value of a fact of the B/L box.
@@ -114,30 +99,10 @@ test.describe(
     async function committedBl(
       reference: string,
     ): Promise<{id: string; label: string; recordNo: string}> {
-      const created = await api.post('/api/records', {
-        headers: carrier.clerk.headers,
-        data: {
-          format: 'dcsa-3.0',
-          document: twoContainerBl(reference),
-          partyOrganisations: {shipper: shipper.id},
-        },
+      return createCommittedBl(api, carrier.clerk, admin, {
+        document: twoContainerBl(reference),
+        partyOrganisations: {shipper: shipper.id},
       });
-      expect(created.status(), await created.text()).toBe(201);
-      const record = await created.json();
-      const submitted = await api.post(
-        `/api/records/${record.id}/versions/1/submit`,
-        {headers: carrier.clerk.headers},
-      );
-      expect(submitted.status(), await submitted.text()).toBe(200);
-      const committed = await api.post(
-        `/api/records/${record.id}/versions/1/commit`,
-        {
-          headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-          data: {by: {id: admin.id, name: admin.name}},
-        },
-      );
-      expect(committed.status(), await committed.text()).toBe(200);
-      return {id: record.id, label: record.label, recordNo: record.recordNo};
     }
 
     /**

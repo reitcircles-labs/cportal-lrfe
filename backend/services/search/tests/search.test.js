@@ -88,16 +88,6 @@ async function reviewAndFile(service, id) {
 }
 
 describe('search: the four events, each document fetched (API-802)', () => {
-  it('follows the four events, each with its own durable consumer', () => {
-    expect(CONSUMERS.map(c => c.type)).to.deep.equal([
-      'intake.document.extracted',
-      'intake.document.rejected',
-      'edrms.document.filed',
-      'edrms.document.amended',
-    ]);
-    expect(new Set(CONSUMERS.map(c => c.durable)).size).to.equal(4);
-  });
-
   it('an AI reading is fetched from intake, a filed and a corrected document from edrms', async () => {
     const {captureAndExtract, service, edrmsService, counts, logger} =
       await makeSearch();

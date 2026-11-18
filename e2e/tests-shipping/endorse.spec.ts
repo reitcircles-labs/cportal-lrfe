@@ -9,8 +9,6 @@
  * organisations and their people are made through the API by the administrator. Screenshots for
  * the ticket with `npm run evidence -- CB-45 --shipping` (support/evidence.ts).
  */
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
 import {
   expect,
   test,
@@ -18,24 +16,22 @@ import {
   type Page,
 } from '@playwright/test';
 import {unique} from '../support/admin';
+import {trackApi} from '../support/api-idle';
 import {evidence} from '../support/evidence';
 import {
   INVITED_PASSWORD,
+  committedBl,
   demoEmails,
+  dismissToasts,
+  negotiableBl,
   TRADE_ROLE,
   organisationWithClerk,
-  serviceToken,
   signIn,
   signInOnScreen,
   type Organisation,
   type SignedIn,
 } from '../support/shipping';
-import {
-  DEMO_PASSWORD,
-  GATEWAY_URL,
-  REPO_DIR,
-  SHIPPING_URL,
-} from '../stack/config.mjs';
+import {DEMO_PASSWORD, GATEWAY_URL, SHIPPING_URL} from '../stack/config.mjs';
 
 /** The ticket the screenshots are for. */
 const TICKET = 'CB-45';
@@ -44,42 +40,6 @@ const TICKET = 'CB-45';
 interface ListItem {
   id: string;
   roles: string[];
-}
-
-/**
- * DCSA's example transport document (a B/L to order) with its own reference.
- * @param reference the transport document reference
- * @return the document
- */
-function negotiableBl(reference: string): Record<string, unknown> {
-  const path = join(
-    REPO_DIR,
-    'backend',
-    'domains',
-    'shipping',
-    'dcsa',
-    '3.0.3',
-    'examples',
-    'td-regular.json',
-  );
-  const example = JSON.parse(readFileSync(path, 'utf8'));
-  return {...example, transportDocumentReference: reference};
-}
-
-/**
- * Closes the toasts on the screen, so that a screenshot shows the page alone.
- * @param page the page
- */
-async function dismissToasts(page: Page): Promise<void> {
-  const dismiss = page.getByRole('button', {name: 'Dismiss'});
-  while ((await dismiss.count()) > 0) {
-    // a toast may close by itself between the count and the click
-    await dismiss
-      .first()
-      .click({timeout: 2_000})
-      .catch(() => undefined);
-  }
-  await expect(dismiss).toHaveCount(0);
 }
 
 test.describe.configure({mode: 'serial'});
@@ -290,36 +250,11 @@ test.describe(
       parts.set(buyerBank.id, "the buyer's bank");
       parts.set(buyer.id, 'the buyer');
 
-      const created = await api.post('/api/records', {
-        headers: carrier.clerk.headers,
-        data: {
-          format: 'dcsa-3.0',
-          document: negotiableBl(`CB45${unique().toUpperCase()}`.slice(0, 20)),
-          partyOrganisations: {shipper: shipper.id},
-        },
+      bl = await committedBl(api, carrier.clerk, admin, {
+        document: negotiableBl(`CB45${unique().toUpperCase()}`.slice(0, 20)),
+        partyOrganisations: {shipper: shipper.id},
+        issue: true,
       });
-      expect(created.status(), await created.text()).toBe(201);
-      const record = await created.json();
-      bl = {id: record.id, label: record.label};
-      const submitted = await api.post(
-        `/api/records/${bl.id}/versions/1/submit`,
-        {headers: carrier.clerk.headers},
-      );
-      expect(submitted.status(), await submitted.text()).toBe(200);
-      // the second pair of eyes: a decision reported by bpm, by someone other than the submitter
-      const committed = await api.post(
-        `/api/records/${bl.id}/versions/1/commit`,
-        {
-          headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-          data: {by: {id: admin.id, name: admin.name}},
-        },
-      );
-      expect(committed.status(), await committed.text()).toBe(200);
-      const issued = await api.post(`/api/records/${bl.id}/title/issue`, {
-        headers: carrier.clerk.headers,
-        data: {},
-      });
-      expect(issued.status(), await issued.text()).toBe(200);
     });
 
     test.afterAll(async () => {
@@ -417,6 +352,7 @@ test.describe(
     }) => {
       /** The GET requests the pages make, by what they read. */
       const counts = new Map<string, number>();
+      const apiIdle = trackApi(page);
       page.on('request', request => {
         if (request.method() !== 'GET') {
           return;
@@ -435,11 +371,11 @@ test.describe(
         }
       });
       /**
-       * Waits a while on a page that has shown, then checks what it read.
+       * Waits until API calls settle on a page that has shown, then checks what it read.
        * @param key what the page reads
        */
       async function expectReadOnce(key: string): Promise<void> {
-        await page.waitForTimeout(3_000);
+        await apiIdle(500);
         expect(counts.get(key) ?? 0, key).toBeGreaterThanOrEqual(1);
         expect(counts.get(key) ?? 0, key).toBeLessThanOrEqual(2);
       }

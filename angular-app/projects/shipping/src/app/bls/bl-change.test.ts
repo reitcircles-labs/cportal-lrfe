@@ -451,19 +451,19 @@ describe('every refusal of the title engine and the record service, in plain wor
     assert.ok(codes.length >= 35, `${codes.length} codes`);
   });
 
-  for (const code of codes) {
-    it(`${code}: the page has plain words for it`, () => {
-      assert.ok(Object.hasOwn(REFUSAL_REASONS, code), 'no words');
+  it('every refusal code of the engine and service has plain words', () => {
+    for (const code of codes) {
+      assert.ok(Object.hasOwn(REFUSAL_REASONS, code), `${code}: no words`);
       const words = REFUSAL_REASONS[code];
-      assert.ok(words.trim().length > 0);
-      assert.ok(!words.includes(code), 'names its code');
-      assert.ok(!vendors.test(words), 'names a vendor');
-      assert.match(words, /^[A-Z].*[.]$/, 'a sentence');
+      assert.ok(words.trim().length > 0, code);
+      assert.ok(!words.includes(code), `${code}: names its code`);
+      assert.ok(!vendors.test(words), `${code}: names a vendor`);
+      assert.match(words, /^[A-Z].*[.]$/, `${code}: a sentence`);
       // what the page shows when the service gives no reason
       const refusal = refusalOf({status: 409, message: '', details: {code}});
-      assert.equal(refusal.message, words);
-    });
-  }
+      assert.equal(refusal.message, words, code);
+    }
+  });
 });
 
 describe('refusals the service words for developers, and unknown ones (CB-54)', () => {

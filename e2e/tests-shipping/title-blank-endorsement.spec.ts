@@ -13,16 +13,17 @@
  * and the buyer are organisations made here by the administrator, each with a B/L clerk invited
  * through the API.
  */
-import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {expect, test, type APIRequestContext} from '@playwright/test';
 import {unique} from '../support/admin';
 import {
+  committedBl,
   demoEmails,
+  negotiableBl,
+  testChainFetch,
   TRADE_ROLE,
   organisationWithClerk,
-  serviceToken,
   signIn,
   type Organisation,
   type SignedIn,
@@ -68,38 +69,6 @@ const MIXED_EVENTS = [
   'records.title.surrender',
   'records.title.release',
 ];
-
-/**
- * DCSA's example transport document (a B/L to order) with its own reference.
- * @param reference the transport document reference
- * @return the document
- */
-function negotiableBl(reference: string): Record<string, unknown> {
-  const path = join(
-    REPO_DIR,
-    'backend',
-    'domains',
-    'shipping',
-    'dcsa',
-    '3.0.3',
-    'examples',
-    'td-regular.json',
-  );
-  const example = JSON.parse(readFileSync(path, 'utf8'));
-  return {...example, transportDocumentReference: reference};
-}
-
-/**
- * The verifier's blockchain queries, sent to the test chain behind the gateway instead: the
- * query's name (the last part of its path) is kept, the host is the gateway's.
- * @param url the address the verifier asks
- * @param init the request's options
- * @return the test chain's answer
- */
-function testChainFetch(url: string, init: RequestInit): Promise<Response> {
-  const query = new URL(url).pathname.split('/').pop();
-  return fetch(`${GATEWAY_URL}/api/audit/test/koios/${query}`, init);
-}
 
 test.describe.configure({mode: 'serial'});
 
@@ -205,29 +174,11 @@ test.describe('blank endorsement and transfer through the gateway (CB-37)', () =
   });
 
   test("the carrier's B/L to order is committed with four eyes and issued to the shipper", async () => {
-    const created = await api.post('/api/records', {
-      headers: carrier.headers,
-      data: {
-        format: 'dcsa-3.0',
-        document: negotiableBl(`CB37${unique().toUpperCase()}`.slice(0, 20)),
-        partyOrganisations: {shipper: shipper.id},
-      },
+    const bl = await committedBl(api, carrier, approver, {
+      document: negotiableBl(`CB37${unique().toUpperCase()}`.slice(0, 20)),
+      partyOrganisations: {shipper: shipper.id},
     });
-    expect(created.status(), await created.text()).toBe(201);
-    recordId = (await created.json()).id;
-    const submitted = await api.post(
-      `/api/records/${recordId}/versions/1/submit`,
-      {headers: carrier.headers},
-    );
-    expect(submitted.status(), await submitted.text()).toBe(200);
-    const committed = await api.post(
-      `/api/records/${recordId}/versions/1/commit`,
-      {
-        headers: {authorization: `Bearer ${serviceToken('bpm')}`},
-        data: {by: {id: approver.id, name: approver.name}},
-      },
-    );
-    expect(committed.status(), await committed.text()).toBe(200);
+    recordId = bl.id;
 
     const issued = await run('issue', carrier);
     expect(issued.title).toMatchObject({

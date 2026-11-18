@@ -315,12 +315,15 @@ describe('OpenBao keyring (AppRole)', () => {
 
     it('waits for a vault that is still sealed (starting up), then passes', async () => {
       bao.state.sealed = true;
-      setTimeout(() => {
-        bao.state.sealed = false;
-      }, 150);
-      const t0 = Date.now();
-      await checking().check({waitMs: 3000, intervalMs: 30});
-      expect(Date.now() - t0).to.be.within(100, 3000);
+      let slept = 0;
+      await checking({
+        sleep: async () => {
+          if (++slept === 2) {
+            bao.state.sealed = false;
+          }
+        },
+      }).check({waitMs: 3000, intervalMs: 20});
+      expect(slept).to.equal(2);
     });
 
     it('gives up after the wait with a clear message', async () => {

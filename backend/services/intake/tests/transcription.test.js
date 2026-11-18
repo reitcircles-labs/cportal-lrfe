@@ -19,7 +19,6 @@ const PAGES = [
   {page: 2, text: 'Signed before me, Registrar of Deeds'},
 ];
 const intakeKeys = () => createFakeKeyring({keyName: 'intake-files'});
-const edrmsKeys = () => createFakeKeyring({keyName: 'edrms-files'});
 const withPages = () => answer({pages: structuredClone(PAGES)});
 const serviceAuth = service => ({
   authorization: `Bearer ${createServiceTokenSigner({secret: SECRET, service})()}`,
@@ -211,32 +210,9 @@ describe('page text (API-798)', () => {
     expect(denied.statusCode).to.equal(401);
   });
 
-  it('filing carries the page text into the EDRMS, encrypted under its own key', async () => {
-    const {service, captureAndExtract, edrmsService, edrmsPlainStore} =
-      await makeIntake({
-        keyring: intakeKeys(),
-        edrmsKeyring: edrmsKeys(),
-        respond: withPages,
-      });
-    const doc = await captureAndExtract(pdf('filed with text'));
-    const filed = await reviewAndFile(service, doc.id);
-    const text = await edrmsService.repo.getText(filed.filedDocumentId);
-    expect(text).to.include({versionNumber: 1, pages: 2});
-    expect(text.encryption.keyName).to.equal('edrms-files');
-    expect(text).not.to.have.property('text');
-    expect(
-      edrmsPlainStore.blobs.get(text.storageKey).data.subarray(0, 4).toString(),
-    ).to.equal('LRFE');
-    expect(blobsAsText(edrmsPlainStore)).not.to.include('Registrar of Deeds');
-    expect(await edrmsService.readText(filed.filedDocumentId)).to.deep.equal(
-      PAGES,
-    );
-  });
-
   it('the back-fill gives documents filed earlier their text, once', async () => {
     const ctx = await makeIntake({
       keyring: intakeKeys(),
-      edrmsKeyring: edrmsKeys(),
       respond: withPages,
     });
     const doc = await ctx.captureAndExtract(pdf('filed before'));
