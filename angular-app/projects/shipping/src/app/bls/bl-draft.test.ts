@@ -4,6 +4,7 @@ import {strict as assert} from 'node:assert';
 import {describe, it} from 'node:test';
 
 import {
+  draftFormOf,
   draftProblems,
   draftRequest,
   emptyDraftForm,
@@ -259,6 +260,54 @@ describe('the new B/L form: the document it sends', () => {
       Record<string, unknown>
     >;
     assert.equal(equipment['seals'], undefined);
+  });
+
+  it('fills the form back from a saved draft (CB-70)', () => {
+    const negotiable = filled();
+    const negReq = draftRequest(negotiable, CONTEXT);
+    const roundTripped = draftFormOf({
+      versionNumber: 1,
+      state: 'draft',
+      data: {
+        document: negReq.document,
+        partyOrganisations: negReq.partyOrganisations,
+      },
+    });
+    assert.deepEqual(roundTripped, {
+      ...negotiable,
+      reference: 'CB44-0001',
+      carrierCode: 'NSL',
+      issuerCountry: 'DE',
+      portOfLoading: 'BRSSZ',
+      portOfDischarge: 'NLRTM',
+      containerNumber: 'MSKU7045123',
+    });
+
+    const straight = filled({
+      toOrder: false,
+      consigneeId: BUYER.id,
+      sealNumber: '',
+    });
+    const strReq = draftRequest(straight, CONTEXT);
+    assert.deepEqual(
+      draftFormOf({
+        versionNumber: 1,
+        state: 'in_review',
+        data: {
+          document: strReq.document,
+          partyOrganisations: strReq.partyOrganisations,
+        },
+      }),
+      {
+        ...straight,
+        reference: 'CB44-0001',
+        carrierCode: 'NSL',
+        issuerCountry: 'DE',
+        portOfLoading: 'BRSSZ',
+        portOfDischarge: 'NLRTM',
+        containerNumber: 'MSKU7045123',
+      },
+    );
   });
 });
 

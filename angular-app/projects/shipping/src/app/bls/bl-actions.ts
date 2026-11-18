@@ -108,6 +108,21 @@ export function maySubmit(
 }
 
 /**
+ * Whether the user may edit an unapproved draft (CB-70): before submit, while in review, or
+ * after it was sent back, by its author only.
+ * @param draft the open draft, null when there is none
+ * @param user who looks at it: their id and permissions
+ * @return true when the page offers Edit
+ */
+export function mayEdit(draft: DraftVersion | null, user: Approver): boolean {
+  if (draft === null || !user.perms.includes(DRAFT_PERMISSION)) {
+    return false;
+  }
+  const editable = draft.state === 'draft' || draft.state === 'in_review';
+  return editable && draft.createdById === user.id;
+}
+
+/**
  * Whether the user may draft a new B/L.
  * @param perms the user's permissions
  * @return true with the permission to draft

@@ -26,6 +26,11 @@ export const routes: Routes = [
     children: [
       {path: '', component: BlListComponent, canActivate: [homeGuard]},
       {path: 'bls/new', component: BlNewComponent, canActivate: [draftGuard]},
+      {
+        path: 'bls/:id/edit',
+        component: BlNewComponent,
+        canActivate: [draftGuard],
+      },
       {path: 'bls/:id', component: BlDetailComponent},
       {path: 'bls/:id/history', component: BlHistoryComponent},
       {

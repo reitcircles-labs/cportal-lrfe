@@ -208,35 +208,10 @@ describe('approving a B/L draft on the platform, four eyes (CB-44)', () => {
         ]);
       });
 
-      it('who changed the draft is a drafter too, even when someone else submitted it: 403 own-draft', async () => {
+      it('who submitted the draft is a drafter too, even when someone else created it: 403 own-draft', async () => {
         const id = await submittedBy(clerk, clerk);
-        // a second B/L: drafted by the clerk, changed by the editor, submitted by the clerk
-        const second = await call('POST', '/records', clerk, {
-          format: 'dcsa-3.0',
-          document: exampleWithReference(nextReference()),
-          partyOrganisations: {shipper: SHIPPER},
-        });
-        const secondId = second.json().id;
-        const changed = await call(
-          'PUT',
-          `/records/${secondId}/draft`,
-          editor,
-          {
-            format: 'dcsa-3.0',
-            document: {
-              ...exampleWithReference(second.json().recordNo),
-              termsAndConditions: 'Changed by the editor.',
-            },
-            partyOrganisations: {shipper: SHIPPER},
-          },
-        );
-        expect(changed.statusCode, changed.body).to.equal(200);
-        const submitted = await call(
-          'POST',
-          `/records/${secondId}/versions/1/submit`,
-          clerk,
-        );
-        expect(submitted.statusCode, submitted.body).to.equal(200);
+        // a second B/L: drafted by the clerk, submitted by the editor
+        const secondId = await submittedBy(clerk, editor);
         const res = await approve(secondId, editor);
         expect(res.statusCode, res.body).to.equal(403);
         expect(res.json().details?.code).to.equal('own-draft');
@@ -252,19 +227,7 @@ describe('approving a B/L draft on the platform, four eyes (CB-44)', () => {
       });
 
       it('commit itself refuses a drafter approving on the platform (four eyes on the version it reads)', async () => {
-        const created = await call('POST', '/records', clerk, {
-          format: 'dcsa-3.0',
-          document: exampleWithReference(nextReference()),
-          partyOrganisations: {shipper: SHIPPER},
-        });
-        const id = created.json().id;
-        const changed = await call('PUT', `/records/${id}/draft`, editor, {
-          format: 'dcsa-3.0',
-          document: exampleWithReference(created.json().recordNo),
-          partyOrganisations: {shipper: SHIPPER},
-        });
-        expect(changed.statusCode, changed.body).to.equal(200);
-        await call('POST', `/records/${id}/versions/1/submit`, clerk);
+        const id = await submittedBy(clerk, editor);
         let refused = null;
         try {
           await ctx.service.commit(id, 1, {by: {id: editor.id}}, 'approval');
@@ -275,10 +238,9 @@ describe('approving a B/L draft on the platform, four eyes (CB-44)', () => {
         expect(refused?.details?.code).to.equal('own-draft');
       });
 
-      it('sent back, changed by the approver and submitted again while the approval was under way: 403 own-draft', async () => {
+      it('sent back, changed by the approver or resubmitted while the approval was under way: 403 own-draft', async () => {
         const id = await submittedBy(clerk);
-        // the approval reads the version; meanwhile it is sent back, changed by the approver
-        // and submitted again by the clerk, before the commit reads it again
+        // the approval reads the version; meanwhile it is sent back and resubmitted by the manager
         const read = ctx.service.requireVersion.bind(ctx.service);
         let meanwhile = async () => {
           await ctx.service.reject(
@@ -287,18 +249,7 @@ describe('approving a B/L draft on the platform, four eyes (CB-44)', () => {
             {by: {id: secondManager.id}, comment: 'Fix the weight'},
             'bpm',
           );
-          const record = await ctx.service.getRecord(id, CARRIER);
-          await ctx.service.saveDraft(
-            id,
-            {
-              format: 'dcsa-3.0',
-              document: exampleWithReference(record.recordNo),
-              partyOrganisations: {shipper: SHIPPER},
-            },
-            manager,
-            CARRIER,
-          );
-          await ctx.service.submit(id, 1, clerk, CARRIER);
+          await ctx.service.submit(id, 1, manager, CARRIER);
         };
         ctx.service.requireVersion = async (record, n) => {
           const version = await read(record, n);
@@ -313,6 +264,31 @@ describe('approving a B/L draft on the platform, four eyes (CB-44)', () => {
         expect(res.statusCode, res.body).to.equal(403);
         expect(res.json().details?.code).to.equal('own-draft');
         expect(eventsOf('records.record.committed')).to.have.length(0);
+      });
+
+      it('refuses approval of an older revision when the author edited the draft while in review (CB-70, 409)', async () => {
+        const id = await submittedBy(clerk);
+        const seen = (await call('GET', `/records/${id}`, manager)).json();
+        const edited = await call('PUT', `/records/${id}/draft`, clerk, {
+          format: 'dcsa-3.0',
+          document: {
+            ...exampleWithReference(seen.recordNo),
+            termsAndConditions: 'Edited while in review.',
+          },
+          partyOrganisations: {shipper: SHIPPER},
+        });
+        expect(edited.statusCode, edited.body).to.equal(200);
+        const stale = await approve(id, manager, 1, {
+          revision: seen.draft.revision,
+        });
+        expect(stale.statusCode, stale.body).to.equal(409);
+        expect(stale.json().details?.code).to.equal('changed-meanwhile');
+        expect(eventsOf('records.record.committed')).to.have.length(0);
+        // with the fresh revision, approval succeeds
+        const fresh = await approve(id, manager, 1, {
+          revision: edited.json().draft.revision,
+        });
+        expect(fresh.statusCode, fresh.body).to.equal(200);
       });
 
       it('a clerk without bl.issue may not approve: 403', async () => {

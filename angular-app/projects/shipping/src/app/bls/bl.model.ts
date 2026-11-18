@@ -112,6 +112,7 @@ export interface DraftVersion {
   versionNumber: number;
   /** `draft`, `in_review` or `committed`. */
   state: string;
+  revision?: number;
   createdById?: string | null;
   createdByName?: string | null;
   submittedById?: string | null;

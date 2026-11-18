@@ -336,11 +336,15 @@ for (const store of stores()) {
     });
 
     describe('changing a draft', () => {
-      it('replaces the open draft, with its new hash', async () => {
+      it('the author replaces the open draft, with its new hash; another person of the carrier is refused (403)', async () => {
         const record = (await createAs(ctx, users.a1, example())).json();
         const changed = example();
         changed.shippingInstructionsReference = 'SI-CHANGED';
-        const res = await saveDraft(ctx, users.a2, record.id, changed);
+        const other = await saveDraft(ctx, users.a2, record.id, changed);
+        expect(other.statusCode, other.body).to.equal(403);
+        expect(other.json().details?.code).to.equal('not-author');
+
+        const res = await saveDraft(ctx, users.a1, record.id, changed);
         expect(res.statusCode, res.body).to.equal(200);
         const {draft} = res.json();
         expect(draft.versionNumber).to.equal(1);
@@ -368,15 +372,27 @@ for (const store of stores()) {
         ).to.equal(400);
       });
 
-      it('refuses a change while the draft is in review (409)', async () => {
+      it('the author may edit while the draft is in review: it stays in review with a new revision', async () => {
         const id = await submittedDraft(ctx, users.a1, 'REVIEW0001');
-        const res = await saveDraft(
-          ctx,
-          users.a1,
-          id,
-          exampleWithReference('REVIEW0001'),
-        );
-        expect(res.statusCode).to.equal(409);
+        const before = (
+          await call(ctx, 'GET', `/records/${id}`, ctx.as(users.a1))
+        ).json();
+        const changed = exampleWithReference('REVIEW0001');
+        changed.shippingInstructionsReference = 'SI-IN-REVIEW';
+        const res = await saveDraft(ctx, users.a1, id, changed);
+        expect(res.statusCode, res.body).to.equal(200);
+        const updated = res.json();
+        expect(updated.draftState).to.equal('in_review');
+        expect(updated.draft.state).to.equal('in_review');
+        expect(updated.draft.revision).to.equal(before.draft.revision + 1);
+        expect(
+          updated.draft.data.document.shippingInstructionsReference,
+        ).to.equal('SI-IN-REVIEW');
+        expect(updated.draft.changes.at(-1).action).to.equal('edit');
+        // another person in the carrier still cannot edit it in review
+        expect(
+          (await saveDraft(ctx, users.a2, id, changed)).statusCode,
+        ).to.equal(403);
       });
 
       it('opens a new draft version after a commit, the current version unchanged', async () => {
@@ -408,7 +424,7 @@ for (const store of stores()) {
         const second = example();
         second.shippingInstructionsReference = 'SI-SECOND';
         // the second change lands after the first one read the draft
-        interleave(ctx, () => saveDraft(ctx, users.a2, record.id, second));
+        interleave(ctx, () => saveDraft(ctx, users.a1, record.id, second));
         const late = await saveDraft(ctx, users.a1, record.id, first);
         expect(late.statusCode, late.body).to.equal(409);
 
@@ -420,7 +436,7 @@ for (const store of stores()) {
           'create',
           'edit',
         ]);
-        expect(draft.changes[1].byId).to.equal(users.a2.id);
+        expect(draft.changes[1].byId).to.equal(users.a1.id);
       });
 
       it('refuses to submit a draft that changed meanwhile (409), keeping the change', async () => {
@@ -428,7 +444,7 @@ for (const store of stores()) {
         const changed = example();
         changed.shippingInstructionsReference = 'SI-MEANWHILE';
         // the change lands after the submission read the draft
-        interleave(ctx, () => saveDraft(ctx, users.a2, record.id, changed));
+        interleave(ctx, () => saveDraft(ctx, users.a1, record.id, changed));
         const late = await submit(ctx, users.a1, record.id, 1);
         expect(late.statusCode, late.body).to.equal(409);
 

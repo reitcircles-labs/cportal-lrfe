@@ -177,6 +177,7 @@ found" before any refusal that would tell the B/L's state.
 | `cargo-mismatch` | 400 | the children's cargo does not add up to the parent's (`details.problems`) | The cargo of the new B/Ls must add up to the B/L's: … |
 | `reference-taken` | 409 | the carrier already has a B/L with a child's reference | The carrier already has a B/L with the reference … |
 | `own-draft` | 403 | `POST /records/:id/versions/:n/approve` (CB-44, before issue) by a person who created, changed or submitted that version: four eyes | You drafted this version, so a second person must approve it (four-eyes) |
+| `not-author` | 403 | `PUT /records/:id/draft` (CB-70) by anyone other than the person who created the draft | Only the person who created this draft may edit it |
 | `proof-unavailable` | 503 | `GET /records/:id/title/proof` while the proof on the blockchain cannot be read | The proof on the blockchain cannot be read now: try again later. |
 | `no-number` | 400 | `GET /records/title?number=` with a blank number (CB-47, "Check a B/L by number") | Give the number of the B/L to look for |
 | `unknown-port` | 400 | a new or changed port of loading or discharge (`POST /records`, `PUT /records/:id/draft`, `amend`) is not a sea port of the port list (CB-63; `details.problems`) | This B/L is not valid: XXAAA is not a sea port of the UN/LOCODE list: pick the port of discharge from the list |

@@ -215,6 +215,9 @@ paths:
                   type: object
                 partyOrganisations:
                   type: object
+                revision:
+                  type: integer
+                  minimum: 1
       responses:
         "200":
           description: OK
@@ -352,6 +355,9 @@ paths:
                 comment:
                   type: string
                   maxLength: 4000
+                revision:
+                  type: integer
+                  minimum: 1
       responses:
         "200":
           description: OK

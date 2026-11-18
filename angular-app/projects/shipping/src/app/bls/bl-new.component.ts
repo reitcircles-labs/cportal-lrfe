@@ -2,15 +2,20 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
+  input,
   signal,
+  untracked,
 } from '@angular/core';
 import {NgTemplateOutlet} from '@angular/common';
 import {Router, RouterLink} from '@angular/router';
 import {AuthService, ToastService, toApiError} from '@lrfe/platform';
 
 import {BlApi} from './bl.api';
+import {mayEdit} from './bl-actions';
 import {
+  draftFormOf,
   draftProblems,
   draftRequest,
   emptyDraftForm,
@@ -34,6 +39,8 @@ interface FieldSpec {
   hint?: string;
   /** A port: offered from the port list as it is typed (CB-63). */
   port?: boolean;
+  /** Locked once the B/L is created: number and carrier code (CB-70). */
+  lockInEdit?: boolean;
 }
 
 /** The fields of each section, in order. */
@@ -44,6 +51,7 @@ const BL_FIELDS: readonly FieldSpec[] = [
     type: 'text',
     mono: true,
     maxlength: 20,
+    lockInEdit: true,
   },
   {
     field: 'carrierCode',
@@ -52,6 +60,7 @@ const BL_FIELDS: readonly FieldSpec[] = [
     mono: true,
     maxlength: 4,
     hint: 'The SMDG code of the carrier, e.g. ABCD.',
+    lockInEdit: true,
   },
   {
     field: 'bookingReference',
@@ -150,15 +159,16 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
-      <a class="small" routerLink="/">← Bills of lading</a>
+      <a class="small" [routerLink]="backLink()">{{ isEdit() ? '← Back to B/L' : '← Bills of lading' }}</a>
       <header>
-        <h1 style="margin:4px 0 4px;font-size:32px">New B/L</h1>
-        <p class="muted" style="margin:0">A draft of {{ carrierName() }}. A second person approves it before it is issued.</p>
+        <h1 style="margin:4px 0 4px;font-size:32px">{{ isEdit() ? 'Edit draft B/L' : 'New B/L' }}</h1>
+        <p class="muted" style="margin:0">{{ isEdit() ? 'Edit this draft of ' + carrierName() + '. The B/L number and carrier code stay fixed.' : 'A draft of ' + carrierName() + '. A second person approves it before it is issued.' }}</p>
       </header>
       @if (loadError(); as e) {
         <div class="note danger" role="alert">{{ e }}</div>
       }
-      <form class="stack" style="gap:18px" (submit)="$event.preventDefault(); save()" novalidate>
+      @if (ready()) {
+        <form class="stack" style="gap:18px" (submit)="$event.preventDefault(); save()" novalidate>
         <section class="panel">
           <div class="panel-head"><h2>B/L</h2></div>
           <div class="panel-body grid">
@@ -244,15 +254,16 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
           </div>
         }
         <div class="row" style="gap:10px;justify-content:flex-end">
-          <a class="btn btn-secondary" routerLink="/">Cancel</a>
-          <button type="submit" class="btn btn-primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save draft' }}</button>
+          <a class="btn btn-secondary" [routerLink]="backLink()">Cancel</a>
+          <button type="submit" class="btn btn-primary" [disabled]="saving()">{{ submitLabel() }}</button>
         </div>
-      </form>
+        </form>
+      }
     </div>
     <ng-template #input let-f>
       <div class="field">
         <label [for]="'bl-' + f.field">{{ f.label }}</label>
-        <input [id]="'bl-' + f.field" [type]="f.type" [class]="f.mono ? 'input mono' : 'input'" autocomplete="off" [attr.maxlength]="f.maxlength ?? null" [attr.min]="f.type === 'number' ? 0 : null" [value]="valueOf(f.field)" (input)="setFrom(f, $any($event.target).value)" [attr.aria-invalid]="isInvalid(f.field) ? 'true' : null" [attr.aria-describedby]="f.hint ? 'bl-' + f.field + '-hint' : null" [attr.list]="f.port ? 'bl-' + f.field + '-ports' : null">
+        <input [id]="'bl-' + f.field" [type]="f.type" [class]="f.mono ? 'input mono' : 'input'" autocomplete="off" [attr.maxlength]="f.maxlength ?? null" [attr.min]="f.type === 'number' ? 0 : null" [disabled]="isEdit() && !!f.lockInEdit" [value]="valueOf(f.field)" (input)="setFrom(f, $any($event.target).value)" [attr.aria-invalid]="isInvalid(f.field) ? 'true' : null" [attr.aria-describedby]="f.hint ? 'bl-' + f.field + '-hint' : null" [attr.list]="f.port ? 'bl-' + f.field + '-ports' : null">
         @if (f.port) {
           <datalist [id]="'bl-' + f.field + '-ports'">
             @for (p of ports.options(f.field); track p.code) {
@@ -284,6 +295,9 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
   ],
 })
 export class BlNewComponent {
+  /** Present when editing an existing draft (`/bls/:id/edit`, CB-70). */
+  readonly id = input<string>();
+
   private readonly bls = inject(BlApi);
   /** The ports offered in the port fields (CB-63). */
   protected readonly ports = new PortOptions(
@@ -301,10 +315,17 @@ export class BlNewComponent {
   protected readonly voyageFields = VOYAGE_FIELDS;
   protected readonly cargoFields = CARGO_FIELDS;
 
+  protected readonly isEdit = computed(() => Boolean(this.id()));
+  protected readonly backLink = computed(() => {
+    const id = this.id();
+    return id ? ['/bls', id] : ['/'];
+  });
   protected readonly form = signal<DraftForm>(emptyDraftForm());
   protected readonly organisations = signal<PartyOrganisation[]>([]);
   protected readonly loadError = signal<string | null>(null);
+  protected readonly ready = signal(true);
   protected readonly saving = signal(false);
+  private readonly draftRevision = signal<number | undefined>(undefined);
   /** The form's own problems, shown once it was sent. */
   private readonly formProblems = signal<DraftProblem[]>([]);
   /** The record service's refusal: its message and the problems it names. */
@@ -321,9 +342,20 @@ export class BlNewComponent {
     }
     return 'The B/L was not saved:';
   });
+  protected readonly submitLabel = computed(() => {
+    if (this.saving()) {
+      return 'Saving…';
+    }
+    return this.isEdit() ? 'Save changes' : 'Save draft';
+  });
 
   constructor() {
-    void this.loadOrganisations();
+    effect(() => {
+      const id = this.id();
+      untracked(() => {
+        void this.load(id);
+      });
+    });
   }
 
   /**
@@ -403,9 +435,19 @@ export class BlNewComponent {
     });
     this.saving.set(true);
     try {
-      const record = await this.bls.create(request);
-      this.toast.show('success', 'Draft saved', `B/L ${record.recordNo}`);
-      await this.router.navigate(['/bls', record.id]);
+      const editId = this.id();
+      if (editId) {
+        const record = await this.bls.saveDraft(editId, {
+          ...request,
+          revision: this.draftRevision(),
+        });
+        this.toast.show('success', 'Draft updated', `B/L ${record.recordNo}`);
+        await this.router.navigate(['/bls', record.id]);
+      } else {
+        const record = await this.bls.create(request);
+        this.toast.show('success', 'Draft saved', `B/L ${record.recordNo}`);
+        await this.router.navigate(['/bls', record.id]);
+      }
     } catch (e) {
       const error = toApiError(e);
       this.refusal.set([error.message, ...problemMessages(error.details)]);
@@ -414,12 +456,50 @@ export class BlNewComponent {
   }
 
   /**
-   * Loads the organisations the B/L may name.
-   * @return when they are listed
+   * Loads the organisations and, when editing, the draft's current values (CB-70).
+   * @param id the B/L's id when editing, undefined for a new B/L
+   * @return when ready
    */
-  private async loadOrganisations(): Promise<void> {
+  private async load(id?: string): Promise<void> {
+    this.loadError.set(null);
+    this.formProblems.set([]);
+    this.refusal.set([]);
+    if (!id) {
+      this.ready.set(true);
+      this.form.set(emptyDraftForm());
+      this.draftRevision.set(undefined);
+      try {
+        this.organisations.set(await this.bls.organisations());
+      } catch (e) {
+        this.loadError.set(toApiError(e).message);
+      }
+      return;
+    }
+    this.ready.set(false);
     try {
-      this.organisations.set(await this.bls.organisations());
+      const [organisations, record] = await Promise.all([
+        this.bls.organisations(),
+        this.bls.record(id),
+      ]);
+      this.organisations.set(organisations);
+      const user = {
+        id: this.auth.me()?.user.id ?? '',
+        perms: this.auth.perms(),
+      };
+      if (!mayEdit(record.draft, user)) {
+        this.loadError.set(
+          record.draft === null
+            ? 'This B/L can no longer be edited.'
+            : 'Only the person who created this draft may edit it.',
+        );
+        return;
+      }
+      const hydrated = draftFormOf(record.draft);
+      this.form.set(hydrated);
+      this.draftRevision.set(record.draft?.revision);
+      this.ready.set(true);
+      void this.ports.search('portOfLoading', hydrated.portOfLoading);
+      void this.ports.search('portOfDischarge', hydrated.portOfDischarge);
     } catch (e) {
       this.loadError.set(toApiError(e).message);
     }

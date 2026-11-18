@@ -24,7 +24,13 @@ import {
 import {BlApi} from './bl.api';
 import {BlAmendComponent} from './bl-amend.component';
 import {BlCheckComponent} from './bl-check.component';
-import {approvalOf, issueCommands, maySubmit, versionNote} from './bl-actions';
+import {
+  approvalOf,
+  issueCommands,
+  mayEdit,
+  maySubmit,
+  versionNote,
+} from './bl-actions';
 import {
   type CloseCommand,
   closeCommands,
@@ -144,6 +150,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
           <!-- the actions on the B/L: CB-44 the draft's and the issue, CB-45 the endorsement,
                CB-46 the surrender and the release -->
           <section class="actions row" aria-label="Actions">
+            @if (canEdit()) {
+              <a class="btn btn-secondary" [routerLink]="['/bls', v.recordId, 'edit']">Edit</a>
+            }
             @if (canSubmit()) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="submit()">Submit for approval</button>
             }
@@ -454,6 +463,9 @@ export class BlDetailComponent {
   protected readonly facts = computed(() =>
     draftFacts(this.shown(), this.names()),
   );
+  protected readonly canEdit = computed(
+    () => !this.issued() && mayEdit(this.draft(), this.user()),
+  );
   protected readonly canSubmit = computed(() =>
     maySubmit(this.draft(), this.auth.perms()),
   );
@@ -745,7 +757,7 @@ export class BlDetailComponent {
       return;
     }
     await this.act('Draft approved', () =>
-      this.bls.approve(this.id(), draft.versionNumber),
+      this.bls.approve(this.id(), draft.versionNumber, draft.revision),
     );
   }
 
