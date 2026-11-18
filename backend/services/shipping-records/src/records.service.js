@@ -154,6 +154,17 @@ function changedMeanwhile() {
 }
 
 /**
+ * The 409 for an archived B/L draft, which can no longer be changed (CB-71).
+ * @return {!ConflictError}
+ */
+function archivedRecord() {
+  return new ConflictError(
+    'This B/L is archived and can no longer be changed',
+    {code: 'draft-archived'},
+  );
+}
+
+/**
  * Shipping records (README.md): draft bills of lading of an organisation, versioned, submitted for
  * review, committed by a second person and sealed. Each record answers the record contract (CB-4)
  * for the shared services; a user sees only their organisation's records.
@@ -361,6 +372,9 @@ export class ShippingRecordsService {
    */
   async saveDraft(id, body, actor, organisationId) {
     const record = await this.requireRecord(id, organisationId);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const data = this.billOfLadingOf(body);
     assertSameDocument(record, data.document);
     const current = record.currentVersion
@@ -463,6 +477,9 @@ export class ShippingRecordsService {
    */
   async submit(id, n, actor, organisationId) {
     const record = await this.requireRecord(id, organisationId);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const version = await this.requireVersion(record, n);
     if (record.draftVersion !== n || version.state !== 'draft') {
       throw new ConflictError(
@@ -520,6 +537,9 @@ export class ShippingRecordsService {
    */
   async commit(id, n, {by, comment, revision}, via) {
     const record = await this.requireRecord(id);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const version = await this.requireVersion(record, n);
     if (version.state === 'committed' && version.approvedById === by.id) {
       return this.getRecord(id);
@@ -616,6 +636,9 @@ export class ShippingRecordsService {
    */
   async approve(id, n, actor, organisationId, {comment, revision} = {}) {
     const record = await this.requireRecord(id, organisationId);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const version = await this.requireVersion(record, n);
     if (draftersOf(version).has(actor.id)) {
       throw ownDraft();
@@ -636,6 +659,9 @@ export class ShippingRecordsService {
    */
   async reject(id, n, {by, comment}, via) {
     const record = await this.requireRecord(id);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const version = await this.requireVersion(record, n);
     if (version.state === 'draft' && version.reviewComment === comment) {
       return this.getRecord(id);
@@ -682,6 +708,68 @@ export class ShippingRecordsService {
       );
     });
     return this.getRecord(id);
+  }
+
+  /**
+   * Archives a never-issued draft (CB-71, `draft` or `in_review`): frees its carrier code and
+   * reference for reuse, hides it from lists, keeps its versions and history, and prevents any
+   * further edits, submissions, approvals or issue. 409 for already archived or committed/issued.
+   * @param {string} id
+   * @param {object} actor
+   * @param {string} organisationId the caller's organisation
+   * @return {!Promise<object>} the record as getRecord answers it
+   */
+  async archive(id, actor, organisationId) {
+    const record = await this.requireRecord(id, organisationId);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
+    if (record.status !== 'draft') {
+      throw new ConflictError(
+        'Only a draft B/L that has not been approved or issued can be archived',
+        {code: 'cannot-archive'},
+      );
+    }
+    const draft = record.draftVersion
+      ? await this.requireVersion(record, record.draftVersion)
+      : null;
+    const now = this.clock();
+    await this.atomic(async () => {
+      if (draft) {
+        const saved = await this.repo.updateVersion(
+          id,
+          draft.versionNumber,
+          {
+            revision: draft.revision + 1,
+            updatedAt: now,
+            changes: [
+              ...(draft.changes || []),
+              this.entry(actor, {action: 'archive'}),
+            ],
+          },
+          {expectedState: draft.state, expectedRevision: draft.revision},
+        );
+        if (!saved) {
+          throw changedMeanwhile();
+        }
+      }
+      await this.repo.updateRecord(id, {
+        status: 'archived',
+        draftState: null,
+        updatedAt: now,
+      });
+      await this.publish(
+        'records.record.archived',
+        {
+          recordId: id,
+          recordNo: record.recordNo,
+          carrierCode: record.carrierCode,
+          versionNumber: draft?.versionNumber ?? null,
+        },
+        actor,
+      );
+    });
+    return this.getRecord(id, organisationId);
   }
 
   // ---------------------------------------------------------------- reading

@@ -93,6 +93,12 @@ describe('stateLabel and stateTone', () => {
     assert.equal(stateLabel(bl({draftState: 'in_review'})), 'In review');
   });
 
+  it('an archived draft reads as Archived with ended tone (CB-71)', () => {
+    const archived = bl({status: 'archived', draftState: null});
+    assert.equal(stateLabel(archived), 'Archived');
+    assert.equal(stateTone(archived), 'ended');
+  });
+
   it('after issue: the title state, live or ended', () => {
     const cases: Array<[string, string, string]> = [
       ['issued', 'Issued', 'live'],

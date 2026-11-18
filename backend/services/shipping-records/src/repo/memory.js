@@ -117,6 +117,7 @@ export function createMemoryRepo() {
   function findByReference({organisationId, carrierCode, recordNo}) {
     return [...records.values()].find(
       r =>
+        r.status !== 'archived' &&
         r.organisationId === organisationId &&
         r.carrierCode === carrierCode &&
         r.recordNo === recordNo,
@@ -186,7 +187,7 @@ export function createMemoryRepo() {
         .filter(
           r => organisationId === null || r.organisationId === organisationId,
         )
-        .filter(r => !status || r.status === status)
+        .filter(r => (status ? r.status === status : r.status !== 'archived'))
         .filter(r => !draftState || r.draftState === draftState)
         .filter(r => !needle || matches(r, needle))
         .sort(
@@ -219,6 +220,9 @@ export function createMemoryRepo() {
     async listPartyRecords({organisationId, limit = 50, offset = 0, number}) {
       const all = [];
       for (const record of records.values()) {
+        if (record.status === 'archived') {
+          continue;
+        }
         const title = titles.get(record.id) ?? null;
         const inChain = (entries.get(record.id) ?? []).some(
           entry => entry.from === organisationId || entry.to === organisationId,

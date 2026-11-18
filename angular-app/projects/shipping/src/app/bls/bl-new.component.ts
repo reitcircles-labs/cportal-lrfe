@@ -486,6 +486,12 @@ export class BlNewComponent {
         id: this.auth.me()?.user.id ?? '',
         perms: this.auth.perms(),
       };
+      if (record.status === 'archived') {
+        this.loadError.set(
+          'This B/L is archived and can no longer be changed.',
+        );
+        return;
+      }
       if (!mayEdit(record.draft, user)) {
         this.loadError.set(
           record.draft === null

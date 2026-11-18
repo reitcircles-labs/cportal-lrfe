@@ -509,9 +509,15 @@ export class TitleService {
   /**
    * Checks that a B/L can be issued now: 409 when it has no committed version, or while a new
    * version is in review.
-   * @param {{currentVersion: ?number, draftState: ?string}} record
+   * @param {{status?: string, currentVersion: ?number, draftState: ?string}} record
    */
   requireIssuable(record) {
+    if (record.status === 'archived') {
+      throw new ConflictError(
+        'This B/L is archived and can no longer be changed',
+        {code: 'draft-archived'},
+      );
+    }
     if (!record.currentVersion) {
       throw new ConflictError(
         'This B/L has no committed version yet: it can be issued once a version is committed',

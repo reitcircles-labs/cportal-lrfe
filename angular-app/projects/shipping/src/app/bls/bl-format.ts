@@ -105,6 +105,9 @@ export function stateLabel(bl: BlState): string {
   if (bl.title) {
     return STATE_NAMES.get(bl.title.state)?.label ?? bl.title.state;
   }
+  if (bl.status === 'archived') {
+    return 'Archived';
+  }
   if (bl.draftState === 'in_review') {
     return 'In review';
   }
@@ -123,6 +126,9 @@ export function stateTone(bl: BlState): StateTone {
   if (bl.title) {
     const ended = STATE_NAMES.get(bl.title.state)?.ended ?? false;
     return ended ? 'ended' : 'live';
+  }
+  if (bl.status === 'archived') {
+    return 'ended';
   }
   if (bl.status === 'draft' && bl.draftState !== 'in_review') {
     return 'draft';

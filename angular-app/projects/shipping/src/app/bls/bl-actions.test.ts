@@ -8,6 +8,7 @@ import {
   approvalOf,
   draftersOf,
   issueCommands,
+  mayArchive,
   mayDraft,
   mayEdit,
   maySubmit,
@@ -129,6 +130,35 @@ describe('submitting a draft and drafting a new B/L', () => {
       false,
     );
     assert.equal(mayEdit(null, lena), false);
+  });
+
+  it('archiving a draft (CB-71): any carrier user with bl.draft on a never-issued draft (draft or in review)', () => {
+    assert.equal(
+      mayArchive({status: 'draft', draftState: 'draft', title: null}, CLERK),
+      true,
+    );
+    assert.equal(
+      mayArchive(
+        {status: 'draft', draftState: 'in_review', title: null},
+        CLERK,
+      ),
+      true,
+    );
+    assert.equal(
+      mayArchive({status: 'committed', draftState: null, title: null}, MANAGER),
+      false,
+    );
+    assert.equal(
+      mayArchive({status: 'archived', draftState: null, title: null}, CLERK),
+      false,
+    );
+    assert.equal(
+      mayArchive({status: 'draft', draftState: 'draft', title: null}, [
+        'bl.read',
+      ]),
+      false,
+    );
+    assert.equal(mayArchive(null, CLERK), false);
   });
 });
 

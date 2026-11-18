@@ -581,6 +581,35 @@ for (const store of stores()) {
         expect(identity.asked).to.deep.equal([CARRIER]);
       });
 
+      it('leaves archived drafts out of the party list and number search (CB-71)', async () => {
+        const ref = nextReference('NA');
+        const id = await draftBl(ctx, CARRIER, ref);
+        const archived = await ctx.app.inject({
+          method: 'POST',
+          url: `/records/${id}/archive`,
+          headers: ctx.as(staffOf(CARRIER)),
+        });
+        expect(archived.statusCode, archived.body).to.equal(200);
+        expect(
+          (await listOf(ctx, CARRIER)).items.map(i => i.id),
+        ).to.not.include(id);
+        const byNumber = await ctx.app.inject({
+          method: 'GET',
+          url: `/records/title?number=${encodeURIComponent(ref)}`,
+          headers: ctx.as(staffOf(CARRIER)),
+        });
+        expect(byNumber.statusCode).to.equal(200);
+        expect(byNumber.json().items).to.deep.equal([]);
+        // Issuing an archived draft is refused
+        const issued = await ctx.app.inject({
+          method: 'POST',
+          url: `/records/${id}/title/issue`,
+          headers: ctx.as(staffOf(CARRIER)),
+          payload: {},
+        });
+        expect(issued.statusCode).to.equal(409);
+      });
+
       it('an organisation identity has no name for is left out; the rest are named', async () => {
         const id = await committedBl(ctx, CARRIER, nextReference('NU'));
         await run(ctx, id, 'issue', CARRIER);

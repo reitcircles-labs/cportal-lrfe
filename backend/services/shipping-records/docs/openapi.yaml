@@ -313,6 +313,61 @@ paths:
       x-access:
         allOf:
           - bl.draft
+  /records/{id}/archive:
+    post:
+      tags:
+        - Records
+      summary: Archive a never-issued draft B/L
+      description: >-
+        Moves an unapproved draft B/L (`draft` or `in_review`) to `archived` (CB-71), hides it from lists and number search, frees its
+        carrier code and reference for reuse, and keeps its versions and history while refusing further edits, submissions, approvals or
+        issue (409 `draft-archived`). 409 (`cannot-archive`) if already approved or issued; 404 for another organisation.
+
+
+        **Access:** Signed-in user with permission `bl.draft`.
+      operationId: postRecordsIdArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.draft
   /records/{id}/versions/{n}/approve:
     post:
       tags:

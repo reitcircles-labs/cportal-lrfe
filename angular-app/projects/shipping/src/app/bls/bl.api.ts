@@ -138,6 +138,17 @@ export class BlApi {
   }
 
   /**
+   * Archives a never-issued draft B/L (CB-71): frees its number and hides it from lists.
+   * @param id the B/L's id
+   * @return the record
+   */
+  archive(id: string): Promise<BlRecord> {
+    return this.api.post<BlRecord>(
+      `/records/${encodeURIComponent(id)}/archive`,
+    );
+  }
+
+  /**
    * Submits a draft for approval by a second person (CB-44).
    * @param id the B/L's id
    * @param version the draft's version number

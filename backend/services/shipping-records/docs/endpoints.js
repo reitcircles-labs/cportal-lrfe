@@ -30,6 +30,12 @@ export const ENDPOINTS = {
       description:
         'The draft is frozen in review, with you as its submitter, until a second person commits it or sends it back. 409 when version `n` is not the open draft, or when it was changed meanwhile.',
     },
+    'POST /records/{id}/archive': {
+      tag: 'Records',
+      summary: 'Archive a never-issued draft B/L',
+      description:
+        'Moves an unapproved draft B/L (`draft` or `in_review`) to `archived` (CB-71), hides it from lists and number search, frees its carrier code and reference for reuse, and keeps its versions and history while refusing further edits, submissions, approvals or issue (409 `draft-archived`). 409 (`cannot-archive`) if already approved or issued; 404 for another organisation.',
+    },
     'POST /records/{id}/versions/{n}/approve': {
       tag: 'Records',
       summary: 'Approve a version in review, as a second person (four eyes)',

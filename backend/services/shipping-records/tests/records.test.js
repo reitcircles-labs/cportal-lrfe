@@ -673,5 +673,129 @@ for (const store of stores()) {
         expect(committed.data.documentHash).to.equal(version.documentHash);
       });
     });
+
+    describe('archiving a draft (CB-71)', () => {
+      it('archives an unsubmitted or in-review draft, hides it from lists/search, frees its number, and blocks further changes', async () => {
+        const draft = (
+          await createAs(ctx, users.a1, exampleWithReference('ARCH000001'))
+        ).json();
+        const archived = await call(
+          ctx,
+          'POST',
+          `/records/${draft.id}/archive`,
+          ctx.as(users.a2),
+        );
+        expect(archived.statusCode, archived.body).to.equal(200);
+        const body = archived.json();
+        expect(body.status).to.equal('archived');
+        expect(body.draftState).to.equal(null);
+        expect(body.draft.changes.at(-1).action).to.equal('archive');
+        expect(body.draft.changes.at(-1).byId).to.equal(users.a2.id);
+
+        // Gone from /records
+        expect(
+          (await call(ctx, 'GET', '/records', ctx.as(users.a1)))
+            .json()
+            .items.map(r => r.id),
+        ).to.not.include(draft.id);
+
+        // Versions and history are kept on direct read
+        const kept = await call(
+          ctx,
+          'GET',
+          `/records/${draft.id}`,
+          ctx.as(users.a1),
+        );
+        expect(kept.statusCode).to.equal(200);
+        expect(kept.json().status).to.equal('archived');
+        const versions = await call(
+          ctx,
+          'GET',
+          `/records/${draft.id}/versions`,
+          ctx.as(users.a1),
+        );
+        expect(versions.statusCode).to.equal(200);
+        expect(versions.json()).to.have.length(1);
+
+        // The B/L number is freed for a new draft with the same carrier code and number
+        const reused = await createAs(
+          ctx,
+          users.a1,
+          exampleWithReference('ARCH000001'),
+        );
+        expect(reused.statusCode, reused.body).to.equal(201);
+
+        // Every change to the archived B/L is refused (409)
+        for (const [method, url, caller, payload] of [
+          [
+            'PUT',
+            `/records/${draft.id}/draft`,
+            users.a1,
+            {format: 'dcsa-3.0', document: exampleWithReference('ARCH000001')},
+          ],
+          ['POST', `/records/${draft.id}/versions/1/submit`, users.a1],
+          [
+            'POST',
+            `/records/${draft.id}/versions/1/approve`,
+            {...users.a2, perms: ['bl.read', 'bl.draft', 'bl.issue']},
+            {},
+          ],
+          ['POST', `/records/${draft.id}/archive`, users.a1],
+        ]) {
+          const res = await call(ctx, method, url, ctx.as(caller), payload);
+          expect(res.statusCode, `${method} ${url}: ${res.body}`).to.equal(409);
+        }
+
+        // An in-review draft can also be archived; event is published
+        const inReviewId = await submittedDraft(ctx, users.a1, 'ARCHREV001');
+        const archivedReview = await call(
+          ctx,
+          'POST',
+          `/records/${inReviewId}/archive`,
+          ctx.as(users.a1),
+        );
+        expect(archivedReview.statusCode, archivedReview.body).to.equal(200);
+        expect(archivedReview.json().status).to.equal('archived');
+        expect(
+          ctx.published.filter(e => e.type === 'records.record.archived'),
+        ).to.have.length(2);
+      });
+
+      it('refuses archiving a committed/issued B/L (409), another org (404), or without bl.draft (403)', async () => {
+        const id = await submittedDraft(ctx, users.a1, 'ARCHCOMM01');
+        await decide(ctx, 'commit', id, 1, {by: by(users.a2)});
+        const committed = await call(
+          ctx,
+          'POST',
+          `/records/${id}/archive`,
+          ctx.as(users.a1),
+        );
+        expect(committed.statusCode, committed.body).to.equal(409);
+
+        const draft = (
+          await createAs(ctx, users.a1, exampleWithReference('ARCHAUTH01'))
+        ).json();
+        expect(
+          (
+            await call(
+              ctx,
+              'POST',
+              `/records/${draft.id}/archive`,
+              ctx.as(users.b1),
+            )
+          ).statusCode,
+        ).to.equal(404);
+        expect(
+          (
+            await call(
+              ctx,
+              'POST',
+              `/records/${draft.id}/archive`,
+              ctx.as(users.aReader),
+            )
+          ).statusCode,
+        ).to.equal(403);
+      });
+    });
   });
 }

@@ -4,7 +4,7 @@
  * issue to the shipper. The record service checks each again; these only decide what the page
  * offers. Tested by bl-actions.test.ts (`npm run test:shipping`).
  */
-import type {DraftVersion} from './bl.model';
+import type {BlState, DraftVersion} from './bl.model';
 
 /** How a user stands towards a draft in review. */
 export type ApprovalState = 'approve' | 'own-draft' | 'waiting';
@@ -129,6 +129,20 @@ export function mayEdit(draft: DraftVersion | null, user: Approver): boolean {
  */
 export function mayDraft(perms: readonly string[]): boolean {
   return perms.includes(DRAFT_PERMISSION);
+}
+
+/**
+ * Whether the user may archive a never-issued draft B/L (CB-71): draft or in review, never
+ * committed/issued, with the permission to draft.
+ * @param record the B/L's state, null when not loaded
+ * @param perms the user's permissions
+ * @return true when the page offers Archive
+ */
+export function mayArchive(
+  record: BlState | null,
+  perms: readonly string[],
+): boolean {
+  return record?.status === 'draft' && perms.includes(DRAFT_PERMISSION);
 }
 
 /**

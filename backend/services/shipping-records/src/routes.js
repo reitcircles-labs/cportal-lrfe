@@ -347,6 +347,12 @@ export async function recordsRoutes(app, {service}) {
       service.submit(req.params.id, req.params.n, actorOf(req), ownerOf(req)),
   );
 
+  app.post(
+    '/records/:id/archive',
+    {onRequest: canDraft, schema: idParams()},
+    async req => service.archive(req.params.id, actorOf(req), ownerOf(req)),
+  );
+
   // ------------------------------------------------ approval on the platform (CB-44)
 
   // a second person of the B/L's organisation approves the version in review (four eyes: never
