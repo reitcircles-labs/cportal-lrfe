@@ -4,7 +4,7 @@
  * issue to the shipper. The record service checks each again; these only decide what the page
  * offers. Tested by bl-actions.test.ts (`npm run test:shipping`).
  */
-import type {DraftVersion} from './bl.model';
+import type {BlState, DraftVersion} from './bl.model';
 
 /** How a user stands towards a draft in review. */
 export type ApprovalState = 'approve' | 'own-draft' | 'waiting';
@@ -108,12 +108,41 @@ export function maySubmit(
 }
 
 /**
+ * Whether the user may edit an unapproved draft (CB-70): before submit, while in review, or
+ * after it was sent back, by its author only.
+ * @param draft the open draft, null when there is none
+ * @param user who looks at it: their id and permissions
+ * @return true when the page offers Edit
+ */
+export function mayEdit(draft: DraftVersion | null, user: Approver): boolean {
+  if (draft === null || !user.perms.includes(DRAFT_PERMISSION)) {
+    return false;
+  }
+  const editable = draft.state === 'draft' || draft.state === 'in_review';
+  return editable && draft.createdById === user.id;
+}
+
+/**
  * Whether the user may draft a new B/L.
  * @param perms the user's permissions
  * @return true with the permission to draft
  */
 export function mayDraft(perms: readonly string[]): boolean {
   return perms.includes(DRAFT_PERMISSION);
+}
+
+/**
+ * Whether the user may archive a never-issued draft B/L (CB-71): draft or in review, never
+ * committed/issued, with the permission to draft.
+ * @param record the B/L's state, null when not loaded
+ * @param perms the user's permissions
+ * @return true when the page offers Archive
+ */
+export function mayArchive(
+  record: BlState | null,
+  perms: readonly string[],
+): boolean {
+  return record?.status === 'draft' && perms.includes(DRAFT_PERMISSION);
 }
 
 /**

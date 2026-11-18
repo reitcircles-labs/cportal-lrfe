@@ -117,6 +117,7 @@ export function createMemoryRepo() {
   function findByReference({organisationId, carrierCode, recordNo}) {
     return [...records.values()].find(
       r =>
+        r.status !== 'archived' &&
         r.organisationId === organisationId &&
         r.carrierCode === carrierCode &&
         r.recordNo === recordNo,
@@ -186,7 +187,7 @@ export function createMemoryRepo() {
         .filter(
           r => organisationId === null || r.organisationId === organisationId,
         )
-        .filter(r => !status || r.status === status)
+        .filter(r => (status ? r.status === status : r.status !== 'archived'))
         .filter(r => !draftState || r.draftState === draftState)
         .filter(r => !needle || matches(r, needle))
         .sort(
@@ -212,13 +213,16 @@ export function createMemoryRepo() {
      *   number?: string,
      * }} query
      * @return {!Promise<{
-     *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
+     *   items: !Array<{record: object, title: ?object, inChain: boolean, version: ?object}>,
      *   total: number,
      * }>}
      */
     async listPartyRecords({organisationId, limit = 50, offset = 0, number}) {
       const all = [];
       for (const record of records.values()) {
+        if (record.status === 'archived') {
+          continue;
+        }
         const title = titles.get(record.id) ?? null;
         const inChain = (entries.get(record.id) ?? []).some(
           entry => entry.from === organisationId || entry.to === organisationId,
@@ -234,7 +238,12 @@ export function createMemoryRepo() {
           number === undefined ||
           record.recordNo.toLowerCase() === number.toLowerCase();
         if (party && numbered) {
-          all.push({record, title, inChain});
+          const latestVersion = record.currentVersion ?? record.draftVersion;
+          const version =
+            latestVersion === null || latestVersion === undefined
+              ? null
+              : (findVersion(record.id, latestVersion) ?? null);
+          all.push({record, title, inChain, version});
         }
       }
       all.sort(

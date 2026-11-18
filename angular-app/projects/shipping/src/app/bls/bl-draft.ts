@@ -7,7 +7,7 @@
  * document against DCSA and names every problem; this form only checks that nothing is missing.
  * Tested by bl-draft.test.ts (`npm run test:shipping`).
  */
-import type {PartyOrganisation} from './bl.model';
+import type {DraftVersion, PartyOrganisation} from './bl.model';
 
 /** The B/L format the form writes (one of the record service's formats, `LRFE_BL_FORMATS`). */
 export const DRAFT_FORMAT = 'dcsa-3.0';
@@ -341,6 +341,122 @@ export function draftRequest(
     utilizedTransportEquipments: [equipment],
   };
   return {format: DRAFT_FORMAT, document, partyOrganisations};
+}
+
+/**
+ * Reads an object property as a record, or an empty object.
+ * @param value the parent value
+ * @param key the property name
+ * @return the nested record
+ */
+function obj(value: unknown, key: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object') {
+    return {};
+  }
+  const child = (value as Record<string, unknown>)[key];
+  return child !== null && typeof child === 'object'
+    ? (child as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * Reads a positive number from an unknown value, or null.
+ * @param value the value
+ * @return the number, or null
+ */
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Fills the B/L form from a saved draft version (CB-70).
+ * @param version the draft version
+ * @return the form
+ */
+export function draftFormOf(
+  version: DraftVersion | null | undefined,
+): DraftForm {
+  const doc = version?.data?.document ?? {};
+  const parties = version?.data?.partyOrganisations ?? {};
+  const docParties = obj(doc, 'documentParties');
+  const issuingAddress = obj(obj(docParties, 'issuingParty'), 'address');
+  const transports = obj(doc, 'transports');
+  const voyages = Array.isArray(transports['vesselVoyages'])
+    ? (transports['vesselVoyages'] as unknown[])
+    : [];
+  const voyage =
+    voyages[0] !== null && typeof voyages[0] === 'object'
+      ? (voyages[0] as Record<string, unknown>)
+      : {};
+  const equipments = Array.isArray(doc['utilizedTransportEquipments'])
+    ? (doc['utilizedTransportEquipments'] as unknown[])
+    : [];
+  const equipEntry =
+    equipments[0] !== null && typeof equipments[0] === 'object'
+      ? (equipments[0] as Record<string, unknown>)
+      : {};
+  const equipment = obj(equipEntry, 'equipment');
+  const seals = Array.isArray(equipEntry['seals'])
+    ? (equipEntry['seals'] as unknown[])
+    : [];
+  const firstSeal =
+    seals[0] !== null && typeof seals[0] === 'object'
+      ? (seals[0] as Record<string, unknown>)
+      : {};
+  const consignments = Array.isArray(doc['consignmentItems'])
+    ? (doc['consignmentItems'] as unknown[])
+    : [];
+  const consignment =
+    consignments[0] !== null && typeof consignments[0] === 'object'
+      ? (consignments[0] as Record<string, unknown>)
+      : {};
+  const goods = Array.isArray(consignment['descriptionOfGoods'])
+    ? (consignment['descriptionOfGoods'] as unknown[])
+    : [];
+  const hsCodes = Array.isArray(consignment['HSCodes'])
+    ? (consignment['HSCodes'] as unknown[])
+    : [];
+  const cargoItems = Array.isArray(consignment['cargoItems'])
+    ? (consignment['cargoItems'] as unknown[])
+    : [];
+  const cargo =
+    cargoItems[0] !== null && typeof cargoItems[0] === 'object'
+      ? (cargoItems[0] as Record<string, unknown>)
+      : {};
+  const grossWeight = obj(cargo, 'cargoGrossWeight');
+  const packaging = obj(cargo, 'outerPackaging');
+  const defaults = emptyDraftForm();
+  const toOrder = doc['isToOrder'] !== false;
+  return {
+    reference: textOf(doc['transportDocumentReference']),
+    carrierCode: textOf(doc['carrierCode']),
+    bookingReference: textOf(consignment['carrierBookingReference']),
+    toOrder,
+    shipperId: textOf(parties['shipper']),
+    consigneeId: toOrder ? '' : textOf(parties['consignee']),
+    issuerStreet: textOf(issuingAddress['street']),
+    issuerCity: textOf(issuingAddress['city']),
+    issuerCountry: textOf(issuingAddress['countryCode']),
+    vesselName: textOf(voyage['vesselName']),
+    voyageNumber: textOf(voyage['carrierExportVoyageNumber']),
+    portOfLoading: textOf(obj(transports, 'portOfLoading')['UNLocationCode']),
+    portOfDischarge: textOf(
+      obj(transports, 'portOfDischarge')['UNLocationCode'],
+    ),
+    departureDate: textOf(transports['plannedDepartureDate']),
+    arrivalDate: textOf(transports['plannedArrivalDate']),
+    containerNumber: textOf(equipment['equipmentReference']),
+    isoEquipmentCode:
+      textOf(equipment['ISOEquipmentCode']) || defaults.isoEquipmentCode,
+    sealNumber: textOf(firstSeal['number']),
+    goods: textOf(goods[0]),
+    hsCode: textOf(hsCodes[0]),
+    packages: numberOrNull(packaging['numberOfPackages']),
+    packageDescription: textOf(packaging['description']),
+    grossWeightKg: numberOrNull(grossWeight['value']),
+    termsAndConditions:
+      textOf(doc['termsAndConditions']) || defaults.termsAndConditions,
+  };
 }
 
 /**

@@ -206,7 +206,7 @@ export const TITLE_WORDING = Object.freeze({
 
   draftOpen:
     'A new version of this B/L is being drafted or in review: ' +
-    'finish or discard that draft before amending or splitting the B/L',
+    'finish or archive that draft before amending or splitting the B/L',
 
   missingDocument: 'Send the new document of the B/L with its format',
 

@@ -73,7 +73,26 @@ export function createSequelizeRepo(sequelize) {
      * @return {!Promise<void>}
      */
     async sync() {
+      // On an existing install (CB-71), add 'archived' to the status enum before sync()
+      await sequelize.query(`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE n.nspname = '${SCHEMA}' AND t.typname = 'enum_bill_of_lading_status'
+          ) THEN
+            ALTER TYPE "${SCHEMA}"."enum_bill_of_lading_status" ADD VALUE IF NOT EXISTS 'archived';
+          END IF;
+        END $$;
+      `);
       await sequelize.sync();
+      // Replace the old full unique index with a partial one so archived drafts free their numbers
+      await sequelize.query(
+        `DROP INDEX IF EXISTS "${SCHEMA}"."bill_of_lading_organisation_id_carrier_code_record_no"`,
+      );
+      await sequelize.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "bill_of_lading_active_reference" ON "${SCHEMA}"."bill_of_lading" ("organisationId", "carrierCode", "recordNo") WHERE "status" <> 'archived'`,
+      );
       // the audit service's backfill reads committed seals in this order
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "bl_version_seal_order" ON "${SCHEMA}"."bl_version" ("committedAt", "recordId", "versionNumber") WHERE "seal" IS NOT NULL`,
@@ -141,7 +160,12 @@ export function createSequelizeRepo(sequelize) {
     async findRecord({organisationId, carrierCode, recordNo}) {
       return plain(
         await models.Record.findOne({
-          where: {organisationId, carrierCode, recordNo},
+          where: {
+            organisationId,
+            carrierCode,
+            recordNo,
+            status: {[Op.ne]: 'archived'},
+          },
         }),
       );
     },
@@ -169,9 +193,7 @@ export function createSequelizeRepo(sequelize) {
       if (organisationId !== null) {
         where.organisationId = organisationId;
       }
-      if (status) {
-        where.status = status;
-      }
+      where.status = status ?? {[Op.ne]: 'archived'};
       if (draftState) {
         where.draftState = draftState;
       }
@@ -206,7 +228,7 @@ export function createSequelizeRepo(sequelize) {
      *   number?: string,
      * }} query
      * @return {!Promise<{
-     *   items: !Array<{record: object, title: ?object, inChain: boolean}>,
+     *   items: !Array<{record: object, title: ?object, inChain: boolean, version: ?object}>,
      *   total: number,
      * }>}
      */
@@ -223,7 +245,8 @@ export function createSequelizeRepo(sequelize) {
         numbered = 'AND lower(r."recordNo") = lower(:number)';
       }
       const where = `
-        WHERE ((t."recordId" IS NULL AND r."organisationId" = :org)
+        WHERE r."status" <> 'archived'
+          AND ((t."recordId" IS NULL AND r."organisationId" = :org)
           OR t."carrier" = :org OR t."holder" = :org OR t."consignee" = :org
           OR ${inChain})
           ${numbered}`;
@@ -243,12 +266,25 @@ export function createSequelizeRepo(sequelize) {
       const ids = rows.map(row => row.id);
       const records = await models.Record.findAll({where: {id: ids}});
       const titles = await models.Title.findAll({where: {recordId: ids}});
+      const targetVersions = records
+        .map(row => ({
+          recordId: row.id,
+          versionNumber: row.currentVersion ?? row.draftVersion,
+        }))
+        .filter(v => v.versionNumber !== null && v.versionNumber !== undefined);
+      const latestVersions = targetVersions.length
+        ? await models.Version.findAll({where: {[Op.or]: targetVersions}})
+        : [];
       const recordById = new Map(records.map(row => [row.id, plain(row)]));
       const titleById = new Map(titles.map(row => [row.recordId, plain(row)]));
+      const versionByRecord = new Map(
+        latestVersions.map(row => [row.recordId, plain(row)]),
+      );
       const items = rows.map(row => ({
         record: recordById.get(row.id),
         title: titleById.get(row.id) ?? null,
         inChain: row.inChain,
+        version: versionByRecord.get(row.id) ?? null,
       }));
       return {items, total};
     },

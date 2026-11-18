@@ -349,6 +349,40 @@ function partiesOf(stored) {
 }
 
 /**
+ * Latest ports, shipper, consignee and kind for a row of the B/L list (CB-72).
+ * @param {?object} version the latest committed or draft version
+ * @param {?object} title the stored title, null before issue
+ * @return {{
+ *   portOfLoading: ?string,
+ *   portOfDischarge: ?string,
+ *   shipper: ?string,
+ *   shipperName: ?string,
+ *   consignee: ?string,
+ *   consigneeName: ?string,
+ *   draftKind: ?string,
+ * }}
+ */
+function listMetaOf(version, title) {
+  const doc = version?.data?.document ?? null;
+  const parties = version?.data?.partyOrganisations ?? {};
+  const draftKind = title?.kind ?? (doc ? kindOf(doc) : null);
+  const negotiable = draftKind === 'negotiable' || doc?.isToOrder === true;
+  return {
+    portOfLoading: doc?.transports?.portOfLoading?.UNLocationCode ?? null,
+    portOfDischarge: doc?.transports?.portOfDischarge?.UNLocationCode ?? null,
+    shipper: parties.shipper ?? null,
+    shipperName: doc?.documentParties?.shipper?.partyName ?? null,
+    consignee: negotiable
+      ? null
+      : (parties.consignee ?? title?.consignee ?? null),
+    consigneeName: negotiable
+      ? null
+      : (doc?.documentParties?.consignee?.partyName ?? null),
+    draftKind,
+  };
+}
+
+/**
  * A stored title as the list of a party's B/Ls gives it (CB-42), or null before issue.
  * @param {?object} stored
  * @return {?object}
@@ -509,9 +543,15 @@ export class TitleService {
   /**
    * Checks that a B/L can be issued now: 409 when it has no committed version, or while a new
    * version is in review.
-   * @param {{currentVersion: ?number, draftState: ?string}} record
+   * @param {{status?: string, currentVersion: ?number, draftState: ?string}} record
    */
   requireIssuable(record) {
+    if (record.status === 'archived') {
+      throw new ConflictError(
+        'This B/L is archived and can no longer be changed',
+        {code: 'draft-archived'},
+      );
+    }
     if (!record.currentVersion) {
       throw new ConflictError(
         'This B/L has no committed version yet: it can be issued once a version is committed',
@@ -1346,6 +1386,7 @@ export class TitleService {
    *   items: !Array<object>,
    *   total: number,
    *   organisationNames: !Object<string, string>,
+   *   ports: !Object<string, !Object>,
    * }>}
    */
   async listForParty(actor, {limit = 50, offset = 0, number} = {}) {
@@ -1362,17 +1403,33 @@ export class TitleService {
       offset,
       number: numberOf(number),
     });
-    const items = page.items.map(({record, title, inChain}) => ({
+    const items = page.items.map(({record, title, inChain, version}) => ({
       ...summaryOf(record),
+      ...listMetaOf(version, title),
       title: titleSummaryOf(title),
       roles: rolesOf(record, title, inChain, organisation),
     }));
     const named = [];
-    for (const {record, title} of page.items) {
-      named.push(record.organisationId, ...partiesOf(title));
+    const ports = {};
+    for (const [i, {record, title}] of page.items.entries()) {
+      const item = items[i];
+      named.push(
+        record.organisationId,
+        ...partiesOf(title),
+        item.shipper,
+        item.consignee,
+      );
+      for (const code of [item.portOfLoading, item.portOfDischarge]) {
+        if (code && !Object.hasOwn(ports, code)) {
+          const port = this.ports?.get(code);
+          if (port) {
+            ports[code] = port;
+          }
+        }
+      }
     }
     const organisationNames = await this.namesOf(named);
-    return {items, total: page.total, organisationNames};
+    return {items, total: page.total, organisationNames, ports};
   }
 
   /**

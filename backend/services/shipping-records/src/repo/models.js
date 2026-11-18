@@ -43,8 +43,11 @@ export function defineModels(sequelize) {
       label: {type: DataTypes.STRING, allowNull: false},
       // the owner: the organisation of the user who created it (CB-18)
       organisationId: {type: DataTypes.STRING, allowNull: false},
-      // draft = never committed; committed = has a current version (a change may be in progress)
-      status: {type: DataTypes.ENUM('draft', 'committed'), allowNull: false},
+      // draft = never committed; committed = has a current version; archived = discarded draft (CB-71)
+      status: {
+        type: DataTypes.ENUM('draft', 'committed', 'archived'),
+        allowNull: false,
+      },
       currentVersion: {type: DataTypes.INTEGER},
       draftVersion: {type: DataTypes.INTEGER},
       draftState: {type: DataTypes.ENUM('draft', 'in_review')}, // state of the open draft, for lists
@@ -54,14 +57,7 @@ export function defineModels(sequelize) {
       updatedAt: {type: DataTypes.DATE, allowNull: false},
     },
     tableOptions({
-      indexes: [
-        // A reference is unique per organisation, not on the platform: drafts are private, so a
-        // second organisation's draft with the same reference must never be refused (that would
-        // reveal the first). One issued B/L per carrier reference on the platform is a rule of
-        // issuing (L3/L4), not of drafts.
-        {unique: true, fields: ['organisationId', 'carrierCode', 'recordNo']},
-        {fields: ['organisationId', 'createdAt']},
-      ],
+      indexes: [{fields: ['organisationId', 'createdAt']}],
     }),
   );
 

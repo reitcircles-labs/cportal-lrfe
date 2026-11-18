@@ -90,7 +90,10 @@ export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'not-set-up':
     'B/L actions are not available yet on this platform. Tell your administrator.',
   'draft-open':
-    'A new version of this B/L is being drafted or waits for approval: finish or discard it first.',
+    'A new version of this B/L is being drafted or waits for approval: finish or archive it first.',
+  'draft-archived': 'This B/L is archived and can no longer be changed.',
+  'cannot-archive':
+    'Only a draft B/L that has not been approved or issued can be archived.',
   'missing-document': 'The new document of the B/L is missing.',
   'different-reference':
     'The new document must keep the carrier code and the reference of this B/L.',
@@ -101,6 +104,7 @@ export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'reference-taken': 'The carrier already has a B/L with that reference.',
   'own-draft':
     'You drafted or changed this version, so another person must approve it.',
+  'not-author': 'Only the person who created this draft may edit it.',
   'proof-unavailable':
     'The proof on the blockchain cannot be read now: try again later.',
   'no-number': 'Give the number of the B/L to look for.',
@@ -136,6 +140,8 @@ const RELOAD_CODES: ReadonlySet<string> = new Set([
   'closed',
   'not-holder',
   'not-carrier',
+  'draft-archived',
+  'cannot-archive',
 ]);
 
 /** What an earlier holder is told of a change after it held the B/L. */

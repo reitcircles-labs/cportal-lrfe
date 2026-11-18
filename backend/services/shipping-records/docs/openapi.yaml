@@ -215,6 +215,9 @@ paths:
                   type: object
                 partyOrganisations:
                   type: object
+                revision:
+                  type: integer
+                  minimum: 1
       responses:
         "200":
           description: OK
@@ -310,6 +313,61 @@ paths:
       x-access:
         allOf:
           - bl.draft
+  /records/{id}/archive:
+    post:
+      tags:
+        - Records
+      summary: Archive a never-issued draft B/L
+      description: >-
+        Moves an unapproved draft B/L (`draft` or `in_review`) to `archived` (CB-71), hides it from lists and number search, frees its
+        carrier code and reference for reuse, and keeps its versions and history while refusing further edits, submissions, approvals or
+        issue (409 `draft-archived`). 409 (`cannot-archive`) if already approved or issued; 404 for another organisation.
+
+
+        **Access:** Signed-in user with permission `bl.draft`.
+      operationId: postRecordsIdArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.draft
   /records/{id}/versions/{n}/approve:
     post:
       tags:
@@ -352,6 +410,9 @@ paths:
                 comment:
                   type: string
                   maxLength: 4000
+                revision:
+                  type: integer
+                  minimum: 1
       responses:
         "200":
           description: OK
@@ -757,17 +818,19 @@ paths:
         - Records
       summary: List the B/Ls your organisation is party to
       description: >-
-        `{ items, total }`, newest first; `limit` (1 to 200, 50 by default) and `offset` page it. The B/Ls your session's organisation sees
-        with `GET /records/{id}/title`: before issue the ones it owns (its drafts, in review or committed), after it those of which it is
-        the carrier, the current holder, a past holder or the consignee. Never another organisation's B/L; the organisation is never taken
-        from the request. `number` (CB-47, up to 100 characters): only the B/Ls of that number (the whole transport document reference,
-        whatever its case and the spaces around it; two carriers may use the same one); another organisation's B/L of that number is never
-        found, so the answer is the same as for a number nobody uses; 400 for a blank number. Each item: the fields of `GET /records` (`id`,
-        `recordNo`, `carrierCode`, `label`, `status`, `draftState`, ...), `title` (`{ kind, state, carrier, holder, endorsement, consignee,
-        updatedAt }`, null before issue) and `roles`, your organisation's roles on it (`carrier`, `holder`, `past-holder`, `consignee`; the
-        carrier is never its own past holder). `organisationNames`: `{ id: name }` of the organisations the items name (owner, carrier,
-        holder, consignee), as identity gives them; one it gives no name for, or every one while identity cannot answer, is left out (show
-        its id): the list never fails for a name. 403 for a user of no organisation.
+        `{ items, total, organisationNames, ports }`, newest first; `limit` (1 to 200, 50 by default) and `offset` page it. The B/Ls your
+        session's organisation sees with `GET /records/{id}/title`: before issue the ones it owns (its drafts, in review or committed),
+        after it those of which it is the carrier, the current holder, a past holder or the consignee. Never another organisation's B/L; the
+        organisation is never taken from the request. `number` (CB-47, up to 100 characters): only the B/Ls of that number (the whole
+        transport document reference, whatever its case and the spaces around it; two carriers may use the same one); another organisation's
+        B/L of that number is never found, so the answer is the same as for a number nobody uses; 400 for a blank number. Each item: the
+        fields of `GET /records` (`id`, `recordNo`, `carrierCode`, `label`, `status`, `draftState`, ...), latest `portOfLoading`,
+        `portOfDischarge`, `shipper`, `shipperName`, `consignee`, `consigneeName`, `draftKind` (CB-72), `title` (`{ kind, state, carrier,
+        holder, endorsement, consignee, updatedAt }`, null before issue) and `roles`, your organisation's roles on it (`carrier`, `holder`,
+        `past-holder`, `consignee`; the carrier is never its own past holder). `organisationNames`: `{ id: name }` of the organisations the
+        items name (owner, carrier, holder, shipper, consignee), as identity gives them; one it gives no name for, or every one while
+        identity cannot answer, is left out (show its id): the list never fails for a name. `ports`: `{ code: { code, name, country } }` of
+        the UN/LOCODE ports the items name. 403 for a user of no organisation.
 
 
         **Access:** Signed-in user with permission `bl.read`.

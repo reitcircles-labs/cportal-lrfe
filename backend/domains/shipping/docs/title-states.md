@@ -169,7 +169,7 @@ found" before any refusal that would tell the B/L's state.
 | `organisations-unavailable` | 503 | the organisations cannot be checked now, or listed for a new B/L (`GET /records/organisations`, CB-44) | The organisations cannot be checked now: try again later. |
 | `changed-meanwhile` | 409 | another command changed the title since it was read (of two at the same moment, one wins) | This B/L changed meanwhile: read it again |
 | `not-set-up` | 503 | the platform has no signing key (production without `TITLE_SIGNER`) | Title commands are not available yet: the platform signature is not set up. Tell the administrator. |
-| `draft-open` | 409 | `amend` or `split` while a version of the B/L is being drafted or in review | A new version of this B/L is being drafted or in review: finish or discard that draft before amending or splitting the B/L |
+| `draft-open` | 409 | `amend` or `split` while a version of the B/L is being drafted or in review | A new version of this B/L is being drafted or in review: finish or archive that draft before amending or splitting the B/L |
 | `missing-document` | 400 | `amend`, or a child of `split`, without a document | Send the new document of the B/L with its format |
 | `different-reference` | 400 | the new document changes the carrier code or the reference (`amend`), or a child's carrier code (`split`) | The new document must keep the carrier code and the transport document reference of this B/L |
 | `kind-changed` | 400 | the new document, or a child, is not a B/L to order | The new document must stay a negotiable B/L (a B/L to order): its kind cannot change |
@@ -177,6 +177,9 @@ found" before any refusal that would tell the B/L's state.
 | `cargo-mismatch` | 400 | the children's cargo does not add up to the parent's (`details.problems`) | The cargo of the new B/Ls must add up to the B/L's: … |
 | `reference-taken` | 409 | the carrier already has a B/L with a child's reference | The carrier already has a B/L with the reference … |
 | `own-draft` | 403 | `POST /records/:id/versions/:n/approve` (CB-44, before issue) by a person who created, changed or submitted that version: four eyes | You drafted this version, so a second person must approve it (four-eyes) |
+| `not-author` | 403 | `PUT /records/:id/draft` (CB-70) by anyone other than the person who created the draft | Only the person who created this draft may edit it |
+| `draft-archived` | 409 | any change or issue on an archived draft B/L (CB-71) | This B/L is archived and can no longer be changed |
+| `cannot-archive` | 409 | `POST /records/:id/archive` (CB-71) on a B/L already approved or issued | Only a draft B/L that has not been approved or issued can be archived |
 | `proof-unavailable` | 503 | `GET /records/:id/title/proof` while the proof on the blockchain cannot be read | The proof on the blockchain cannot be read now: try again later. |
 | `no-number` | 400 | `GET /records/title?number=` with a blank number (CB-47, "Check a B/L by number") | Give the number of the B/L to look for |
 | `unknown-port` | 400 | a new or changed port of loading or discharge (`POST /records`, `PUT /records/:id/draft`, `amend`) is not a sea port of the port list (CB-63; `details.problems`) | This B/L is not valid: XXAAA is not a sea port of the UN/LOCODE list: pick the port of discharge from the list |

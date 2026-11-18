@@ -47,6 +47,17 @@ const billOfLadingBody = {
   },
 };
 
+/** Saving a draft: the B/L document and optionally the revision the caller read (CB-70). */
+const saveDraftBody = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['format', 'document'],
+  properties: {
+    ...billOfLadingBody.properties,
+    revision: {type: 'integer', minimum: 1},
+  },
+};
+
 /** A review decision reported by bpm. */
 const decisionBody = {
   type: 'object',
@@ -65,12 +76,13 @@ const decisionBody = {
   },
 };
 
-/** A person's approval of a version in review (CB-44): an optional comment. */
+/** A person's approval of a version in review (CB-44): an optional comment and revision (CB-70). */
 const approvalBody = {
   type: ['object', 'null'],
   additionalProperties: false,
   properties: {
     comment: {type: 'string', maxLength: 4000},
+    revision: {type: 'integer', minimum: 1},
   },
 };
 
@@ -323,7 +335,7 @@ export async function recordsRoutes(app, {service}) {
 
   app.put(
     '/records/:id/draft',
-    {onRequest: canDraft, schema: {...idParams(), body: billOfLadingBody}},
+    {onRequest: canDraft, schema: {...idParams(), body: saveDraftBody}},
     async req =>
       service.saveDraft(req.params.id, req.body, actorOf(req), ownerOf(req)),
   );
@@ -333,6 +345,12 @@ export async function recordsRoutes(app, {service}) {
     {onRequest: canDraft, schema: idParams(versionParam)},
     async req =>
       service.submit(req.params.id, req.params.n, actorOf(req), ownerOf(req)),
+  );
+
+  app.post(
+    '/records/:id/archive',
+    {onRequest: canDraft, schema: idParams()},
+    async req => service.archive(req.params.id, actorOf(req), ownerOf(req)),
   );
 
   // ------------------------------------------------ approval on the platform (CB-44)

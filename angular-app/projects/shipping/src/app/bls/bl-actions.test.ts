@@ -8,7 +8,9 @@ import {
   approvalOf,
   draftersOf,
   issueCommands,
+  mayArchive,
   mayDraft,
+  mayEdit,
   maySubmit,
   versionNote,
 } from './bl-actions.ts';
@@ -113,6 +115,50 @@ describe('submitting a draft and drafting a new B/L', () => {
     assert.equal(mayDraft(CLERK), true);
     assert.equal(mayDraft(['bl.read', 'bl.endorse']), false);
     assert.equal(mayDraft([]), false);
+  });
+
+  it('editing a draft (CB-70): only its author while not yet approved (draft or in review)', () => {
+    const lena = {id: 'u-lena', perms: CLERK};
+    const ravi = {id: 'u-ravi', perms: MANAGER};
+    assert.equal(mayEdit(inReview({state: 'draft'}), lena), true);
+    assert.equal(mayEdit(inReview({state: 'in_review'}), lena), true);
+    assert.equal(mayEdit(inReview({state: 'draft'}), ravi), false);
+    assert.equal(mayEdit(inReview({state: 'in_review'}), ravi), false);
+    assert.equal(mayEdit(inReview({state: 'committed'}), lena), false);
+    assert.equal(
+      mayEdit(inReview({state: 'draft'}), {id: 'u-lena', perms: ['bl.read']}),
+      false,
+    );
+    assert.equal(mayEdit(null, lena), false);
+  });
+
+  it('archiving a draft (CB-71): any carrier user with bl.draft on a never-issued draft (draft or in review)', () => {
+    assert.equal(
+      mayArchive({status: 'draft', draftState: 'draft', title: null}, CLERK),
+      true,
+    );
+    assert.equal(
+      mayArchive(
+        {status: 'draft', draftState: 'in_review', title: null},
+        CLERK,
+      ),
+      true,
+    );
+    assert.equal(
+      mayArchive({status: 'committed', draftState: null, title: null}, MANAGER),
+      false,
+    );
+    assert.equal(
+      mayArchive({status: 'archived', draftState: null, title: null}, CLERK),
+      false,
+    );
+    assert.equal(
+      mayArchive({status: 'draft', draftState: 'draft', title: null}, [
+        'bl.read',
+      ]),
+      false,
+    );
+    assert.equal(mayArchive(null, CLERK), false);
   });
 });
 

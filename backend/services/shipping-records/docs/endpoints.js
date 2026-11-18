@@ -30,6 +30,12 @@ export const ENDPOINTS = {
       description:
         'The draft is frozen in review, with you as its submitter, until a second person commits it or sends it back. 409 when version `n` is not the open draft, or when it was changed meanwhile.',
     },
+    'POST /records/{id}/archive': {
+      tag: 'Records',
+      summary: 'Archive a never-issued draft B/L',
+      description:
+        'Moves an unapproved draft B/L (`draft` or `in_review`) to `archived` (CB-71), hides it from lists and number search, frees its carrier code and reference for reuse, and keeps its versions and history while refusing further edits, submissions, approvals or issue (409 `draft-archived`). 409 (`cannot-archive`) if already approved or issued; 404 for another organisation.',
+    },
     'POST /records/{id}/versions/{n}/approve': {
       tag: 'Records',
       summary: 'Approve a version in review, as a second person (four eyes)',
@@ -84,7 +90,7 @@ export const ENDPOINTS = {
       tag: 'Records',
       summary: 'List the B/Ls your organisation is party to',
       description:
-        "`{ items, total }`, newest first; `limit` (1 to 200, 50 by default) and `offset` page it. The B/Ls your session's organisation sees with `GET /records/{id}/title`: before issue the ones it owns (its drafts, in review or committed), after it those of which it is the carrier, the current holder, a past holder or the consignee. Never another organisation's B/L; the organisation is never taken from the request. `number` (CB-47, up to 100 characters): only the B/Ls of that number (the whole transport document reference, whatever its case and the spaces around it; two carriers may use the same one); another organisation's B/L of that number is never found, so the answer is the same as for a number nobody uses; 400 for a blank number. Each item: the fields of `GET /records` (`id`, `recordNo`, `carrierCode`, `label`, `status`, `draftState`, ...), `title` (`{ kind, state, carrier, holder, endorsement, consignee, updatedAt }`, null before issue) and `roles`, your organisation's roles on it (`carrier`, `holder`, `past-holder`, `consignee`; the carrier is never its own past holder). `organisationNames`: `{ id: name }` of the organisations the items name (owner, carrier, holder, consignee), as identity gives them; one it gives no name for, or every one while identity cannot answer, is left out (show its id): the list never fails for a name. 403 for a user of no organisation.",
+        "`{ items, total, organisationNames, ports }`, newest first; `limit` (1 to 200, 50 by default) and `offset` page it. The B/Ls your session's organisation sees with `GET /records/{id}/title`: before issue the ones it owns (its drafts, in review or committed), after it those of which it is the carrier, the current holder, a past holder or the consignee. Never another organisation's B/L; the organisation is never taken from the request. `number` (CB-47, up to 100 characters): only the B/Ls of that number (the whole transport document reference, whatever its case and the spaces around it; two carriers may use the same one); another organisation's B/L of that number is never found, so the answer is the same as for a number nobody uses; 400 for a blank number. Each item: the fields of `GET /records` (`id`, `recordNo`, `carrierCode`, `label`, `status`, `draftState`, ...), latest `portOfLoading`, `portOfDischarge`, `shipper`, `shipperName`, `consignee`, `consigneeName`, `draftKind` (CB-72), `title` (`{ kind, state, carrier, holder, endorsement, consignee, updatedAt }`, null before issue) and `roles`, your organisation's roles on it (`carrier`, `holder`, `past-holder`, `consignee`; the carrier is never its own past holder). `organisationNames`: `{ id: name }` of the organisations the items name (owner, carrier, holder, shipper, consignee), as identity gives them; one it gives no name for, or every one while identity cannot answer, is left out (show its id): the list never fails for a name. `ports`: `{ code: { code, name, country } }` of the UN/LOCODE ports the items name. 403 for a user of no organisation.",
     },
     'GET /records/seals': {
       tag: 'Records',

@@ -38,6 +38,13 @@ export interface BlLink {
   recordNo: string;
 }
 
+/** A sea port on a B/L list page (CB-72). */
+export interface BlListPort {
+  code: string;
+  name: string;
+  country: string;
+}
+
 /** One B/L of the list of the B/Ls the organisation is party to. */
 export interface BlListItem extends BlState {
   id: string;
@@ -48,6 +55,13 @@ export interface BlListItem extends BlState {
   updatedAt: string;
   title: TitleSummary | null;
   roles: PartyRole[];
+  portOfLoading?: string | null;
+  portOfDischarge?: string | null;
+  shipper?: string | null;
+  shipperName?: string | null;
+  consignee?: string | null;
+  consigneeName?: string | null;
+  draftKind?: string | null;
 }
 
 /** A page of that list. */
@@ -56,6 +70,8 @@ export interface BlPage {
   total: number;
   /** The names of the organisations the items name, by id (CB-42); some may be missing. */
   organisationNames: Record<string, string>;
+  /** The ports the items name, by UN/LOCODE (CB-72). */
+  ports?: Record<string, BlListPort>;
 }
 
 /** One step of a B/L's chain of title (the fields the app reads). */
@@ -112,6 +128,7 @@ export interface DraftVersion {
   versionNumber: number;
   /** `draft`, `in_review` or `committed`. */
   state: string;
+  revision?: number;
   createdById?: string | null;
   createdByName?: string | null;
   submittedById?: string | null;

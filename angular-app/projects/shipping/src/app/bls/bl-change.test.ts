@@ -542,4 +542,11 @@ describe('refusals the service words for developers, and unknown ones (CB-54)', 
       'This action could not be done. Nothing was changed.',
     );
   });
+
+  it('draft-open asks the user to finish or archive the open draft (CB-71)', () => {
+    assert.equal(
+      REFUSAL_REASONS['draft-open'],
+      'A new version of this B/L is being drafted or waits for approval: finish or archive it first.',
+    );
+  });
 });

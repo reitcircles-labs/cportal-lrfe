@@ -13,7 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import {DatePipe} from '@angular/common';
-import {RouterLink} from '@angular/router';
+import {Router, RouterLink} from '@angular/router';
 import {
   AuthService,
   ConfirmService,
@@ -24,7 +24,14 @@ import {
 import {BlApi} from './bl.api';
 import {BlAmendComponent} from './bl-amend.component';
 import {BlCheckComponent} from './bl-check.component';
-import {approvalOf, issueCommands, maySubmit, versionNote} from './bl-actions';
+import {
+  approvalOf,
+  issueCommands,
+  mayArchive,
+  mayEdit,
+  maySubmit,
+  versionNote,
+} from './bl-actions';
 import {
   type CloseCommand,
   closeCommands,
@@ -144,8 +151,14 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
           <!-- the actions on the B/L: CB-44 the draft's and the issue, CB-45 the endorsement,
                CB-46 the surrender and the release -->
           <section class="actions row" aria-label="Actions">
+            @if (canEdit()) {
+              <a class="btn btn-secondary" [routerLink]="['/bls', v.recordId, 'edit']">Edit</a>
+            }
             @if (canSubmit()) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="submit()">Submit for approval</button>
+            }
+            @if (canArchive()) {
+              <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="archive()">Archive</button>
             }
             @if (approval() === 'approve') {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="approve()">Approve</button>
@@ -367,6 +380,7 @@ export class BlDetailComponent {
 
   private readonly bls = inject(BlApi);
   private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
   private readonly toast = inject(ToastService);
   private readonly confirm = inject(ConfirmService);
   private readonly viewer = injectViewer();
@@ -418,13 +432,17 @@ export class BlDetailComponent {
 
   /** Whether the B/L is issued: its record, if read, is then for a change only (CB-50). */
   private readonly issued = computed(() => !!this.view()?.title);
+  /** Whether this B/L is an archived draft (CB-71). */
+  private readonly archived = computed(
+    () => this.view()?.record.status === 'archived',
+  );
   /** The open draft, when the user's organisation drafts this B/L. */
   private readonly draft = computed(() =>
-    this.issued() ? null : (this.record()?.draft ?? null),
+    this.issued() || this.archived() ? null : (this.record()?.draft ?? null),
   );
   /** The version the panel shows before issue: the open draft, else the approved one. */
   protected readonly shown = computed(() => {
-    if (this.issued()) {
+    if (this.issued() || this.archived()) {
       return null;
     }
     return this.record()?.draft ?? this.record()?.current ?? null;
@@ -454,8 +472,14 @@ export class BlDetailComponent {
   protected readonly facts = computed(() =>
     draftFacts(this.shown(), this.names()),
   );
+  protected readonly canEdit = computed(
+    () => !this.issued() && mayEdit(this.draft(), this.user()),
+  );
   protected readonly canSubmit = computed(() =>
     maySubmit(this.draft(), this.auth.perms()),
+  );
+  protected readonly canArchive = computed(
+    () => !this.issued() && mayArchive(this.blState(), this.auth.perms()),
   );
   protected readonly canEndorse = computed(() =>
     mayEndorse(this.view()?.allowedCommands ?? []),
@@ -599,6 +623,9 @@ export class BlDetailComponent {
    */
   protected readonly titleNoteText = computed(() => {
     const v = this.view();
+    if (this.archived()) {
+      return 'Archived: this draft is closed and no longer appears in the B/L list.';
+    }
     const state = v?.title?.state ?? null;
     const ended = titleNote(state) || closeNote(state);
     if (ended !== '' || v === null) {
@@ -722,6 +749,38 @@ export class BlDetailComponent {
   }
 
   /**
+   * Archives a never-issued draft after confirmation and returns to the B/L list (CB-71).
+   * @return when archived
+   */
+  protected async archive(): Promise<void> {
+    const label = this.view()?.record.label ?? 'this B/L';
+    const confirmed = await this.confirm.ask({
+      title: `Archive ${label}?`,
+      body: 'This draft will leave the B/L list and can no longer be edited, submitted or issued. Its number will be free to use again.',
+      confirmLabel: 'Archive draft',
+      tone: 'danger',
+    });
+    if (!confirmed) {
+      return;
+    }
+    this.busy.set(true);
+    this.actionError.set(null);
+    try {
+      await this.bls.archive(this.id());
+      this.toast.show('success', 'Draft archived', label);
+      await this.router.navigate(['/']);
+    } catch (e) {
+      const refusal = refusalOf(toApiError(e));
+      if (refusal.reload) {
+        await this.load(this.id());
+      }
+      this.actionError.set(refusal.message);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  /**
    * Submits the draft for approval by a second person.
    * @return when the page shows it
    */
@@ -745,7 +804,7 @@ export class BlDetailComponent {
       return;
     }
     await this.act('Draft approved', () =>
-      this.bls.approve(this.id(), draft.versionNumber),
+      this.bls.approve(this.id(), draft.versionNumber, draft.revision),
     );
   }
 

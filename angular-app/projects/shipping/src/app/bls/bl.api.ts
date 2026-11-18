@@ -122,6 +122,33 @@ export class BlApi {
   }
 
   /**
+   * Replaces the open draft of a B/L (CB-70): by its author only, before approval.
+   * @param id the B/L's id
+   * @param request the document, parties' organisations and optional revision
+   * @return the record
+   */
+  saveDraft(
+    id: string,
+    request: DraftRequest & {revision?: number},
+  ): Promise<BlRecord> {
+    return this.api.put<BlRecord>(
+      `/records/${encodeURIComponent(id)}/draft`,
+      request,
+    );
+  }
+
+  /**
+   * Archives a never-issued draft B/L (CB-71): frees its number and hides it from lists.
+   * @param id the B/L's id
+   * @return the record
+   */
+  archive(id: string): Promise<BlRecord> {
+    return this.api.post<BlRecord>(
+      `/records/${encodeURIComponent(id)}/archive`,
+    );
+  }
+
+  /**
    * Submits a draft for approval by a second person (CB-44).
    * @param id the B/L's id
    * @param version the draft's version number
@@ -137,11 +164,13 @@ export class BlApi {
    * Approves a draft in review: a second person of the carrier, never its drafter (CB-44).
    * @param id the B/L's id
    * @param version the version in review
+   * @param revision the revision the approver saw (CB-70)
    * @return the record, its version committed
    */
-  approve(id: string, version: number): Promise<BlRecord> {
+  approve(id: string, version: number, revision?: number): Promise<BlRecord> {
     return this.api.post<BlRecord>(
       `/records/${encodeURIComponent(id)}/versions/${version}/approve`,
+      revision !== undefined ? {revision} : undefined,
     );
   }
 

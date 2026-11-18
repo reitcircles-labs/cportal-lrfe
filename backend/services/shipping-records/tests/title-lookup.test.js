@@ -282,6 +282,7 @@ for (const store of stores()) {
           items: [],
           total: 0,
           organisationNames: {},
+          ports: {},
         });
         expect(unknown.statusCode).to.equal(200);
         expect(unknown.json()).to.deep.equal(existing.json());

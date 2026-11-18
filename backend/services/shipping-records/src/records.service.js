@@ -149,6 +149,18 @@ function ownDraft() {
 function changedMeanwhile() {
   return new ConflictError(
     'The draft was changed or submitted meanwhile: reload it and try again',
+    {code: 'changed-meanwhile'},
+  );
+}
+
+/**
+ * The 409 for an archived B/L draft, which can no longer be changed (CB-71).
+ * @return {!ConflictError}
+ */
+function archivedRecord() {
+  return new ConflictError(
+    'This B/L is archived and can no longer be changed',
+    {code: 'draft-archived'},
   );
 }
 
@@ -349,16 +361,20 @@ export class ShippingRecordsService {
   }
 
   /**
-   * Replaces the open draft's B/L, or opens a new draft version after the current one when there
-   * is none. Refused while the draft is in review (409) and for another B/L's document (400).
+   * Replaces the open draft's B/L (while not yet approved, by its author only), or opens a new
+   * draft version after the current one when there is none. Refused for non-authors (403), when
+   * changed since it was read (409), and for another B/L's document (400).
    * @param {string} id
-   * @param {{format: string, document: object, partyOrganisations?: object}} body
+   * @param {{format: string, document: object, partyOrganisations?: object, revision?: number}} body
    * @param {object} actor
    * @param {string} organisationId the caller's organisation
    * @return {Promise<object>} the record as getRecord answers it
    */
   async saveDraft(id, body, actor, organisationId) {
     const record = await this.requireRecord(id, organisationId);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const data = this.billOfLadingOf(body);
     assertSameDocument(record, data.document);
     const current = record.currentVersion
@@ -372,7 +388,7 @@ export class ShippingRecordsService {
     // the draft, the record and the event are committed together
     await this.atomic(async () => {
       const version = draft
-        ? await this.replaceDraft(record, draft, data, actor)
+        ? await this.replaceDraft(record, draft, data, actor, body.revision)
         : await this.openDraft(record, data, actor);
       await this.publish(
         'records.draft.changed',
@@ -384,19 +400,30 @@ export class ShippingRecordsService {
   }
 
   /**
-   * The open draft with a new B/L; 409 when it is in review, or was changed or submitted since it
-   * was read (the last writer never silently wins).
+   * The open draft with a new B/L (before submit, while in review, or after sent back), by its
+   * author only; 403 for any other user, 409 when already committed or changed meanwhile (the last
+   * writer never silently wins).
    * @param {object} record
    * @param {object} draft the open draft as read before
    * @param {object} data
    * @param {object} actor
+   * @param {number} [expectedRevision]
    * @return {Promise<object>} the saved version
    */
-  async replaceDraft(record, draft, data, actor) {
-    if (draft.state !== 'draft') {
+  async replaceDraft(record, draft, data, actor, expectedRevision) {
+    if (!['draft', 'in_review'].includes(draft.state)) {
       throw new ConflictError(
-        'The draft is in review: it can change again once it is sent back',
+        `Version ${draft.versionNumber} is already ${draft.state}`,
       );
+    }
+    if (draft.createdById !== actor.id) {
+      throw new ForbiddenError(
+        'Only the person who created this draft may edit it',
+        {code: 'not-author'},
+      );
+    }
+    if (expectedRevision !== undefined && draft.revision !== expectedRevision) {
+      throw changedMeanwhile();
     }
     const saved = await this.repo.updateVersion(
       record.id,
@@ -411,7 +438,7 @@ export class ShippingRecordsService {
         revision: draft.revision + 1,
         updatedAt: this.clock(),
       },
-      {expectedState: 'draft', expectedRevision: draft.revision},
+      {expectedState: draft.state, expectedRevision: draft.revision},
     );
     if (!saved) {
       throw changedMeanwhile();
@@ -450,6 +477,9 @@ export class ShippingRecordsService {
    */
   async submit(id, n, actor, organisationId) {
     const record = await this.requireRecord(id, organisationId);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const version = await this.requireVersion(record, n);
     if (record.draftVersion !== n || version.state !== 'draft') {
       throw new ConflictError(
@@ -501,12 +531,15 @@ export class ShippingRecordsService {
    * version already committed by the same approver answers it unchanged.
    * @param {string} id
    * @param {number} n
-   * @param {{by: {id: string, name?: string}, comment?: string}} decision
+   * @param {{by: {id: string, name?: string}, comment?: string, revision?: number}} decision
    * @param {string} via the service that reports the decision
    * @return {Promise<object>} the record as getRecord answers it
    */
-  async commit(id, n, {by, comment}, via) {
+  async commit(id, n, {by, comment, revision}, via) {
     const record = await this.requireRecord(id);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const version = await this.requireVersion(record, n);
     if (version.state === 'committed' && version.approvedById === by.id) {
       return this.getRecord(id);
@@ -515,6 +548,9 @@ export class ShippingRecordsService {
       throw new ConflictError(
         `Version ${n} is not in review (${version.state})`,
       );
+    }
+    if (revision !== undefined && version.revision !== revision) {
+      throw changedMeanwhile();
     }
     // an approval on the platform checks its drafters again on the version read here: one sent
     // back, changed by the approver and submitted again since approve() read it is refused
@@ -589,22 +625,26 @@ export class ShippingRecordsService {
    * Approved on the platform by a person of the B/L's organisation (CB-44; the route checks
    * bl.issue): four eyes, so never one of the version's drafters (403, `details.code`
    * `own-draft`). Then committed as `commit` commits it: sealed, chained, its event published; a
-   * retry by the same approver answers it unchanged, a version no longer in review is 409.
+   * retry by the same approver answers it unchanged, a version no longer in review or whose
+   * revision moved on (CB-70) is 409.
    * @param {string} id
    * @param {number} n
    * @param {{id: string, name?: string}} actor the approver
    * @param {string} organisationId the approver's organisation: another's B/L is 404
-   * @param {{comment?: string}} [body]
+   * @param {{comment?: string, revision?: number}} [body]
    * @return {Promise<object>} the record as getRecord answers it
    */
-  async approve(id, n, actor, organisationId, {comment} = {}) {
+  async approve(id, n, actor, organisationId, {comment, revision} = {}) {
     const record = await this.requireRecord(id, organisationId);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const version = await this.requireVersion(record, n);
     if (draftersOf(version).has(actor.id)) {
       throw ownDraft();
     }
     const by = {id: actor.id, name: actor.name};
-    await this.commit(id, n, {by, comment}, APPROVED_ON_PLATFORM);
+    await this.commit(id, n, {by, comment, revision}, APPROVED_ON_PLATFORM);
     return this.getRecord(id, organisationId);
   }
 
@@ -619,6 +659,9 @@ export class ShippingRecordsService {
    */
   async reject(id, n, {by, comment}, via) {
     const record = await this.requireRecord(id);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
     const version = await this.requireVersion(record, n);
     if (version.state === 'draft' && version.reviewComment === comment) {
       return this.getRecord(id);
@@ -665,6 +708,68 @@ export class ShippingRecordsService {
       );
     });
     return this.getRecord(id);
+  }
+
+  /**
+   * Archives a never-issued draft (CB-71, `draft` or `in_review`): frees its carrier code and
+   * reference for reuse, hides it from lists, keeps its versions and history, and prevents any
+   * further edits, submissions, approvals or issue. 409 for already archived or committed/issued.
+   * @param {string} id
+   * @param {object} actor
+   * @param {string} organisationId the caller's organisation
+   * @return {!Promise<object>} the record as getRecord answers it
+   */
+  async archive(id, actor, organisationId) {
+    const record = await this.requireRecord(id, organisationId);
+    if (record.status === 'archived') {
+      throw archivedRecord();
+    }
+    if (record.status !== 'draft') {
+      throw new ConflictError(
+        'Only a draft B/L that has not been approved or issued can be archived',
+        {code: 'cannot-archive'},
+      );
+    }
+    const draft = record.draftVersion
+      ? await this.requireVersion(record, record.draftVersion)
+      : null;
+    const now = this.clock();
+    await this.atomic(async () => {
+      if (draft) {
+        const saved = await this.repo.updateVersion(
+          id,
+          draft.versionNumber,
+          {
+            revision: draft.revision + 1,
+            updatedAt: now,
+            changes: [
+              ...(draft.changes || []),
+              this.entry(actor, {action: 'archive'}),
+            ],
+          },
+          {expectedState: draft.state, expectedRevision: draft.revision},
+        );
+        if (!saved) {
+          throw changedMeanwhile();
+        }
+      }
+      await this.repo.updateRecord(id, {
+        status: 'archived',
+        draftState: null,
+        updatedAt: now,
+      });
+      await this.publish(
+        'records.record.archived',
+        {
+          recordId: id,
+          recordNo: record.recordNo,
+          carrierCode: record.carrierCode,
+          versionNumber: draft?.versionNumber ?? null,
+        },
+        actor,
+      );
+    });
+    return this.getRecord(id, organisationId);
   }
 
   // ---------------------------------------------------------------- reading
