@@ -16,13 +16,16 @@ import {type Refusal, refusalOf} from './bl-change';
 import {DRAFT_FORMAT} from './bl-draft';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
 import {
+  DEFAULT_MAX_SPLIT_PARTS,
   type SplitPart,
   addPart,
   cargoRows,
   firstParts,
   partLetter,
   partSummary,
+  removeLastPart,
   rowAssigned,
+  setPartCount,
   splitConfirmation,
   splitDone,
   splitLabel,
@@ -52,6 +55,13 @@ type ShareField = 'packages' | 'weight';
       <div class="panel-head"><h2 tabindex="-1">Split {{ recordNo() }} into new B/Ls</h2></div>
       <div class="panel-body stack" style="gap:14px">
         <p class="muted" style="margin:0">Give each new B/L its number and its share of the cargo. A container may be divided between them: its packages and weights must add up.</p>
+        <div class="row" style="align-items:flex-end;gap:10px">
+          <div class="field" style="max-width:180px">
+            <label for="split-count">Number of new B/Ls</label>
+            <input id="split-count" type="number" min="2" [max]="maxParts()" step="1" class="input num" [disabled]="busy()" [value]="parts().length" (change)="setCount($any($event.target))" />
+          </div>
+          <span class="small muted">Between 2 and {{ maxParts() }} new B/Ls.</span>
+        </div>
         <div class="parts">
           @for (p of parts(); track $index; let i = $index) {
             <div class="field">
@@ -117,7 +127,8 @@ type ShareField = 'packages' | 'weight';
         }
         <div class="row" style="gap:8px">
           <button type="button" class="btn btn-primary" [disabled]="busy() || problems().length > 0" (click)="send()">{{ label() }}</button>
-          <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="add()">Add a B/L</button>
+          <button type="button" class="btn btn-secondary" [disabled]="busy() || parts().length >= maxParts()" (click)="add()">Add a B/L</button>
+          <button type="button" class="btn btn-secondary" [disabled]="busy() || parts().length <= 2" (click)="shrink()">Remove last B/L</button>
           <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="cancelled.emit()">Cancel</button>
         </div>
       </div>
@@ -143,6 +154,8 @@ export class BlSplitComponent {
   readonly document = input.required<Record<string, unknown>>();
   /** The name of the holder the new B/Ls are issued to. */
   readonly holderName = input.required<string>();
+  /** Maximum number of new B/Ls per split (CB-73, default 10). */
+  readonly maxParts = input(DEFAULT_MAX_SPLIT_PARTS);
 
   /** The B/L is split: the page reads it again and closes the panel. */
   readonly split = output<void>();
@@ -164,7 +177,7 @@ export class BlSplitComponent {
   protected readonly refusal = signal<Refusal | null>(null);
 
   protected readonly problems = computed(() =>
-    splitProblems(this.rows(), this.parts(), this.recordNo()),
+    splitProblems(this.rows(), this.parts(), this.recordNo(), this.maxParts()),
   );
   protected readonly label = computed(() => splitLabel(this.parts().length));
 
@@ -251,7 +264,40 @@ export class BlSplitComponent {
   /** Adds an empty part ("Add a B/L"). */
   protected add(): void {
     this.refusal.set(null);
-    this.parts.update(parts => addPart(parts, this.rows(), this.recordNo()));
+    this.parts.update(parts =>
+      addPart(parts, this.rows(), this.recordNo(), this.maxParts()),
+    );
+  }
+
+  /** Drops the last part with all its entries (CB-73). */
+  protected shrink(): void {
+    this.refusal.set(null);
+    this.parts.update(parts => removeLastPart(parts));
+  }
+
+  /**
+   * Sets the number of output B/Ls directly (CB-73); shrinking drops the last parts.
+   * Restores the input value when blank, non-numeric, or clamped.
+   * @param input count field element
+   */
+  protected setCount(input: HTMLInputElement): void {
+    const trimmed = input.value.trim();
+    const parsed = trimmed === '' ? Number.NaN : Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      input.value = String(this.parts().length);
+      return;
+    }
+    this.refusal.set(null);
+    this.parts.update(parts =>
+      setPartCount(
+        parts,
+        parsed,
+        this.rows(),
+        this.recordNo(),
+        this.maxParts(),
+      ),
+    );
+    input.value = String(this.parts().length);
   }
 
   /**

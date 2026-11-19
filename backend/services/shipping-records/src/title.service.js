@@ -14,6 +14,7 @@ import {
   splitCargoProblems,
 } from '@lrfe/domain-shipping/bill-of-lading';
 import {
+  DEFAULT_MAX_SPLIT_CHILDREN,
   TITLE_WORDING,
   TitleRefusal,
   allowedCommands,
@@ -475,6 +476,7 @@ export class TitleService {
    *     nameOf?: function(string): !Promise<?string>,
    *   },
    *   formats?: !ReadonlyArray<object>,
+   *   maxSplitChildren?: number,
    * }} options `modules`: the title modules on in this install (modulesFromSettings); `formats`:
    *     the B/L formats on (formatsFromSettings), which an amendment's and a split's documents
    *     come in (the default format when not given); `signer`:
@@ -482,7 +484,8 @@ export class TitleService {
    *     is none (title commands are then refused with 503); `audit`: the client of the audit
    *     service giving the trail-entry proof of an event (./audit-client.js), null when there is
    *     none (title proofs are then refused with 503); `organisations`: the client of identity
-   *     saying whether an organisation is registered and active (./identity-client.js); required
+   *     saying whether an organisation is registered and active (./identity-client.js); required;
+   *     `maxSplitChildren`: maximum new B/Ls per split (LRFE_BL_SPLIT_MAX, default 10)
    */
   constructor({
     repo,
@@ -494,6 +497,7 @@ export class TitleService {
     organisations,
     formats = formatsFromSettings({}),
     ports = null,
+    maxSplitChildren = DEFAULT_MAX_SPLIT_CHILDREN,
   }) {
     if (typeof organisations?.standingOf !== 'function') {
       throw new Error(
@@ -509,6 +513,7 @@ export class TitleService {
     this.organisations = organisations;
     this.formats = formats;
     this.ports = ports;
+    this.maxSplitChildren = maxSplitChildren;
   }
 
   /**
@@ -689,7 +694,14 @@ export class TitleService {
       engineCommand = issued.command;
     }
     if (engineCommand.name === 'split') {
-      engineCommand = {name: 'split', children: childCountOf(command)};
+      const count = childCountOf(command);
+      if (count > this.maxSplitChildren) {
+        throw new BadRequestError(
+          `A B/L can be split into at most ${this.maxSplitChildren} new B/Ls`,
+          {code: 'too-many-children'},
+        );
+      }
+      engineCommand = {name: 'split', children: count};
     }
     const result = this.run(titleOf(stored), engineCommand, actor);
     if (engineCommand.name === 'split') {
@@ -1282,6 +1294,7 @@ export class TitleService {
    *   title: ?object,
    *   allowedCommands: !Array<string>,
    *   roles: !Array<string>,
+   *   maxSplitChildren: (number|undefined),
    *   chain: (!Array<object>|undefined),
    *   splitFrom: (!Object|undefined),
    *   splitInto: (!Array<!Object>|undefined),
@@ -1311,6 +1324,9 @@ export class TitleService {
         modules: this.modules,
       });
       view.allowedCommands = allowed.filter(name => OFFERED_COMMANDS.has(name));
+      if (view.allowedCommands.includes('split')) {
+        view.maxSplitChildren = this.maxSplitChildren;
+      }
     }
     if (withChain) {
       view.chain = chain;

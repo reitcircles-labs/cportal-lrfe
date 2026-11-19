@@ -111,7 +111,8 @@ Docker, in the folder the bundle is unpacked in.
    `COMPOSE_PROFILES=postgres,bao,shipping`); a land install sets neither and never starts it.
    `LRFE_BL_FORMATS` (default `dcsa-3.0`) lists the B/L formats it accepts, `LRFE_BL_MODULES`
    (default: all) the B/L title modules on (`waybill`, always on, `negotiable`,
-   `blank-endorsement`, `amendment`, `split`), and `TITLE_SIGNER` the platform key that signs each
+   `blank-endorsement`, `amendment`, `split`), `LRFE_BL_SPLIT_MAX` (default `10`, 2–100) how many
+   new B/Ls one split may create, and `TITLE_SIGNER` the platform key that signs each
    B/L's chain of title: `bao`, OpenBao's key `bl-title`, set once it is prepared (part D, step 7);
    not set (the default), title commands are refused and drafting and reading B/Ls work. shipping-records reaches audit (`AUDIT_URL`)
    and identity (`IDENTITY_URL`) at the addresses set in the compose file. The gateway, audit, bpm and extracts reach it at

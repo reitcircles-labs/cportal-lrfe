@@ -13,6 +13,10 @@
 /** The longest B/L number DCSA allows. */
 const MAX_NUMBER_LENGTH = 20;
 
+/** Default minimum and maximum number of new B/Ls per split (CB-73). */
+export const DEFAULT_MAX_SPLIT_PARTS = 10;
+const MIN_SPLIT_PARTS = 2;
+
 /** How far two weights may differ and still add up (rounding of decimal weights). */
 const WEIGHT_TOLERANCE = 1e-6;
 
@@ -141,12 +145,18 @@ export function cargoRows(document: Record<string, unknown>): CargoRow[] {
 }
 
 /**
- * The letter of a part: A, B, C…
+ * The letter(s) of a part: A..Z, then AA, AB…
  * @param index its place, from 0
- * @return the letter
+ * @return the letter code
  */
 export function partLetter(index: number): string {
-  return String.fromCharCode('A'.charCodeAt(0) + index);
+  let n = index;
+  let result = '';
+  do {
+    result = String.fromCharCode('A'.charCodeAt(0) + (n % 26)) + result;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return result;
 }
 
 /**
@@ -181,19 +191,71 @@ export function firstParts(
 }
 
 /**
- * The parts with one more, empty, after them ("Add a B/L"). The parts given are not changed.
+ * The parts with one more, empty, after them ("Add a B/L"), capped at `maxParts`. The parts
+ * given are not changed.
  * @param parts the parts
  * @param rows the parent's cargo
  * @param parentNumber the parent's number
+ * @param maxParts maximum allowed parts (default 10)
  * @return the new list
  */
 export function addPart(
   parts: readonly SplitPart[],
   rows: readonly CargoRow[],
   parentNumber: string,
+  maxParts = DEFAULT_MAX_SPLIT_PARTS,
 ): SplitPart[] {
+  if (parts.length >= maxParts) {
+    return [...parts];
+  }
   const reference = `${parentNumber}-${partLetter(parts.length)}`;
   return [...parts, emptyPart(rows, reference)];
+}
+
+/**
+ * Drops the last part (with all its entries) when shrinking (CB-73), keeping at least two parts.
+ * @param parts the parts
+ * @return the updated list
+ */
+export function removeLastPart(parts: readonly SplitPart[]): SplitPart[] {
+  if (parts.length <= MIN_SPLIT_PARTS) {
+    return [...parts];
+  }
+  return parts.slice(0, -1);
+}
+
+/**
+ * Sets the number of output B/Ls directly (CB-73), clamped to [2, maxParts]. Shrinking drops
+ * the last part(s) with all their entries; growing appends empty parts.
+ * @param parts current parts
+ * @param count requested count
+ * @param rows parent's cargo
+ * @param parentNumber parent's number
+ * @param maxParts maximum allowed parts (default 10)
+ * @return updated parts list
+ */
+export function setPartCount(
+  parts: readonly SplitPart[],
+  count: number,
+  rows: readonly CargoRow[],
+  parentNumber: string,
+  maxParts = DEFAULT_MAX_SPLIT_PARTS,
+): SplitPart[] {
+  if (!Number.isFinite(count)) {
+    return [...parts];
+  }
+  const target = Math.max(
+    MIN_SPLIT_PARTS,
+    Math.min(maxParts, Math.trunc(count)),
+  );
+  if (target <= parts.length) {
+    return parts.slice(0, target);
+  }
+  const next = [...parts];
+  while (next.length < target) {
+    next.push(emptyPart(rows, `${parentNumber}-${partLetter(next.length)}`));
+  }
+  return next;
 }
 
 /**
@@ -329,14 +391,19 @@ function numberProblems(
  * @param rows the parent's cargo
  * @param parts the parts
  * @param parentNumber the parent's number
+ * @param maxParts maximum allowed parts (default 10)
  * @return the problems, none when it can be sent
  */
 export function splitProblems(
   rows: readonly CargoRow[],
   parts: readonly SplitPart[],
   parentNumber: string,
+  maxParts = DEFAULT_MAX_SPLIT_PARTS,
 ): string[] {
   const problems = numberProblems(parts, parentNumber);
+  if (parts.length > maxParts) {
+    problems.push(`Split into at most ${maxParts} B/Ls.`);
+  }
   for (const [i, part] of parts.entries()) {
     if (!part.shares.every(validShare)) {
       problems.push(

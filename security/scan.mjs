@@ -447,7 +447,6 @@ function scans(tokens) {
             '-jsonl',
             '-o',
             '/out/nuclei.jsonl',
-            '-silent',
             '-rl',
             '50',
           ],

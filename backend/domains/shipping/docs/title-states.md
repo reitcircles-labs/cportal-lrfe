@@ -180,6 +180,7 @@ found" before any refusal that would tell the B/L's state.
 | `not-author` | 403 | `PUT /records/:id/draft` (CB-70) by anyone other than the person who created the draft | Only the person who created this draft may edit it |
 | `draft-archived` | 409 | any change or issue on an archived draft B/L (CB-71) | This B/L is archived and can no longer be changed |
 | `cannot-archive` | 409 | `POST /records/:id/archive` (CB-71) on a B/L already approved or issued | Only a draft B/L that has not been approved or issued can be archived |
+| `too-many-children` | 400 | `split` into more new B/Ls than `LRFE_BL_SPLIT_MAX` allows (CB-73, default 10) | A B/L can be split into at most 10 new B/Ls |
 | `proof-unavailable` | 503 | `GET /records/:id/title/proof` while the proof on the blockchain cannot be read | The proof on the blockchain cannot be read now: try again later. |
 | `no-number` | 400 | `GET /records/title?number=` with a blank number (CB-47, "Check a B/L by number") | Give the number of the B/L to look for |
 | `unknown-port` | 400 | a new or changed port of loading or discharge (`POST /records`, `PUT /records/:id/draft`, `amend`) is not a sea port of the port list (CB-63; `details.problems`) | This B/L is not valid: XXAAA is not a sea port of the UN/LOCODE list: pick the port of discharge from the list |

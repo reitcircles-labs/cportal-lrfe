@@ -148,6 +148,27 @@ jobs:
         run: node --test security/*.test.mjs
       - name: Scans
         run: node security/scan.mjs --level ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }} --out security/.reports/run
+      - name: Print penetration test summary and errors
+        if: always()
+        run: |
+          if [ -f security/.reports/run/summary.md ]; then
+            cat security/.reports/run/summary.md
+          fi
+          if [ -f security/.reports/run/findings.json ]; then
+            node -e '
+              const fs = require("fs");
+              const open = JSON.parse(fs.readFileSync("security/.reports/run/findings.json", "utf8"))
+                .filter(f => !f.accepted && f.severity === "high");
+              console.log(`Open high findings (${open.length}):`);
+              for (const f of open) console.log(`- [${f.tool}] ${f.id}: ${f.title} (${f.where || ""})`);
+            '
+          fi
+          if [ -f security/.reports/run/run.log ]; then
+            echo "--- run.log (nuclei / tail) ---"
+            grep -iE 'nuclei|error|fatal|panic|failed' security/.reports/run/run.log | tail -n 60 || true
+            echo "--- run.log (last 40 lines) ---"
+            tail -n 40 security/.reports/run/run.log
+          fi
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:

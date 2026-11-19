@@ -81,6 +81,39 @@ export const ALL_MODULES = Object.freeze(Object.keys(MODULES));
 /** The setting that lists the modules on in an install. */
 export const MODULES_SETTING = 'LRFE_BL_MODULES';
 
+/** Default and bounds for how many B/Ls one split may create (CB-73). */
+export const DEFAULT_MAX_SPLIT_CHILDREN = 10;
+const MIN_SPLIT_CHILDREN = 2;
+const MAX_SPLIT_CHILDREN_LIMIT = 100;
+
+/** The setting that configures how many new B/Ls a single split may produce (CB-73). */
+export const SPLIT_MAX_SETTING = 'LRFE_BL_SPLIT_MAX';
+
+/**
+ * Maximum number of new B/Ls a single split may produce, from `LRFE_BL_SPLIT_MAX` (default 10).
+ *
+ * @param {!Object<string, (string|undefined)>=} source the settings, `process.env` by default
+ * @return {number} integer between 2 and 100
+ */
+export function maxSplitFromSettings(source = process.env) {
+  const raw = source[SPLIT_MAX_SETTING]?.trim();
+  if (!raw) {
+    return DEFAULT_MAX_SPLIT_CHILDREN;
+  }
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(
+      `${SPLIT_MAX_SETTING} must be a whole number between ${MIN_SPLIT_CHILDREN} and ${MAX_SPLIT_CHILDREN_LIMIT}`,
+    );
+  }
+  const value = Number(raw);
+  if (value < MIN_SPLIT_CHILDREN || value > MAX_SPLIT_CHILDREN_LIMIT) {
+    throw new Error(
+      `${SPLIT_MAX_SETTING} must be between ${MIN_SPLIT_CHILDREN} and ${MAX_SPLIT_CHILDREN_LIMIT}`,
+    );
+  }
+  return value;
+}
+
 /**
  * Whether the platform has a module of this name (its own entries only, never an object's
  * built-in names such as `toString`).

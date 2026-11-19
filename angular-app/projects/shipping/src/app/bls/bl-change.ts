@@ -75,6 +75,7 @@ export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'partial-release':
     'A B/L is released whole: to release part of its cargo, split it into new B/Ls first.',
   'too-few-children': 'A split needs at least two new B/Ls.',
+  'too-many-children': 'Too many new B/Ls requested for a single split.',
   'bearer-unconfirmed':
     'Switching a blank-endorsed B/L to paper makes the paper a bearer document: confirm it to go on.',
   // the record service

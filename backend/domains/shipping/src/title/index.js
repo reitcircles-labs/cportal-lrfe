@@ -12,5 +12,12 @@ export {
   applyTitleCommand,
 } from './engine.js';
 export {endorseeOf} from './endorsee.js';
-export {MODULES, MODULES_SETTING, modulesFromSettings} from './modules.js';
+export {
+  DEFAULT_MAX_SPLIT_CHILDREN,
+  MODULES,
+  MODULES_SETTING,
+  SPLIT_MAX_SETTING,
+  maxSplitFromSettings,
+  modulesFromSettings,
+} from './modules.js';
 export {TITLE_WORDING} from './wording.js';
