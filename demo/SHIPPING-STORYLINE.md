@@ -65,6 +65,7 @@ Sign in as **`a.morgan@shipping.example`**. He lands on **Organisations**.
 | # | Do | They see |
 |---|---|---|
 | 1.1 | Nothing: the list is open | The five organisations of the demo, each with its code: Bluewater Meridian Lines (BWML), Highland Coffee Exporters (HCEX), Harbour Trust Bank (HTB), Northgate Commercial Bank (NGCB), Roastery Collective Imports (RCI), and the operator's own, Shipping Registry |
+| 1.2 | **Open Bluewater Meridian Lines**, pick **MSC — Mediterranean Shipping Company** under **Default carrier code**, **Save carrier code** | `SMDG MSC` on Bluewater Meridian Lines (filled in by default when its clerks draft a B/L) |
 
 *Say:* "The platform is run by a neutral operator. It admits companies and their staff, and that is all it can do: it
 has no button to move a B/L, not even in a dispute."
@@ -76,8 +77,8 @@ Sign in as **`l.okafor@bluewater-lines.example`**. She lands on **Bills of ladin
 | # | Do | They see |
 |---|---|---|
 | 2.1 | **New B/L** | The form: "A draft of Bluewater Meridian Lines. A second person approves it before it is issued." |
-| 2.2 | Fill in: **B/L number** in the carrier's form: its code, the year and month, a running number of any length, e.g. `BWML2611001` (each B/L number once per install), **Carrier code** `BWML`, **Booking reference** `BKG-2611-0042`; **To order**: *Yes, negotiable* (already chosen); **Shipper**: *Highland Coffee Exporters*; place of issue **Street** `Rua do Porto 12`, **City** `Santos`, **Country code** `BR`; **Vessel** `Meridian Star`, **Voyage** `2611E`, **Port of loading** `BRSSZ`, **Port of discharge** `NLRTM`, **Planned departure** and **Planned arrival** two dates apart; **Container number** `BWMU7045123`, **Container type** `22G1` (filled in: a 20-foot dry container; keep it), **Seal number** `SL220871`, **Goods** `320 bags of green coffee beans`, **HS code** `090111`, **Number of packages** `320`, **Kind of packages** `Bags`, **Gross weight (kg)** `19200`; **The carrier's terms** come filled in with the carrier's standard text: leave them | The shipper is picked from the companies on the platform, not typed; the platform operator is not among them |
-| 2.3 | **Save draft** | The B/L's page, "B/L BWML2611001 (BWML)", State *Draft*, Kind *Negotiable B/L* |
+| 2.2 | Fill in: **B/L number** in the carrier's form: its code, the year and month, a running number of any length, e.g. `BWML2611001` (each B/L number once per install), **Carrier code** (already set to `MSC` from Bluewater's default; any SMDG code can be searched and picked), **Booking reference** `BKG-2611-0042`; **To order**: *Yes, negotiable* (already chosen); **Shipper**: *Highland Coffee Exporters*; place of issue **Street** `Rua do Porto 12`, **City** `Santos`, **Country code** `BR`; **Vessel** `Meridian Star`, **Voyage** `2611E`, **Port of loading** `BRSSZ`, **Port of discharge** `NLRTM`, **Planned departure** and **Planned arrival** two dates apart; **Container number** `BWMU7045123`, **Container type** `22G1` (filled in: a 20-foot dry container; keep it), **Seal number** `SL220871`, **Goods** `320 bags of green coffee beans`, **HS code** `090111`, **Number of packages** `320`, **Kind of packages** `Bags`, **Gross weight (kg)** `19200`; **The carrier's terms** come filled in with the carrier's standard text: leave them | The shipper is picked from the companies on the platform, not typed; the platform operator is not among them |
+| 2.3 | **Save draft** | The B/L's page, "B/L BWML2611001 (MSC)", State *Draft*, Kind *Negotiable B/L* |
 | 2.4 | **Submit for approval** | State *In review*; under **Approval**: "You prepared this draft, so a second person must approve it." No **Approve** button |
 
 *Say:* "Four eyes: the person who drafts a B/L can never issue it alone. The platform refuses it, not just the screen."
@@ -187,9 +188,9 @@ is the same seven demo users; no other data is needed.
 asked for, and mistakes are cancelled. Every one of these is a step on the chain, signed and on the blockchain, and
 nobody can do one out of turn."
 
-## Act 10 · The carrier's clerk: ports from the list (5 min)
+## Act 10 · The carrier's clerk: carrier code by default and ports from the list (5 min)
 
-Sign in as **`l.okafor@bluewater-lines.example`**. **New B/L**, filled in as in Act 2, with number `BWML2611011`.
+Sign in as **`l.okafor@bluewater-lines.example`**. **New B/L**, filled in as in Act 2, with number `BWML2611011` — notice **Carrier code** is already filled in with Bluewater's default SMDG code (`MSC`) set in Act 1, and can be changed from the searchable SMDG dropdown if needed.
 
 | # | Do | They see |
 |---|---|---|

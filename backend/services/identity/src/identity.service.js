@@ -146,6 +146,7 @@ export class IdentityService {
       // the organisation's current name (CB-19); '' only before the seed has given the user one
       organisation: organisation?.name ?? '',
       organisationId: organisation?.id ?? null,
+      organisationCarrierCode: organisation?.carrierCode ?? null,
       status: user.status,
       mfa: !!user.mfaEnrolled,
       lastActive: user.lastActiveAt ?? null,
@@ -738,6 +739,7 @@ export class IdentityService {
       id: o.id,
       code: o.code,
       name: o.name,
+      carrierCode: o.carrierCode ?? null,
       status: o.status,
       createdAt: o.createdAt ?? null,
       offices: offices.filter(x => x.organisationId === o.id).length,
@@ -824,7 +826,28 @@ export class IdentityService {
     return String(name).trim();
   }
 
-  async createOrganisation({code, name}, actor) {
+  /**
+   * Cleans an optional default carrier code (2-4 uppercase alphanumeric chars, CB-68), or null.
+   * @param {*} carrierCode
+   * @return {?string}
+   */
+  organisationCarrierCode(carrierCode) {
+    if (carrierCode === null || carrierCode === undefined) {
+      return null;
+    }
+    const clean = String(carrierCode).trim().toUpperCase();
+    if (clean === '') {
+      return null;
+    }
+    if (!/^[A-Z0-9]{2,4}$/.test(clean)) {
+      throw new BadRequestError(
+        'Carrier code must be 2 to 4 letters or digits',
+      );
+    }
+    return clean;
+  }
+
+  async createOrganisation({code, name, carrierCode = null}, actor) {
     const cleanCode = String(code || '')
       .trim()
       .toUpperCase();
@@ -832,6 +855,7 @@ export class IdentityService {
       throw new BadRequestError('The code must be 2 to 5 letters, e.g. ABC');
     }
     const cleanName = this.organisationName(name);
+    const cleanCarrierCode = this.organisationCarrierCode(carrierCode);
     if (await this.repo.getOrganisationByCode(cleanCode)) {
       throw new ConflictError(
         `An organisation with code ${cleanCode} already exists`,
@@ -840,6 +864,7 @@ export class IdentityService {
     const organisation = await this.repo.createOrganisation({
       code: cleanCode,
       name: cleanName,
+      carrierCode: cleanCarrierCode,
       status: 'Active',
     });
     await this.log(
@@ -852,22 +877,36 @@ export class IdentityService {
     return this.publicOrganisation(organisation);
   }
 
-  /** The name can change; the code cannot. */
-  async updateOrganisation(id, {name}, actor) {
+  /** The name and optional default carrier code can change; the code cannot. */
+  async updateOrganisation(id, {name, carrierCode}, actor) {
     const organisation = await this.requireOrganisation(id);
-    if (name === undefined) {
+    const patch = {};
+    const details = [];
+    if (name !== undefined) {
+      const cleanName = this.organisationName(name);
+      if (cleanName !== organisation.name) {
+        patch.name = cleanName;
+        details.push(`name: ${organisation.name} → ${cleanName}`);
+      }
+    }
+    if (carrierCode !== undefined) {
+      const cleanCarrier = this.organisationCarrierCode(carrierCode);
+      if (cleanCarrier !== (organisation.carrierCode ?? null)) {
+        patch.carrierCode = cleanCarrier;
+        details.push(
+          `carrier code: ${organisation.carrierCode ?? 'none'} → ${cleanCarrier ?? 'none'}`,
+        );
+      }
+    }
+    if (Object.keys(patch).length === 0) {
       return this.organisationWithCounts(organisation);
     }
-    const cleanName = this.organisationName(name);
-    if (cleanName === organisation.name) {
-      return this.organisationWithCounts(organisation);
-    }
-    const updated = await this.repo.updateOrganisation(id, {name: cleanName});
+    const updated = await this.repo.updateOrganisation(id, patch);
     await this.log(
       'organisation',
       'Organisation updated',
       `${organisation.code} · ${updated.name}`,
-      `name: ${organisation.name} → ${updated.name}`,
+      details.join(' · '),
       actor,
     );
     return this.organisationWithCounts(updated);

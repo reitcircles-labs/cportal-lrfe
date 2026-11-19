@@ -4,6 +4,8 @@ import {strict as assert} from 'node:assert';
 import {describe, it} from 'node:test';
 
 import {
+  COPY_BLANK_FIELDS,
+  copyFormOf,
   draftFormOf,
   draftProblems,
   draftRequest,
@@ -331,5 +333,63 @@ describe("the backend's refusal, for people", () => {
     assert.deepEqual(problemMessages(undefined), []);
     assert.deepEqual(problemMessages({code: 'x'}), []);
     assert.deepEqual(problemMessages({problems: 'oops'}), []);
+  });
+});
+
+describe('copying a B/L into the new B/L form (CB-69)', () => {
+  it('clears only the four shipment-specific fields and preserves every other field', () => {
+    assert.deepEqual(
+      [...COPY_BLANK_FIELDS],
+      ['reference', 'bookingReference', 'containerNumber', 'sealNumber'],
+    );
+    const source = filled({toOrder: false, consigneeId: BUYER.id});
+    const req = draftRequest(source, CONTEXT);
+    const copied = copyFormOf({
+      versionNumber: 2,
+      state: 'committed',
+      data: {
+        document: req.document,
+        partyOrganisations: req.partyOrganisations,
+      },
+    });
+    assert.deepEqual(copied, {
+      ...source,
+      reference: '',
+      bookingReference: '',
+      containerNumber: '',
+      sealNumber: '',
+      carrierCode: 'NSL',
+      issuerCountry: 'DE',
+      portOfLoading: 'BRSSZ',
+      portOfDischarge: 'NLRTM',
+    });
+    assert.deepEqual(
+      draftProblems(copied, CONTEXT.organisations).map(p => p.field),
+      ['reference', 'bookingReference', 'containerNumber'],
+    );
+  });
+});
+
+describe('carrier code validation against the SMDG list (CB-68)', () => {
+  const smdg = [
+    {code: 'MSC', name: 'Mediterranean Shipping Company'},
+    {code: 'MSK', name: 'Maersk'},
+  ];
+
+  it('refuses a carrier code that is not on the SMDG list when carriers are provided', () => {
+    const problems = draftProblems(
+      filled({carrierCode: 'BWML'}),
+      CONTEXT.organisations,
+      smdg,
+    );
+    assert.deepEqual(
+      problems.map(p => p.field),
+      ['carrierCode'],
+    );
+    assert.match(problems[0].message, /list/i);
+    assert.deepEqual(
+      draftProblems(filled({carrierCode: 'MSC'}), CONTEXT.organisations, smdg),
+      [],
+    );
   });
 });
