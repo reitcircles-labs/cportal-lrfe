@@ -85,7 +85,7 @@ Sign in as **`l.okafor@bluewater-lines.example`**. She lands on **Bills of ladin
 
 ## Act 3 · The carrier's release manager: approve and issue (3 min)
 
-Sign in as **`r.menon@bluewater-lines.example`**. Open the B/L from the list (**Open B/L BWML2611001 (BWML)**).
+Sign in as **`r.menon@bluewater-lines.example`**. Open the B/L from the list (**Open B/L BWML2611001 (MSC)**).
 
 | # | Do | They see |
 |---|---|---|
@@ -104,7 +104,7 @@ Sign in as **`a.ribeiro@highland-coffee.example`**. Her list shows the B/L, her 
 |---|---|---|
 | 4.1 | Open the B/L, **Endorse to…** | A panel **Endorse to a named organisation**, with the list **Endorse to**: "Organisations registered on the platform."; neither her own company nor the platform operator is offered |
 | 4.2 | Choose **Harbour Trust Bank** | Under the choice: "Harbour Trust Bank becomes the holder; you can no longer act on this B/L." |
-| 4.3 | **Endorse** | The confirmation: "Endorse B/L BWML2611001 (BWML) to Harbour Trust Bank?", with the same sentence |
+| 4.3 | **Endorse** | The confirmation: "Endorse B/L BWML2611001 (MSC) to Harbour Trust Bank?", with the same sentence |
 | 4.4 | **Endorse** (in the confirmation) | State *With holder*; **Holder** Harbour Trust Bank; **Your role** *Past holder*; no more **Endorse to…**; the chain has a second row, *Endorsed*, from Highland Coffee Exporters to Harbour Trust Bank |
 
 *Say:* "The shipper is paid by its bank against this B/L, so it hands the B/L over. One click, and it is no longer
@@ -135,7 +135,7 @@ Sign in as **`y.demir@roastery-collective.example`**. Open the B/L (his role: **
 
 | # | Do | They see |
 |---|---|---|
-| 7.1 | **Surrender to the carrier** | "Surrender B/L BWML2611001 (BWML) to the carrier?": the carrier will hold it to release the goods; he can no longer endorse it |
+| 7.1 | **Surrender to the carrier** | "Surrender B/L BWML2611001 (MSC) to the carrier?": the carrier will hold it to release the goods; he can no longer endorse it |
 | 7.2 | **Surrender** | State *Surrendered*; **Holder** Bluewater Meridian Lines; his role *Past holder*; the chain's fifth row |
 
 *Say:* "The ship has arrived. The buyer gives the B/L back to the carrier to claim the goods, exactly what a paper
@@ -147,7 +147,7 @@ Sign in as **`r.menon@bluewater-lines.example`**. Open the B/L (State *Surrender
 
 | # | Do | They see |
 |---|---|---|
-| 8.1 | **Release the goods** | "Release the goods of B/L BWML2611001 (BWML)?": the B/L becomes accomplished, nobody holds it any more |
+| 8.1 | **Release the goods** | "Release the goods of B/L BWML2611001 (MSC)?": the B/L becomes accomplished, nobody holds it any more |
 | 8.2 | **Release** | State *Accomplished*; no holder; no buttons left; the chain complete: six rows, the last *Released* |
 
 ## Act 9 · The buyer's bank: check the B/L and its proof (5 min)
@@ -210,7 +210,7 @@ Sign in as **`a.ribeiro@highland-coffee.example`**. Open `BWML2611011`.
 | # | Do | They see |
 |---|---|---|
 | 11.1 | **Endorse to…**, pick **Harbour Trust Bank**, choose **In blank** | Under the choice, what endorsing in blank means |
-| 11.2 | **Endorse** | "Endorse B/L BWML2611011 (BWML) in blank and hand it to Harbour Trust Bank?", with the same explanation |
+| 11.2 | **Endorse** | "Endorse B/L BWML2611011 (MSC) in blank and hand it to Harbour Trust Bank?", with the same explanation |
 | 11.3 | **Endorse in blank** | **Endorsement** "Endorsed in blank"; the chain's row "Endorsed in blank"; her role *Past holder* |
 
 ## Act 12 · The exporter's bank: transfer (2 min)
@@ -291,7 +291,7 @@ open `BWML2611011-A`.
 
 | # | Do | They see |
 |---|---|---|
-| 17.1 | **Full history and checks** | "Chain of title: B/L BWML2611011-A (BWML)"; "All … steps carry the platform's signature, checked in your browser." |
+| 17.1 | **Full history and checks** | "Chain of title: B/L BWML2611011-A (MSC)"; "All … steps carry the platform's signature, checked in your browser." |
 | 17.2 | Read the table | First the original B/L's steps (issued, endorsed in blank, transferred, the change request, amended, split), then this B/L's; the exceptions marked **Exception**; each signature checked; the latest step on the blockchain, every earlier one linked to it |
 | 17.3 | **Download the proof** | The proof file, to check offline as in Act 9 |
 
@@ -300,4 +300,70 @@ asking us."
 
 ## After the R2 demo
 
-The B/Ls stay in every party's list in their final states. For the next demo, start from a fresh install.
+The B/Ls stay in every party's list in their final states. Continue straight to Part 3 (R3) on the same install, or start from a fresh install (`node demo/release.mjs deploy --shipping --version <version> --mode fresh`).
+
+# Part 3 · R3: Network & drafting (`CB-41`, `CB-76`)
+
+The third demo covers drafting productivity (**Copy**, **Edit**, **Archive**) and the three R3 Network capabilities: **Carrier Issuance API** (`CB-56`), **Automatic Paper B/L Reading** (`CB-57`), and **DCSA PINT Cross-Platform eBL Transfers** (`CB-55`).
+
+| B/L | Number (example) | Used for |
+|---|---|---|
+| Copied B/L | `BWML2611021` | copying an accomplished B/L, editing and archiving a draft (`CB-69`, `CB-70`, `CB-71`) |
+| API-issued B/L | `BWML2611031` | direct issuance via carrier API key and duplicate-cargo refusal (`CB-56`) |
+| Paper-read B/L | `BWML2611041` | automatic paper B/L upload, uncertain-field review, and save (`CB-57`) |
+| Cross-platform B/L | `BWML2611051` | outbound & inbound DCSA PINT cross-platform transfer (`CB-55`) |
+
+## Act 18 · The carrier's clerk: copy, edit, and archive a draft (4 min)
+
+Sign in as **`l.okafor@bluewater-lines.example`**. Open `BWML2611001` (accomplished in Act 8).
+
+| # | Do | They see |
+|---|---|---|
+| 18.1 | **Copy** | `#/bls/new?copy=…`: **Copied from B/L BWML2611001 (MSC)** banner; carrier code (`MSC`), shipper, voyage, ports, cargo, and terms are pre-filled; **B/L number**, **Booking reference**, **Container number**, and **Seal number** are empty and highlighted ("Fill in for the new shipment.") |
+| 18.2 | Enter `BWML2611021`, `BKG-2611-0210`, `BWMU7045221`, `SL220921`, **Save draft** | New independent `Draft` B/L `BWML2611021 (MSC)` with an empty chain of title |
+| 18.3 | **Edit**, change **Goods** to `340 bags of green coffee beans`, **Save changes** | **B/L number** and **Carrier code** stayed locked; updated goods shown under **Approval** |
+| 18.4 | Create a spare draft `BWML2611099`, open it, **Archive**, **Archive draft** | Draft leaves the **Bills of lading** list; opening its URL directly shows **Archived** and no actions; `BWML2611099` is free to reuse |
+
+*Say:* "Clerks reuse an earlier shipment in seconds without retyping the whole B/L, fix mistakes before approval, and discard unwanted drafts cleanly."
+
+## Act 19 · The platform operator and carrier system: API key & direct issuance (4 min)
+
+Sign in as **`a.morgan@shipping.example`**.
+
+| # | Do | They see |
+|---|---|---|
+| 19.1 | **Organisations → Open Bluewater Meridian Lines → Carrier API keys**: name `Carrier TMS`, check **Allow direct B/L issue**, **Create API key** | Secret key `lrfe_…` shown **once**; copy it |
+| 19.2 | From a terminal (`curl`): exchange the key at `POST /api/auth/api-token` (`X-Api-Key: lrfe_…`) | Short-lived access token scoped to `bl.read`, `bl.draft`, `bl.issue` |
+| 19.3 | `POST /api/records/issuance` with `issue: true`, `format: "dcsa-3.0"`, DCSA `document` (`BWML2611031`, `carrierCode: "MSC"`, container `BWMU7045331`, seal `SL220931`), and `partyOrganisations: {shipper: "<Highland Coffee Exporters UUID>"}` | `201 Created`: B/L committed and issued in one atomic step; appears immediately on `l.okafor@bluewater-lines.example` and `a.ribeiro@highland-coffee.example` screens as **Issued** |
+| 19.4 | Repeat `POST /api/records/issuance` with `BWML2611032` and the **same** container `BWMU7045331` + seal `SL220931` | `409 duplicate-cargo`: active cargo cannot be double-issued on a second B/L |
+| 19.5 | Back on Bluewater's admin page: **Revoke** the `Carrier TMS` key | `POST /api/auth/api-token` with that key now fails with `401` immediately |
+
+*Say:* "Carriers can connect their own transport system directly using scoped per-organisation API keys, with duplicate-cargo protection and instant revocation."
+
+## Act 20 · The carrier's clerk: read a scanned paper B/L automatically (3 min)
+
+Sign in as **`l.okafor@bluewater-lines.example`**. Click **New B/L**.
+
+| # | Do | They see |
+|---|---|---|
+| 20.1 | Under **Read from paper B/L**, select a PDF, PNG, JPEG, or WebP scan (in mock mode, a `.pdf`/`.png`/`.jpg`/`.webp` file, e.g. containing a JSON test payload), click **Read paper B/L** | Draft fields fill automatically without saving; uncertain fields show amber highlights and a **Check value** badge |
+| 20.2 | Edit/confirm a highlighted field (e.g. **Gross weight**), pick/confirm `MSC` and ports if needed | **Check value** highlight clears as each field is confirmed |
+| 20.3 | **Save draft** | Saved as an ordinary `Draft` B/L ready for normal 4-eyes approval |
+
+*Say:* "When a paper B/L arrives by scan, the automatic check fills the draft and flags anything uncertain for the clerk to confirm before anything is saved."
+
+## Act 21 · Cross-platform eBL transfer (DCSA PINT, 5 min)
+
+Sign in as **`a.morgan@shipping.example`** to register a connected peer platform (**Organisations → Connected eBL platforms**). (For a live demo without a second deployed server, a small mock peer HTTP server answers `GET <baseUrl>/records/pint/parties?partyCode=…` and `POST <baseUrl>/records/pint/transfers` with `RECE`.)
+
+| # | Do | They see |
+|---|---|---|
+| 21.1 | Add peer platform (**Platform ID** `PEEREBL`, **Name** `Partner Trade Platform`, **Base URL**, **Public keys (JWKS JSON)** `{"keys":[…]}`) | Peer platform appears under **Connected eBL platforms** |
+| 21.2 | Draft, approve, and issue `BWML2611051` (`MSC`) to `Highland Coffee Exporters` | State **Issued**, **Holder** `Highland Coffee Exporters` |
+| 21.3 | As **`a.ribeiro@highland-coffee.example`**, open `BWML2611051`, click **Endorse to…**, choose **A party on another platform**, pick **Platform** `Partner Trade Platform`, enter **Party code at that platform**, click **Check receiver**, then **Send to platform** and confirm | State moves to **Sending** and **Transferred out** once the peer accepts the PINT envelope; the chain shows the signed cross-platform transfer |
+| 21.4 | Send an inbound PINT transfer envelope (`POST /api/records/pint/transfers`) addressed to `Highland Coffee Exporters`; open it as `a.ribeiro@highland-coffee.example` | B/L appears in **Arrived** state; clicking **Keep this B/L** transitions it to **With holder** for normal endorsement/surrender |
+
+## After the R3 demo
+
+Reset cleanly before the next presentation with `node demo/release.mjs deploy --shipping --version <version> --mode fresh` (keeps OpenBao and the Cardano blockchain node intact).
+
