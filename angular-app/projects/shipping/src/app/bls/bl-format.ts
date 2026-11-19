@@ -52,6 +52,9 @@ const STATE_NAMES: ReadonlyMap<string, {label: string; ended: boolean}> =
     ['with-holder', {label: 'With holder', ended: false}],
     ['surrendered', {label: 'Surrendered', ended: false}],
     ['amendment-requested', {label: 'Change requested', ended: false}],
+    ['transfer-pending', {label: 'Sending', ended: false}],
+    ['transferred-out', {label: 'Transferred out', ended: false}],
+    ['arrived', {label: 'Arrived', ended: false}],
     ['accomplished', {label: 'Accomplished', ended: true}],
     ['delivered', {label: 'Delivered', ended: true}],
     ['void', {label: 'Void', ended: true}],
@@ -73,6 +76,9 @@ const STEP_NAMES: ReadonlyMap<string, string> = new Map([
   ['amend', 'Amended'],
   ['split', 'Split'],
   ['switch-to-paper', 'Switched to paper'],
+  ['transfer-out', 'Sent to another platform'],
+  ['receive-in', 'Received from another platform'],
+  ['accept-incoming', 'Kept by receiver'],
 ]);
 
 /**
@@ -634,4 +640,35 @@ export function listReceiverLabel(
     return partyLabel(orgId, viewer, names);
   }
   return item.consigneeName || NONE;
+}
+
+/**
+ * Note on cross-platform transfer status for `transfer-pending`, `transferred-out`, or `arrived`
+ * (CB-55). Returns '' for other states.
+ * @param title the title summary
+ * @param platformNames map of platform code to human name
+ * @return human-readable status note
+ */
+export function interopTitleNote(
+  title: TitleSummary | null | undefined,
+  platformNames: Readonly<Record<string, string>> = {},
+): string {
+  if (!title) {
+    return '';
+  }
+  const platform =
+    (title.externalPlatform && platformNames[title.externalPlatform]) ||
+    title.externalPlatform ||
+    'another platform';
+  if (title.state === 'transfer-pending') {
+    return `Sending to ${platform}. The title stays with you until ${platform} confirms; other actions stay locked.`;
+  }
+  if (title.state === 'transferred-out') {
+    const party = title.externalParty ? `${title.externalParty} on ` : '';
+    return `Held by ${party}${platform}. This platform's copy is no longer valid.`;
+  }
+  if (title.state === 'arrived') {
+    return `Arrived from ${platform}. Review the B/L and its chain of title, then keep it or send it back.`;
+  }
+  return '';
 }

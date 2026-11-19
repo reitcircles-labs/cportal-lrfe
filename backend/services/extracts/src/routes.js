@@ -25,8 +25,12 @@ export async function extractsRoutes(app, {service}) {
           ],
           properties: {
             recordId: uuid,
-            versionNumber: {type: 'integer', minimum: 1},
-            ownerIndex: {type: 'integer', minimum: 0},
+            versionNumber: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 2_147_483_647,
+            },
+            ownerIndex: {type: 'integer', minimum: 0, maximum: 2_147_483_647},
             idNo: {type: 'string', minLength: 1, maxLength: 40},
             documentSeen: {type: 'boolean'},
           },

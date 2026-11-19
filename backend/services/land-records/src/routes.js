@@ -14,8 +14,10 @@ const idParams = (extra = {}) => ({
     properties: {id: {type: 'string', format: 'uuid'}, ...extra},
   },
 });
-const versionParam = {n: {type: 'integer', minimum: 1}};
-const revision = {type: 'integer', minimum: 1};
+const versionParam = {
+  n: {type: 'integer', minimum: 1, maximum: 2_147_483_647},
+};
+const revision = {type: 'integer', minimum: 1, maximum: 2_147_483_647};
 const uuid = {type: 'string', format: 'uuid'};
 /** Whether the user may read intake's documents, so a search may show those still in intake (API-803). */
 const readsIntake = req =>

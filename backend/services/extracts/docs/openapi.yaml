@@ -75,9 +75,11 @@ paths:
                 versionNumber:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
                 ownerIndex:
                   type: integer
                   minimum: 0
+                  maximum: 2147483647
                 idNo:
                   type: string
                   minLength: 1

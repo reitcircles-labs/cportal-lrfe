@@ -146,6 +146,18 @@ jobs:
         run: npm ci --prefix backend
       - name: Findings and verdict (unit tests)
         run: node --test security/*.test.mjs
+      - uses: actions/cache@v6
+        with:
+          path: security/.reports/.nuclei-cache
+          key: nuclei-templates-${{ runner.os }}-v1
+      - name: Prepare nuclei templates
+        run: |
+          mkdir -p security/.reports/.nuclei-cache
+          if [ ! -d security/.reports/.nuclei-cache/nuclei-templates/.git ]; then
+            rm -rf security/.reports/.nuclei-cache/nuclei-templates
+            git clone --depth 1 https://github.com/projectdiscovery/nuclei-templates.git security/.reports/.nuclei-cache/nuclei-templates
+          fi
+          chmod -R a+rwX security/.reports/.nuclei-cache
       - name: Scans
         run: node security/scan.mjs --level ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'nightly' || 'pr' }} --out security/.reports/run
       - name: Print penetration test summary and errors

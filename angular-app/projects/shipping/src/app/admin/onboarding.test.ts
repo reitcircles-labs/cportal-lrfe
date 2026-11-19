@@ -5,6 +5,7 @@ import {describe, it} from 'node:test';
 
 import {
   ONBOARDING_PERMS,
+  apiKeyProblem,
   cleanInvitation,
   cleanOrganisation,
   freeOfficeCode,
@@ -17,6 +18,7 @@ import {
   officeOf,
   organisationProblem,
   rolesText,
+  selectedApiKeyPerms,
   sortOrganisations,
   staffOf,
   staffRoles,
@@ -379,5 +381,22 @@ describe('organisationInvalidField and invitationInvalidField: the field to mark
     assert.equal(invitationInvalidField({...ok, email: 'grace'}), 'email');
     assert.equal(invitationInvalidField({...ok, roles: []}), 'roles');
     assert.equal(invitationInvalidField(ok), null);
+  });
+});
+
+describe('carrier API key helpers (CB-56)', () => {
+  it('validates the API key name and builds scoped B/L permissions', () => {
+    assert.equal(apiKeyProblem('  '), 'Give the API key a name.');
+    assert.equal(
+      apiKeyProblem('x'.repeat(101)),
+      'The API key name is at most 100 characters.',
+    );
+    assert.equal(apiKeyProblem('Carrier TMS'), null);
+    assert.deepEqual(selectedApiKeyPerms(false), ['bl.read', 'bl.draft']);
+    assert.deepEqual(selectedApiKeyPerms(true), [
+      'bl.read',
+      'bl.draft',
+      'bl.issue',
+    ]);
   });
 });

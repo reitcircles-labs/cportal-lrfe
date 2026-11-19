@@ -1961,6 +1961,8 @@ export const TITLE_STATE_AFTER = new Map([
   ['amend', 'with-holder'],
   ['split', 'split'],
   ['switch-to-paper', 'switched-to-paper'],
+  ['transfer-out', 'transfer-pending'],
+  ['accept-incoming', 'with-holder'],
 ]);
 
 /**

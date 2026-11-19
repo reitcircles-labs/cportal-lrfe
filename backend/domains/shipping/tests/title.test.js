@@ -65,7 +65,11 @@ function titleIn(kind, state) {
   if (state === 'issued') {
     return {...base, holder: SHIPPER};
   }
-  if (state === 'with-holder') {
+  if (
+    state === 'with-holder' ||
+    state === 'transfer-pending' ||
+    state === 'arrived'
+  ) {
     return {...base, holder: BANK, endorsement: 'blank'};
   }
   if (state === 'surrendered') {
@@ -108,11 +112,14 @@ const ALLOWED = new Set([
   'negotiable issued holder surrender',
   'negotiable issued holder surrender-for-amendment',
   'negotiable issued holder switch-to-paper',
+  'negotiable issued holder transfer-out',
   'negotiable with-holder holder endorse',
   'negotiable with-holder holder transfer',
   'negotiable with-holder holder surrender',
   'negotiable with-holder holder surrender-for-amendment',
   'negotiable with-holder holder switch-to-paper',
+  'negotiable with-holder holder transfer-out',
+  'negotiable arrived holder accept-incoming',
   'negotiable surrendered carrier release',
   'negotiable amendment-requested carrier amend',
   'negotiable amendment-requested carrier split',
@@ -132,6 +139,8 @@ const NEGOTIABLE_ONLY = [
   'amend',
   'split',
   'switch-to-paper',
+  'transfer-out',
+  'accept-incoming',
 ];
 
 /** The commands only the holder runs; the others (but issue) are the carrier's. */
@@ -141,6 +150,8 @@ const HOLDER_COMMANDS = [
   'surrender',
   'surrender-for-amendment',
   'switch-to-paper',
+  'transfer-out',
+  'accept-incoming',
 ];
 
 /** The states each command runs from, written out by hand from the design. */
@@ -155,6 +166,8 @@ const FROM = {
   amend: ['amendment-requested'],
   split: ['amendment-requested'],
   'switch-to-paper': ['issued', 'with-holder'],
+  'transfer-out': ['issued', 'with-holder'],
+  'accept-incoming': ['arrived'],
 };
 
 /**
@@ -513,6 +526,7 @@ describe('title engine (CB-30)', () => {
         'surrender',
         'surrender-for-amendment',
         'switch-to-paper',
+        'transfer-out',
       ]);
       ({title} = applyTitleCommand(title, {name: 'surrender'}, buyer));
       expect(title).to.include({state: 'surrendered', holder: CARRIER});

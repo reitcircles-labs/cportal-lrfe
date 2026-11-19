@@ -16,7 +16,9 @@ import {OFFERED_COMMANDS} from './title.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuid = {type: 'string', format: 'uuid'};
-const versionParam = {n: {type: 'integer', minimum: 1}};
+const versionParam = {
+  n: {type: 'integer', minimum: 1, maximum: 2_147_483_647},
+};
 /** The longest B/L number a lookup takes (CB-47); a transport document reference has 20 at most. */
 const MAX_NUMBER_LENGTH = 100;
 
@@ -55,6 +57,30 @@ const saveDraftBody = {
   properties: {
     ...billOfLadingBody.properties,
     revision: {type: 'integer', minimum: 1},
+  },
+};
+
+/** Carrier issuance API request (CB-56): ready-to-issue B/L, or straight-through `issue: true`. */
+const issuanceBody = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['format', 'document'],
+  properties: {
+    ...billOfLadingBody.properties,
+    issue: {type: 'boolean'},
+    comment: {type: 'string', maxLength: 4000},
+  },
+};
+
+/** Paper B/L scan upload for automatic draft extraction (CB-57). */
+const readPaperBody = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['fileName', 'mimeType', 'contentBase64'],
+  properties: {
+    fileName: {type: 'string', minLength: 1, maxLength: 255},
+    mimeType: {type: 'string', minLength: 1, maxLength: 100},
+    contentBase64: {type: 'string', maxLength: 22_000_000},
   },
 };
 
@@ -115,6 +141,8 @@ const titleCommandBody = {
     document: {type: 'object'},
     partyOrganisations: {type: 'object'},
     children: {type: 'array', maxItems: 100, items: titleDocument},
+    platform: {type: 'string', minLength: 1, maxLength: 50},
+    partyCode: {type: 'string', minLength: 1, maxLength: 100},
   },
 };
 
@@ -130,6 +158,8 @@ const TITLE_COMMAND_ARGUMENTS = [
   'document',
   'partyOrganisations',
   'children',
+  'platform',
+  'partyCode',
   ...CARGO_PART_ARGUMENTS,
 ];
 
@@ -331,6 +361,62 @@ export async function recordsRoutes(app, {service}) {
       );
       return reply.code(201).send(record);
     },
+  );
+
+  // Carrier issuance API (CB-56): submits an approved/ready B/L, or issues straight through when `issue: true`
+  app.post(
+    '/records/issuance',
+    {onRequest: canDraft, schema: {body: issuanceBody}},
+    async (req, reply) => {
+      const organisationId = ownerOf(req);
+      const actor = actorOf(req);
+      const shouldIssue = req.body.issue === true;
+      if (shouldIssue && !(req.user.perms ?? []).includes('bl.issue')) {
+        throw new ForbiddenError('Not permitted', {perm: 'bl.issue'});
+      }
+      const {data, cargoKey} = await service.prepareIssuance(
+        req.body,
+        organisationId,
+      );
+      if (shouldIssue) {
+        const prepared = service.buildCommittedRecord(
+          data,
+          actor,
+          organisationId,
+          {comment: req.body.comment},
+        );
+        const applied = await titlesOf(app).issueCommitted({
+          prepared,
+          data,
+          actor,
+          organisationId,
+          writeRecord: () => service.writeCommittedRecord(prepared, actor),
+        });
+        const record = await service.getRecord(
+          prepared.record.id,
+          organisationId,
+        );
+        return reply.code(201).send({record, title: applied.title, cargoKey});
+      }
+      const record = await service.createCommittedRecord(
+        data,
+        actor,
+        organisationId,
+        {comment: req.body.comment},
+      );
+      return reply.code(201).send({record, title: null, cargoKey});
+    },
+  );
+
+  // Automatic paper B/L reading (CB-57): returns extracted fields and uncertain flags without saving
+  app.post(
+    '/records/read-paper',
+    {
+      onRequest: canDraft,
+      bodyLimit: 22 * 1024 * 1024,
+      schema: {body: readPaperBody},
+    },
+    async req => app.paperReader.read(req.body),
   );
 
   app.put(
@@ -535,6 +621,103 @@ export async function recordsRoutes(app, {service}) {
   // check a chain with them, offline (CB-32)
   app.get('/records/title/keys', async () => titlesOf(app).keys());
 
+  // ------------------------------------------------ DCSA PINT cross-platform interop (CB-55)
+
+  app.get('/records/platforms', {onRequest: app.authenticate}, async req => ({
+    items: await titlesOf(app).listPlatforms(
+      (req.user.perms ?? []).includes('admin.organisations'),
+    ),
+  }));
+  app.post(
+    '/records/platforms',
+    {
+      onRequest: app.requirePerm('admin.organisations'),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['code', 'name', 'baseUrl', 'jwks'],
+          properties: {
+            code: {type: 'string', minLength: 1, maxLength: 50},
+            name: {type: 'string', minLength: 1, maxLength: 200},
+            baseUrl: {type: 'string', minLength: 1, maxLength: 500},
+            jwks: {type: 'object'},
+            agreementDate: {type: 'string', maxLength: 50},
+          },
+        },
+      },
+    },
+    async (req, reply) =>
+      reply.code(201).send(await titlesOf(app).createPlatform(req.body)),
+  );
+  app.post(
+    '/records/platforms/:code/suspend',
+    {
+      onRequest: app.requirePerm('admin.organisations'),
+      schema: {
+        params: {
+          type: 'object',
+          required: ['code'],
+          properties: {code: {type: 'string', minLength: 1, maxLength: 50}},
+        },
+      },
+    },
+    async req => titlesOf(app).setPlatformStatus(req.params.code, 'Suspended'),
+  );
+  app.post(
+    '/records/platforms/:code/reactivate',
+    {
+      onRequest: app.requirePerm('admin.organisations'),
+      schema: {
+        params: {
+          type: 'object',
+          required: ['code'],
+          properties: {code: {type: 'string', minLength: 1, maxLength: 50}},
+        },
+      },
+    },
+    async req => titlesOf(app).setPlatformStatus(req.params.code, 'Active'),
+  );
+
+  app.get(
+    '/records/pint/parties',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            partyCode: {type: 'string', maxLength: 100},
+            code: {type: 'string', maxLength: 100},
+          },
+        },
+      },
+    },
+    async req =>
+      titlesOf(app).pintPartyInfo(req.query.partyCode ?? req.query.code ?? ''),
+  );
+  app.get(
+    '/records/pint/lookup-party',
+    {
+      onRequest: app.authenticate,
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['platform', 'partyCode'],
+          properties: {
+            platform: {type: 'string', minLength: 1, maxLength: 50},
+            partyCode: {type: 'string', minLength: 1, maxLength: 100},
+          },
+        },
+      },
+    },
+    async req =>
+      titlesOf(app).lookupPeerParty(req.query.platform, req.query.partyCode),
+  );
+  app.post('/records/pint/transfers', async (req, reply) => {
+    const result = await titlesOf(app).receivePintTransfer(req.body);
+    return reply.code(result.status).send(result.body);
+  });
+
   // ------------------------------------------------ the title (CB-34)
 
   // the B/Ls the session's organisation is party to (CB-42): its drafts, and the B/Ls of which it
@@ -573,6 +756,21 @@ export async function recordsRoutes(app, {service}) {
       const view = await titlesOf(app).read(req.params.id, actorOf(req), {
         withChain: true,
       });
+      return forUser(view, req);
+    },
+  );
+
+  // Retry a locked outgoing cross-platform transfer with the exact stored envelope (CB-55)
+  app.post(
+    '/records/:id/title/retry-transfer',
+    {onRequest: app.requirePerm('bl.endorse'), schema: idParams()},
+    async req => {
+      ownerOf(req);
+      const view = await titlesOf(app).retryTransfer(
+        req.params.id,
+        actorOf(req),
+        {withChain: true},
+      );
       return forUser(view, req);
     },
   );

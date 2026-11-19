@@ -37,7 +37,9 @@ const idParams = (extra = {}) => ({
     properties: {id: {type: 'string', format: 'uuid'}, ...extra},
   },
 });
-const versionParam = {n: {type: 'integer', minimum: 1}};
+const versionParam = {
+  n: {type: 'integer', minimum: 1, maximum: 2_147_483_647},
+};
 
 /** Largest page text accepted from intake (API-798): at filing, and alone for the back-fill. */
 export const MAX_TRANSCRIPTION_BYTES = 16 * 1024 * 1024;

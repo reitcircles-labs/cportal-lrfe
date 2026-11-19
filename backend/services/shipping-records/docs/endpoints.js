@@ -18,6 +18,20 @@ export const ENDPOINTS = {
       description:
         '`{ format, document, partyOrganisations? }`. `format` names a B/L format that is on in this install (`LRFE_BL_FORMATS`, `dcsa-3.0` by default); `document` is the B/L in that format, converted to the internal model (its status is left out). `partyOrganisations` links parties of the document to organisations (`shipper`, `notifyParties.0`). 400 with `details.problems` (every problem, `{ path, message }`) when the B/L is not valid, or for a format that is unknown or not on. 409 when your organisation already has a B/L with the same carrier code and transport document reference (another organisation may draft the same reference; neither sees the other one). 403 for a user of no organisation. Answers the record as `GET /records/{id}` does.',
     },
+    'POST /records/issuance': {
+      tag: 'Records',
+      status: 201,
+      summary: "Submit or issue a B/L from a carrier's system (CB-56)",
+      description:
+        '`{ format, document, partyOrganisations?, issue?, comment? }`. Validates the document, port list and unique reference, and rejects duplicate active cargo (`409 duplicate-cargo`). With `issue: false` (default), commits version 1 ready for a human approver to issue. With `issue: true` (requires `bl.issue`), also issues and anchors the title atomically. Answers `{ record, title, cargoKey }`.',
+    },
+    'POST /records/read-paper': {
+      tag: 'Records',
+      summary:
+        'Read a scanned paper B/L automatically into draft fields (CB-57)',
+      description:
+        '`{ fileName, mimeType, contentBase64 }` (PDF or image, up to 15 MB). Extracts draft fields, matches active organisations and ports, and flags uncertain fields for human confirmation (`{ fileName, fields, uncertain, warnings, summary }`).',
+    },
     'PUT /records/{id}/draft': {
       tag: 'Records',
       summary: "Replace the open draft's B/L, or open a new draft version",
@@ -91,6 +105,55 @@ export const ENDPOINTS = {
       description:
         "`{ keys: [{ kty: 'EC', crv: 'P-256', x, y, kid, alg: 'ES256', use: 'sig' }] }`: a JWK set of every version of the platform's signing key, to check the signature of each chain-of-title entry (its `kid` picks the key), also offline. 503 while the platform signature is not set up.",
       auth: 'public',
+    },
+    'GET /records/platforms': {
+      tag: 'Records',
+      summary: 'List connected eBL platforms (CB-55)',
+      description:
+        '`{ items }` of registered peer eBL platforms; administrators see all statuses, trade users see active platforms only.',
+    },
+    'POST /records/platforms': {
+      tag: 'Records',
+      status: 201,
+      summary: 'Register a connected eBL platform (CB-55)',
+      description:
+        '`{ code, name, baseUrl, jwks, agreementDate? }`. Adds a peer platform with its public signing keys (admin.organisations).',
+    },
+    'POST /records/platforms/{code}/suspend': {
+      tag: 'Records',
+      summary: 'Suspend a connected eBL platform (CB-55)',
+      description: 'Marks a connected platform Suspended.',
+    },
+    'POST /records/platforms/{code}/reactivate': {
+      tag: 'Records',
+      summary: 'Reactivate a connected eBL platform (CB-55)',
+      description: 'Marks a connected platform Active again.',
+    },
+    'GET /records/pint/parties': {
+      tag: 'Records',
+      auth: 'public',
+      summary: 'DCSA PINT incoming party lookup (CB-55)',
+      description:
+        '`?partyCode=`: returns `{ partyCode, partyName }` for an active admitted non-operator organisation, or 404.',
+    },
+    'GET /records/pint/lookup-party': {
+      tag: 'Records',
+      summary: 'Check a receiver party on a connected peer platform (CB-55)',
+      description:
+        '`?platform=&partyCode=`: queries the active peer platform and returns `{ platform, platformName, partyCode, partyName }`.',
+    },
+    'POST /records/pint/transfers': {
+      tag: 'Records',
+      auth: 'public',
+      summary: 'Receive a signed DCSA PINT B/L transfer envelope (CB-55)',
+      description:
+        'Verifies sender registration, all chain signatures, prior local entries byte-for-byte, document checksum, and active receiver; answers `RECE`, `DUPE`, `BSIG`, or `BENV`.',
+    },
+    'POST /records/{id}/title/retry-transfer': {
+      tag: 'Records',
+      summary: 'Retry a locked outgoing cross-platform transfer (CB-55)',
+      description:
+        'Resends the identical stored PINT envelope while the B/L is in `transfer-pending`.',
     },
     'GET /records/title': {
       tag: 'Records',

@@ -7,8 +7,10 @@ import {
   input,
   signal,
 } from '@angular/core';
+import {DatePipe} from '@angular/common';
 import {RouterLink} from '@angular/router';
 import {
+  ConfirmService,
   NATIONAL_ROLES,
   RbacService,
   ToastService,
@@ -20,14 +22,17 @@ import type {CarrierOption} from '../bls/carrier-picker';
 import {CarrierPickerComponent} from '../bls/carrier-picker.component';
 import {LatestRequest} from '../bls/latest';
 import {
+  apiKeyProblem,
   cleanInvitation,
   invitationInvalidField,
   invitationProblem,
   rolesText,
+  selectedApiKeyPerms,
   staffOf,
   staffRoles,
   statusTagClass,
   type Organisation,
+  type OrganisationApiKey,
   type StaffMember,
 } from './onboarding';
 import {OrganisationsApi, type InvitationResult} from './organisations.api';
@@ -46,7 +51,7 @@ interface StaffRow {
  */
 @Component({
   selector: 'app-organisation-detail',
-  imports: [RouterLink, CarrierPickerComponent],
+  imports: [DatePipe, RouterLink, CarrierPickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -147,6 +152,72 @@ interface StaffRow {
             </div>
           </form>
         </section>
+        <section class="panel" aria-label="Carrier API keys">
+          <div class="panel-head"><h2>Carrier API keys ({{ apiKeys().length }})</h2></div>
+          <div class="panel-body stack" style="gap:14px">
+            <p class="small muted" style="margin:0">Carrier systems exchange an API key at <span class="mono">/api/auth/api-token</span> and submit or issue B/Ls through <span class="mono">/api/records/issuance</span>.</p>
+            @if (createdSecret(); as secret) {
+              <div class="note secret-box" role="status">
+                <strong>API key created — save it now (it is shown only once):</strong>
+                <div class="mono" style="margin-top:6px;word-break:break-all">{{ secret }}</div>
+              </div>
+            }
+            @if (o.status === 'Active') {
+              <form class="stack" style="gap:10px" (submit)="$event.preventDefault(); createKey(o)">
+                <div class="who">
+                  <div class="field">
+                    <label for="api-key-name">Key name</label>
+                    <input id="api-key-name" class="input" maxlength="100" autocomplete="off" placeholder="e.g. Carrier TMS" [value]="keyName()" (input)="keyName.set($any($event.target).value)">
+                  </div>
+                  <div class="field" style="justify-content:flex-end">
+                    <label class="role" style="min-height:auto;align-items:center">
+                      <input type="checkbox" [checked]="keyAllowIssue()" (change)="keyAllowIssue.set($any($event.target).checked)">
+                      <span>Allow direct B/L issue (<span class="mono small">bl.issue</span>)</span>
+                    </label>
+                  </div>
+                </div>
+                @if (keyError(); as ke) {
+                  <div class="note danger" role="alert">{{ ke }}</div>
+                }
+                <div>
+                  <button type="submit" class="btn btn-secondary" [disabled]="keyBusy()">{{ keyBusy() ? 'Creating…' : 'Create API key' }}</button>
+                </div>
+              </form>
+            }
+            <div style="overflow-x:auto">
+              <table class="table" style="min-width:640px" aria-label="API keys">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Prefix</th>
+                    <th>Permissions</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (k of apiKeys(); track k.id) {
+                    <tr>
+                      <td><strong>{{ k.name }}</strong></td>
+                      <td class="mono small">{{ k.prefix }}…</td>
+                      <td class="mono small">{{ k.perms.join(', ') }}</td>
+                      <td><span [class]="k.status === 'Active' ? 'tag tag-accent' : 'tag tag-neutral'">{{ k.status }}</span></td>
+                      <td class="small muted">{{ k.createdAt | date: 'mediumDate' }}</td>
+                      <td style="text-align:right">
+                        @if (k.status === 'Active') {
+                          <button type="button" class="btn btn-secondary" [disabled]="keyBusy()" (click)="revokeKey(o, k)">Revoke</button>
+                        }
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="6" class="muted" style="padding:18px 16px">No API keys yet.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       } @else {
         <p class="muted" role="status">Loading…</p>
       }
@@ -159,6 +230,7 @@ interface StaffRow {
     .roles { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
     .role { display: flex; gap: 10px; align-items: flex-start; min-height: 44px; }
     .role input { margin-top: 3px; }
+    .secret-box { background: var(--color-surface-2); border: 1px solid var(--color-divider); }
     @media (max-width: 720px) { .who { grid-template-columns: 1fr; } }
   `,
   ],
@@ -169,6 +241,7 @@ export class OrganisationDetailComponent {
 
   private readonly organisationsApi = inject(OrganisationsApi);
   private readonly rbac = inject(RbacService);
+  private readonly confirm = inject(ConfirmService);
   private readonly toast = inject(ToastService);
   private readonly latest = new LatestRequest();
 
@@ -178,6 +251,7 @@ export class OrganisationDetailComponent {
   protected readonly carrierCode = signal('');
   protected readonly savingCarrier = signal(false);
   protected readonly carrierError = signal<string | null>(null);
+  protected readonly apiKeys = signal<OrganisationApiKey[]>([]);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly name = signal('');
@@ -185,6 +259,11 @@ export class OrganisationDetailComponent {
   protected readonly chosen = signal<string[]>([]);
   protected readonly saving = signal(false);
   protected readonly formError = signal<string | null>(null);
+  protected readonly keyName = signal('');
+  protected readonly keyAllowIssue = signal(false);
+  protected readonly keyBusy = signal(false);
+  protected readonly keyError = signal<string | null>(null);
+  protected readonly createdSecret = signal<string | null>(null);
   /** The field the form's problem is in, marked invalid for screen readers. */
   protected readonly invalid = signal<'name' | 'email' | 'roles' | null>(null);
 
@@ -326,9 +405,10 @@ export class OrganisationDetailComponent {
     this.error.set(null);
     this.carrierError.set(null);
     try {
-      const [organisations, users, carriers] = await Promise.all([
+      const [organisations, users, apiKeys, carriers] = await Promise.all([
         this.organisationsApi.list(),
         this.organisationsApi.users(),
+        this.organisationsApi.apiKeys(id),
         this.organisationsApi.carriers().catch(err => {
           if (this.latest.isCurrent(request)) {
             this.carrierError.set(toApiError(err).message);
@@ -347,6 +427,7 @@ export class OrganisationDetailComponent {
       this.carrierCode.set(organisation?.carrierCode ?? '');
       this.carriers.set(carriers);
       this.members.set(staffOf(users, id));
+      this.apiKeys.set(apiKeys);
     } catch (e) {
       if (!this.latest.isCurrent(request)) {
         return;
@@ -354,5 +435,68 @@ export class OrganisationDetailComponent {
       this.error.set(toApiError(e).message);
     }
     this.loading.set(false);
+  }
+
+  /**
+   * Creates an API key for the organisation and shows its one-time secret (CB-56).
+   * @param organisation the organisation
+   * @return when created
+   */
+  protected async createKey(organisation: Organisation): Promise<void> {
+    const problem = apiKeyProblem(this.keyName());
+    this.keyError.set(problem);
+    if (problem) {
+      return;
+    }
+    this.keyBusy.set(true);
+    this.createdSecret.set(null);
+    try {
+      const created = await this.organisationsApi.createApiKey(
+        organisation.id,
+        this.keyName().trim(),
+        selectedApiKeyPerms(this.keyAllowIssue()),
+      );
+      this.createdSecret.set(created.secret ?? null);
+      this.keyName.set('');
+      this.keyAllowIssue.set(false);
+      this.toast.show('success', 'API key created', created.name);
+      await this.load(organisation.id);
+    } catch (e) {
+      this.keyError.set(toApiError(e).message);
+    } finally {
+      this.keyBusy.set(false);
+    }
+  }
+
+  /**
+   * Revokes an active API key after confirmation (CB-56).
+   * @param organisation the organisation
+   * @param key the key to revoke
+   * @return when revoked
+   */
+  protected async revokeKey(
+    organisation: Organisation,
+    key: OrganisationApiKey,
+  ): Promise<void> {
+    const confirmed = await this.confirm.ask({
+      title: `Revoke API key "${key.name}"?`,
+      body: 'Systems using this key will immediately stop being able to issue or submit B/Ls.',
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    });
+    if (!confirmed) {
+      return;
+    }
+    this.keyBusy.set(true);
+    this.keyError.set(null);
+    try {
+      await this.organisationsApi.revokeApiKey(organisation.id, key.id);
+      this.toast.show('success', 'API key revoked', key.name);
+      await this.load(organisation.id);
+    } catch (e) {
+      this.keyError.set(toApiError(e).message);
+    } finally {
+      this.keyBusy.set(false);
+    }
   }
 }

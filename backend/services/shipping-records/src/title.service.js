@@ -24,7 +24,10 @@ import {
 import {carrierProblems} from '@lrfe/domain-shipping/carriers';
 import {portProblems} from '@lrfe/domain-shipping/ports';
 
+import {sealOf} from '@lrfe/record-contract/seal';
+
 import {TITLE_ENTRY_TYP, entryHashOf} from './chain.js';
+import {RESERVED_KEYS, UUID_PATTERN, verifyIncomingChain} from './pint.js';
 import {summaryOf} from './records.service.js';
 import {
   checkedDocument,
@@ -50,6 +53,8 @@ export const OFFERED_COMMANDS = new Map([
   ['surrender', 'bl.endorse'],
   ['surrender-for-amendment', 'bl.endorse'],
   ['switch-to-paper', 'bl.endorse'],
+  ['transfer-out', 'bl.endorse'],
+  ['accept-incoming', 'bl.endorse'],
 ]);
 
 /**
@@ -500,6 +505,8 @@ export class TitleService {
     ports = null,
     carriers = null,
     maxSplitChildren = DEFAULT_MAX_SPLIT_CHILDREN,
+    platformCode = 'LRFE',
+    fetchImpl = globalThis.fetch,
   }) {
     if (typeof organisations?.standingOf !== 'function') {
       throw new Error(
@@ -517,6 +524,8 @@ export class TitleService {
     this.ports = ports;
     this.carriers = carriers;
     this.maxSplitChildren = maxSplitChildren;
+    this.platformCode = platformCode;
+    this.fetchImpl = fetchImpl;
   }
 
   /**
@@ -572,6 +581,84 @@ export class TitleService {
         {code: 'in-review'},
       );
     }
+  }
+
+  /**
+   * Validates, signs, and atomically writes a new committed B/L and its initial issue title +
+   * chain entry in one transaction (CB-56). Leaves nothing stored if signing or persistence fails.
+   * @param {{
+   *   prepared: {record: object, version: object},
+   *   data: object,
+   *   actor: {id: string, name?: string, org?: string},
+   *   organisationId: string,
+   *   writeRecord: function(): !Promise<void>,
+   * }} options
+   * @return {!Promise<object>} the issued title view with chain
+   */
+  async issueCommitted({prepared, data, actor, organisationId, writeRecord}) {
+    if (this.signer === null) {
+      throw notSetUp();
+    }
+    const {record, version} = prepared;
+    const links = data.partyOrganisations ?? {};
+    const issueCommand = {
+      name: 'issue',
+      kind: kindOf(data.document),
+      shipper: links.shipper ?? null,
+      consignee: links.consignee ?? null,
+    };
+    const result = this.run(null, issueCommand, {org: organisationId});
+    await this.requireRegistered(issueCommand);
+    const now = this.clock();
+    const entry = await this.signedEntry({
+      recordId: record.id,
+      stored: null,
+      command: 'issue',
+      actor,
+      title: result.title,
+      documentHash: version.documentHash,
+      at: now,
+    });
+    let saved;
+    let appended;
+    await this.atomic(async () => {
+      await writeRecord();
+      saved = await this.repo.createTitle({
+        recordId: record.id,
+        ...result.title,
+        issuedVersion: version.versionNumber,
+        documentHash: version.documentHash,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      appended = await this.repo.appendTitleEntry(entry);
+      await this.publishEntry(record, appended, actor);
+    });
+    return this.viewOf(record, saved, actor, [appended], {withChain: true});
+  }
+
+  /**
+   * Validates that an issuance document can be issued immediately (signer set up, valid issue
+   * command for this carrier, registered and active shipper/consignee) before anything is written
+   * (CB-56).
+   * @param {object} data converted B/L data
+   * @param {string} organisationId issuing carrier organisation
+   * @return {!Promise<void>}
+   */
+  async validateIssue(data, organisationId) {
+    if (this.signer === null) {
+      throw notSetUp();
+    }
+    const links = data.partyOrganisations ?? {};
+    const issueCommand = {
+      name: 'issue',
+      kind: kindOf(data.document),
+      shipper: links.shipper ?? null,
+      consignee: links.consignee ?? null,
+    };
+    this.run(null, issueCommand, {org: organisationId});
+    await this.requireRegistered(issueCommand);
   }
 
   /**
@@ -709,6 +796,11 @@ export class TitleService {
     const result = this.run(titleOf(stored), engineCommand, actor);
     if (engineCommand.name === 'split') {
       return this.split(record, stored, chain, command, result, actor, {
+        withChain,
+      });
+    }
+    if (engineCommand.name === 'transfer-out') {
+      return this.transferOut(record, stored, chain, command, actor, {
         withChain,
       });
     }
@@ -1232,13 +1324,10 @@ export class TitleService {
     at,
   }) {
     const chain = await this.repo.listTitleEntries(recordId);
-    const revision = stored?.revision ?? 0;
-    if (chain.length !== revision) {
-      throw changedMeanwhile();
-    }
+    const seq = chain.length + 1;
     return this.signed({
       recordId,
-      seq: revision + 1,
+      seq,
       command,
       actor: entryActor(actor),
       from: stored?.holder ?? null,
@@ -1328,6 +1417,10 @@ export class TitleService {
     } else {
       view.title = {
         ...titleOf(stored),
+        ...(stored.externalPlatform
+          ? {externalPlatform: stored.externalPlatform}
+          : {}),
+        ...(stored.externalParty ? {externalParty: stored.externalParty} : {}),
         issuedVersion: stored.issuedVersion,
         documentHash: stored.documentHash,
         revision: stored.revision,
@@ -1527,5 +1620,857 @@ export class TitleService {
       }
       throw error;
     }
+  }
+
+  // ---------------------------------------------------------------- DCSA PINT interop (CB-55)
+
+  /**
+   * Lists connected eBL platforms; trade users see Active platforms only.
+   * @param {boolean} [includeSuspended]
+   * @return {!Promise<!Array<object>>}
+   */
+  async listPlatforms(includeSuspended = false) {
+    const all = await this.repo.listPlatforms();
+    return includeSuspended ? all : all.filter(p => p.status === 'Active');
+  }
+
+  /**
+   * Registers a peer eBL platform in the directory (CB-55).
+   * @param {{code: string, name: string, baseUrl: string, jwks: object, agreementDate?: string}} input
+   * @return {!Promise<object>}
+   */
+  async createPlatform({code, name, baseUrl, jwks, agreementDate}) {
+    const cleanCode = typeof code === 'string' ? code.trim() : '';
+    if (!cleanCode || RESERVED_KEYS.has(cleanCode)) {
+      throw new BadRequestError('Platform code is not valid');
+    }
+    const cleanName = typeof name === 'string' ? name.trim() : '';
+    const cleanUrl =
+      typeof baseUrl === 'string' ? baseUrl.trim().replace(/\/+$/, '') : '';
+    if (!cleanName || !cleanUrl || !Array.isArray(jwks?.keys)) {
+      throw new BadRequestError(
+        'Platform name, baseUrl, and public JWKS keys are required',
+      );
+    }
+    const now = this.clock();
+    return this.repo.createPlatform({
+      code: cleanCode,
+      name: cleanName,
+      baseUrl: cleanUrl,
+      jwks,
+      agreementDate: agreementDate ?? null,
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Suspends or reactivates a connected eBL platform (CB-55).
+   * @param {string} code
+   * @param {'Active'|'Suspended'} status
+   * @return {!Promise<object>}
+   */
+  async setPlatformStatus(code, status) {
+    if (!code || RESERVED_KEYS.has(code)) {
+      throw new NotFoundError('Platform not found');
+    }
+    const updated = await this.repo.updatePlatform(code, {
+      status,
+      updatedAt: this.clock(),
+    });
+    if (!updated) {
+      throw new NotFoundError('Platform not found');
+    }
+    return updated;
+  }
+
+  /**
+   * Answers an incoming PINT party lookup with the active non-operator organisation's name (CB-55).
+   * @param {string} partyCode
+   * @return {!Promise<{partyCode: string, partyName: string}>}
+   */
+  async pintPartyInfo(partyCode) {
+    const clean = typeof partyCode === 'string' ? partyCode.trim() : '';
+    if (!clean || RESERVED_KEYS.has(clean)) {
+      throw new NotFoundError('Party not found');
+    }
+    let standing;
+    try {
+      standing = await this.organisations.standingOf(clean);
+    } catch (cause) {
+      throw organisationsUnavailable(cause);
+    }
+    if (standing !== 'active') {
+      throw new NotFoundError('Party not found');
+    }
+    const partyName =
+      typeof this.organisations.nameOf === 'function'
+        ? await this.organisations.nameOf(clean)
+        : null;
+    if (!partyName) {
+      throw new NotFoundError('Party not found');
+    }
+    return {partyCode: clean, partyName};
+  }
+
+  /**
+   * Queries a connected peer platform for a receiver party's registered name before sending (CB-55).
+   * @param {string} platformCode
+   * @param {string} partyCode
+   * @return {!Promise<{platform: string, platformName: string, partyCode: string, partyName: string}>}
+   */
+  async lookupPeerParty(platformCode, partyCode) {
+    if (!platformCode || RESERVED_KEYS.has(platformCode)) {
+      throw new NotFoundError('Connected platform not found', {
+        code: 'platform-not-found',
+      });
+    }
+    const peer = await this.repo.getPlatform(platformCode);
+    if (!peer) {
+      throw new NotFoundError('Connected platform not found', {
+        code: 'platform-not-found',
+      });
+    }
+    if (peer.status !== 'Active') {
+      throw new ConflictError(`Platform ${peer.name} is suspended`, {
+        code: 'platform-suspended',
+      });
+    }
+    let response;
+    try {
+      response = await this.fetchImpl(
+        `${peer.baseUrl}/records/pint/parties?partyCode=${encodeURIComponent(partyCode)}`,
+        {method: 'GET', signal: AbortSignal.timeout(10_000)},
+      );
+    } catch (cause) {
+      const error = new AppError(
+        503,
+        `${peer.name} is not answering. Try again later.`,
+        {code: 'peer-unavailable'},
+      );
+      error.cause = cause;
+      throw error;
+    }
+    if (response.status === 404) {
+      throw new NotFoundError(
+        `${peer.name} does not know party code ${partyCode}.`,
+      );
+    }
+    if (!response.ok) {
+      throw new AppError(
+        502,
+        `${peer.name} returned an unexpected answer (${response.status}).`,
+        {code: 'peer-unavailable'},
+      );
+    }
+    const data = await response.json();
+    return {
+      platform: peer.code,
+      platformName: peer.name,
+      partyCode,
+      partyName: data.partyName,
+    };
+  }
+
+  /**
+   * Sends a B/L out to a party on another eBL platform (CB-55): locks in `transfer-pending`, sends
+   * the signed envelope, moves to `transferred-out` on `RECE`/`DUPE`, unlocks on peer refusal, or
+   * stays locked for `retryTransfer` on network/timeout errors.
+   * @param {object} record
+   * @param {object} stored
+   * @param {!Array<object>} chain
+   * @param {{platform: string, partyCode: string, inBlank?: boolean}} command
+   * @param {{id: string, name?: string, org?: string}} actor
+   * @param {{withChain?: boolean}} [options]
+   * @return {!Promise<object>}
+   */
+  async transferOut(
+    record,
+    stored,
+    chain,
+    command,
+    actor,
+    {withChain = false} = {},
+  ) {
+    const platformCode =
+      typeof command.platform === 'string' ? command.platform.trim() : '';
+    const partyCode =
+      typeof command.partyCode === 'string' ? command.partyCode.trim() : '';
+    if (!platformCode || RESERVED_KEYS.has(platformCode)) {
+      throw new NotFoundError('Connected platform not found', {
+        code: 'platform-not-found',
+      });
+    }
+    if (!partyCode) {
+      throw new BadRequestError(
+        'Give the receiver party code on the peer platform',
+      );
+    }
+    const peer = await this.repo.getPlatform(platformCode);
+    if (!peer) {
+      throw new NotFoundError('Connected platform not found', {
+        code: 'platform-not-found',
+      });
+    }
+    if (peer.status !== 'Active') {
+      throw new ConflictError(`Platform ${peer.name} is suspended`, {
+        code: 'platform-suspended',
+      });
+    }
+    const version = await this.repo.getVersion(record.id, stored.issuedVersion);
+    const inBlank = Boolean(command.inBlank);
+    const endorsement = inBlank ? 'blank' : 'named';
+    const now = this.clock();
+    const outEntry = await this.signed({
+      recordId: record.id,
+      seq: chain.length + 1,
+      command: 'transfer-out',
+      actor: entryActor(actor),
+      from: stored.holder,
+      to: partyCode,
+      endorsement,
+      documentHash: stored.documentHash,
+      at: now.toISOString(),
+      previousHash: chain.at(-1)?.entryHash ?? null,
+      kid: await this.signer.currentKid(),
+    });
+    const envelope = {
+      envelopeId: randomUUID(),
+      senderPlatform: this.platformCode,
+      receiverPartyCode: partyCode,
+      inBlank,
+      schemaVersion: version.data.schemaVersion,
+      document: version.data.document,
+      partyOrganisations: version.data.partyOrganisations ?? {},
+      documentHash: stored.documentHash,
+      chain: [...chain, outEntry],
+    };
+
+    let locked;
+    let transfer;
+    await this.atomic(async () => {
+      locked = await this.repo.updateTitle(
+        record.id,
+        {
+          state: 'transfer-pending',
+          previousState: stored.state,
+          previousEndorsement: stored.endorsement,
+          externalPlatform: peer.code,
+          externalParty: partyCode,
+          revision: stored.revision + 1,
+          updatedAt: now,
+        },
+        stored.revision,
+      );
+      if (!locked) {
+        throw changedMeanwhile();
+      }
+      transfer = await this.repo.createTransfer({
+        id: randomUUID(),
+        recordId: record.id,
+        direction: 'out',
+        envelopeId: envelope.envelopeId,
+        platformCode: peer.code,
+        partyCode,
+        status: 'pending',
+        responseCode: null,
+        envelope,
+        attempts: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    return this.deliverPendingTransfer(
+      record,
+      locked,
+      chain,
+      transfer,
+      peer,
+      actor,
+      {withChain},
+    );
+  }
+
+  /**
+   * Retries a locked `transfer-pending` B/L using the exact same stored envelope (CB-55).
+   * @param {string} recordId
+   * @param {{id: string, name?: string, org?: string}} actor
+   * @param {{withChain?: boolean}} [options]
+   * @return {!Promise<object>}
+   */
+  async retryTransfer(recordId, actor, {withChain = false} = {}) {
+    const {record, stored, chain} = await this.requireVisible(recordId, actor);
+    if (this.signer === null) {
+      throw notSetUp();
+    }
+    if (!stored || stored.state !== 'transfer-pending') {
+      throw new ConflictError(
+        TITLE_WORDING.wrongState('transfer-out', stored?.state ?? 'draft'),
+        {code: 'wrong-state'},
+      );
+    }
+    if (actor?.org !== stored.holder) {
+      throw new ForbiddenError(TITLE_WORDING.notHolder('transfer-out'), {
+        code: 'not-holder',
+      });
+    }
+    const transfer = await this.repo.getPendingTransfer(recordId);
+    if (!transfer) {
+      throw new NotFoundError('No pending outgoing transfer found');
+    }
+    const peer = await this.repo.getPlatform(transfer.platformCode);
+    if (!peer) {
+      throw new NotFoundError('Connected platform not found', {
+        code: 'platform-not-found',
+      });
+    }
+    const bumped = await this.repo.updateTransfer(transfer.id, {
+      attempts: (transfer.attempts ?? 1) + 1,
+      updatedAt: this.clock(),
+    });
+    return this.deliverPendingTransfer(
+      record,
+      stored,
+      chain,
+      bumped ?? transfer,
+      peer,
+      actor,
+      {withChain},
+    );
+  }
+
+  /**
+   * Sends `transfer.envelope` to `peer` and transitions `locked` accordingly (CB-55).
+   * @param {object} record
+   * @param {object} locked
+   * @param {!Array<object>} chain
+   * @param {object} transfer
+   * @param {object} peer
+   * @param {{id: string, name?: string, org?: string}} actor
+   * @param {{withChain?: boolean}} [options]
+   * @return {!Promise<object>}
+   */
+  async deliverPendingTransfer(
+    record,
+    locked,
+    chain,
+    transfer,
+    peer,
+    actor,
+    {withChain = false} = {},
+  ) {
+    let response;
+    try {
+      response = await this.fetchImpl(
+        `${peer.baseUrl}/records/pint/transfers`,
+        {
+          method: 'POST',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify(transfer.envelope),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+    } catch (cause) {
+      const error = new AppError(
+        502,
+        `${peer.name} did not confirm the transfer; the B/L stays locked for retry.`,
+        {code: 'transfer-pending'},
+      );
+      error.cause = cause;
+      throw error;
+    }
+
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      body = {};
+    }
+    const responseCode = body.responseCode ?? body.details?.code ?? body.code;
+    const now = this.clock();
+
+    if (response.ok && (responseCode === 'RECE' || responseCode === 'DUPE')) {
+      const outEntry = transfer.envelope.chain.at(-1);
+      let saved;
+      let appended;
+      await this.atomic(async () => {
+        saved = await this.repo.updateTitle(
+          record.id,
+          {
+            state: 'transferred-out',
+            holder: null,
+            endorsement: transfer.envelope.inBlank ? 'blank' : 'named',
+            externalPlatform: peer.code,
+            externalParty: transfer.partyCode,
+            previousState: null,
+            previousEndorsement: null,
+            revision: locked.revision + 1,
+            updatedAt: now,
+          },
+          locked.revision,
+        );
+        if (!saved) {
+          throw changedMeanwhile();
+        }
+        appended = await this.repo.appendTitleEntry(outEntry);
+        await this.repo.updateTransfer(transfer.id, {
+          status: 'accepted',
+          responseCode,
+          updatedAt: now,
+        });
+        await this.publishEntry(record, appended, actor);
+      });
+      return this.viewOf(record, saved, actor, [...chain, appended], {
+        withChain,
+      });
+    }
+
+    if (response.status >= 400 && response.status < 500) {
+      await this.atomic(async () => {
+        const restored = await this.repo.updateTitle(
+          record.id,
+          {
+            state: locked.previousState ?? 'with-holder',
+            endorsement: locked.previousEndorsement ?? locked.endorsement,
+            externalPlatform: null,
+            externalParty: null,
+            previousState: null,
+            previousEndorsement: null,
+            revision: locked.revision + 1,
+            updatedAt: now,
+          },
+          locked.revision,
+        );
+        if (!restored) {
+          throw changedMeanwhile();
+        }
+        await this.repo.updateTransfer(transfer.id, {
+          status: 'refused',
+          responseCode: responseCode ?? String(response.status),
+          updatedAt: now,
+        });
+      });
+      throw new AppError(
+        422,
+        `${peer.name} refused the transfer (${responseCode ?? response.status}): ${body.message ?? 'automatic check failed'}`,
+        {code: 'transfer-refused', responseCode: responseCode ?? null},
+      );
+    }
+
+    throw new AppError(
+      502,
+      `${peer.name} could not confirm the transfer (${response.status}); the B/L stays locked for retry.`,
+      {code: 'transfer-pending'},
+    );
+  }
+
+  /**
+   * Validates an incoming DCSA PINT transfer envelope before checking chain signatures or writing
+   * state (CB-55).
+   * @param {object} envelope
+   * @return {{
+   *   ok: boolean,
+   *   error?: {status: number, body: object},
+   *   parsed?: object,
+   * }}
+   */
+  validateIncomingEnvelope(envelope) {
+    const {
+      envelopeId,
+      senderPlatform,
+      receiverPartyCode,
+      inBlank = false,
+      schemaVersion = 'dcsa-ebl/3.0',
+      document,
+      partyOrganisations = {},
+      documentHash,
+      chain,
+    } = envelope ?? {};
+
+    if (
+      typeof envelopeId !== 'string' ||
+      !UUID_PATTERN.test(envelopeId) ||
+      typeof senderPlatform !== 'string' ||
+      RESERVED_KEYS.has(senderPlatform) ||
+      typeof receiverPartyCode !== 'string' ||
+      !receiverPartyCode ||
+      !document ||
+      typeof document !== 'object' ||
+      typeof document.carrierCode !== 'string' ||
+      !document.carrierCode.trim() ||
+      typeof document.transportDocumentReference !== 'string' ||
+      !document.transportDocumentReference.trim() ||
+      !Array.isArray(chain) ||
+      chain.length === 0
+    ) {
+      return {
+        ok: false,
+        error: {
+          status: 400,
+          body: {responseCode: 'BENV', message: 'Malformed transfer envelope'},
+        },
+      };
+    }
+    if (kindOf(document) !== 'negotiable') {
+      return {
+        ok: false,
+        error: {
+          status: 400,
+          body: {
+            responseCode: 'BENV',
+            message: 'Only negotiable B/Ls can be transferred across platforms',
+          },
+        },
+      };
+    }
+    const modelData = {schemaVersion, document, partyOrganisations};
+    const computedHash = billOfLadingHash(modelData);
+    const lastEntry = chain.at(-1);
+    if (
+      typeof documentHash !== 'string' ||
+      computedHash !== documentHash ||
+      lastEntry?.documentHash !== computedHash
+    ) {
+      return {
+        ok: false,
+        error: {
+          status: 400,
+          body: {
+            responseCode: 'BENV',
+            message: 'Document checksum does not match envelope hash',
+          },
+        },
+      };
+    }
+    if (
+      lastEntry?.command !== 'transfer-out' ||
+      lastEntry?.to !== receiverPartyCode
+    ) {
+      return {
+        ok: false,
+        error: {
+          status: 400,
+          body: {
+            responseCode: 'BENV',
+            message:
+              'Final chain entry must be transfer-out addressed to the receiving party',
+          },
+        },
+      };
+    }
+    return {
+      ok: true,
+      parsed: {
+        envelopeId,
+        senderPlatform,
+        receiverPartyCode,
+        inBlank: Boolean(inBlank),
+        document,
+        modelData,
+        computedHash,
+        chain,
+      },
+    };
+  }
+
+  /**
+   * Persists a verified incoming cross-platform B/L transfer inside one transaction (CB-55).
+   * @param {object} options
+   * @return {!Promise<void>}
+   */
+  async persistIncomingTransfer({
+    existing,
+    recordId,
+    peer,
+    receiverPartyCode,
+    endorsement,
+    document,
+    modelData,
+    computedHash,
+    chain,
+    storedEntries,
+    receiveEntry,
+    receiveActor,
+    envelopeId,
+    envelope,
+    now,
+  }) {
+    await this.atomic(async () => {
+      if (!existing) {
+        const record = {
+          id: recordId,
+          recordNo: document.transportDocumentReference,
+          carrierCode: document.carrierCode,
+          label: `B/L ${document.transportDocumentReference} (${document.carrierCode})`,
+          organisationId: receiverPartyCode,
+          status: 'committed',
+          currentVersion: 1,
+          draftVersion: null,
+          draftState: null,
+          createdAt: now,
+          createdById: peer.code,
+          createdByName: peer.name,
+          updatedAt: now,
+        };
+        const versionBase = {
+          id: randomUUID(),
+          recordId,
+          versionNumber: 1,
+          state: 'committed',
+          revision: 1,
+          data: modelData,
+          documentHash: computedHash,
+          reviewComment: null,
+          createdAt: now,
+          createdById: peer.code,
+          createdByName: peer.name,
+          submittedAt: now,
+          submittedById: peer.code,
+          submittedByName: peer.name,
+          approvedById: peer.code,
+          approvedByName: peer.name,
+          committedAt: now,
+          previousSeal: null,
+          updatedAt: now,
+          changes: [
+            {
+              at: now.toISOString(),
+              byId: peer.code,
+              byName: peer.name,
+              action: 'receive-in',
+            },
+          ],
+        };
+        const version = {...versionBase, seal: sealOf(record, versionBase)};
+        await this.repo.createRecord({record, version});
+        await this.repo.createTitle({
+          recordId,
+          kind: kindOf(document),
+          state: 'arrived',
+          carrier: document.carrierCode,
+          holder: receiverPartyCode,
+          endorsement,
+          consignee: null,
+          returnTo: null,
+          externalPlatform: peer.code,
+          externalParty: null,
+          issuedVersion: 1,
+          documentHash: computedHash,
+          revision: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+        for (const incomingEntry of chain) {
+          await this.repo.appendTitleEntry({
+            ...incomingEntry,
+            recordId,
+            rawEntry: incomingEntry,
+          });
+        }
+      } else {
+        const saved = await this.repo.updateTitle(
+          recordId,
+          {
+            state: 'arrived',
+            holder: receiverPartyCode,
+            endorsement,
+            externalPlatform: peer.code,
+            externalParty: null,
+            previousState: null,
+            previousEndorsement: null,
+            revision: existing.title.revision + 1,
+            updatedAt: now,
+          },
+          existing.title.revision,
+        );
+        if (!saved) {
+          throw changedMeanwhile();
+        }
+        for (const incomingEntry of chain.slice(storedEntries.length)) {
+          await this.repo.appendTitleEntry({
+            ...incomingEntry,
+            recordId,
+            rawEntry: incomingEntry,
+          });
+        }
+      }
+      const appended = await this.repo.appendTitleEntry(receiveEntry);
+      await this.repo.createTransfer({
+        id: randomUUID(),
+        recordId,
+        direction: 'in',
+        envelopeId,
+        platformCode: peer.code,
+        partyCode: receiverPartyCode,
+        status: 'accepted',
+        responseCode: 'RECE',
+        envelope,
+        attempts: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const recForEvent = existing
+        ? existing.record
+        : {id: recordId, recordNo: document.transportDocumentReference};
+      await this.publishEntry(recForEvent, appended, receiveActor);
+    });
+  }
+
+  /**
+   * Receives an incoming DCSA PINT envelope from a connected platform (CB-55): verifies peer
+   * standing, signatures, unbroken chain links, byte-for-byte match of any prior local entries,
+   * document hash, non-duplicate active state, and active receiver; stores as `arrived` (`RECE`).
+   * @param {object} envelope
+   * @return {!Promise<{status: number, body: object}>}
+   */
+  async receivePintTransfer(envelope) {
+    if (this.signer === null) {
+      return {
+        status: 503,
+        body: {
+          responseCode: 'BENV',
+          message: 'Platform signer is not configured',
+        },
+      };
+    }
+    const validation = this.validateIncomingEnvelope(envelope);
+    if (!validation.ok) {
+      return validation.error;
+    }
+    const {
+      envelopeId,
+      senderPlatform,
+      receiverPartyCode,
+      inBlank,
+      document,
+      modelData,
+      computedHash,
+      chain,
+    } = validation.parsed;
+
+    const peer = await this.repo.getPlatform(senderPlatform);
+    if (!peer || peer.status !== 'Active') {
+      return {
+        status: 403,
+        body: {
+          responseCode: 'BENV',
+          message: 'Sending platform is not connected or is suspended',
+        },
+      };
+    }
+
+    const replay = await this.repo.getTransferByEnvelopeId(envelopeId);
+    if (replay && replay.direction === 'in' && replay.status === 'accepted') {
+      return {
+        status: 200,
+        body: {responseCode: 'DUPE', envelopeId, recordId: replay.recordId},
+      };
+    }
+
+    const existing = await this.repo.findRecordByCarrierAndNo(
+      document.carrierCode,
+      document.transportDocumentReference,
+    );
+    const storedEntries = existing
+      ? await this.repo.listTitleEntries(existing.record.id)
+      : [];
+
+    if (existing && existing.title?.state !== 'transferred-out') {
+      return {
+        status: 409,
+        body: {
+          responseCode: 'BENV',
+          message: 'This B/L is already active on this platform',
+        },
+      };
+    }
+
+    const allPlatforms = (await this.repo.listPlatforms()).filter(
+      platform => platform.status === 'Active',
+    );
+    const chainCheck = await verifyIncomingChain({
+      entries: chain,
+      storedEntries,
+      ownPlatformCode: this.platformCode,
+      ownJwks: await this.signer.jwks(),
+      peerPlatformCode: peer.code,
+      peerJwks: peer.jwks,
+      allPlatforms,
+    });
+    if (!chainCheck.ok) {
+      return {
+        status: 400,
+        body: {responseCode: chainCheck.code, message: chainCheck.message},
+      };
+    }
+
+    let standing;
+    try {
+      standing = await this.organisations.standingOf(receiverPartyCode);
+    } catch {
+      return {
+        status: 503,
+        body: {
+          responseCode: 'BENV',
+          message: 'Organisations cannot be checked now',
+        },
+      };
+    }
+    if (standing !== 'active') {
+      return {
+        status: 422,
+        body: {
+          responseCode: 'BENV',
+          message: 'Receiving organisation is not active on this platform',
+        },
+      };
+    }
+
+    const now = this.clock();
+    const endorsement = inBlank ? 'blank' : 'named';
+    const recordId = existing ? existing.record.id : randomUUID();
+    const receiveActor = {
+      id: peer.code,
+      name: peer.name,
+      org: receiverPartyCode,
+    };
+    const receiveEntry = await this.signed({
+      recordId,
+      seq: chain.length + 1,
+      command: 'receive-in',
+      actor: receiveActor,
+      from: peer.code,
+      to: receiverPartyCode,
+      endorsement,
+      documentHash: computedHash,
+      at: now.toISOString(),
+      previousHash: chain.at(-1).entryHash,
+      kid: await this.signer.currentKid(),
+    });
+
+    await this.persistIncomingTransfer({
+      existing,
+      recordId,
+      peer,
+      receiverPartyCode,
+      endorsement,
+      document,
+      modelData,
+      computedHash,
+      chain,
+      storedEntries,
+      receiveEntry,
+      receiveActor,
+      envelopeId,
+      envelope,
+      now,
+    });
+
+    return {
+      status: 200,
+      body: {responseCode: 'RECE', envelopeId, recordId},
+    };
   }
 }

@@ -5,6 +5,7 @@ import {describe, it} from 'node:test';
 
 import {
   COPY_BLANK_FIELDS,
+  applyPaperReading,
   copyFormOf,
   draftFormOf,
   draftProblems,
@@ -333,6 +334,60 @@ describe("the backend's refusal, for people", () => {
     assert.deepEqual(problemMessages(undefined), []);
     assert.deepEqual(problemMessages({code: 'x'}), []);
     assert.deepEqual(problemMessages({problems: 'oops'}), []);
+  });
+});
+
+describe('applyPaperReading: pre-filling a draft from a scanned paper B/L (CB-57)', () => {
+  it('fills extracted fields, resolves shipper/consignee by name, and marks uncertain fields', () => {
+    const empty = emptyDraftForm();
+    const {form, uncertainFields} = applyPaperReading(
+      empty,
+      {
+        fileName: 'scan.pdf',
+        summary: 'Read 12 fields from scan.pdf',
+        uncertain: ['grossWeightKg', 'portOfDischarge'],
+        warnings: [],
+        fields: {
+          reference: 'SCAN-2026-9',
+          carrierCode: 'bwml',
+          toOrder: false,
+          shipperName: 'Coffee Exporters',
+          consigneeName: 'Buyer Trading',
+          portOfLoading: 'dkaar',
+          portOfDischarge: 'nlrtm',
+          packages: 250,
+          grossWeightKg: 8400,
+        },
+      },
+      [EXPORTER, BUYER],
+    );
+    assert.equal(form.reference, 'SCAN-2026-9');
+    assert.equal(form.carrierCode, 'BWML');
+    assert.equal(form.shipperId, 'org-exporter');
+    assert.equal(form.consigneeId, 'org-buyer');
+    assert.equal(form.portOfLoading, 'DKAAR');
+    assert.equal(form.portOfDischarge, 'NLRTM');
+    assert.equal(form.packages, 250);
+    assert.equal(form.grossWeightKg, 8400);
+    assert.deepEqual([...uncertainFields].sort(), [
+      'grossWeightKg',
+      'portOfDischarge',
+    ]);
+
+    const negotiable = applyPaperReading(
+      form,
+      {
+        fileName: 'order.pdf',
+        summary: 'Read 1 field',
+        uncertain: [],
+        warnings: [],
+        fields: {toOrder: true},
+      },
+      [EXPORTER, BUYER],
+    );
+    assert.equal(negotiable.form.toOrder, true);
+    assert.equal(negotiable.form.consigneeId, '');
+    assert.equal(negotiable.form.reference, 'SCAN-2026-9');
   });
 });
 

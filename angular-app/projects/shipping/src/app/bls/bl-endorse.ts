@@ -58,6 +58,43 @@ export function mayEndorse(allowed: readonly string[]): boolean {
 }
 
 /**
+ * Whether the holder may send the B/L to a party on another connected platform (CB-55).
+ * @param allowed the title read's allowedCommands
+ * @return true when offered
+ */
+export function mayTransferOut(allowed: readonly string[]): boolean {
+  return allowed.includes('transfer-out');
+}
+
+/**
+ * Whether the receiving holder may keep an arrived B/L from another platform (CB-55).
+ * @param allowed the title read's allowedCommands
+ * @return true when offered
+ */
+export function mayAcceptIncoming(allowed: readonly string[]): boolean {
+  return allowed.includes('accept-incoming');
+}
+
+/**
+ * Whether a locked outgoing cross-platform transfer can be retried by this user (CB-55).
+ * @param state the title state
+ * @param roles viewer's roles on the B/L
+ * @param perms viewer's permissions
+ * @return true when in `transfer-pending`, held by the viewer's org, and user holds `bl.endorse`
+ */
+export function mayRetryTransfer(
+  state: string | null | undefined,
+  roles: readonly string[],
+  perms: readonly string[],
+): boolean {
+  return (
+    state === 'transfer-pending' &&
+    roles.includes('holder') &&
+    perms.includes('bl.endorse')
+  );
+}
+
+/**
  * The organisations the holder may endorse the B/L to: every one listed but its own and the
  * current holder, sorted by name. The list given is not changed.
  * @param organisations the organisations registered and active

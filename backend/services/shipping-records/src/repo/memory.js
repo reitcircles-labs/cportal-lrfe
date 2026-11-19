@@ -98,6 +98,8 @@ export function createMemoryRepo() {
   const titles = new Map();
   /** @type {!Map<string, !Array<object>>} each B/L's chain of title, in order of seq */
   const entries = new Map();
+  const platforms = new Map();
+  const transfers = new Map();
 
   /**
    * The stored version itself (not a copy), or undefined.
@@ -257,6 +259,33 @@ export function createMemoryRepo() {
       };
     },
     /**
+     * Active issued B/Ls of a carrier organisation and carrier code (CB-56 duplicate cargo check):
+     * excludes archived, voided, and split-closed records.
+     * @param {string} organisationId
+     * @param {string} carrierCode
+     * @return {!Promise<!Array<{record: object, version: ?object}>>}
+     */
+    async listActiveCarrierIssued(organisationId, carrierCode) {
+      const active = [];
+      for (const record of records.values()) {
+        if (
+          record.status === 'archived' ||
+          record.organisationId !== organisationId ||
+          record.carrierCode !== carrierCode ||
+          !record.currentVersion
+        ) {
+          continue;
+        }
+        const title = titles.get(record.id) ?? null;
+        if (!title || title.state === 'void' || title.state === 'split') {
+          continue;
+        }
+        const version = findVersion(record.id, record.currentVersion) ?? null;
+        active.push({record: clone(record), version: clone(version)});
+      }
+      return active;
+    },
+    /**
      * @param {string} id
      * @param {object} patch
      * @return {!Promise<?object>} the record, or null when there is none
@@ -391,7 +420,10 @@ export function createMemoryRepo() {
      * @return {!Promise<!Array<object>>}
      */
     async listTitleEntries(recordId) {
-      return clone(entries.get(recordId) ?? []);
+      return (entries.get(recordId) ?? []).map(entry => {
+        const {rawEntry, ...rest} = entry;
+        return clone(rawEntry ?? rest);
+      });
     },
     /**
      * The chain-of-title entry with this entryHash, of any B/L (CB-35: a split child's first
@@ -495,6 +527,123 @@ export function createMemoryRepo() {
           p => findVersion(p.recordId, p.versionNumber)?.state === 'committed',
         )
         .map(p => ({recordId: p.recordId, versionNumber: p.versionNumber}));
+    },
+
+    /**
+     * Connected platforms directory & PINT transfers (CB-55).
+     * @return {!Promise<!Array<object>>}
+     */
+    async listPlatforms() {
+      return [...platforms.values()]
+        .sort((a, b) => a.code.localeCompare(b.code))
+        .map(clone);
+    },
+    /**
+     * @param {string} code
+     * @return {!Promise<?object>}
+     */
+    async getPlatform(code) {
+      return clone(platforms.get(code)) ?? null;
+    },
+    /**
+     * @param {object} platform
+     * @return {!Promise<object>}
+     */
+    async createPlatform(platform) {
+      if (platforms.has(platform.code)) {
+        throw new ConflictError(
+          `Platform ${platform.code} is already registered`,
+        );
+      }
+      platforms.set(platform.code, clone(platform));
+      return clone(platform);
+    },
+    /**
+     * @param {string} code
+     * @param {object} patch
+     * @return {!Promise<?object>}
+     */
+    async updatePlatform(code, patch) {
+      const existing = platforms.get(code);
+      if (!existing) {
+        return null;
+      }
+      Object.assign(existing, clone(patch));
+      return clone(existing);
+    },
+    /**
+     * Finds a B/L record with its title by carrier code and document reference across all
+     * organisations (for incoming PINT return/conflict checks, CB-55).
+     * @param {string} carrierCode
+     * @param {string} recordNo
+     * @return {!Promise<?{record: object, title: ?object}>}
+     */
+    async findRecordByCarrierAndNo(carrierCode, recordNo) {
+      for (const record of records.values()) {
+        if (
+          record.status !== 'archived' &&
+          record.carrierCode === carrierCode &&
+          record.recordNo === recordNo
+        ) {
+          return clone({record, title: titles.get(record.id) ?? null});
+        }
+      }
+      return null;
+    },
+    /**
+     * @param {string} envelopeId
+     * @return {!Promise<?object>}
+     */
+    async getTransferByEnvelopeId(envelopeId) {
+      for (const transfer of transfers.values()) {
+        if (transfer.envelopeId === envelopeId) {
+          return clone(transfer);
+        }
+      }
+      return null;
+    },
+    /**
+     * @param {string} recordId
+     * @return {!Promise<?object>}
+     */
+    async getPendingTransfer(recordId) {
+      let latest = null;
+      for (const transfer of transfers.values()) {
+        if (
+          transfer.recordId === recordId &&
+          transfer.direction === 'out' &&
+          transfer.status === 'pending'
+        ) {
+          if (
+            !latest ||
+            new Date(transfer.createdAt) >= new Date(latest.createdAt)
+          ) {
+            latest = transfer;
+          }
+        }
+      }
+      return clone(latest);
+    },
+    /**
+     * @param {object} transfer
+     * @return {!Promise<object>}
+     */
+    async createTransfer(transfer) {
+      transfers.set(transfer.id, clone(transfer));
+      return clone(transfer);
+    },
+    /**
+     * @param {string} id
+     * @param {object} patch
+     * @return {!Promise<?object>}
+     */
+    async updateTransfer(id, patch) {
+      const existing = transfers.get(id);
+      if (!existing) {
+        return null;
+      }
+      Object.assign(existing, clone(patch));
+      return clone(existing);
     },
   };
 }

@@ -50,6 +50,14 @@ export const ENDPOINTS = {
       auth: 'refresh-cookie',
       summary: 'Sign out: ends the session and clears the cookie',
     },
+    'POST /auth/api-token': {
+      tag: 'Auth',
+      auth: 'public',
+      summary:
+        'Exchange an organisation API key for a short-lived access token',
+      description:
+        'Accepts `X-Api-Key` header or `{ apiKey }`. Returns `{ accessToken, expiresIn, organisationId, perms }` scoped to the key. 401 for an unknown, revoked, or suspended-organisation key.',
+    },
     'GET /auth/me': {
       tag: 'Auth',
       summary: 'The signed-in user',
@@ -202,6 +210,24 @@ export const ENDPOINTS = {
       tag: 'Organisations',
       summary: 'Reactivate an organisation',
       description: 'Its users can sign in again.',
+    },
+    'GET /organisations/{id}/api-keys': {
+      tag: 'Organisations',
+      summary: 'List API keys of an organisation',
+      description: 'Lists `{ items }` without secrets or hashes (CB-56).',
+    },
+    'POST /organisations/{id}/api-keys': {
+      tag: 'Organisations',
+      status: 201,
+      summary: 'Create an API key for an active organisation',
+      description:
+        '`{ name, perms? }`. Returns `{ id, name, prefix, perms, status, createdAt, secret }` with the secret shown once (CB-56).',
+    },
+    'POST /organisations/{id}/api-keys/{keyId}/revoke': {
+      tag: 'Organisations',
+      summary: 'Revoke an organisation API key',
+      description:
+        'Revokes the key immediately and emits a session revocation so active tokens stop (CB-56).',
     },
     'GET /access-log': {
       tag: 'Users',

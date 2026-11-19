@@ -103,6 +103,17 @@ export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'child-reference': 'Each new B/L needs its own reference.',
   'cargo-mismatch': "The cargo of the new B/Ls must add up to the B/L's.",
   'reference-taken': 'The carrier already has a B/L with that reference.',
+  'duplicate-cargo':
+    'These containers and seals are already on an issued B/L of this carrier.',
+  'reading-unavailable':
+    'Automatic reading is not configured on this server yet.',
+  'platform-not-found': 'That connected platform was not found.',
+  'platform-suspended': 'That connected platform is suspended.',
+  'peer-unavailable': 'The other platform is not answering: try again later.',
+  'transfer-pending':
+    'The other platform did not confirm yet: the B/L stays locked so you can retry.',
+  'transfer-refused':
+    'The other platform refused the transfer: the B/L stays with you.',
   'own-draft':
     'You drafted or changed this version, so another person must approve it.',
   'not-author': 'Only the person who created this draft may edit it.',

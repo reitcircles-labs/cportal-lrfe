@@ -16,6 +16,7 @@ import {BlApi} from './bl.api';
 import {mayEdit} from './bl-actions';
 import {
   COPY_BLANK_FIELDS,
+  applyPaperReading,
   copyFormOf,
   draftFormOf,
   draftProblems,
@@ -178,6 +179,34 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
         <div class="note danger" role="alert">{{ e }}</div>
       }
       @if (ready()) {
+        @if (!isEdit() && !copiedFrom()) {
+          <section class="panel" aria-label="Read from paper B/L">
+            <div class="panel-head"><h2>Read from paper B/L</h2></div>
+            <div class="panel-body stack" style="gap:10px">
+              <p class="small muted" style="margin:0">Upload a scanned paper B/L (PDF or image). An automatic check fills in the draft fields below for you to review and confirm before saving.</p>
+              <div class="row" style="gap:10px;align-items:center">
+                <label class="sr-only" for="paper-bl-file">Scanned paper B/L</label>
+                <input id="paper-bl-file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" (change)="pickPaper($any($event.target).files?.[0] ?? null)">
+                <button type="button" class="btn btn-secondary" [disabled]="!selectedPaper() || readingPaper() || saving()" (click)="readPaper()">{{ readingPaper() ? 'Automatic check reading…' : 'Read paper B/L' }}</button>
+              </div>
+              @if (paperError(); as pe) {
+                <div class="note danger" role="alert">{{ pe }}</div>
+              }
+              @if (paperSummary(); as summary) {
+                <div class="note paper-note" role="status">
+                  {{ summary }}
+                  @if (paperWarnings().length > 0) {
+                    <ul class="problems">
+                      @for (w of paperWarnings(); track $index) {
+                        <li>{{ w }}</li>
+                      }
+                    </ul>
+                  }
+                </div>
+              }
+            </div>
+          </section>
+        }
         @if (copiedFrom(); as source) {
           <div class="note warn" role="note">
             Copied from <strong>{{ source }}</strong>. Fill in the highlighted shipment fields (B/L number, booking reference, container number, and seal number if sealed) before saving.
@@ -202,8 +231,13 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
         <section class="panel">
           <div class="panel-head"><h2>Parties</h2></div>
           <div class="panel-body grid">
-            <div class="field">
-              <label for="bl-shipperId">Shipper</label>
+            <div class="field" [class.uncertain]="isUncertain('shipperId')">
+              <label for="bl-shipperId">
+                Shipper
+                @if (isUncertain('shipperId')) {
+                  <span class="check-badge">Check value</span>
+                }
+              </label>
               <select id="bl-shipperId" class="input" [value]="form().shipperId" (change)="setText('shipperId', $any($event.target).value)" [attr.aria-invalid]="isInvalid('shipperId') ? 'true' : null">
                 <option value="">Pick an organisation</option>
                 @for (o of organisations(); track o.id) {
@@ -213,8 +247,13 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
               <span class="small muted">The first holder of the B/L.</span>
             </div>
             @if (!form().toOrder) {
-              <div class="field">
-                <label for="bl-consigneeId">Consignee</label>
+              <div class="field" [class.uncertain]="isUncertain('consigneeId')">
+                <label for="bl-consigneeId">
+                  Consignee
+                  @if (isUncertain('consigneeId')) {
+                    <span class="check-badge">Check value</span>
+                  }
+                </label>
                 <select id="bl-consigneeId" class="input" [value]="form().consigneeId" (change)="setText('consigneeId', $any($event.target).value)" [attr.aria-invalid]="isInvalid('consigneeId') ? 'true' : null">
                   <option value="">Pick an organisation</option>
                   @for (o of organisations(); track o.id) {
@@ -252,8 +291,13 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
         <section class="panel">
           <div class="panel-head"><h2>Terms and conditions</h2></div>
           <div class="panel-body">
-            <div class="field">
-              <label for="bl-terms">The carrier's terms</label>
+            <div class="field" [class.uncertain]="isUncertain('termsAndConditions')">
+              <label for="bl-terms">
+                The carrier's terms
+                @if (isUncertain('termsAndConditions')) {
+                  <span class="check-badge">Check value</span>
+                }
+              </label>
               <textarea id="bl-terms" class="input" rows="3" [value]="form().termsAndConditions" (input)="setText('termsAndConditions', $any($event.target).value)" [attr.aria-invalid]="isInvalid('termsAndConditions') ? 'true' : null"></textarea>
             </div>
           </div>
@@ -276,8 +320,13 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
       }
     </div>
     <ng-template #input let-f>
-      <div class="field" [class.wide]="!!f.carrier">
-        <label [for]="'bl-' + f.field">{{ f.label }}</label>
+      <div class="field" [class.wide]="!!f.carrier" [class.uncertain]="isUncertain(f.field)">
+        <label [for]="'bl-' + f.field">
+          {{ f.label }}
+          @if (isUncertain(f.field)) {
+            <span class="check-badge">Check value</span>
+          }
+        </label>
         @if (f.carrier) {
           <app-carrier-picker
             [inputId]="'bl-' + f.field"
@@ -324,6 +373,9 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
     fieldset.field legend { font-size: 13px; font-weight: 600; margin-bottom: 4px; padding: 0; }
     .to-order { grid-column: 1 / -1; }
     .problems { margin: 6px 0 0; padding-left: 18px; }
+    .field.uncertain .input { border-color: #d97706; background: #fffbeb; }
+    .check-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; background: #fef3c7; color: #92400e; }
+    .paper-note { background: #fffbeb; border: 1px solid #f59e0b; color: #78350f; }
     .note.warn { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-bd); }
     .input.copy-blank { background: var(--warn-bg); border-color: var(--warn-bd); }
     .copy-mark { color: var(--warn-fg); font-weight: 600; }
@@ -369,6 +421,12 @@ export class BlNewComponent {
   protected readonly loadError = signal<string | null>(null);
   protected readonly ready = signal(true);
   protected readonly saving = signal(false);
+  protected readonly selectedPaper = signal<File | null>(null);
+  protected readonly readingPaper = signal(false);
+  protected readonly paperSummary = signal<string | null>(null);
+  protected readonly paperWarnings = signal<string[]>([]);
+  protected readonly paperError = signal<string | null>(null);
+  private readonly uncertainFields = signal<Set<keyof DraftForm>>(new Set());
   private readonly draftRevision = signal<number | undefined>(undefined);
   /** The form's own problems, shown once it was sent. */
   private readonly formProblems = signal<DraftProblem[]>([]);
@@ -491,12 +549,96 @@ export class BlNewComponent {
   }
 
   /**
-   * Sets a text field.
+   * Whether the automatic paper B/L reader marked this field for review (CB-57).
+   * @param field the field
+   * @return true when highlighted for confirmation
+   */
+  protected isUncertain(field: keyof DraftForm): boolean {
+    return this.uncertainFields().has(field);
+  }
+
+  /**
+   * Remembers the chosen paper B/L scan file (CB-57).
+   * @param file chosen file or null
+   */
+  protected pickPaper(file: File | null): void {
+    this.selectedPaper.set(file);
+    this.paperError.set(null);
+  }
+
+  /**
+   * Sends the chosen paper B/L scan for automatic reading and fills the draft fields without
+   * saving (CB-57).
+   * @return when fields are filled
+   */
+  protected async readPaper(): Promise<void> {
+    const file = this.selectedPaper();
+    if (!file) {
+      return;
+    }
+    this.readingPaper.set(true);
+    this.paperError.set(null);
+    this.paperSummary.set(null);
+    this.paperWarnings.set([]);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = '';
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      const contentBase64 = btoa(binary);
+      const mimeType = file.type || 'application/pdf';
+      const reading = await this.bls.readPaper(
+        file.name,
+        mimeType,
+        contentBase64,
+      );
+      const {form, uncertainFields} = applyPaperReading(
+        this.form(),
+        reading,
+        this.organisations(),
+      );
+      this.form.set(form);
+      this.uncertainFields.set(uncertainFields);
+      this.paperSummary.set(reading.summary);
+      this.paperWarnings.set(reading.warnings);
+      if (form.portOfLoading) {
+        void this.ports.search('portOfLoading', form.portOfLoading);
+      }
+      if (form.portOfDischarge) {
+        void this.ports.search('portOfDischarge', form.portOfDischarge);
+      }
+      this.toast.show('info', 'Paper B/L read', 'Review highlighted fields');
+    } catch (e) {
+      this.paperError.set(toApiError(e).message);
+    } finally {
+      this.readingPaper.set(false);
+    }
+  }
+
+  /**
+   * Sets a text field and clears any uncertain highlight once edited.
    * @param field the field
    * @param value its new text
    */
   protected setText(field: keyof DraftForm, value: string): void {
     this.form.update(form => ({...form, [field]: value}));
+    this.clearUncertain(field);
+  }
+
+  /**
+   * Clears the uncertain highlight when a person edits or confirms a field (CB-57).
+   * @param field the field
+   */
+  private clearUncertain(field: keyof DraftForm): void {
+    if (!this.uncertainFields().has(field)) {
+      return;
+    }
+    this.uncertainFields.update(prev => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
   }
 
   /**
@@ -515,6 +657,7 @@ export class BlNewComponent {
     const trimmed = value.trim();
     const number = trimmed === '' ? null : Number(trimmed);
     this.form.update(form => ({...form, [spec.field]: number}));
+    this.clearUncertain(spec.field);
   }
 
   /**
@@ -584,6 +727,11 @@ export class BlNewComponent {
     this.formProblems.set([]);
     this.refusal.set([]);
     this.copiedFrom.set(null);
+    this.selectedPaper.set(null);
+    this.paperSummary.set(null);
+    this.paperWarnings.set([]);
+    this.paperError.set(null);
+    this.uncertainFields.set(new Set());
     const targetId = id || copyId;
     if (!targetId) {
       this.ready.set(true);

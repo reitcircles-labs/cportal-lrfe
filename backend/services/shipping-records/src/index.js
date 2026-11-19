@@ -31,6 +31,7 @@ import {createAuditClient} from './audit-client.js';
 import {createIdentityClient} from './identity-client.js';
 import {ShippingRecordsService} from './records.service.js';
 import {TitleService} from './title.service.js';
+import {createPaperBlReader} from './paper-reader.js';
 import {createMemoryRepo} from './repo/memory.js';
 import {createSequelizeRepo} from './repo/sequelize.js';
 import {SCHEMA} from './repo/models.js';
@@ -123,11 +124,21 @@ const titles = new TitleService({
   ports,
   carriers,
   maxSplitChildren,
+  platformCode: env('PLATFORM_CODE', 'LRFE'),
+});
+
+const paperReader = createPaperBlReader({
+  provider: env('EXTRACTION_PROVIDER', 'mock'),
+  apiKey: env('GEMINI_API_KEY', ''),
+  model: env('GEMINI_MODEL', 'gemini-2.5-flash'),
+  ports,
+  organisations,
 });
 
 const app = await buildApp({
   service,
   titles,
+  paperReader,
   jwtSecret,
   revocations: createRevocationList({events}),
   logger: {level: env('LOG_LEVEL', 'info')},

@@ -575,6 +575,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -771,6 +772,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -830,6 +832,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
         - name: exp
           in: query
           required: true
@@ -885,6 +888,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK

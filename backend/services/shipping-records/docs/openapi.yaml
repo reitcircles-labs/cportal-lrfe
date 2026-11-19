@@ -176,6 +176,137 @@ paths:
           - bl.read
         services:
           - audit
+  /records/issuance:
+    post:
+      tags:
+        - Records
+      summary: Submit or issue a B/L from a carrier's system (CB-56)
+      description: >-
+        `{ format, document, partyOrganisations?, issue?, comment? }`. Validates the document, port list and unique reference, and rejects
+        duplicate active cargo (`409 duplicate-cargo`). With `issue: false` (default), commits version 1 ready for a human approver to
+        issue. With `issue: true` (requires `bl.issue`), also issues and anchors the title atomically. Answers `{ record, title, cargoKey
+        }`.
+
+
+        **Access:** Signed-in user with permission `bl.draft`.
+      operationId: postRecordsIssuance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - format
+                - document
+              properties:
+                format:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                document:
+                  type: object
+                partyOrganisations:
+                  type: object
+                issue:
+                  type: boolean
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.draft
+  /records/read-paper:
+    post:
+      tags:
+        - Records
+      summary: Read a scanned paper B/L automatically into draft fields (CB-57)
+      description: >-
+        `{ fileName, mimeType, contentBase64 }` (PDF or image, up to 15 MB). Extracts draft fields, matches active organisations and ports,
+        and flags uncertain fields for human confirmation (`{ fileName, fields, uncertain, warnings, summary }`).
+
+
+        **Access:** Signed-in user with permission `bl.draft`.
+      operationId: postRecordsReadPaper
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - fileName
+                - mimeType
+                - contentBase64
+              properties:
+                fileName:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                mimeType:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                contentBase64:
+                  type: string
+                  maxLength: 22000000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.draft
   /records/{id}/draft:
     put:
       tags:
@@ -278,6 +409,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -397,6 +529,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -640,6 +773,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -721,6 +855,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -877,6 +1012,304 @@ paths:
             application/json:
               schema: {}
       security: []
+  /records/platforms:
+    get:
+      tags:
+        - Records
+      summary: List connected eBL platforms (CB-55)
+      description: |-
+        `{ items }` of registered peer eBL platforms; administrators see all statuses, trade users see active platforms only.
+
+        **Access:** Any signed-in user.
+      operationId: getRecordsPlatforms
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+    post:
+      tags:
+        - Records
+      summary: Register a connected eBL platform (CB-55)
+      description: |-
+        `{ code, name, baseUrl, jwks, agreementDate? }`. Adds a peer platform with its public signing keys (admin.organisations).
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: postRecordsPlatforms
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - code
+                - name
+                - baseUrl
+                - jwks
+              properties:
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                baseUrl:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                jwks:
+                  type: object
+                agreementDate:
+                  type: string
+                  maxLength: 50
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+  /records/platforms/{code}/suspend:
+    post:
+      tags:
+        - Records
+      summary: Suspend a connected eBL platform (CB-55)
+      description: |-
+        Marks a connected platform Suspended.
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: postRecordsPlatformsCodeSuspend
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+  /records/platforms/{code}/reactivate:
+    post:
+      tags:
+        - Records
+      summary: Reactivate a connected eBL platform (CB-55)
+      description: |-
+        Marks a connected platform Active again.
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: postRecordsPlatformsCodeReactivate
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+  /records/pint/parties:
+    get:
+      tags:
+        - Records
+      summary: DCSA PINT incoming party lookup (CB-55)
+      description: |-
+        `?partyCode=`: returns `{ partyCode, partyName }` for an active admitted non-operator organisation, or 404.
+
+        **Access:** Public: no token needed.
+      operationId: getRecordsPintParties
+      parameters:
+        - name: partyCode
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security: []
+  /records/pint/lookup-party:
+    get:
+      tags:
+        - Records
+      summary: Check a receiver party on a connected peer platform (CB-55)
+      description: |-
+        `?platform=&partyCode=`: queries the active peer platform and returns `{ platform, platformName, partyCode, partyName }`.
+
+        **Access:** Any signed-in user.
+      operationId: getRecordsPintLookupParty
+      parameters:
+        - name: platform
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+        - name: partyCode
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+  /records/pint/transfers:
+    post:
+      tags:
+        - Records
+      summary: Receive a signed DCSA PINT B/L transfer envelope (CB-55)
+      description: >-
+        Verifies sender registration, all chain signatures, prior local entries byte-for-byte, document checksum, and active receiver;
+        answers `RECE`, `DUPE`, `BSIG`, or `BENV`.
+
+
+        **Access:** Public: no token needed.
+      operationId: postRecordsPintTransfers
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
   /records/title:
     get:
       tags:
@@ -1016,6 +1449,58 @@ paths:
       x-access:
         allOf:
           - bl.read
+  /records/{id}/title/retry-transfer:
+    post:
+      tags:
+        - Records
+      summary: Retry a locked outgoing cross-platform transfer (CB-55)
+      description: |-
+        Resends the identical stored PINT envelope while the B/L is in `transfer-pending`.
+
+        **Access:** Signed-in user with permission `bl.endorse`.
+      operationId: postRecordsIdTitleRetryTransfer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.endorse
   /records/{id}/title/{command}:
     post:
       tags:
@@ -1100,6 +1585,14 @@ paths:
                         type: object
                       partyOrganisations:
                         type: object
+                platform:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                partyCode:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
       responses:
         "200":
           description: OK
@@ -1391,6 +1884,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
