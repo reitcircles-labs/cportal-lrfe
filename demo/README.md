@@ -7,7 +7,8 @@ What a demo of the portal needs, next to the install in `deploy/`.
 | `documents/` | The demo document set (API-716): fictitious scans of two chains of title, to scan in, verify, file and build land records from. Its README has the story, the suggested demo flow and what the AI reads. |
 | `check-readiness.mjs` | The readiness check (API-717): run it before every demo (below). |
 | `STORYLINE.md` | The storyline (API-720): what the demo giver does, role by role, from scanning to the audit and the owner's extract that anyone can check. |
-| `SHIPPING-STORYLINE.md` | The shipping product's storyline (CB-48): one negotiable B/L from the carrier through two banks to the buyer, surrendered, released and checked. See "A shipping install" below. |
+| `SHIPPING-STORYLINE.md` | The shipping product's storyline (CB-48, CB-67, CB-76): R1 good-weather journey, R2 exceptions, and R3 network & drafting walkthroughs. See "A shipping install" below. |
+| `SHIPPING-R3-TEST-SCRIPT.md` | Manual Pass/Fail test script covering all R1, R2, and R3 shipping features on `lrfe-shipping` (`port 8089`). |
 | `demo-users.mjs` | The demo users the readiness check looks for: the land registry's, or the shipping pack's on a shipping install. |
 
 ## Before every demo: a known starting state
