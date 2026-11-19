@@ -21,6 +21,7 @@ import {
   applyTitleCommand,
   kindOf,
 } from '@lrfe/domain-shipping/title';
+import {carrierProblems} from '@lrfe/domain-shipping/carriers';
 import {portProblems} from '@lrfe/domain-shipping/ports';
 
 import {TITLE_ENTRY_TYP, entryHashOf} from './chain.js';
@@ -497,6 +498,7 @@ export class TitleService {
     organisations,
     formats = formatsFromSettings({}),
     ports = null,
+    carriers = null,
     maxSplitChildren = DEFAULT_MAX_SPLIT_CHILDREN,
   }) {
     if (typeof organisations?.standingOf !== 'function') {
@@ -513,6 +515,7 @@ export class TitleService {
     this.organisations = organisations;
     this.formats = formats;
     this.ports = ports;
+    this.carriers = carriers;
     this.maxSplitChildren = maxSplitChildren;
   }
 
@@ -804,6 +807,17 @@ export class TitleService {
       convertedDocument(this.formats, command, current.data.partyOrganisations),
       {carrierCode: record.carrierCode, reference: record.recordNo},
     );
+    // the carrier code must be on the SMDG list (CB-68)
+    const carrierErrors = carrierProblems(data.document, this.carriers);
+    if (carrierErrors.length > 0) {
+      throw new BadRequestError(
+        `This B/L is not valid: ${carrierErrors[0].message}`,
+        {
+          code: 'unknown-carrier-code',
+          problems: carrierErrors,
+        },
+      );
+    }
     // a changed port must be on the port list (CB-63)
     const problems = portProblems(
       data.document,

@@ -54,7 +54,8 @@ import {OrganisationsApi} from './organisations.api';
                 <tr>
                   <td>
                     <a class="rec" [routerLink]="['/admin/organisations', o.id]">
-                      <strong>{{ o.name }}</strong><span class="small muted mono">{{ o.code }}</span>
+                      <strong>{{ o.name }}</strong>
+                      <span class="small muted mono">{{ o.code }}@if (o.carrierCode) { · SMDG {{ o.carrierCode }}}</span>
                     </a>
                   </td>
                   <td><span [class]="'tag ' + tagClass(o)">{{ o.status }}</span></td>

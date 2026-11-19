@@ -369,3 +369,27 @@ describe('copying a B/L into the new B/L form (CB-69)', () => {
     );
   });
 });
+
+describe('carrier code validation against the SMDG list (CB-68)', () => {
+  const smdg = [
+    {code: 'MSC', name: 'Mediterranean Shipping Company'},
+    {code: 'MSK', name: 'Maersk'},
+  ];
+
+  it('refuses a carrier code that is not on the SMDG list when carriers are provided', () => {
+    const problems = draftProblems(
+      filled({carrierCode: 'BWML'}),
+      CONTEXT.organisations,
+      smdg,
+    );
+    assert.deepEqual(
+      problems.map(p => p.field),
+      ['carrierCode'],
+    );
+    assert.match(problems[0].message, /list/i);
+    assert.deepEqual(
+      draftProblems(filled({carrierCode: 'MSC'}), CONTEXT.organisations, smdg),
+      [],
+    );
+  });
+});

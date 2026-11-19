@@ -22,6 +22,8 @@ export interface Me {
     /** The user's organisation (CB-19): its name, '' before it has one, and its id. */
     organisation?: string;
     organisationId?: string | null;
+    /** The organisation's default SMDG carrier code, if set (CB-68). */
+    organisationCarrierCode?: string | null;
     roles: string[];
     status: string;
     mfa: boolean;

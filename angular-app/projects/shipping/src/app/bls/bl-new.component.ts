@@ -28,6 +28,8 @@ import {
 import {BL_SHARED_STYLES} from './bl-shared.styles';
 import {NO_PORTS, PortOptions, portLabel} from './bl-ports';
 import type {PartyOrganisation} from './bl.model';
+import {isKnownCarrier, type CarrierOption} from './carrier-picker';
+import {CarrierPickerComponent} from './carrier-picker.component';
 import {LatestRequest} from './latest';
 import {injectViewer} from './viewer';
 
@@ -45,6 +47,8 @@ interface FieldSpec {
   hint?: string;
   /** A port: offered from the port list as it is typed (CB-63). */
   port?: boolean;
+  /** The SMDG carrier code: searchable dropdown (CB-68). */
+  carrier?: boolean;
   /** Locked once the B/L is created: number and carrier code (CB-70). */
   lockInEdit?: boolean;
 }
@@ -60,20 +64,20 @@ const BL_FIELDS: readonly FieldSpec[] = [
     lockInEdit: true,
   },
   {
-    field: 'carrierCode',
-    label: 'Carrier code',
-    type: 'text',
-    mono: true,
-    maxlength: 4,
-    hint: 'The SMDG code of the carrier, e.g. ABCD.',
-    lockInEdit: true,
-  },
-  {
     field: 'bookingReference',
     label: 'Booking reference',
     type: 'text',
     mono: true,
     maxlength: 35,
+  },
+  {
+    field: 'carrierCode',
+    label: 'Carrier code',
+    type: 'text',
+    mono: true,
+    carrier: true,
+    hint: 'Picked from the SMDG liner code list.',
+    lockInEdit: true,
   },
 ];
 const ISSUE_FIELDS: readonly FieldSpec[] = [
@@ -161,7 +165,7 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
  */
 @Component({
   selector: 'app-bl-new',
-  imports: [NgTemplateOutlet, RouterLink],
+  imports: [NgTemplateOutlet, RouterLink, CarrierPickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -272,9 +276,23 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
       }
     </div>
     <ng-template #input let-f>
-      <div class="field">
+      <div class="field" [class.wide]="!!f.carrier">
         <label [for]="'bl-' + f.field">{{ f.label }}</label>
-        <input [id]="'bl-' + f.field" [type]="f.type" [class]="inputClass(f)" autocomplete="off" [attr.maxlength]="f.maxlength ?? null" [attr.min]="f.type === 'number' ? 0 : null" [disabled]="isEdit() && !!f.lockInEdit" [value]="valueOf(f.field)" (input)="setFrom(f, $any($event.target).value)" [attr.aria-invalid]="isInvalid(f.field) ? 'true' : null" [attr.aria-describedby]="describedBy(f)" [attr.list]="f.port ? 'bl-' + f.field + '-ports' : null">
+        @if (f.carrier) {
+          <app-carrier-picker
+            [inputId]="'bl-' + f.field"
+            [carriers]="carriers()"
+            [value]="valueOf(f.field)"
+            [disabled]="isEdit() && !!f.lockInEdit"
+            [invalid]="isInvalid(f.field)"
+            [describedBy]="describedBy(f)"
+            (picked)="setText(f.field, $event)" />
+          @if (legacyCopyCarrierNote(); as legacyNote) {
+            <span class="small copy-mark">{{ legacyNote }}</span>
+          }
+        } @else {
+          <input [id]="'bl-' + f.field" [type]="f.type" [class]="inputClass(f)" autocomplete="off" [attr.maxlength]="f.maxlength ?? null" [attr.min]="f.type === 'number' ? 0 : null" [disabled]="isEdit() && !!f.lockInEdit" [value]="valueOf(f.field)" (input)="setFrom(f, $any($event.target).value)" [attr.aria-invalid]="isInvalid(f.field) ? 'true' : null" [attr.aria-describedby]="describedBy(f)" [attr.list]="f.port ? 'bl-' + f.field + '-ports' : null">
+        }
         @if (isCopyBlank(f.field)) {
           <span class="small copy-mark" [id]="'bl-' + f.field + '-copy'">Fill in for the new shipment.</span>
         }
@@ -301,6 +319,7 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
     .panel-body { padding: 16px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; align-items: start; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+    .field.wide { grid-column: 1 / -1; max-width: 560px; }
     fieldset.field { border: 0; padding: 0; }
     fieldset.field legend { font-size: 13px; font-weight: 600; margin-bottom: 4px; padding: 0; }
     .to-order { grid-column: 1 / -1; }
@@ -346,6 +365,7 @@ export class BlNewComponent {
   );
   protected readonly form = signal<DraftForm>(emptyDraftForm());
   protected readonly organisations = signal<PartyOrganisation[]>([]);
+  protected readonly carriers = signal<CarrierOption[]>([]);
   protected readonly loadError = signal<string | null>(null);
   protected readonly ready = signal(true);
   protected readonly saving = signal(false);
@@ -356,6 +376,17 @@ export class BlNewComponent {
   private readonly refusal = signal<string[]>([]);
 
   protected readonly carrierName = computed(() => this.viewer().organisation);
+  protected readonly legacyCopyCarrierNote = computed(() => {
+    if (this.isEdit() || this.copiedFrom() === null) {
+      return null;
+    }
+    const code = this.form().carrierCode.trim().toUpperCase();
+    const list = this.carriers();
+    if (code === '' || list.length === 0 || isKnownCarrier(code, list)) {
+      return null;
+    }
+    return `Original code ${code} is not on the SMDG list — pick one from the list.`;
+  });
   protected readonly subtitle = computed(() => {
     if (this.isEdit()) {
       return `Edit this draft of ${this.carrierName()}. The B/L number and carrier code stay fixed.`;
@@ -501,7 +532,14 @@ export class BlNewComponent {
    */
   protected async save(): Promise<void> {
     const form = this.form();
-    this.formProblems.set(draftProblems(form, this.organisations()));
+    const carriers = this.carriers();
+    this.formProblems.set(
+      draftProblems(
+        form,
+        this.organisations(),
+        carriers.length > 0 && !this.isEdit() ? carriers : undefined,
+      ),
+    );
     this.refusal.set([]);
     if (this.formProblems().length > 0) {
       return;
@@ -549,12 +587,17 @@ export class BlNewComponent {
     const targetId = id || copyId;
     if (!targetId) {
       this.ready.set(true);
-      this.form.set(emptyDraftForm());
+      const defaultCarrier = this.auth.me()?.user.organisationCarrierCode ?? '';
+      this.form.set({...emptyDraftForm(), carrierCode: defaultCarrier});
       this.draftRevision.set(undefined);
       try {
-        const organisations = await this.bls.organisations();
+        const [organisations, carriers] = await Promise.all([
+          this.bls.organisations(),
+          this.bls.carriers(),
+        ]);
         if (this.latest.isCurrent(request)) {
           this.organisations.set(organisations);
+          this.carriers.set(carriers);
         }
       } catch (e) {
         if (this.latest.isCurrent(request)) {
@@ -565,14 +608,16 @@ export class BlNewComponent {
     }
     this.ready.set(false);
     try {
-      const [organisations, record] = await Promise.all([
+      const [organisations, carriers, record] = await Promise.all([
         this.bls.organisations(),
+        this.bls.carriers(),
         this.bls.record(targetId),
       ]);
       if (!this.latest.isCurrent(request)) {
         return;
       }
       this.organisations.set(organisations);
+      this.carriers.set(carriers);
       if (record.status === 'archived') {
         this.loadError.set(
           id

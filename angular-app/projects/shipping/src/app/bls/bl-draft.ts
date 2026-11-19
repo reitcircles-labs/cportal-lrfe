@@ -8,6 +8,7 @@
  * Tested by bl-draft.test.ts (`npm run test:shipping`).
  */
 import type {DraftVersion, PartyOrganisation} from './bl.model';
+import type {CarrierOption} from './carrier-picker';
 
 /** The B/L format the form writes (one of the record service's formats, `LRFE_BL_FORMATS`). */
 export const DRAFT_FORMAT = 'dcsa-3.0';
@@ -168,12 +169,25 @@ function textOf(value: unknown): string {
 export function draftProblems(
   form: DraftForm,
   organisations?: readonly PartyOrganisation[],
+  carriers?: readonly CarrierOption[],
 ): DraftProblem[] {
   const problems: DraftProblem[] = [];
   for (const [field, name] of REQUIRED_TEXT) {
     if (textOf(form[field]) === '') {
       problems.push({field, message: `Fill in ${name}.`});
     }
+  }
+  const carrierCode = textOf(form.carrierCode).toUpperCase();
+  if (
+    carriers !== undefined &&
+    carriers.length > 0 &&
+    carrierCode !== '' &&
+    !carriers.some(c => c.code === carrierCode)
+  ) {
+    problems.push({
+      field: 'carrierCode',
+      message: 'Pick the carrier code from the SMDG list.',
+    });
   }
   for (const [field, name] of POSITIVE_NUMBERS) {
     const value = form[field];

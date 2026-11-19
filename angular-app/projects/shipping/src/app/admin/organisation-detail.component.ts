@@ -16,6 +16,8 @@ import {
 } from '@lrfe/platform';
 
 import {BL_SHARED_STYLES} from '../bls/bl-shared.styles';
+import type {CarrierOption} from '../bls/carrier-picker';
+import {CarrierPickerComponent} from '../bls/carrier-picker.component';
 import {LatestRequest} from '../bls/latest';
 import {
   cleanInvitation,
@@ -44,7 +46,7 @@ interface StaffRow {
  */
 @Component({
   selector: 'app-organisation-detail',
-  imports: [RouterLink],
+  imports: [RouterLink, CarrierPickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -56,9 +58,34 @@ interface StaffRow {
           <h1 style="margin:4px 0 4px;font-size:32px">{{ o.name }}</h1>
           <span class="row" style="gap:8px">
             <span class="mono small">{{ o.code }}</span>
+            @if (o.carrierCode) {
+              <span class="tag tag-neutral mono">SMDG {{ o.carrierCode }}</span>
+            }
             <span [class]="'tag ' + tagClass(o.status)">{{ o.status }}</span>
           </span>
         </header>
+        <section class="panel">
+          <div class="panel-head"><h2>Carrier settings</h2></div>
+          <form class="panel-body stack" style="gap:12px" (submit)="$event.preventDefault(); saveCarrier(o)">
+            <div class="field" style="max-width:460px">
+              <label for="org-carrierCode">Default carrier code</label>
+              <app-carrier-picker
+                inputId="org-carrierCode"
+                [carriers]="carriers()"
+                [value]="carrierCode()"
+                emptyLabel="None (not a carrier)"
+                describedBy="org-carrier-hint"
+                (picked)="carrierCode.set($event)" />
+              <span id="org-carrier-hint" class="small muted">Filled in automatically when this organisation's staff draft a new B/L.</span>
+            </div>
+            @if (carrierError(); as e) {
+              <div class="note danger" role="alert">{{ e }}</div>
+            }
+            <div>
+              <button type="submit" class="btn btn-primary" [disabled]="savingCarrier()">{{ savingCarrier() ? 'Saving…' : 'Save carrier code' }}</button>
+            </div>
+          </form>
+        </section>
         <section class="panel">
           <div class="panel-head"><h2>Staff ({{ staff().length }})</h2></div>
           <div style="overflow-x:auto">
@@ -147,6 +174,10 @@ export class OrganisationDetailComponent {
 
   protected readonly organisation = signal<Organisation | null>(null);
   private readonly members = signal<StaffMember[]>([]);
+  protected readonly carriers = signal<CarrierOption[]>([]);
+  protected readonly carrierCode = signal('');
+  protected readonly savingCarrier = signal(false);
+  protected readonly carrierError = signal<string | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly name = signal('');
@@ -256,7 +287,36 @@ export class OrganisationDetailComponent {
   }
 
   /**
-   * Loads the organisation and its staff.
+   * Saves or clears the organisation's default SMDG carrier code (CB-68).
+   * @param organisation the organisation
+   * @return when saved
+   */
+  protected async saveCarrier(organisation: Organisation): Promise<void> {
+    this.savingCarrier.set(true);
+    this.carrierError.set(null);
+    try {
+      const code = this.carrierCode().trim().toUpperCase() || null;
+      const updated = await this.organisationsApi.setCarrierCode(
+        organisation.id,
+        code,
+      );
+      this.organisation.set(updated);
+      this.carrierCode.set(updated.carrierCode ?? '');
+      this.toast.show(
+        'success',
+        code
+          ? `Default carrier code set to ${code}`
+          : 'Default carrier code cleared',
+        organisation.name,
+      );
+    } catch (e) {
+      this.carrierError.set(toApiError(e).message);
+    }
+    this.savingCarrier.set(false);
+  }
+
+  /**
+   * Loads the organisation, its staff and the SMDG carrier code list.
    * @param id the organisation's id
    * @return when they are shown
    */
@@ -264,10 +324,17 @@ export class OrganisationDetailComponent {
     const request = this.latest.begin();
     this.loading.set(true);
     this.error.set(null);
+    this.carrierError.set(null);
     try {
-      const [organisations, users] = await Promise.all([
+      const [organisations, users, carriers] = await Promise.all([
         this.organisationsApi.list(),
         this.organisationsApi.users(),
+        this.organisationsApi.carriers().catch(err => {
+          if (this.latest.isCurrent(request)) {
+            this.carrierError.set(toApiError(err).message);
+          }
+          return [] as CarrierOption[];
+        }),
       ]);
       if (!this.latest.isCurrent(request)) {
         return;
@@ -277,6 +344,8 @@ export class OrganisationDetailComponent {
         this.error.set('Organisation not found');
       }
       this.organisation.set(organisation);
+      this.carrierCode.set(organisation?.carrierCode ?? '');
+      this.carriers.set(carriers);
       this.members.set(staffOf(users, id));
     } catch (e) {
       if (!this.latest.isCurrent(request)) {

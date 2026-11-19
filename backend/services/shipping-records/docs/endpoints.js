@@ -42,6 +42,12 @@ export const ENDPOINTS = {
       description:
         "`{ comment? }`. For a person with `bl.issue` of the B/L's organisation (CB-44): commits the version as `commit` does (sealed, chained, `records.record.committed` published), with you as its approver. Never one of its drafters: whoever created, changed or submitted that version gets 403 (`details.code` `own-draft`). 403 without `bl.issue` or for a user of no organisation; 404 for another organisation's B/L. 409 when the version is not in review (still a draft, or committed by someone else; of two approvals at the same moment one wins). A retry by the same approver answers the record unchanged. The B/L is then issued with `POST /records/{id}/title/issue`.",
     },
+    'GET /records/carriers': {
+      tag: 'Records',
+      summary: 'Search or list the SMDG carrier code list',
+      description:
+        "`?q=` part of a code or carrier name (accents ignored), `?limit=` at most 500 (500 by default); or `?code=` one code. Answers `{ items: [{ code, name }], version }`. A new or amended B/L's `carrierCode` must be on this list (400, `details.code` `unknown-carrier-code`). The list comes from `CARRIER_LIST_FILE` (the shipping pack's SMDG list by default). For people with `bl.draft`, `bl.issue` or `admin.organisations`.",
+    },
     'GET /records/ports': {
       tag: 'Records',
       summary: 'Search the port list (UN/LOCODE sea ports)',

@@ -448,6 +448,71 @@ paths:
       x-access:
         allOf:
           - bl.issue
+  /records/carriers:
+    get:
+      tags:
+        - Records
+      summary: Search or list the SMDG carrier code list
+      description: >-
+        `?q=` part of a code or carrier name (accents ignored), `?limit=` at most 500 (500 by default); or `?code=` one code. Answers `{
+        items: [{ code, name }], version }`. A new or amended B/L's `carrierCode` must be on this list (400, `details.code`
+        `unknown-carrier-code`). The list comes from `CARRIER_LIST_FILE` (the shipping pack's SMDG list by default). For people with
+        `bl.draft`, `bl.issue` or `admin.organisations`.
+
+
+        **Access:** Signed-in user with any of `bl.draft`, `bl.issue`, `admin.organisations`.
+      operationId: getRecordsCarriers
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 4
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        anyOf:
+          - bl.draft
+          - bl.issue
+          - admin.organisations
   /records/ports:
     get:
       tags:

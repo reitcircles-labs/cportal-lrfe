@@ -83,8 +83,8 @@ const [IMPORTER] = peopleOf(BUYER);
 const OPERATOR_NAME = (identity as {defaultOrganisation: {name: string}})
   .defaultOrganisation.name;
 
-/** The carrier's code on the B/L. */
-const CARRIER_CODE = CARRIER.code;
+/** The carrier's SMDG code on the B/L (set on Bluewater in Act 1, pre-filled in Act 2). */
+const CARRIER_CODE = 'MSC';
 
 /** What the check says of the whole journey: six steps, each signed. */
 const ALL_CHECKED =
@@ -142,7 +142,7 @@ test.describe(
   () => {
     // the carrier's form, as in the storyline: its code, the year and month, a running number
     // (here from the clock, so a rerun finds its own); 14 characters, within DCSA's 20
-    const reference = `${CARRIER_CODE}2611${String(Date.now()).slice(-6)}`;
+    const reference = `${CARRIER.code}2611${String(Date.now()).slice(-6)}`;
     const label = `B/L ${reference} (${CARRIER_CODE})`;
     let blId = '';
 
@@ -283,6 +283,17 @@ test.describe(
       }
       await dismissToasts(page);
       await evidence(page, TICKET, 'The five organisations of the demo');
+
+      // Act 1 (CB-68): set Bluewater Meridian Lines' default SMDG carrier code
+      await page.getByRole('link', {name: `Open ${CARRIER.name}`}).click();
+      await expect(
+        page.getByRole('heading', {name: CARRIER.name, level: 1}),
+      ).toBeVisible();
+      await page
+        .getByLabel('Default carrier code', {exact: true})
+        .selectOption(CARRIER_CODE);
+      await page.getByRole('button', {name: 'Save carrier code'}).click();
+      await expect(page.getByText(`SMDG ${CARRIER_CODE}`)).toBeVisible();
     });
 
     test("Act 2: the carrier's clerk drafts the B/L and submits it; she cannot approve it", async ({
@@ -294,9 +305,12 @@ test.describe(
       ).toBeVisible();
       await page.getByRole('link', {name: 'New B/L'}).click();
       await expect(page.getByRole('heading', {name: 'New B/L'})).toBeVisible();
+      // the default SMDG carrier code set in Act 1 is already selected
+      await expect(page.getByLabel('Carrier code', {exact: true})).toHaveValue(
+        CARRIER_CODE,
+      );
       const fields: Array<[string, string]> = [
         ['B/L number', reference],
-        ['Carrier code', CARRIER_CODE],
         ['Booking reference', 'BKG-2611-0042'],
         ['Street', 'Rua do Porto 12'],
         ['City', 'Santos'],

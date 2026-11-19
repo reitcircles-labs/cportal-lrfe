@@ -308,6 +308,8 @@ services:
       # the port list a B/L's ports are checked against (CB-63): empty (the default) = the list
       # shipped with the release; a newer UN/LOCODE list = a file in deploy/ports/ (README.md, part G)
       PORT_LIST_FILE: ${PORT_LIST_FILE:-}
+      # the SMDG carrier code list (CB-68): empty (the default) = the list shipped with the release
+      CARRIER_LIST_FILE: ${CARRIER_LIST_FILE:-}
       TITLE_SIGNING_KEY: bl-title
       BAO_ADDR: http://openbao:8200
       BAO_SECRET_ID_FILE: /run/lrfe/bao/secret-id
