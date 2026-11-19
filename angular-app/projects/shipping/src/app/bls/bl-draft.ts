@@ -104,6 +104,17 @@ const DEFAULT_TERMS =
   'Carried under the terms and conditions of the carrier, which are part of this bill of lading.';
 
 /**
+ * The shipment-specific fields left empty when copying a B/L into a new draft (CB-69):
+ * B/L number, booking reference, container number and seal number.
+ */
+export const COPY_BLANK_FIELDS: ReadonlyArray<keyof DraftForm> = [
+  'reference',
+  'bookingReference',
+  'containerNumber',
+  'sealNumber',
+];
+
+/**
  * A new, empty form: to order, a 20-foot general purpose container (22G1), the carrier's terms
  * to complete.
  * @return the form
@@ -456,6 +467,24 @@ export function draftFormOf(
     grossWeightKg: numberOrNull(grossWeight['value']),
     termsAndConditions:
       textOf(doc['termsAndConditions']) || defaults.termsAndConditions,
+  };
+}
+
+/**
+ * Fills the B/L form from an existing B/L version for a new copy (CB-69), leaving the
+ * shipment-specific fields empty so the clerk supplies them.
+ * @param version the original B/L's latest version
+ * @return the pre-filled form
+ */
+export function copyFormOf(
+  version: DraftVersion | null | undefined,
+): DraftForm {
+  return {
+    ...draftFormOf(version),
+    reference: '',
+    bookingReference: '',
+    containerNumber: '',
+    sealNumber: '',
   };
 }
 
