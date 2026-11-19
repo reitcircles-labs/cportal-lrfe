@@ -1,0 +1,618 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>B/L Cross-Platform Transfer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the CB-9 working document on manifest paper. A narrow reading column; step tables and
+   screen sketches may run wider. Sea-ink navy carries the text, signal amber marks "who holds the
+   title", harbour teal marks what is proved on the blockchain, red marks refusals and failures. */
+:root {
+  --paper: #f5f7f6;
+  --sheet: #ffffff;
+  --ink: #14233a;
+  --ink-soft: #4a5a70;
+  --rule: #d5dde3;
+  --teal: #0d6b80;
+  --teal-wash: #e3f1f3;
+  --amber: #b86e00;
+  --amber-wash: #fbf0dc;
+  --red: #a63a2c;
+  --red-wash: #f8e6e2;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1622; --sheet: #152031; --ink: #e4ebf2; --ink-soft: #9fb0c3; --rule: #2a3a50;
+    --teal: #5cc0d3; --teal-wash: #12313b; --amber: #f0b04a; --amber-wash: #3a2a10;
+    --red: #f08a7a; --red-wash: #3d1d19; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1622; --sheet: #152031; --ink: #e4ebf2; --ink-soft: #9fb0c3; --rule: #2a3a50;
+  --teal: #5cc0d3; --teal-wash: #12313b; --amber: #f0b04a; --amber-wash: #3a2a10;
+  --red: #f08a7a; --red-wash: #3d1d19; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.55;
+}
+.wrap {
+  max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 72px;
+  display: grid; gap: 56px;
+}
+.prose { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.1; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 700; letter-spacing: 0.005em; }
+h2 { font-size: 2rem; font-weight: 600; }
+h3 { font-size: 1.35rem; font-weight: 600; }
+p { margin: 0; }
+section { display: grid; gap: 20px; }
+.label {
+  font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft);
+}
+.mono { font-family: var(--font-mono); font-size: 0.86em; }
+.soft { color: var(--ink-soft); }
+.tbc { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.04em; color: var(--red); border: 1px solid var(--red); padding: 0 5px; white-space: nowrap; }
+
+/* header: styled like the top box of a bill of lading */
+.docbox { border: 2px solid var(--ink); background: var(--sheet); display: grid; grid-template-columns: 1fr auto; }
+.docbox > div { padding: 18px 20px; }
+.docbox .meta { border-left: 2px solid var(--ink); display: grid; gap: 6px; align-content: start; min-width: 0; }
+.docbox .meta div { display: grid; gap: 0; }
+.docbox .meta strong { font-family: var(--font-mono); font-weight: 500; font-size: 0.9rem; }
+.docbox .title { display: grid; gap: 12px; min-width: 0; }
+@media (max-width: 640px) {
+  .docbox { grid-template-columns: 1fr; }
+  .docbox .meta { border-left: 0; border-top: 2px solid var(--ink); grid-template-columns: 1fr 1fr; }
+}
+
+/* the one rule */
+.rule {
+  border-left: 6px solid var(--amber); background: var(--amber-wash); padding: 18px 22px; display: grid; gap: 10px; max-width: 80ch;
+}
+.rule ul, .prose ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+
+/* cards (personas in this flow) */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+.card { background: var(--sheet); border: 1px solid var(--rule); padding: 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card .who { display: grid; gap: 2px; }
+.card .who .name { font-family: var(--font-display); font-size: 1.4rem; font-weight: 600; }
+.card .who .role { color: var(--ink-soft); font-size: 0.95rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-mono); font-size: 0.72rem; padding: 2px 8px; border: 1px solid var(--rule); color: var(--ink-soft); }
+.chip.title { border-color: var(--amber); color: var(--amber); }
+.chip.never { border-color: var(--red); color: var(--red); }
+
+/* tables */
+.tscroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; background: var(--sheet); font-size: 0.95rem; }
+.steps table { min-width: 980px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border: 1px solid var(--rule); }
+th { font-family: var(--font-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); background: var(--paper); }
+td.key { font-family: var(--font-mono); font-size: 0.85rem; white-space: nowrap; }
+td.hold { background: var(--amber-wash); font-weight: 600; }
+td.proof { background: var(--teal-wash); }
+td.none { color: var(--ink-soft); }
+.yes { color: var(--teal); font-weight: 600; }
+.no { color: var(--ink-soft); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.9rem; color: var(--ink-soft); }
+.legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; }
+.legend .l-holder::before { background: var(--amber-wash); border: 1px solid var(--amber); }
+.legend .l-proof::before { background: var(--teal-wash); border: 1px solid var(--teal); }
+
+/* screen sketches: wireframes, not final design */
+.screens { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 20px; }
+.screen { border: 1.5px solid var(--ink); background: var(--sheet); display: grid; align-content: start; min-width: 0; font-size: 0.93rem; }
+.screen .bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 8px 12px; border-bottom: 1.5px solid var(--ink); background: var(--paper); }
+.screen .bar .name { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; }
+.screen .body { padding: 14px; display: grid; gap: 12px; min-width: 0; }
+.screen .cap { padding: 8px 12px; border-top: 1px dashed var(--rule); color: var(--ink-soft); font-size: 0.85rem; }
+.field { display: grid; gap: 3px; min-width: 0; }
+.input { border: 1px solid var(--rule); padding: 6px 9px; font-family: var(--font-mono); font-size: 0.85rem; background: var(--paper); overflow-wrap: anywhere; }
+.input.sel::after { content: " ▾"; color: var(--ink-soft); }
+.radio { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.radio span::before { content: "○ "; color: var(--ink-soft); }
+.radio span.on::before { content: "● "; color: var(--ink); }
+.confirm { border: 1px solid var(--teal); background: var(--teal-wash); padding: 8px 10px; display: grid; gap: 2px; }
+.warn { border: 1px solid var(--amber); background: var(--amber-wash); padding: 8px 10px; }
+.bad { border: 1px solid var(--red); background: var(--red-wash); padding: 8px 10px; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { font-family: var(--font-body); font-weight: 600; font-size: 0.88rem; padding: 6px 12px; border: 1.5px solid var(--ink); color: var(--ink); background: var(--sheet); }
+.btn.primary { background: var(--ink); color: var(--sheet); }
+.btn.ghost { border-color: var(--rule); color: var(--ink-soft); }
+.pill { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.04em; padding: 2px 8px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.amber { color: var(--amber); }
+.pill.teal { color: var(--teal); }
+.pill.red { color: var(--red); }
+.pill.soft { color: var(--ink-soft); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 0.9rem; }
+.kv dt { color: var(--ink-soft); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.88rem; }
+.timeline li { display: grid; grid-template-columns: 4.2em 1fr; gap: 8px; }
+.timeline .t { font-family: var(--font-mono); color: var(--ink-soft); font-size: 0.8rem; }
+.timeline li.now { font-weight: 600; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.88rem; }
+.checks li::before { content: "✓ "; color: var(--teal); font-weight: 700; }
+.mini { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.mini th, .mini td { padding: 5px 7px; }
+
+/* decisions */
+.decisions { display: grid; gap: 14px; }
+.decision { background: var(--sheet); border: 1px solid var(--rule); padding: 16px 18px; display: grid; gap: 8px; max-width: 86ch; }
+.decision h3 { font-size: 1.2rem; }
+.decision ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.decision .rec { border-left: 3px solid var(--teal); padding-left: 10px; }
+a { color: var(--teal); }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+  <header class="docbox">
+    <div class="title">
+      <span class="label">Design for review · epic CB-8 · ticket CB-17</span>
+      <h1>Sending a B/L to another eBL platform, and receiving one</h1>
+      <p class="prose">Not every bank or buyer will use our platform. This flow moves a bill of lading to a holder on
+        another electronic B/L platform, and takes one in, the way the DCSA platform interoperability standard (PINT)
+        describes: one envelope carries the B/L and its whole transfer history, the receiving platform says yes or no,
+        and the sending platform's copy stops counting the moment it says yes.</p>
+    </div>
+    <div class="meta">
+      <div><span class="label">Status</span><strong>Draft, for your review</strong></div>
+      <div><span class="label">Date</span><strong>8 Nov 2026</strong></div>
+      <div><span class="label">Product</span><strong>Shipping (CB-1)</strong></div>
+      <div><span class="label">Base</span><strong><a href="https://claude.ai/artifact/CcPi4hHhDcm9d6JiJSRdP6">CB-9</a> step 4, 6</strong></div>
+      <div><span class="label">Decisions asked</span><strong>5, at the end</strong></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="rule">
+      <span class="label">What this flow assumes</span>
+      <p><strong>CB-9's five decisions are not agreed yet.</strong> This page assumes its recommendations: the receiver
+        accepts a transfer; UK Electronic Trade Documents Act 2023 as the reference law (a country setting); the forwarder
+        does not hold title in v1; a neutral operator; the eleven personas.</p>
+      <ul>
+        <li><strong>Still exactly one holder.</strong> Across two platforms, "one holder" means one platform has the
+          B/L active. While it travels, it stays active here; once the other platform confirms, our copy is inactive for good.</li>
+        <li><strong>Title moves only by the holder's endorsement</strong>, never by the operator, and never because a
+          message got lost: no answer means no move.</li>
+        <li><strong>Our blockchain proves what happened here</strong>: that we sent it, to whom, and that the other side
+          confirmed; or that we received it, with the full history it came with. Steps recorded on the other platform are
+          proved by that platform's signature, not by our blockchain.</li>
+      </ul>
+      <p class="soft" style="font-size:0.92rem">Marked <span class="tbc">to confirm</span>: PINT details and legal points I am not sure of. They are checked
+        against the published DCSA PINT specification (version 3.x at the time of writing, to confirm) before CB-17 is built.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 1</span>
+      <h2>The goal, and who is in it</h2>
+      <p>The same coffee shipment as CB-9: B/L <span class="mono">CBL-2026-000123</span>, 1,200 bags of green coffee,
+        Santos to Rotterdam, issued by Lena's and Ravi's carrier on our platform. In this version of the story, Grace's
+        bank in Accra does not use our platform; it uses another eBL platform, here called <strong>Meridian eBL</strong>
+        (a made-up name). So the B/L leaves us at CB-9 step 4 and comes back at step 6.</p>
+    </div>
+    <div class="cards">
+      <article class="card">
+        <div class="who"><span class="name">Ana Ribeiro</span><span class="role">Export clerk, coffee exporter, Santos</span></div>
+        <p>Holder. Sends the B/L out to Grace's bank on Meridian eBL; a second signatory at the exporter approves.</p>
+        <div class="chips"><span class="chip title">holds title until sent</span><span class="chip">outgoing</span></div>
+      </article>
+      <article class="card">
+        <div class="who"><span class="name">Grace Mensah</span><span class="role">Credits officer, bank in Accra, on Meridian eBL</span></div>
+        <p>Not a user here. Holds the B/L on Meridian eBL, checks it there, then endorses it to Yusuf, which sends it back to us.</p>
+        <div class="chips"><span class="chip title">holds title on the other platform</span></div>
+      </article>
+      <article class="card">
+        <div class="who"><span class="name">Yusuf Demir</span><span class="role">Import manager, coffee roaster, Rotterdam</span></div>
+        <p>Receives the B/L from Meridian eBL, keeps it (or returns it), then surrenders it to Ravi as usual (CB-13).</p>
+        <div class="chips"><span class="chip title">holds title after receipt</span><span class="chip">incoming</span></div>
+      </article>
+      <article class="card">
+        <div class="who"><span class="name">Lena and Ravi</span><span class="role">The carrier that issued the B/L</span></div>
+        <p>See where their B/L is ("held on Meridian eBL") but cannot move it. Ravi takes the surrender when it is back.</p>
+        <div class="chips"><span class="chip">sees, never moves</span></div>
+      </article>
+      <article class="card">
+        <div class="who"><span class="name">The platform operator</span><span class="role">Runs this platform</span></div>
+        <p>Keeps the list of connected platforms and their keys, follows transfers that get stuck. Never moves title, never cancels a transfer.</p>
+        <div class="chips"><span class="chip never">never moves title</span></div>
+      </article>
+      <article class="card">
+        <div class="who"><span class="name">Kalinda and Henrik</span><span class="role">Outside checker; auditor</span></div>
+        <p>Kalinda's public check says where the B/L lives now. Henrik reads one chain of title that spans both platforms.</p>
+        <div class="chips"><span class="chip never">never holds</span><span class="chip">CB-15</span><span class="chip">CB-16</span></div>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 2</span>
+      <h2>How a transfer between platforms works</h2>
+      <p>In the PINT model the platforms talk to each other; the users each stay on their own platform. What I am sure of,
+        and what is to confirm:</p>
+      <ul>
+        <li><strong>An envelope.</strong> The sending platform sends one envelope holding the B/L document, a manifest
+          signed by the sending platform, and the <em>envelope transfer chain</em>: the list of every step since issue
+          (issue, transfers, endorsements), each entry signed by the platform that recorded it and linked to the one
+          before by a checksum. The receiver can check the whole history without asking anyone.</li>
+        <li><strong>Supporting documents</strong> can follow the envelope one by one before the sender says the transfer
+          is finished. <span class="tbc">to confirm</span> the exact steps (start, documents, finish) of the version we build on.</li>
+        <li><strong>An answer.</strong> The receiving platform checks the envelope and answers with a code. The ones I
+          am fairly sure of: <span class="mono">RECE</span> received and accepted, <span class="mono">DUPE</span> already
+          received earlier, <span class="mono">BSIG</span> a signature failed, <span class="mono">BENV</span> the envelope
+          is wrong. <span class="tbc">to confirm</span> the full list (for example a "disputed" answer) and whether the answer itself is signed.</li>
+        <li><strong>Our copy becomes inactive</strong> on <span class="mono">RECE</span> or <span class="mono">DUPE</span>;
+          on any other answer, or none, the B/L stays active here.</li>
+        <li><strong>Finding the receiver.</strong> A party is named by a code and the code list it comes from (the
+          receiving platform's own party code, or a global identifier such as an LEI). PINT has a call to ask the receiving
+          platform who a party code belongs to before sending. <span class="tbc">to confirm</span> its exact form and which code lists each platform accepts.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="steps">
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 3</span>
+      <h2>Happy path A: sending out</h2>
+      <p>Ana endorses the B/L to Grace's bank on Meridian eBL (CB-9 step 4, to another platform).</p>
+    </div>
+    <div class="legend"><span class="l-holder">Holder after this step</span><span class="l-proof">Proved on the blockchain</span></div>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>#</th><th>Actor</th><th>Does</th><th>Screen shows</th><th>Status after</th><th>Holder after</th><th>On the blockchain</th></tr></thead>
+        <tbody>
+          <tr><td class="key">A1</td><td>Ana</td><td>Opens the B/L, chooses <em>Endorse</em>, then <em>A party on another platform</em>.</td>
+            <td><strong>Endorse B/L</strong> dialog (sketch 1): platform list from the directory, party code field, code type.</td>
+            <td>Held</td><td class="hold">Ana's company</td><td class="none">nothing</td></tr>
+          <tr><td class="key">A2</td><td>Ana; the platform</td><td>Picks Meridian eBL, types the bank's party code, presses <em>Check receiver</em>. We ask Meridian who the code belongs to.</td>
+            <td>The name Meridian returns: "Banco Atlântico Ghana Ltd, Accra · confirmed by Meridian eBL". A note: the other platform and the receiver will see this B/L and its full history.</td>
+            <td>Held</td><td class="hold">Ana's company</td><td class="none">nothing</td></tr>
+          <tr><td class="key">A3</td><td>Ana</td><td>Checks the name against the letter of credit, picks <em>to the order of</em> the bank, submits.</td>
+            <td><strong>Waiting for approval</strong>; the B/L is locked: no other endorsement can be started.</td>
+            <td>Awaiting approval</td><td class="hold">Ana's company</td><td class="none">nothing</td></tr>
+          <tr><td class="key">A4</td><td>Second signatory at the exporter</td><td>Approves (four-eyes, as for any endorsement, CB-12).</td>
+            <td>Approval card with the confirmed receiver name and platform.</td>
+            <td>Sending</td><td class="hold">Ana's company</td><td class="none">nothing yet; the approval goes in the audit trail</td></tr>
+          <tr><td class="key">A5</td><td>The platform</td><td>Adds a signed endorse-and-transfer entry to the chain, builds the envelope, sends it.</td>
+            <td><strong>B/L detail</strong> (sketch 2): "Sending to Meridian eBL. The title stays with you until Meridian confirms."</td>
+            <td>Sending</td><td class="hold">Ana's company</td><td class="none">nothing yet</td></tr>
+          <tr><td class="key">A6</td><td>Meridian eBL</td><td>Checks the envelope and answers <span class="mono">RECE</span>.</td>
+            <td>"Delivered. Held by Banco Atlântico on Meridian eBL since 12 Nov 2026, 10:43. This platform's copy is no longer valid."</td>
+            <td>Transferred out (inactive)</td><td class="hold">Banco Atlântico, on Meridian eBL</td>
+            <td class="proof"><strong>Sent to another platform</strong>: B/L seal, checksum of the last chain entry, receiving platform, receiver party, answer, time</td></tr>
+          <tr><td class="key">A7</td><td>Ana, Lena, Ravi, Kalinda</td><td>See the new state.</td>
+            <td>Ana: read-only copy, history up to the send. Carrier: "held on another platform". Public check: "Held on Meridian eBL since 12 Nov 2026. Check it there."</td>
+            <td>Transferred out</td><td class="hold">Banco Atlântico, on Meridian eBL</td><td class="none">read only</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="steps">
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 4</span>
+      <h2>Happy path B: receiving</h2>
+      <p>Grace's bank, on Meridian eBL, endorses the B/L to Yusuf's company, which is on our platform (CB-9 step 6, from another platform).
+        The B/L was here before, which gives us one more check.</p>
+    </div>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>#</th><th>Actor</th><th>Does</th><th>Screen shows</th><th>Status after</th><th>Holder after</th><th>On the blockchain</th></tr></thead>
+        <tbody>
+          <tr><td class="key">B1</td><td>Meridian eBL; the platform</td><td>Asks us who Yusuf's party code belongs to. We answer with the registered name only if the organisation is admitted and active here.</td>
+            <td class="none">Nothing for users; the request is logged for the operator.</td>
+            <td class="none">not here yet</td><td class="hold">Banco Atlântico, on Meridian eBL</td><td class="none">nothing</td></tr>
+          <tr><td class="key">B2</td><td>The platform</td><td>Receives the envelope and runs the automatic checks (sketch 3): sender is a connected platform; every chain entry's signature is good with the key of the platform that signed it; the chain is unbroken; the document matches its checksum; the receiver is admitted here; the B/L is not active here; our own earlier entries in the chain match our records exactly.</td>
+            <td class="none">Nothing yet for users.</td>
+            <td class="none">checking</td><td class="hold">Banco Atlântico, on Meridian eBL</td><td class="none">nothing</td></tr>
+          <tr><td class="key">B3</td><td>The platform</td><td>All checks pass: answers <span class="mono">RECE</span>; the B/L is active here again.</td>
+            <td>Yusuf's company gets "A B/L arrived from Meridian eBL" in <strong>Arrived from other platforms</strong>.</td>
+            <td>Arrived, waiting for the holder's decision</td><td class="hold">Yusuf's company</td>
+            <td class="proof"><strong>Received from another platform</strong>: checksum of the full received chain and document, sending platform, holder, time</td></tr>
+          <tr><td class="key">B4</td><td>Yusuf (and his signatory if his organisation's four-eyes rule says so)</td><td>Reads the B/L and the whole chain, presses <em>Keep this B/L</em>.</td>
+            <td>Status "Held"; the holder's usual actions (endorse, surrender, ask for an amendment).</td>
+            <td>Held</td><td class="hold">Yusuf's company</td><td class="proof"><strong>Accepted by the holder</strong></td></tr>
+          <tr><td class="key">B5</td><td>Yusuf, Ravi</td><td>Surrender and release, as usual.</td><td>CB-13 screens.</td>
+            <td>Surrendered</td><td class="hold">The carrier</td><td class="proof">Surrendered (CB-13)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="prose soft">Why the receiver decides after our platform has answered: the other platform expects its answer
+      during the transfer, and a person cannot answer within that time <span class="tbc">to confirm</span> that PINT has no delayed answer.
+      This matches paper practice: a bank that refuses documents holds them at the presenter's disposal or returns them
+      (UCP 600 article 16). See question 1.</p>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 5</span>
+      <h2>Screen sketches</h2>
+      <p>Wireframes for the four key screens, with the example content. Layout and wording are for discussion, not final.</p>
+    </div>
+    <div class="screens">
+
+      <div class="screen" role="figure" aria-label="Sketch 1: endorse to another platform">
+        <div class="bar"><span class="name">Endorse B/L CBL-2026-000123</span><span class="pill amber">Held by you</span></div>
+        <div class="body">
+          <div class="field"><span class="label">Endorse to</span>
+            <div class="radio"><span>A party on this platform</span><span class="on">A party on another platform</span></div></div>
+          <div class="field"><span class="label">Platform</span><div class="input sel">Meridian eBL</div></div>
+          <div class="field"><span class="label">Party code at that platform</span><div class="input">BAGH-ACC-00417</div></div>
+          <div class="field"><span class="label">Kind of code</span><div class="input sel">Meridian eBL party code</div></div>
+          <div class="btns"><span class="btn">Check receiver</span></div>
+          <div class="confirm"><strong>Banco Atlântico Ghana Ltd, Accra</strong><span class="soft" style="font-size:0.85rem">Confirmed by Meridian eBL, 12 Nov 2026 10:31. Check this is the party named in the letter of credit.</span></div>
+          <div class="field"><span class="label">Endorsement</span>
+            <div class="radio"><span class="on">To the order of this party</span><span>In blank</span></div></div>
+          <div class="warn" style="font-size:0.88rem">Meridian eBL and the receiver will see this B/L and its full history of holders. Once Meridian confirms, you can no longer act on this B/L here.</div>
+          <div class="btns"><span class="btn primary">Send for approval</span><span class="btn ghost">Cancel</span></div>
+        </div>
+        <div class="cap">Steps A1 to A3. "In blank" is shown only if the B/L allows it (CB-12) and the other platform accepts it <span class="tbc">to confirm</span>.</div>
+      </div>
+
+      <div class="screen" role="figure" aria-label="Sketch 2: B/L detail while sending">
+        <div class="bar"><span class="name">B/L CBL-2026-000123</span><span class="pill amber">Sending to Meridian eBL</span></div>
+        <div class="body">
+          <dl class="kv"><dt>Holder</dt><dd><strong>Your company</strong> (until Meridian confirms)</dd>
+            <dt>To</dt><dd>Banco Atlântico Ghana Ltd, on Meridian eBL</dd>
+            <dt>Cargo</dt><dd>1,200 bags green coffee, Santos → Rotterdam</dd></dl>
+          <ol class="timeline">
+            <li><span class="t">10:31</span><span>Receiver confirmed by Meridian eBL</span></li>
+            <li><span class="t">10:34</span><span>Submitted by Ana Ribeiro</span></li>
+            <li><span class="t">10:41</span><span>Approved by Marcos Lima (second signatory)</span></li>
+            <li class="now"><span class="t">10:42</span><span>Sent. Waiting for Meridian eBL to answer</span></li>
+          </ol>
+          <div class="warn" style="font-size:0.88rem">The title stays with you until Meridian eBL confirms. You cannot endorse, surrender or amend this B/L while it is being sent.</div>
+          <div class="btns"><span class="btn ghost">Endorse (locked)</span><span class="btn ghost">Surrender (locked)</span></div>
+        </div>
+        <div class="cap">Step A5. Later states of the same banner: "Delivered" (teal), "Refused by Meridian eBL" (red, unlocked), "Not confirmed yet" (amber, still locked). See Part 6.</div>
+      </div>
+
+      <div class="screen" role="figure" aria-label="Sketch 3: B/L arrived from another platform">
+        <div class="bar"><span class="name">Arrived from other platforms</span><span class="pill amber">1 waiting for you</span></div>
+        <div class="body">
+          <dl class="kv"><dt>B/L</dt><dd class="mono">CBL-2026-000123</dd>
+            <dt>From</dt><dd>Banco Atlântico Ghana Ltd, on Meridian eBL</dd>
+            <dt>Endorsed</dt><dd>To the order of Demir Koffiebranderij B.V.</dd>
+            <dt>Arrived</dt><dd>19 Nov 2026, 15:06</dd></dl>
+          <div class="field"><span class="label">Automatic checks</span>
+            <ul class="checks">
+              <li>Sent by a connected platform</li>
+              <li>All 4 history entries signed by the platform that recorded them</li>
+              <li>History unbroken from issue to this transfer</li>
+              <li>Our own 2 entries match our records</li>
+              <li>Not active anywhere on this platform</li>
+            </ul></div>
+          <div class="btns"><span class="btn primary">Keep this B/L</span><span class="btn">Return to sender</span><span class="btn ghost">View history</span></div>
+        </div>
+        <div class="cap">Steps B3 and B4. Return sends it back to the same party on Meridian eBL, as a new transfer (Part 6).</div>
+      </div>
+
+      <div class="screen" role="figure" aria-label="Sketch 4: chain of title across platforms">
+        <div class="bar"><span class="name">History of CBL-2026-000123</span><span class="pill teal">Held</span></div>
+        <div class="body" style="overflow-x:auto">
+          <table class="mini">
+            <thead><tr><th>Step</th><th>Holder after</th><th>Recorded on</th><th>Proof</th></tr></thead>
+            <tbody>
+              <tr><td>Issued</td><td>Exportadora Santos</td><td>this platform</td><td><span class="pill teal">blockchain</span></td></tr>
+              <tr><td>Sent out</td><td>Banco Atlântico</td><td>this platform</td><td><span class="pill teal">blockchain</span></td></tr>
+              <tr><td>Received</td><td>Banco Atlântico</td><td>Meridian eBL</td><td><span class="pill soft">Meridian signature</span></td></tr>
+              <tr><td>Endorsed out</td><td>Demir Koffie</td><td>Meridian eBL</td><td><span class="pill soft">Meridian signature</span></td></tr>
+              <tr><td>Received</td><td>Demir Koffie</td><td>this platform</td><td><span class="pill teal">blockchain</span></td></tr>
+              <tr><td>Kept</td><td>Demir Koffie</td><td>this platform</td><td><span class="pill teal">blockchain</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="cap">The CB-16 history, extended: one line per step, whichever platform recorded it, and how each is proved.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 6</span>
+      <h2>When it goes wrong</h2>
+      <p>The principle: <strong>only a confirmed yes moves the title.</strong> Everything else leaves it with the sender.
+        An unclear outcome keeps the B/L locked, because unlocking it while the other side might have it would make two holders.</p>
+    </div>
+    <div class="tscroll">
+      <table style="min-width:820px">
+        <thead><tr><th>Case</th><th>What the user sees</th><th>Title</th><th>Recorded</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Receiver not found</strong> (A2)</td><td>"Meridian eBL does not know party code BAGH-ACC-00417. Check the code with the receiver." Nothing is sent.</td><td>Stays with Ana; never locked</td><td class="none">audit trail</td></tr>
+          <tr><td><strong>Wrong name returned</strong> (A2)</td><td>Ana sees a name that is not the bank in the credit, and cancels. Nothing is sent.</td><td>Stays with Ana</td><td class="none">audit trail</td></tr>
+          <tr><td><strong>Other platform unreachable before sending</strong> (A2)</td><td>"Meridian eBL is not answering. Try again later." The receiver cannot be confirmed, so the endorsement cannot be submitted.</td><td>Stays with Ana</td><td class="none">audit trail</td></tr>
+          <tr><td><strong>Approver refuses</strong> (A4)</td><td>Back to Ana with the approver's reason; unlocked.</td><td>Stays with Ana</td><td class="none">audit trail</td></tr>
+          <tr><td><strong>Refused by the other platform</strong> (A6: <span class="mono">BSIG</span>, <span class="mono">BENV</span> or another refusal)</td><td>Red banner: "Meridian eBL refused the transfer: its automatic check failed. The title stays with you and you can act on the B/L again." The operator is alerted with the code and details.</td><td>Stays with Ana; unlocked</td><td class="none">audit trail (refusal kept as evidence)</td></tr>
+          <tr><td><strong>No answer, network error, time-out</strong> (A6)</td><td>Amber banner: "Not confirmed yet. The title is still yours, but the B/L stays locked until Meridian eBL answers. We try again automatically; last try 10:58, next 11:13." The retry sends the same envelope again, so a lost answer comes back as <span class="mono">DUPE</span>.</td><td>Stays with Ana; locked</td><td class="none">audit trail for each try</td></tr>
+          <tr><td><strong>Late <span class="mono">DUPE</span></strong> after a time-out</td><td>"Delivered" as in A6: Meridian already had it.</td><td>Moves, as A6</td><td class="proof">Sent to another platform</td></tr>
+          <tr><td><strong>Still no answer after the limit</strong> (question 2)</td><td>"Not confirmed after 24 hours. Our support is in contact with Meridian eBL." An exception case opens (CB-14). The operator can chase, never unlock alone.</td><td>Stays with Ana; locked</td><td class="none">audit trail, exception case</td></tr>
+          <tr><td><strong>Incoming fails a check</strong> (B2)</td><td>Nothing appears for Yusuf; we answer the refusal code and the sender's platform tells its user. The operator sees it in the connections log.</td><td>Stays on the other platform</td><td class="none">audit trail</td></tr>
+          <tr><td><strong>Incoming B/L already active here</strong> (B2)</td><td>Refused. Serious alert to the operator and the issuing carrier: two platforms claim the same B/L. Evidence for Henrik from both chains.</td><td>Unchanged here; dispute (CB-14)</td><td class="none">audit trail, exception case</td></tr>
+          <tr><td><strong>Incoming history disagrees with our records</strong> (B2)</td><td>Refused, with the same serious alert: an entry signed by us does not match what we recorded.</td><td>Stays on the other platform</td><td class="none">audit trail, exception case</td></tr>
+          <tr><td><strong>Receiver returns it</strong> (B4)</td><td>Yusuf presses <em>Return to sender</em> and gives a reason. The B/L goes back to Banco Atlântico on Meridian eBL as a new outgoing transfer (Part 3 from A4), approved under his four-eyes rule.</td><td>Yusuf's until Meridian confirms the return</td><td class="proof">Returned: as "Sent to another platform"</td></tr>
+          <tr><td><strong>Receiver does nothing</strong> (B4)</td><td>Reminders after 1 and 3 banking days. The B/L is his meanwhile: he holds it, it just waits for his decision.</td><td>Yusuf's company</td><td class="none">nothing new</td></tr>
+          <tr><td><strong>Other platform suspended</strong> by the operator</td><td>Not offered in the platform list; incoming envelopes from it are refused. Transfers already sending keep retrying (they may have arrived).</td><td>Unchanged</td><td class="none">audit trail</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 7</span>
+      <h2>Chain of title across platforms</h2>
+      <ul>
+        <li><strong>One history, two kinds of proof.</strong> The chain that travels in the envelope is the B/L's history.
+          We keep every chain we send or receive, unchanged, with its signatures. CB-16's history screen shows each entry with
+          the platform that recorded it (sketch 4).</li>
+        <li><strong>Our entries</strong> are proved on our blockchain, as for any title step. <strong>The other platform's
+          entries</strong> are proved by its signature, checked with the key we hold for it. We do not anchor their steps
+          one by one; we anchor the checksum of the whole chain as we received it, which proves what we got and when.</li>
+        <li><strong>When the B/L comes back</strong>, the chain contains our earlier entries. They must match our records
+          to the byte, or the transfer is refused. That makes a rewritten history visible.</li>
+        <li><strong>While the B/L is away</strong> our history ends at "Sent out". We do not learn the steps on the other
+          platform until the B/L comes back. Henrik's evidence pack for a B/L that never comes back has our part and the
+          other platform's confirmation; the rest he gets from that platform.</li>
+        <li><strong>Public check</strong> (CB-15) for a B/L that is away: "Held on Meridian eBL since 12 Nov 2026. This
+          platform's copy is no longer valid." It never shows the copy as current.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 8</span>
+      <h2>Trust between platforms</h2>
+      <ul>
+        <li><strong>A connection is set up before any transfer.</strong> The operator adds a platform to the directory:
+          its name, its platform code, its address, its public signing keys, and the date of the agreement with it.
+          A second operator person approves (four-eyes). The keys are fixed in the directory; a key change is a new
+          approval. <span class="tbc">to confirm</span> how DCSA expects keys to be exchanged and whether a shared registry exists.</li>
+        <li><strong>A legal agreement</strong> between the two platforms covers who answers for what (lost messages,
+          wrong receiver, a disputed history). Its form is <span class="tbc">to confirm</span>; groups such as the DCSA members
+          and the Digital Standards Initiative work on shared terms.</li>
+        <li><strong>Our signing key</strong> for chain entries and envelopes is kept like the platform's other keys, and
+          rotated with notice to connected platforms.</li>
+        <li><strong>Legal standing.</strong> The ETDA asks for a reliable system that gives exclusive control. Whether a
+          copy made inactive on a confirmed answer meets that across two platforms is <span class="tbc">to confirm</span> with counsel.
+          Carriers' P&amp;I cover for electronic B/Ls is usually tied to systems approved by the International Group of
+          P&amp;I Clubs; whether transfers to another platform need anything more is <span class="tbc">to confirm</span>.</li>
+        <li><strong>No vendor names on our screens</strong> other than the receiving platform's own name, which the user
+          needs to pick it. Technical names (PINT, the response codes) stay out of user screens; the codes appear only in
+          the operator's connections log.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 9</span>
+      <h2>Rules and permissions</h2>
+    </div>
+    <div class="tscroll">
+      <table style="min-width:760px">
+        <thead><tr><th>Rule</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Who may send out</td><td>The holder's staff with the endorse right; the organisation's four-eyes rule applies as for any endorsement (CB-12).</td></tr>
+          <tr><td>Who may keep or return an incoming B/L</td><td>The receiving organisation's staff with the accept right, under its four-eyes rule.</td></tr>
+          <tr><td>Which B/Ls can leave</td><td>B/L to order: to any party. Straight B/L: only to the named consignee. Sea waybill: never (not a document of title).</td></tr>
+          <tr><td>Locked while sending</td><td>No endorse, surrender, amendment or second transfer until a definite answer. No "cancel" once sent.</td></tr>
+          <tr><td>What the other side sees</td><td>The full B/L and its full history of holders: the receiving platform needs it to check. The sender is told before submitting.</td></tr>
+          <tr><td>What we keep after it leaves</td><td>A read-only copy for the organisations that already had access, history up to "Sent out", the envelope and the answer.</td></tr>
+          <tr><td>Our answer to "who is this party code"</td><td>Only the registered name of an admitted, active organisation; nothing else about it.</td></tr>
+          <tr><td>The operator</td><td>Manages the directory and follows stuck transfers. Never moves title, never cancels or unlocks a transfer alone, never sees commercial details except for support.</td></tr>
+          <tr><td>The carrier</td><td>Sees where its B/L is ("held on another platform"), cannot move it.</td></tr>
+          <tr><td>Amendments while away</td><td>Not from here; the B/L is not active here (CB-14).</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 10</span>
+      <h2>What is anchored on the blockchain</h2>
+    </div>
+    <div class="tscroll">
+      <table style="min-width:760px">
+        <thead><tr><th>Event</th><th>When</th><th>What is anchored</th></tr></thead>
+        <tbody>
+          <tr><td class="proof"><strong>Sent to another platform</strong></td><td>On <span class="mono">RECE</span> or <span class="mono">DUPE</span></td><td>B/L seal, checksum of the entry we added, receiving platform code, receiver party, the answer, time. Our copy is inactive from here.</td></tr>
+          <tr><td class="proof"><strong>Received from another platform</strong></td><td>When we answer <span class="mono">RECE</span></td><td>Checksum of the document and of the full chain as received, sending platform code, holder, time.</td></tr>
+          <tr><td class="proof"><strong>Accepted by the holder</strong></td><td>B4, "Keep this B/L"</td><td>Holder, who approved, time.</td></tr>
+          <tr><td class="proof"><strong>Returned</strong></td><td>On the other platform's confirmation</td><td>As "Sent to another platform", marked as a return.</td></tr>
+          <tr><td class="none">Receiver checks, attempts, refusals, retries, time-outs</td><td>As they happen</td><td>Not anchored one by one; they go in the audit trail, which is anchored as a whole like every audit trail on the platform.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 11</span>
+      <h2>Decisions for you</h2>
+      <p>A recommendation is given; tell me where you disagree.</p>
+    </div>
+    <div class="decisions">
+      <div class="decision">
+        <h3>1. How does a receiver here accept a B/L from another platform?</h3>
+        <ul>
+          <li>A: Our platform answers once the automatic checks pass; the receiver then keeps it or returns it.</li>
+          <li>B: Our platform answers only after the receiver accepts (needs a delayed answer in PINT, <span class="tbc">to confirm</span>).</li>
+          <li>C: Receivers set "accept automatically from other platforms" in advance; no step for the person.</li>
+        </ul>
+        <p class="rec"><strong>Recommended: A.</strong> It works with an immediate answer, keeps CB-9's "the receiver decides", and matches UCP 600 practice (refused documents are returned).</p>
+      </div>
+      <div class="decision">
+        <h3>2. What if the other platform never gives a definite answer?</h3>
+        <ul>
+          <li>A: Keep the B/L locked, retry the same envelope, and after 24 hours open an exception case; unlock only on a refusal from that platform, or its written statement that it never received the B/L, recorded with four-eyes.</li>
+          <li>B: Unlock automatically after a time limit.</li>
+        </ul>
+        <p class="rec"><strong>Recommended: A.</strong> B risks two holders when only the answer was lost. A rare event, so it must not slow down the normal path.</p>
+      </div>
+      <div class="decision">
+        <h3>3. Who connects another platform?</h3>
+        <ul>
+          <li>A: The operator, with four-eyes, only after a signed agreement and a test transfer.</li>
+          <li>B: Each organisation adds the platforms it works with.</li>
+        </ul>
+        <p class="rec"><strong>Recommended: A.</strong> Trust in a platform's keys is a platform-wide matter; organisations only pick from the list.</p>
+      </div>
+      <div class="decision">
+        <h3>4. Supporting documents in the first version?</h3>
+        <ul>
+          <li>A: The B/L only.</li>
+          <li>B: The B/L plus documents attached to it (invoice, packing list, certificates).</li>
+        </ul>
+        <p class="rec"><strong>Recommended: A for v1</strong>, B later if banks on the other side ask for it. Letter-of-credit documents usually travel by the banking channel anyway.</p>
+      </div>
+      <div class="decision">
+        <h3>5. Which other platform do we test against first?</h3>
+        <ul>
+          <li>A: A second install of our own platform acting as "the other platform".</li>
+          <li>B: A real eBL platform's test environment, with its agreement.</li>
+        </ul>
+        <p class="rec"><strong>Recommended: A first, then B</strong> before calling CB-17 done: our own pair proves the flow; a real platform proves we read PINT the same way.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 12</span>
+      <h2>Out of scope here</h2>
+      <ul>
+        <li><strong>CB-10</strong>: admitting organisations and their party codes; the operator's directory screen itself is designed there or in a small follow-up.</li>
+        <li><strong>CB-11</strong>: issuing. A B/L issued on another platform and sent to us arrives through this flow, but issuing elsewhere is that platform's matter.</li>
+        <li><strong>CB-12</strong>: the endorsement itself between parties on this platform, its four-eyes and wording.</li>
+        <li><strong>CB-13</strong>: surrender and delivery. Surrender by a holder on another platform to a carrier here
+          (and the DCSA surrender messages) <span class="tbc">to confirm</span> there.</li>
+        <li><strong>CB-14</strong>: exception cases, disputes (two platforms claiming one B/L), switch to paper, amendments.</li>
+        <li><strong>CB-15</strong>: the public check's wording for a B/L held elsewhere.</li>
+        <li><strong>CB-16</strong>: the history screen and evidence pack that show both kinds of proof.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="prose" style="color:var(--ink-soft);display:grid;gap:6px">
+    <span class="label">Next</span>
+    <p>CB-17 is third in CB-1's build order. Once you agree this page, the PINT points marked "to confirm" are checked
+      against the specification before the ticket's "Done when" is written.</p>
+  </footer>
+</div>
+
+</body></html>
