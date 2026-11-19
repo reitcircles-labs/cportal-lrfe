@@ -1,0 +1,557 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>B/L Issuing Flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a working document on manifest paper. A narrow reading column, with the voyage strip
+   and the persona grid allowed to run wider. Sea-ink navy carries the text, signal amber marks
+   "who holds the title", harbour teal marks what is proved on the blockchain. */
+:root {
+  --paper: #f5f7f6;
+  --sheet: #ffffff;
+  --ink: #14233a;
+  --ink-soft: #4a5a70;
+  --rule: #d5dde3;
+  --teal: #0d6b80;
+  --teal-wash: #e3f1f3;
+  --amber: #b86e00;
+  --amber-wash: #fbf0dc;
+  --red: #a63a2c;
+  --red-wash: #f8e6e2;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1622; --sheet: #152031; --ink: #e4ebf2; --ink-soft: #9fb0c3; --rule: #2a3a50;
+    --teal: #5cc0d3; --teal-wash: #12313b; --amber: #f0b04a; --amber-wash: #3a2a10;
+    --red: #f08a7a; --red-wash: #3d1d19; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1622; --sheet: #152031; --ink: #e4ebf2; --ink-soft: #9fb0c3; --rule: #2a3a50;
+  --teal: #5cc0d3; --teal-wash: #12313b; --amber: #f0b04a; --amber-wash: #3a2a10;
+  --red: #f08a7a; --red-wash: #3d1d19; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.55;
+}
+.wrap {
+  max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 72px;
+  display: grid; gap: 56px;
+}
+.prose { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.1; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 700; letter-spacing: 0.005em; }
+h2 { font-size: 2rem; font-weight: 600; }
+h3 { font-size: 1.35rem; font-weight: 600; }
+p { margin: 0; }
+section { display: grid; gap: 20px; }
+.label {
+  font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft);
+}
+.mono { font-family: var(--font-mono); font-size: 0.86em; }
+
+/* header: styled like the top box of a bill of lading */
+.docbox { border: 2px solid var(--ink); background: var(--sheet); display: grid; grid-template-columns: 1fr auto; }
+.docbox > div { padding: 18px 20px; }
+.docbox .meta { border-left: 2px solid var(--ink); display: grid; gap: 6px; align-content: start; min-width: 0; }
+.docbox .meta div { display: grid; gap: 0; }
+.docbox .meta strong { font-family: var(--font-mono); font-weight: 500; font-size: 0.9rem; }
+.docbox .title { display: grid; gap: 12px; min-width: 0; }
+@media (max-width: 640px) {
+  .docbox { grid-template-columns: 1fr; }
+  .docbox .meta { border-left: 0; border-top: 2px solid var(--ink); grid-template-columns: 1fr 1fr; }
+}
+
+/* the one rule */
+.rule {
+  border-left: 6px solid var(--amber); background: var(--amber-wash); padding: 18px 22px; display: grid; gap: 10px; max-width: 80ch;
+}
+.rule ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+
+/* personas */
+.groups { display: grid; gap: 36px; }
+.group { display: grid; gap: 14px; }
+.group-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.card { background: var(--sheet); border: 1px solid var(--rule); padding: 18px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.card .who { display: grid; gap: 2px; }
+.card .who .name { font-family: var(--font-display); font-size: 1.4rem; font-weight: 600; }
+.card .who .role { color: var(--ink-soft); font-size: 0.95rem; }
+.card dl { margin: 0; display: grid; gap: 8px; }
+.card dt { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+.card dd { margin: 0; font-size: 0.95rem; }
+.card .quote { font-style: italic; color: var(--ink-soft); font-size: 0.95rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-mono); font-size: 0.72rem; padding: 2px 8px; border: 1px solid var(--rule); color: var(--ink-soft); }
+.chip.title { border-color: var(--amber); color: var(--amber); }
+.chip.never { border-color: var(--red); color: var(--red); }
+
+/* the voyage strip */
+.strip-scroll { overflow-x: auto; border: 1px solid var(--rule); background: var(--sheet); }
+.strip { display: grid; grid-template-columns: 150px repeat(9, minmax(150px, 1fr)); min-width: 1500px; font-size: 0.9rem; }
+.strip > div { padding: 10px 12px; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); min-width: 0; }
+.strip .rowhead { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); background: var(--paper); position: sticky; left: 0; z-index: 1; }
+.strip .step { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; display: grid; gap: 2px; }
+.strip .step .n { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 400; color: var(--ink-soft); }
+.strip .holder { background: var(--amber-wash); color: var(--ink); font-weight: 600; }
+.strip .holder.none { background: transparent; color: var(--ink-soft); font-weight: 400; }
+.strip .proof { background: var(--teal-wash); }
+.strip .proof.none { background: transparent; color: var(--ink-soft); }
+.strip .ticket { font-family: var(--font-mono); font-size: 0.78rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.9rem; color: var(--ink-soft); }
+.legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; }
+.legend .l-holder::before { background: var(--amber-wash); border: 1px solid var(--amber); }
+.legend .l-proof::before { background: var(--teal-wash); border: 1px solid var(--teal); }
+
+/* tables */
+.tscroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; background: var(--sheet); font-size: 0.95rem; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border: 1px solid var(--rule); }
+th { font-family: var(--font-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); background: var(--paper); }
+td.key { font-family: var(--font-mono); font-size: 0.85rem; white-space: nowrap; }
+.yes { color: var(--teal); font-weight: 600; }
+.no { color: var(--ink-soft); }
+
+/* decisions */
+.decisions { display: grid; gap: 14px; counter-reset: q; }
+.decision { background: var(--sheet); border: 1px solid var(--rule); padding: 16px 18px; display: grid; gap: 8px; max-width: 86ch; }
+.decision h3 { font-size: 1.2rem; }
+.decision .rec { border-left: 3px solid var(--teal); padding-left: 10px; }
+a { color: var(--teal); }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* CB-11 additions: step table, wireframe screens, path list */
+.steps td.n { font-family: var(--font-mono); font-size: 0.85rem; white-space: nowrap; }
+.steps td.anch { background: var(--teal-wash); }
+.steps td.anch.none { background: transparent; color: var(--ink-soft); }
+.steps td.hold { background: var(--amber-wash); font-weight: 600; }
+.steps td.hold.none { background: transparent; font-weight: 400; color: var(--ink-soft); }
+.steps table { min-width: 980px; }
+.phase td { background: var(--paper); font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; }
+
+.screens { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); gap: 24px; }
+.screen { border: 2px solid var(--ink); background: var(--sheet); display: grid; align-content: start; min-width: 0; font-size: 0.92rem; }
+.screen .bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; align-items: baseline; padding: 8px 14px; border-bottom: 2px solid var(--ink); background: var(--paper); }
+.screen .bar b { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; }
+.screen .body { padding: 14px; display: grid; gap: 12px; min-width: 0; }
+.screen .who { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-soft); }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.f { border: 1px solid var(--rule); padding: 6px 8px; display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.f span { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.f.wide { grid-column: 1 / -1; }
+.f.flag { border-color: var(--amber); background: var(--amber-wash); }
+.f.changed { border-color: var(--teal); }
+.f.bad { border-color: var(--red); background: var(--red-wash); }
+.note { font-size: 0.82rem; color: var(--ink-soft); }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { font-family: var(--font-body); font-weight: 600; font-size: 0.85rem; padding: 6px 12px; border: 1px solid var(--ink); background: var(--sheet); color: var(--ink); }
+.btn.primary { background: var(--ink); color: var(--sheet); }
+.btn.off { border-color: var(--rule); color: var(--ink-soft); }
+.pill { font-family: var(--font-mono); font-size: 0.7rem; padding: 2px 8px; border: 1px solid var(--ink-soft); color: var(--ink-soft); white-space: nowrap; }
+.pill.amber { border-color: var(--amber); color: var(--amber); }
+.pill.teal { border-color: var(--teal); color: var(--teal); }
+.pill.red { border-color: var(--red); color: var(--red); }
+.checks { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.checks li::before { content: "\2713  "; color: var(--teal); font-weight: 700; }
+.checks li.x::before { content: "!  "; color: var(--red); }
+.comment { border-left: 3px solid var(--amber); padding: 4px 10px; background: var(--amber-wash); font-size: 0.85rem; }
+.mini { width: 100%; font-size: 0.82rem; }
+.mini th, .mini td { padding: 5px 8px; }
+
+.paths { display: grid; gap: 12px; }
+.path { background: var(--sheet); border: 1px solid var(--rule); border-left: 4px solid var(--red); padding: 12px 16px; display: grid; gap: 4px; max-width: 92ch; }
+.path.soft { border-left-color: var(--amber); }
+.path h3 { font-size: 1.15rem; }
+.path .sees { font-size: 0.92rem; }
+.path .sees::before { content: "Screen says: "; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.confirm { font-family: var(--font-mono); font-size: 0.72rem; color: var(--red); border: 1px solid var(--red); padding: 0 5px; white-space: nowrap; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.box { background: var(--sheet); border: 1px solid var(--rule); padding: 16px 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.box ul { margin: 0; padding-left: 1.2em; display: grid; gap: 5px; }
+</style>
+
+<div class="wrap">
+
+  <header class="docbox">
+    <div class="title">
+      <span class="label">Design for review · epic CB-8 · ticket CB-11</span>
+      <h1>Issuing a bill of lading or a sea waybill</h1>
+      <p class="prose">Steps 1 to 3 of the CB-9 map, screen by screen: the shipper's instructions, the draft and its
+        corrections, the carrier's four-eyes approval, and the issue that creates the one electronic original and
+        names its first holder. The same flow makes a sea waybill, a straight B/L and a B/L to order.</p>
+    </div>
+    <div class="meta">
+      <div><span class="label">Status</span><strong>Draft, for your review</strong></div>
+      <div><span class="label">Date</span><strong>8 Nov 2026</strong></div>
+      <div><span class="label">Based on</span><strong>CB-9 personas and map</strong></div>
+      <div><span class="label">Decisions asked</span><strong>5, at the end</strong></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="rule">
+      <span class="label">What this flow assumes</span>
+      <p>CB-9's five decisions are not agreed yet. This page takes its recommendations as given; if you change one, the
+        steps marked below change with it.</p>
+      <ul>
+        <li><strong>A transfer needs the receiver's acceptance</strong> (CB-9 question 1). Issue is not a transfer: the
+          first holder does not have to accept, since the shipper asked for the B/L (see question 4 below).</li>
+        <li><strong>Reference law: UK Electronic Trade Documents Act 2023</strong>, as a country setting (question 2).</li>
+        <li><strong>A forwarder does not hold title</strong> in v1 (question 3): Tomás prepares and reviews, Ana's company is the first holder.</li>
+        <li><strong>A neutral operator</strong> runs the platform (question 4), and <strong>the eleven personas</strong> stand (question 5).</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 1</span>
+      <h2>Goal and people</h2>
+      <p><strong>Goal:</strong> turn the shipper's instructions into one issued, signed electronic transport document
+        that matches what the shipper asked for, is issued once only for that cargo, and whose issue anyone can check on
+        the blockchain. For a B/L, the issue also names the first holder.</p>
+    </div>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Persona</th><th>Side</th><th>Part in this flow</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Ana Ribeiro</strong></td><td>Shipper, coffee exporter, Santos</td><td>Sends the instructions, checks the draft, asks for corrections, approves it; her company becomes the first holder of a B/L.</td></tr>
+          <tr><td><strong>Tomás Vidal</strong></td><td>Freight forwarder</td><td>Sends instructions and reviews drafts for Ana's company, within what it delegated (CB-10). Never the holder.</td></tr>
+          <tr><td><strong>Lena Okafor</strong></td><td>Carrier, documentation clerk</td><td>Builds the draft from the instructions, sends it to the shipper, works in corrections, submits it for approval. Cannot issue.</td></tr>
+          <tr><td><strong>Ravi Menon</strong></td><td>Carrier, B/L release manager</td><td>The second pair of eyes: approves, signs and issues, or sends the draft back to Lena.</td></tr>
+          <tr><td><strong>Priya Shah</strong>, the consignee</td><td>Named on the document</td><td>Told when it is issued if named (notify party, or the consignee of a waybill or straight B/L); sees nothing before issue.</td></tr>
+          <tr><td><strong>Officer Kalinda</strong>, <strong>Henrik</strong></td><td>Checkers</td><td>Can check the issue afterwards (CB-15, CB-16). Not active here.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 2</span>
+      <h2>Happy path</h2>
+      <p>Example: 2 containers of green coffee, Santos to Rotterdam on <span class="mono">MV Atlantic Crest 2611N</span>,
+        booking <span class="mono">BKG-SSZ-884120</span>, a B/L to order paid under a letter of credit.
+        Step numbers extend the CB-9 map (1, 2, 3). Scroll the table sideways on a phone.</p>
+    </div>
+    <div class="legend"><span class="l-holder">Holder after the step</span><span class="l-proof">Proved on the blockchain</span></div>
+    <div class="tscroll steps">
+      <table>
+        <thead><tr><th>#</th><th>Actor</th><th>Does</th><th>Screen shows</th><th>Status</th><th>Holder</th><th>Blockchain</th></tr></thead>
+        <tbody>
+          <tr class="phase"><td colspan="7">1 · Shipping instructions</td></tr>
+          <tr><td class="n">1.1</td><td>Ana or Tomás</td><td>Opens a booking the carrier confirmed and starts the instructions. Picks the document type: sea waybill, straight B/L or B/L to order.</td><td><strong>New shipping instructions</strong>: booking, type, three ways in (type it, upload a document, or already sent from our system)</td><td><span class="pill">Instructions draft</span></td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">1.2a</td><td>Ana or Tomás</td><td>Types the fields: shipper, consignee (named, or "to order" / "to order of shipper"), notify party, ports, containers and seals, goods, weights, freight prepaid or collect, clauses the credit asks for.</td><td>The form, with the letter of credit wording field for clauses the credit requires (free text)</td><td>same</td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">1.2b</td><td>Ana or Tomás</td><td>Uploads instructions as a PDF, scan or spreadsheet. The automatic check reads it and fills the form.</td><td>The same form, filled, with each field the reading was unsure of marked in amber and the source page beside it</td><td>same</td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">1.2c</td><td>Carrier's or shipper's system</td><td>Sends the instructions as a DCSA Shipping Instructions message, or the carrier's system sends a finished draft (step 2.1 starts at once).</td><td>Lena's list shows them as "received from system", with the sender</td><td>same</td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">1.3</td><td>Ana</td><td>Confirms the amber fields and submits. Tomás can submit only if Ana's company delegated it.</td><td>Summary and <em>Send to carrier</em>; the automatic check lists missing fields and blocks sending until fixed</td><td><span class="pill teal">Instructions sent</span></td><td class="hold none">none</td><td class="anch none">nothing (kept in the audit trail)</td></tr>
+          <tr class="phase"><td colspan="7">2 · Draft and review</td></tr>
+          <tr><td class="n">2.1</td><td>Lena</td><td>Opens the instructions from her work list, builds the draft: B/L number reserved, vessel and voyage, on-board date when loaded, carrier clauses.</td><td><strong>Draft workspace</strong>: instructions on the left, draft on the right, differences highlighted</td><td><span class="pill">Draft</span></td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">2.2</td><td>Lena</td><td>Sends the draft to the shipper.</td><td><em>Send to shipper for review</em>; the draft is locked while the shipper reviews</td><td><span class="pill amber">With shipper</span></td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">2.3</td><td>Ana (or Tomás)</td><td>Reads the draft, comments on fields, asks for corrections.</td><td><strong>Draft review</strong>: the draft as it will look, comments pinned to fields, <em>Ask for corrections</em> / <em>Approve draft</em></td><td><span class="pill amber">Corrections asked</span></td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">2.4</td><td>Lena</td><td>Accepts or answers each comment, changes the draft, sends it again. Steps 2.2 to 2.4 repeat until approved; each round is a numbered version.</td><td>Draft version 2, the changes since version 1 marked</td><td><span class="pill amber">With shipper</span></td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">2.5</td><td>Ana</td><td>Approves the draft. Her approval is tied to that exact version: any later change needs a new approval.</td><td>"You approved version 2 at 14:02. The carrier issues after loading."</td><td><span class="pill teal">Approved by shipper</span></td><td class="hold none">none</td><td class="anch none">nothing; drafts are kept, not anchored</td></tr>
+          <tr class="phase"><td colspan="7">3 · Approve and issue</td></tr>
+          <tr><td class="n">3.1</td><td>Lena</td><td>Adds the on-board date once the containers are loaded, submits for approval.</td><td><em>Submit for approval</em>; the automatic checks run (below)</td><td><span class="pill amber">Waiting for approval</span></td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">3.2</td><td>Ravi</td><td>Opens it from the approvals list. Sees the approved draft, the checks, and that someone else prepared it.</td><td><strong>Approve and issue</strong>: summary, checks, duplicate result, number of originals, first holder, <em>Send back</em> / <em>Approve and issue</em></td><td>same</td><td class="hold none">none</td><td class="anch none">nothing</td></tr>
+          <tr><td class="n">3.3</td><td>Ravi</td><td>Confirms with his second sign-in factor. The platform signs for the carrier, seals the document and gives it its check code.</td><td>"Issued: CBL-2026-000123. Proof on the blockchain: pending."</td><td><span class="pill teal">Issued</span></td><td class="hold">Ana's company (B/L) · none (waybill)</td><td class="anch">Issued: number, type, the document's fingerprint, issuer, first holder, cargo key</td></tr>
+          <tr><td class="n">3.4</td><td>Platform</td><td>Anchors the issue; tells Ana, Tomás, the consignee and notify party.</td><td>Ana's <strong>Issued document</strong> page: holder, check code, proof confirmed, <em>Endorse</em> (CB-12) for a B/L to order</td><td><span class="pill teal">Issued · proved</span></td><td class="hold">Ana's company (B/L)</td><td class="anch">Proof confirmed</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Type chosen in 1.1</th><th>Consignee field</th><th>First holder at 3.3</th><th>What the issue allows next</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Sea waybill</strong></td><td>A named company</td><td>none: a waybill is not a document of title</td><td>Release to the named consignee on identification (CB-13). Shipper may change the consignee before delivery (CB-14) <span class="confirm">to confirm: CMI rules option</span></td></tr>
+          <tr><td><strong>Straight B/L</strong></td><td>A named company</td><td>The shipper</td><td>One transfer to the named consignee, no endorsement (CB-12); surrender to take delivery (CB-13)</td></tr>
+          <tr><td><strong>B/L to order</strong></td><td>"To order", "to order of shipper" or "to order of [bank]"</td><td>The shipper</td><td>Endorsement in blank or to a named party (CB-12)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="prose note">"To order of [bank]": on paper the shipper hands the originals to the bank, and the bank is the
+      order party. Here the shipper is still the first holder and then transfers to that bank (CB-12).
+      <span class="confirm">to confirm with a trade-finance reviewer</span></p>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 3</span>
+      <h2>Key screens</h2>
+      <p>Wireframes only: boxes for layout and content, not the final look. Amber marks what needs a person's eye; teal, what is confirmed.</p>
+    </div>
+    <div class="screens">
+
+      <div class="screen">
+        <div class="bar"><b>Shipping instructions</b><span class="pill">Instructions draft</span></div>
+        <div class="body">
+          <span class="who">Ana Ribeiro · Café Serra Alta Exportadora · booking BKG-SSZ-884120</span>
+          <div class="btns"><span class="btn">Type it</span><span class="btn primary">Upload a document</span><span class="btn off">From our system</span></div>
+          <p class="note">Read from "SI_884120_signed.pdf" (2 pages). 3 fields need your check.</p>
+          <div class="fields">
+            <div class="f"><span>Document type</span>B/L to order</div>
+            <div class="f"><span>Originals</span>1 electronic original</div>
+            <div class="f"><span>Shipper</span>Café Serra Alta Exportadora Ltda, Santos SP</div>
+            <div class="f flag"><span>Consignee · check</span>To order of Banco Atlântico Comercial S.A.</div>
+            <div class="f flag"><span>Notify party · check</span>Shah Customs Brokers BV, Rotterdam</div>
+            <div class="f"><span>Port of loading → discharge</span>Santos → Rotterdam</div>
+            <div class="f"><span>Containers / seals</span>MSKU 704512-3 / SL 220871<br>TGHU 918334-0 / SL 220872</div>
+            <div class="f flag"><span>Gross weight · check</span>38,400 kg (page 2 says 38,040)</div>
+            <div class="f wide"><span>Goods</span>640 bags green coffee, Brazil Arabica NY 2/3, 60 kg net each. HS 0901.11</div>
+            <div class="f"><span>Freight</span>Prepaid</div>
+            <div class="f"><span>Letter of credit wording</span>"Clean on board", "Freight prepaid", L/C no. LC-ATL-26-0417</div>
+          </div>
+          <div class="btns"><span class="btn off">Send to carrier (3 to check)</span><span class="btn">Save</span></div>
+        </div>
+      </div>
+
+      <div class="screen">
+        <div class="bar"><b>Draft review</b><span class="pill amber">With shipper · version 2</span></div>
+        <div class="body">
+          <span class="who">Draft CBL-2026-000123 · from Lena Okafor, Nordsee Line · sent 7 Nov 16:40</span>
+          <div class="fields">
+            <div class="f changed"><span>Consignee · changed in v2</span>To order of Banco Atlântico Comercial S.A.</div>
+            <div class="f"><span>Vessel / voyage</span>MV Atlantic Crest 2611N</div>
+            <div class="f changed"><span>Gross weight · changed in v2</span>38,040 kg</div>
+            <div class="f"><span>Shipped on board</span>after loading, est. 10 Nov 2026</div>
+            <div class="f wide"><span>Carrier clause</span>Shipper's load, stow and count. Said to contain 640 bags.</div>
+          </div>
+          <div class="comment"><strong>Ana, v1:</strong> Weight must be 38,040 kg as in the credit. <em>Lena: fixed in v2.</em></div>
+          <div class="comment"><strong>Tomás, v2:</strong> Notify party address is fine now.</div>
+          <div class="btns"><span class="btn">Comment on a field</span><span class="btn">Ask for corrections</span><span class="btn primary">Approve version 2</span></div>
+          <p class="note">Approving fixes this text. The carrier adds only the on-board date; any other change comes back to you.</p>
+        </div>
+      </div>
+
+      <div class="screen">
+        <div class="bar"><b>Approve and issue</b><span class="pill amber">Waiting for approval</span></div>
+        <div class="body">
+          <span class="who">Ravi Menon · prepared by Lena Okafor · shipper approved v2 on 7 Nov 18:02</span>
+          <div class="fields">
+            <div class="f"><span>Number</span>CBL-2026-000123</div>
+            <div class="f"><span>Type</span>B/L to order (negotiable)</div>
+            <div class="f"><span>Originals</span>One (1) electronic original</div>
+            <div class="f"><span>First holder</span>Café Serra Alta Exportadora Ltda</div>
+            <div class="f"><span>Shipped on board</span>10 Nov 2026, Santos</div>
+            <div class="f"><span>Place and date of issue</span>Santos, 10 Nov 2026</div>
+          </div>
+          <ul class="checks">
+            <li>Text identical to the version the shipper approved</li>
+            <li>No other document issued or waiting for these containers and seals</li>
+            <li>First holder is an admitted organisation on the platform</li>
+            <li>Prepared by someone else (you did not edit this draft)</li>
+          </ul>
+          <div class="btns"><span class="btn">Send back to Lena</span><span class="btn primary">Approve and issue</span></div>
+          <p class="note">Issuing signs for Nordsee Line and cannot be undone. Changes after issue are amendments.</p>
+        </div>
+      </div>
+
+      <div class="screen">
+        <div class="bar"><b>Issued document</b><span class="pill teal">Issued · proved on the blockchain</span></div>
+        <div class="body">
+          <span class="who">Seen by Ana Ribeiro · Café Serra Alta Exportadora</span>
+          <div class="fields">
+            <div class="f"><span>B/L to order</span><b class="mono">CBL-2026-000123</b></div>
+            <div class="f"><span>Holder</span>Your company, since 10 Nov 14:31</div>
+            <div class="f"><span>Check code</span><span class="mono">7K4M-Q9TR-2XWD</span></div>
+            <div class="f"><span>Issued by</span>Nordsee Line, signed by Ravi Menon</div>
+          </div>
+          <table class="mini">
+            <thead><tr><th>When</th><th>Event</th><th>Proof</th></tr></thead>
+            <tbody>
+              <tr><td>10 Nov 14:31</td><td>Issued to your company</td><td class="yes">on the blockchain</td></tr>
+            </tbody>
+          </table>
+          <div class="btns"><span class="btn primary">Endorse</span><span class="btn">Download PDF (not an original)</span><span class="btn">Ask for an amendment</span></div>
+          <p class="note">The PDF shows the holder and the check code. Only the holder named here can endorse or surrender.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 4</span>
+      <h2>What is anchored, and how a duplicate is stopped</h2>
+    </div>
+    <div class="two">
+      <div class="box">
+        <h3>On the blockchain at issue</h3>
+        <ul>
+          <li>The B/L or waybill number and its type.</li>
+          <li>The fingerprint (hash) of the sealed document, so any copy can be compared with the original.</li>
+          <li>The issuing carrier and the first holder, as platform organisation ids, not names.</li>
+          <li>A cargo key: a salted fingerprint of carrier, container numbers and seal numbers (question 5).</li>
+          <li>The time and the reference law (country setting).</li>
+        </ul>
+        <p class="note">Never on the blockchain: the instructions, drafts, comments, goods, weights, prices, or the letter of credit.
+          Those stay in the platform and its audit trail.</p>
+      </div>
+      <div class="box">
+        <h3>One issue per cargo</h3>
+        <ul>
+          <li><strong>When the draft is made</strong> and again <strong>at approval</strong>, the platform looks for any draft or issued document of the same carrier with the same container and seal numbers.</li>
+          <li>An <strong>issued</strong> match blocks the issue. A <strong>draft</strong> match warns Lena and links the other draft.</li>
+          <li>The same booking reference alone only warns: one booking can lawfully split into several B/Ls.</li>
+          <li>The cargo key on the blockchain lets a bank or court see that no second issue used the same key, without seeing the cargo.</li>
+          <li>Replacing an issued document (amendment, switch to paper) is CB-14; the old one is marked replaced, never issued twice.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>One electronic original</h3>
+        <ul>
+          <li>The document says "Number of originals: one (1)". There is no "full set of three" in electronic form.</li>
+          <li>Every PDF or printout is marked "Not an original" and shows the check code.</li>
+          <li>A credit asking for "full set 3/3" is met by the one electronic record under eUCP <span class="confirm">to confirm article and bank practice</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 5</span>
+      <h2>Errors, refusals and disputes</h2>
+      <p>Red: the flow stops until someone acts. Amber: a warning the user can deal with and go on.</p>
+    </div>
+    <div class="paths">
+      <div class="path soft"><h3>The automatic reading is unsure or contradicts itself (1.2b)</h3>
+        <p>Fields under the confidence threshold, or two values on different pages, are marked for Ana. Sending stays off until she confirms each one.</p>
+        <p class="sees">"3 fields need your check. Gross weight: page 1 says 38,400 kg, page 2 says 38,040 kg."</p></div>
+      <div class="path"><h3>Instructions incomplete</h3>
+        <p>Missing consignee, ports, containers or goods description: the form names each one. For a straight B/L or waybill, the consignee must be a named party; "to order" is refused.</p>
+        <p class="sees">"A straight B/L needs a named consignee. Choose 'B/L to order' if the consignee is 'to order'."</p></div>
+      <div class="path soft"><h3>Forwarder acts beyond delegation</h3>
+        <p>Tomás can prepare but not submit or approve when Ana's company did not delegate it (CB-10). The button is replaced by a request to Ana.</p>
+        <p class="sees">"Café Serra Alta approves its own drafts. Ana Ribeiro has been asked to approve version 2."</p></div>
+      <div class="path soft"><h3>Shipper asks for corrections the carrier refuses</h3>
+        <p>Lena answers the comment instead of changing the field (for example, a clause the carrier must keep, or a weight the carrier cannot confirm). Ana may approve anyway or keep asking. Discussion stays on the field, both sides see it.</p>
+        <p class="sees">On Ana's draft: "Lena: we keep 'shipper's load, stow and count' on all FCL shipments."</p></div>
+      <div class="path soft"><h3>The shipper does not answer</h3>
+        <p>Lena sees how long the draft has waited and can send a reminder. Nothing is issued without the shipper's approval of the current version.</p>
+        <p class="sees">"With shipper for 2 days · vessel sails 10 Nov · Send reminder"</p></div>
+      <div class="path"><h3>The draft changes after the shipper approved it</h3>
+        <p>Any change other than adding the on-board date clears the approval and sends the draft back to Ana.</p>
+        <p class="sees">To Ravi: the "Text identical to the approved version" check fails and issuing is off.</p></div>
+      <div class="path"><h3>Ravi sends it back</h3>
+        <p>Ravi gives a reason; the draft returns to Lena, keeps the shipper's approval only if Lena changes nothing.</p>
+        <p class="sees">Lena: "Sent back by Ravi Menon: on-board date is before the vessel's departure from the previous port."</p></div>
+      <div class="path"><h3>Same person tries to prepare and approve</h3>
+        <p>Whoever edited the draft cannot approve it, even with the approver role (the platform's existing four-eyes rule).</p>
+        <p class="sees">"You prepared this draft. Another approver at Nordsee Line must issue it."</p></div>
+      <div class="path"><h3>Duplicate cargo</h3>
+        <p>Containers and seals already on an issued document of this carrier: issue is blocked, with a link to the other document for carrier staff only.</p>
+        <p class="sees">"MSKU 704512-3 with seal SL 220871 is already on CBL-2026-000098 (issued 2 Nov). Issue is blocked. To replace a document, use an amendment."</p></div>
+      <div class="path"><h3>First holder not on the platform</h3>
+        <p>An electronic B/L needs a holder who can hold it. The carrier can invite the shipper's organisation (CB-10) or issue on paper outside the platform; no holder-less B/L is issued. A waybill has no holder and is not affected.</p>
+        <p class="sees">"Café Serra Alta is not on the platform yet. Invite them, or issue this B/L on paper."</p></div>
+      <div class="path"><h3>The carrier's system sends a bad or duplicate issue request (1.2c)</h3>
+        <p>A DCSA issuance request with missing data, an unknown holder, or a duplicate cargo key is refused with a coded answer to that system, and listed for Lena.</p>
+        <p class="sees">Lena's list: "Refused from system: duplicate of CBL-2026-000098".</p></div>
+      <div class="path soft"><h3>The blockchain proof is slow</h3>
+        <p>The document is issued and signed at 3.3; the proof follows. Until it is confirmed, the holder sees "proof pending" and cannot offer a transfer, so no title step runs ahead of its proof.</p>
+        <p class="sees">"Issued. Proof on the blockchain: pending (usually a few minutes). You can endorse once it is confirmed."</p></div>
+      <div class="path"><h3>A mistake found after issue</h3>
+        <p>An issued document is never edited or deleted. Corrections go through an amendment agreed by holder and carrier (CB-14).</p>
+        <p class="sees">On the issued page: "Ask for an amendment".</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 6</span>
+      <h2>Rules and permissions</h2>
+    </div>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Action</th><th>Shipper (Ana)</th><th>Forwarder (Tomás)</th><th>Carrier clerk (Lena)</th><th>Carrier approver (Ravi)</th><th>Consignee, notify party</th><th>Operator</th></tr></thead>
+        <tbody>
+          <tr><td>Create and send instructions</td><td class="yes">yes</td><td>if delegated</td><td>on the shipper's behalf, marked so</td><td class="no">no</td><td class="no">no</td><td class="no">never</td></tr>
+          <tr><td>Build and change the draft</td><td class="no">comments only</td><td class="no">comments only</td><td class="yes">yes</td><td class="no">sends back</td><td class="no">no</td><td class="no">never</td></tr>
+          <tr><td>Approve the draft</td><td class="yes">yes</td><td>if delegated</td><td class="no">no</td><td class="no">no</td><td class="no">no</td><td class="no">never</td></tr>
+          <tr><td>Issue and sign</td><td class="no">no</td><td class="no">no</td><td class="no">no</td><td class="yes">yes, not on own drafts, with second factor</td><td class="no">no</td><td class="no">never</td></tr>
+          <tr><td>See instructions and drafts</td><td>own company's</td><td>delegated shippers'</td><td>own carrier's</td><td>own carrier's</td><td class="no">no, only after issue</td><td>support only, when asked</td></tr>
+          <tr><td>See the issued document</td><td class="yes">yes</td><td>delegated shippers'</td><td class="yes">yes</td><td class="yes">yes</td><td>where named</td><td>support only</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="box" style="max-width:86ch">
+      <ul>
+        <li><strong>Four-eyes:</strong> one person prepares, another issues. Each carrier's organisation admin sets who holds the clerk and approver roles at the carrier (CB-10).</li>
+        <li><strong>Private until issue:</strong> instructions, drafts and comments are seen only by the shipper's side and the carrier. The audit trail keeps every version, comment and approval with its author and time.</li>
+        <li><strong>The carrier never chooses the holder freely:</strong> the first holder is the shipper named in the approved draft.</li>
+        <li><strong>No vendor names on screens:</strong> "automatic check", "blockchain".</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 7</span>
+      <h2>Decisions for you</h2>
+      <p>A recommendation is given for each; tell me where you disagree.</p>
+    </div>
+    <div class="decisions">
+      <div class="decision">
+        <h3>1. May the forwarder approve the draft for the shipper?</h3>
+        <p>Options: (a) only the shipper approves; (b) the forwarder may, when the shipper delegated draft approval.</p>
+        <p class="rec"><strong>Recommended: (b).</strong> It is how forwarders work today; the shipper sees who approved, and the delegation is set by the shipper's own admin in CB-10. The first holder is still the shipper.</p>
+      </div>
+      <div class="decision">
+        <h3>2. Shipped on board only, or also "received for shipment"?</h3>
+        <p>Options: (a) issue only after loading, with the on-board date; (b) also allow "received for shipment" B/Ls with a later on-board notation.</p>
+        <p class="rec"><strong>Recommended: (a) in v1.</strong> Letters of credit almost always ask for an on-board B/L; (b) adds a notation step and can come with amendments (CB-14).</p>
+      </div>
+      <div class="decision">
+        <h3>3. When the carrier's own system issues (DCSA issuance), who does the four-eyes?</h3>
+        <p>Options: (a) the request arrives as an approved draft and Ravi still issues on the platform; (b) the carrier's system issues straight through, its own controls counting as the four-eyes.</p>
+        <p class="rec"><strong>Recommended: (a) for the first version.</strong> The platform can prove its own four-eyes; it cannot prove the carrier system's. Straight-through can be a later carrier setting.</p>
+      </div>
+      <div class="decision">
+        <h3>4. Does the first holder accept the issued B/L?</h3>
+        <p>Options: (a) the shipper becomes holder at issue; (b) the shipper must accept, like a transfer.</p>
+        <p class="rec"><strong>Recommended: (a).</strong> The shipper asked for the B/L and approved its text; one more click adds delay without protecting anyone.</p>
+      </div>
+      <div class="decision">
+        <h3>5. What counts as "the same cargo", and how much goes on the blockchain?</h3>
+        <p>Options: (a) carrier + container + seal numbers, anchored as a salted fingerprint; (b) the booking reference only; (c) no cargo key on chain, duplicates checked only inside the platform.</p>
+        <p class="rec"><strong>Recommended: (a).</strong> Container and seal identify the physical cargo; a booking can be split. The salted fingerprint lets a bank or court see that no second issue exists, without exposing the cargo. <span class="confirm">to confirm: LCL and break-bulk cargo need another key</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose" style="display:grid;gap:10px">
+      <span class="label">Part 8</span>
+      <h2>Out of scope here</h2>
+    </div>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Topic</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Admitting carriers and shippers, roles, forwarder delegation</td><td class="key">CB-10</td></tr>
+          <tr><td>Endorsement, transfer to the named consignee or to the bank</td><td class="key">CB-12</td></tr>
+          <tr><td>Surrender, delivery order, release of a waybill to its consignee</td><td class="key">CB-13</td></tr>
+          <tr><td>Amendments after issue, switch to paper, a paper B/L issued outside, disputes</td><td class="key">CB-14</td></tr>
+          <tr><td>The public check of an issued document (check code, QR)</td><td class="key">CB-15</td></tr>
+          <tr><td>Chain of title and evidence pack</td><td class="key">CB-16</td></tr>
+          <tr><td>Receiving or sending an eBL from another platform (DCSA PINT)</td><td class="key">CB-17</td></tr>
+          <tr><td>Bookings, freight invoices and payment holds: kept in the carrier's own systems</td><td class="key">not in CB-1</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+</body></html>
