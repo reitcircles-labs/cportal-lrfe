@@ -135,22 +135,34 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
   });
 
   // Exchange a carrier API key (X-Api-Key header or { apiKey }) for a short-lived access JWT (CB-56)
-  app.post('/auth/api-token', async req => {
-    const header = req.headers['x-api-key'];
-    const bodyKey =
-      req.body && typeof req.body === 'object' ? req.body.apiKey : undefined;
-    const secret =
-      typeof header === 'string' && header.trim() !== '' ? header : bodyKey;
-    const {claims, apiKey} = await service.exchangeApiKey(secret);
-    return {
-      accessToken: app.jwt.sign(claims, {
-        expiresIn: `${accessTtlSeconds}s`,
-      }),
-      expiresIn: accessTtlSeconds,
-      organisationId: apiKey.organisationId,
-      perms: apiKey.perms,
-    };
-  });
+  app.post(
+    '/auth/api-token',
+    {
+      schema: {
+        body: {
+          type: ['object', 'null'],
+          additionalProperties: false,
+          properties: {apiKey: str({maxLength: 500})},
+        },
+      },
+    },
+    async req => {
+      const header = req.headers['x-api-key'];
+      const bodyKey =
+        req.body && typeof req.body === 'object' ? req.body.apiKey : undefined;
+      const secret =
+        typeof header === 'string' && header.trim() !== '' ? header : bodyKey;
+      const {claims, apiKey} = await service.exchangeApiKey(secret);
+      return {
+        accessToken: app.jwt.sign(claims, {
+          expiresIn: `${accessTtlSeconds}s`,
+        }),
+        expiresIn: accessTtlSeconds,
+        organisationId: apiKey.organisationId,
+        perms: apiKey.perms,
+      };
+    },
+  );
 
   app.post(
     '/invitations/accept',

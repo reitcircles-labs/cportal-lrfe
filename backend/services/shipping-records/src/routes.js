@@ -16,7 +16,9 @@ import {OFFERED_COMMANDS} from './title.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuid = {type: 'string', format: 'uuid'};
-const versionParam = {n: {type: 'integer', minimum: 1}};
+const versionParam = {
+  n: {type: 'integer', minimum: 1, maximum: 2_147_483_647},
+};
 /** The longest B/L number a lookup takes (CB-47); a transport document reference has 20 at most. */
 const MAX_NUMBER_LENGTH = 100;
 

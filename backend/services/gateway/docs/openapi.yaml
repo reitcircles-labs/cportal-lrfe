@@ -232,6 +232,7 @@ paths:
                 version:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -388,6 +389,7 @@ paths:
                 version:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -530,6 +532,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -589,6 +592,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
         - name: limit
           in: query
           required: false
@@ -661,6 +665,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
         - name: limit
           in: query
           required: false
@@ -1140,6 +1145,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -1725,6 +1731,7 @@ paths:
                 version:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -1766,12 +1773,31 @@ paths:
 
         **Access:** Public: no token needed.
       operationId: identity_postAuthApiToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type:
+                - object
+                - "null"
+              additionalProperties: false
+              properties:
+                apiKey:
+                  type: string
+                  maxLength: 500
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       security: []
   /api/auth/login:
     post:
@@ -1997,6 +2023,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
         - name: exp
           in: query
           required: true
@@ -2582,6 +2609,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -2650,6 +2678,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -2708,6 +2737,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -2971,9 +3001,11 @@ paths:
                 versionNumber:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
                 ownerIndex:
                   type: integer
                   minimum: 0
+                  maximum: 2147483647
                 idNo:
                   type: string
                   minLength: 1
@@ -6018,6 +6050,7 @@ paths:
                 revision:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
                 changes:
                   type: object
                 accept:
@@ -6224,6 +6257,7 @@ paths:
                 revision:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
                 edrmsDocumentId:
                   type: string
                   format: uuid
@@ -6291,6 +6325,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -6364,6 +6399,7 @@ paths:
                 revision:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -6431,6 +6467,7 @@ paths:
                 revision:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -6939,6 +6976,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -7003,6 +7041,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -7084,6 +7123,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:

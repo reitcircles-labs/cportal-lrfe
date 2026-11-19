@@ -437,6 +437,7 @@ paths:
                 revision:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
                 changes:
                   type: object
                 accept:
@@ -577,6 +578,7 @@ paths:
                 revision:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
                 edrmsDocumentId:
                   type: string
                   format: uuid
@@ -645,6 +647,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -719,6 +722,7 @@ paths:
                 revision:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -961,6 +965,7 @@ paths:
                 revision:
                   type: integer
                   minimum: 1
+                  maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -1396,6 +1401,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -1478,6 +1484,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -1858,6 +1865,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK

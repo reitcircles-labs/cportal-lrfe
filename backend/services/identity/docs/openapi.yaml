@@ -190,12 +190,31 @@ paths:
 
         **Access:** Public: no token needed.
       operationId: postAuthApiToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type:
+                - object
+                - "null"
+              additionalProperties: false
+              properties:
+                apiKey:
+                  type: string
+                  maxLength: 500
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       security: []
       x-gateway-path: /api/auth/api-token
   /invitations/accept:

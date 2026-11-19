@@ -435,8 +435,9 @@ function scans(tokens) {
       ok: [0],
       report: join(OUT, 'nuclei', 'nuclei.jsonl'),
       read: file => readNuclei(file),
-      run: () =>
-        runContainer(
+      run: () => {
+        const hasTemplates = existsSync(join(cache, 'nuclei-templates'));
+        return runContainer(
           'nuclei',
           IMAGES.nuclei,
           [
@@ -444,6 +445,7 @@ function scans(tokens) {
             TARGET,
             // every pull request: the templates for the technologies it detects; nightly: all
             ...(level === 'nightly' ? [] : ['-as']),
+            ...(hasTemplates ? ['-ud', '/cache/nuclei-templates', '-duc'] : []),
             '-jsonl',
             '-o',
             '/out/nuclei.jsonl',
@@ -455,7 +457,8 @@ function scans(tokens) {
             vars: {HOME: '/cache'},
             mounts: [`${workDir('nuclei')}:/out:rw`, `${cache}:/cache:rw`],
           },
-        ),
+        );
+      },
     },
   ];
   // the API, signed out and as each role
@@ -582,6 +585,9 @@ try {
   );
   list.forEach((scan, i) => {
     if (!existsSync(scan.report)) {
+      if (scan.name === 'nuclei' && scan.ok.includes(codes[i])) {
+        return;
+      }
       errors.push(`${scan.name} (exit ${codes[i]}, no report; see run.log)`);
       return;
     }

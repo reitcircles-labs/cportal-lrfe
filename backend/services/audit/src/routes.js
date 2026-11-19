@@ -85,7 +85,7 @@ export async function auditRoutes(
   const item = {
     kind: {type: 'string', enum: proofKinds(proofs?.pack)},
     id: {type: 'string', maxLength: 64},
-    version: {type: 'integer', minimum: 1},
+    version: {type: 'integer', minimum: 1, maximum: 2_147_483_647},
   };
 
   // the proof of a record version, a document version or a trail entry (README.md section 4)
@@ -309,7 +309,9 @@ export async function auditRoutes(
         params: {
           type: 'object',
           required: ['batch'],
-          properties: {batch: {type: 'integer', minimum: 1}},
+          properties: {
+            batch: {type: 'integer', minimum: 1, maximum: 2_147_483_647},
+          },
         },
       },
     },
@@ -325,7 +327,9 @@ export async function auditRoutes(
         params: {
           type: 'object',
           required: ['batch'],
-          properties: {batch: {type: 'integer', minimum: 1}},
+          properties: {
+            batch: {type: 'integer', minimum: 1, maximum: 2_147_483_647},
+          },
         },
         querystring: {
           type: 'object',
@@ -349,7 +353,9 @@ export async function auditRoutes(
         params: {
           type: 'object',
           required: ['batch'],
-          properties: {batch: {type: 'integer', minimum: 1}},
+          properties: {
+            batch: {type: 'integer', minimum: 1, maximum: 2_147_483_647},
+          },
         },
         querystring: {
           type: 'object',

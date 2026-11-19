@@ -409,6 +409,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
@@ -528,6 +529,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -771,6 +773,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -852,6 +855,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       requestBody:
         required: true
         content:
@@ -1880,6 +1884,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 2147483647
       responses:
         "200":
           description: OK
