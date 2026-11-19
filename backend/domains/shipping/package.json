@@ -8,7 +8,8 @@
     ".": "./src/index.js",
     "./bill-of-lading": "./src/bill-of-lading/index.js",
     "./title": "./src/title/index.js",
-    "./ports": "./src/ports/index.js"
+    "./ports": "./src/ports/index.js",
+    "./carriers": "./src/carriers/index.js"
   },
   "scripts": {
     "test": "mocha 'tests/**/*.test.js' --timeout 20000"

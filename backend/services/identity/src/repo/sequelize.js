@@ -12,7 +12,7 @@ const OFFICE_FIELDS = [
   'organisationId',
   'status',
 ];
-const ORGANISATION_FIELDS = ['code', 'name', 'status'];
+const ORGANISATION_FIELDS = ['code', 'name', 'carrierCode', 'status'];
 const API_KEY_FIELDS = [
   'organisationId',
   'name',
@@ -90,6 +90,13 @@ export function createSequelizeRepo(sequelize) {
       }
       if (!(await q.describeTable(office)).organisationId) {
         await q.addColumn(office, 'organisationId', {type: DataTypes.UUID});
+      }
+      // CB-68: optional default SMDG carrier code per organisation
+      const organisation = {tableName: 'organisation', schema: SCHEMA};
+      if (!(await q.describeTable(organisation)).carrierCode) {
+        await q.addColumn(organisation, 'carrierCode', {
+          type: DataTypes.STRING(4),
+        });
       }
       for (const kind of ['office', 'organisation']) {
         await sequelize.query(

@@ -8,6 +8,7 @@
  * Tested by bl-draft.test.ts (`npm run test:shipping`).
  */
 import type {DraftVersion, PartyOrganisation} from './bl.model';
+import type {CarrierOption} from './carrier-picker';
 
 /** The B/L format the form writes (one of the record service's formats, `LRFE_BL_FORMATS`). */
 export const DRAFT_FORMAT = 'dcsa-3.0';
@@ -104,6 +105,17 @@ const DEFAULT_TERMS =
   'Carried under the terms and conditions of the carrier, which are part of this bill of lading.';
 
 /**
+ * The shipment-specific fields left empty when copying a B/L into a new draft (CB-69):
+ * B/L number, booking reference, container number and seal number.
+ */
+export const COPY_BLANK_FIELDS: ReadonlyArray<keyof DraftForm> = [
+  'reference',
+  'bookingReference',
+  'containerNumber',
+  'sealNumber',
+];
+
+/**
  * A new, empty form: to order, a 20-foot general purpose container (22G1), the carrier's terms
  * to complete.
  * @return the form
@@ -157,12 +169,25 @@ function textOf(value: unknown): string {
 export function draftProblems(
   form: DraftForm,
   organisations?: readonly PartyOrganisation[],
+  carriers?: readonly CarrierOption[],
 ): DraftProblem[] {
   const problems: DraftProblem[] = [];
   for (const [field, name] of REQUIRED_TEXT) {
     if (textOf(form[field]) === '') {
       problems.push({field, message: `Fill in ${name}.`});
     }
+  }
+  const carrierCode = textOf(form.carrierCode).toUpperCase();
+  if (
+    carriers !== undefined &&
+    carriers.length > 0 &&
+    carrierCode !== '' &&
+    !carriers.some(c => c.code === carrierCode)
+  ) {
+    problems.push({
+      field: 'carrierCode',
+      message: 'Pick the carrier code from the SMDG list.',
+    });
   }
   for (const [field, name] of POSITIVE_NUMBERS) {
     const value = form[field];
@@ -456,6 +481,24 @@ export function draftFormOf(
     grossWeightKg: numberOrNull(grossWeight['value']),
     termsAndConditions:
       textOf(doc['termsAndConditions']) || defaults.termsAndConditions,
+  };
+}
+
+/**
+ * Fills the B/L form from an existing B/L version for a new copy (CB-69), leaving the
+ * shipment-specific fields empty so the clerk supplies them.
+ * @param version the original B/L's latest version
+ * @return the pre-filled form
+ */
+export function copyFormOf(
+  version: DraftVersion | null | undefined,
+): DraftForm {
+  return {
+    ...draftFormOf(version),
+    reference: '',
+    bookingReference: '',
+    containerNumber: '',
+    sealNumber: '',
   };
 }
 

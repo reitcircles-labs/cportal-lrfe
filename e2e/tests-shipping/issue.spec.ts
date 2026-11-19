@@ -118,7 +118,7 @@ test.describe(
       await expect(page.getByRole('heading', {name: 'New B/L'})).toBeVisible();
 
       await fill(page, 'B/L number', reference);
-      await fill(page, 'Carrier code', 'ECAR');
+      await page.getByLabel('Carrier code', {exact: true}).selectOption('MSC');
       await fill(page, 'Booking reference', 'BKG-884120');
       await page.getByLabel('Shipper', {exact: true}).selectOption({
         label: shipper.name,
@@ -147,7 +147,7 @@ test.describe(
       await page.getByRole('button', {name: 'Save draft'}).click();
       await expect(page).toHaveURL(/#\/bls\/[0-9a-f-]{36}$/);
       blId = page.url().split('/').at(-1) ?? '';
-      label = `B/L ${reference} (ECAR)`;
+      label = `B/L ${reference} (MSC)`;
       await expect(page.getByRole('heading', {name: label})).toBeVisible();
       await expect(page.locator('dt:text-is("State") + dd')).toHaveText(
         'Draft',

@@ -9,6 +9,8 @@ export interface Organisation {
   id: string;
   code: string;
   name: string;
+  /** Optional default SMDG carrier code (CB-68). */
+  carrierCode?: string | null;
   status: 'Active' | 'Suspended';
   createdAt: string | null;
   /** how many offices it has */

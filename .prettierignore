@@ -9,9 +9,11 @@
 **/*.yaml
 backend/.tools/
 backend/services/*/docs/openapi.json
+# Published design artifacts, kept as uploaded
+docs/artifacts/
 # DCSA's published files and examples, copied unchanged (checksums in each SOURCE.md)
 backend/domains/shipping/dcsa/
-# the port list, built from UN/LOCODE by backend/domains/shipping/scripts/build-port-list.mjs (CB-63)
+# port and carrier code lists, built by scripts in backend/domains/shipping/scripts/ (CB-63, CB-68)
 backend/domains/shipping/data/
 e2e/.stack/
 e2e/.auth/

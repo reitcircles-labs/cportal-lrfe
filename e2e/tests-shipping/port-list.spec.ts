@@ -98,7 +98,7 @@ test.describe('the port list of the B/L form (CB-63)', {tag: '@CB-63'}, () => {
     // a whole B/L with a port of loading that is not on the list
     const reference = `CB63${unique().toUpperCase()}`.slice(0, 20);
     await fill(page, 'B/L number', reference);
-    await fill(page, 'Carrier code', 'ECAR');
+    await page.getByLabel('Carrier code', {exact: true}).selectOption('MSC');
     await fill(page, 'Booking reference', 'BKG-630001');
     await page.getByLabel('Shipper', {exact: true}).selectOption({
       label: shipper.name,
@@ -130,7 +130,7 @@ test.describe('the port list of the B/L form (CB-63)', {tag: '@CB-63'}, () => {
     await page.getByRole('button', {name: 'Save draft'}).click();
     await expect(page).toHaveURL(/#\/bls\/[0-9a-f-]{36}$/);
     await expect(
-      page.getByRole('heading', {name: `B/L ${reference} (ECAR)`}),
+      page.getByRole('heading', {name: `B/L ${reference} (MSC)`}),
     ).toBeVisible();
   });
 });

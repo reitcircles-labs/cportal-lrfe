@@ -662,3 +662,59 @@ describe('the session carries the organisation (CB-20)', () => {
     expect(res.statusCode).to.equal(200);
   });
 });
+
+describe('default carrier code on an organisation (CB-68)', () => {
+  it('sets, normalizes, clears, and includes carrierCode on organisations and /auth/me', async () => {
+    const {app, login, auth} = await makeApp();
+    const admin = await login(ADMIN);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/organisations',
+      headers: auth(admin.token),
+      payload: {code: 'CAR', name: 'Carrier Line'},
+    });
+    expect(created.statusCode).to.equal(201);
+    const orgId = created.json().id;
+    expect(created.json().carrierCode).to.equal(null);
+
+    const setRes = await app.inject({
+      method: 'PATCH',
+      url: `/organisations/${orgId}`,
+      headers: auth(admin.token),
+      payload: {carrierCode: ' msk '},
+    });
+    expect(setRes.statusCode, setRes.body).to.equal(200);
+    expect(setRes.json().carrierCode).to.equal('MSK');
+
+    const bad = await app.inject({
+      method: 'PATCH',
+      url: `/organisations/${orgId}`,
+      headers: auth(admin.token),
+      payload: {carrierCode: 'TOOLONG'},
+    });
+    expect(bad.statusCode).to.equal(400);
+
+    const invited = await app.inject({
+      method: 'POST',
+      url: '/users',
+      headers: auth(admin.token),
+      payload: {
+        name: 'Clerk',
+        email: 'clerk@carrier-line.test',
+        roles: ['adm'],
+        organisationId: orgId,
+      },
+    });
+    expect(invited.statusCode).to.equal(201);
+    expect(invited.json().user.organisationCarrierCode).to.equal('MSK');
+
+    const cleared = await app.inject({
+      method: 'PATCH',
+      url: `/organisations/${orgId}`,
+      headers: auth(admin.token),
+      payload: {carrierCode: null},
+    });
+    expect(cleared.statusCode).to.equal(200);
+    expect(cleared.json().carrierCode).to.equal(null);
+  });
+});

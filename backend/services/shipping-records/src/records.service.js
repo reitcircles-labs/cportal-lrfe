@@ -10,6 +10,7 @@ import {
   billOfLadingHash,
   formatNamed,
 } from '@lrfe/domain-shipping/bill-of-lading';
+import {carrierProblems} from '@lrfe/domain-shipping/carriers';
 import {portProblems} from '@lrfe/domain-shipping/ports';
 import {sealOf, verifyChain} from '@lrfe/record-contract/seal';
 
@@ -229,12 +230,37 @@ export class ShippingRecordsService {
    *   clock?: function(): Date,
    * }} options `formats`: the B/L formats on in this install (formatsFromSettings)
    */
-  constructor({repo, events, formats, clock = () => new Date(), ports = null}) {
+  constructor({
+    repo,
+    events,
+    formats,
+    clock = () => new Date(),
+    ports = null,
+    carriers = null,
+  }) {
     this.repo = repo;
     this.events = events;
     this.formats = formats;
     this.clock = clock;
     this.ports = ports;
+    this.carriers = carriers;
+  }
+
+  /**
+   * Refuses (400) a B/L whose carrier code is not on the SMDG list (CB-68).
+   * @param {object} document the new document
+   */
+  requireCarrierCode(document) {
+    const problems = carrierProblems(document, this.carriers);
+    if (problems.length > 0) {
+      throw new BadRequestError(
+        `This B/L is not valid: ${problems[0].message}`,
+        {
+          code: 'unknown-carrier-code',
+          problems,
+        },
+      );
+    }
   }
 
   /**
@@ -347,6 +373,7 @@ export class ShippingRecordsService {
    */
   async createRecord(body, actor, organisationId) {
     const data = this.billOfLadingOf(body);
+    this.requireCarrierCode(data.document);
     this.requirePorts(data.document, null);
     const {carrierCode, transportDocumentReference: recordNo} = data.document;
     if (await this.repo.findRecord({organisationId, carrierCode, recordNo})) {
@@ -392,6 +419,7 @@ export class ShippingRecordsService {
    */
   async prepareIssuance(body, organisationId) {
     const data = this.billOfLadingOf(body);
+    this.requireCarrierCode(data.document);
     this.requirePorts(data.document, null);
     const {carrierCode, transportDocumentReference: recordNo} = data.document;
     if (await this.repo.findRecord({organisationId, carrierCode, recordNo})) {

@@ -122,6 +122,8 @@ export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'no-number': 'Give the number of the B/L to look for.',
   'unknown-port':
     'A port of the B/L is not a sea port of the port list: pick it from the list.',
+  'unknown-carrier-code':
+    'The carrier code is not on the SMDG liner code list: pick it from the list.',
 });
 
 /**

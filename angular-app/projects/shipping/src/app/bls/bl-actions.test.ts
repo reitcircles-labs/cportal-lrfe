@@ -9,6 +9,7 @@ import {
   draftersOf,
   issueCommands,
   mayArchive,
+  mayCopy,
   mayDraft,
   mayEdit,
   maySubmit,
@@ -347,6 +348,47 @@ describe('what the panel says about a version (added: the approved B/L stays vis
     assert.equal(
       versionNote(inReview({state: 'draft'}), ravi),
       'Draft: not submitted for approval yet.',
+    );
+  });
+});
+
+describe('copying a B/L (CB-69)', () => {
+  it('allows Copy for a carrier user with bl.draft on non-archived B/Ls in any state', () => {
+    assert.equal(mayCopy({status: 'draft', roles: ['carrier']}, CLERK), true);
+    assert.equal(
+      mayCopy({status: 'committed', roles: ['carrier']}, CLERK),
+      true,
+    );
+    assert.equal(
+      mayCopy({status: 'committed', roles: ['carrier', 'holder']}, MANAGER),
+      true,
+    );
+  });
+
+  it('hides Copy on archived B/Ls, without bl.draft, or for non-carrier parties', () => {
+    assert.equal(mayCopy(null, CLERK), false);
+    assert.equal(
+      mayCopy({status: 'archived', roles: ['carrier']}, CLERK),
+      false,
+    );
+    assert.equal(
+      mayCopy({status: 'committed', roles: ['carrier']}, [
+        'bl.read',
+        'bl.issue',
+      ]),
+      false,
+    );
+    assert.equal(
+      mayCopy({status: 'committed', roles: ['holder']}, CLERK),
+      false,
+    );
+    assert.equal(
+      mayCopy({status: 'committed', roles: ['consignee']}, CLERK),
+      false,
+    );
+    assert.equal(
+      mayCopy({status: 'committed', roles: ['past-holder']}, CLERK),
+      false,
     );
   });
 });

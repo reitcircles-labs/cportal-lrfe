@@ -165,6 +165,7 @@ export function defineModels(sequelize) {
       },
       code: {type: DataTypes.STRING(5), allowNull: false, unique: true},
       name: {type: DataTypes.STRING, allowNull: false},
+      carrierCode: {type: DataTypes.STRING(4), allowNull: true},
       status: {
         type: DataTypes.ENUM('Active', 'Suspended'),
         allowNull: false,

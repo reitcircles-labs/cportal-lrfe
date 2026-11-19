@@ -460,6 +460,40 @@ export async function recordsRoutes(app, {service}) {
   // the organisations registered and active on the platform, whom a new B/L may name as its
   // shipper or consignee (CB-44) and whom its holder may endorse it to (CB-45: trade staff have
   // bl.endorse, not bl.draft); only the id, code and name of each
+  // the SMDG carrier code list (CB-68): the codes a B/L or organisation setting may name
+  app.get(
+    '/records/carriers',
+    {
+      onRequest: app.requireAnyPerm(
+        'bl.draft',
+        'bl.issue',
+        'admin.organisations',
+      ),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            q: {type: 'string', maxLength: 100},
+            code: {type: 'string', maxLength: 4},
+            limit: {type: 'integer', minimum: 1, maximum: 500},
+          },
+        },
+      },
+    },
+    async req => {
+      const carriers = service.carriers;
+      if (!carriers) {
+        return {items: [], version: null};
+      }
+      const {q = '', code, limit = 500} = req.query;
+      const items = code
+        ? [carriers.get(code)].filter(carrier => carrier !== null)
+        : carriers.search(q, limit);
+      return {items, version: carriers.version};
+    },
+  );
+
   // the port list (CB-63): the ports a B/L may name, searched by code or name
   app.get(
     '/records/ports',

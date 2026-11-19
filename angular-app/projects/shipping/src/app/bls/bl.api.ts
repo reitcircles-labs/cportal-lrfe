@@ -1,5 +1,6 @@
 import {Injectable, inject} from '@angular/core';
 import type {Port} from './bl-ports';
+import type {CarrierOption} from './carrier-picker';
 import {ApiService} from '@lrfe/platform';
 import type {AmendRequest} from './bl-amend';
 import type {DraftRequest, PaperReading} from './bl-draft';
@@ -98,6 +99,17 @@ export class BlApi {
   async organisations(): Promise<PartyOrganisation[]> {
     const answer = await this.api.get<{items: PartyOrganisation[]}>(
       '/records/organisations',
+    );
+    return answer.items;
+  }
+
+  /**
+   * Lists the SMDG liner carrier codes (CB-68).
+   * @return the carriers, sorted by code
+   */
+  async carriers(): Promise<CarrierOption[]> {
+    const answer = await this.api.get<{items: CarrierOption[]}>(
+      '/records/carriers',
     );
     return answer.items;
   }

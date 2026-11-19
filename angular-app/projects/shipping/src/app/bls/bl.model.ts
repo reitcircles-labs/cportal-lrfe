@@ -155,6 +155,7 @@ export interface DraftVersion {
 export interface BlRecord {
   id: string;
   recordNo: string;
+  label?: string;
   status: string;
   draftVersion: number | null;
   draftState: string | null;

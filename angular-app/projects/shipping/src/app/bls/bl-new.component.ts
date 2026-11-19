@@ -15,7 +15,9 @@ import {AuthService, ToastService, toApiError} from '@lrfe/platform';
 import {BlApi} from './bl.api';
 import {mayEdit} from './bl-actions';
 import {
+  COPY_BLANK_FIELDS,
   applyPaperReading,
+  copyFormOf,
   draftFormOf,
   draftProblems,
   draftRequest,
@@ -27,7 +29,13 @@ import {
 import {BL_SHARED_STYLES} from './bl-shared.styles';
 import {NO_PORTS, PortOptions, portLabel} from './bl-ports';
 import type {PartyOrganisation} from './bl.model';
+import {isKnownCarrier, type CarrierOption} from './carrier-picker';
+import {CarrierPickerComponent} from './carrier-picker.component';
+import {LatestRequest} from './latest';
 import {injectViewer} from './viewer';
+
+/** Shipment-specific fields left empty and marked when copying an existing B/L (CB-69). */
+const COPY_BLANK_SET: ReadonlySet<keyof DraftForm> = new Set(COPY_BLANK_FIELDS);
 
 /** A text, date or number field of the form, as the template draws it. */
 interface FieldSpec {
@@ -40,6 +48,8 @@ interface FieldSpec {
   hint?: string;
   /** A port: offered from the port list as it is typed (CB-63). */
   port?: boolean;
+  /** The SMDG carrier code: searchable dropdown (CB-68). */
+  carrier?: boolean;
   /** Locked once the B/L is created: number and carrier code (CB-70). */
   lockInEdit?: boolean;
 }
@@ -55,20 +65,20 @@ const BL_FIELDS: readonly FieldSpec[] = [
     lockInEdit: true,
   },
   {
-    field: 'carrierCode',
-    label: 'Carrier code',
-    type: 'text',
-    mono: true,
-    maxlength: 4,
-    hint: 'The SMDG code of the carrier, e.g. ABCD.',
-    lockInEdit: true,
-  },
-  {
     field: 'bookingReference',
     label: 'Booking reference',
     type: 'text',
     mono: true,
     maxlength: 35,
+  },
+  {
+    field: 'carrierCode',
+    label: 'Carrier code',
+    type: 'text',
+    mono: true,
+    carrier: true,
+    hint: 'Picked from the SMDG liner code list.',
+    lockInEdit: true,
   },
 ];
 const ISSUE_FIELDS: readonly FieldSpec[] = [
@@ -156,20 +166,20 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
  */
 @Component({
   selector: 'app-bl-new',
-  imports: [NgTemplateOutlet, RouterLink],
+  imports: [NgTemplateOutlet, RouterLink, CarrierPickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
-      <a class="small" [routerLink]="backLink()">{{ isEdit() ? '← Back to B/L' : '← Bills of lading' }}</a>
+      <a class="small" [routerLink]="backLink()">{{ backLabel() }}</a>
       <header>
         <h1 style="margin:4px 0 4px;font-size:32px">{{ isEdit() ? 'Edit draft B/L' : 'New B/L' }}</h1>
-        <p class="muted" style="margin:0">{{ isEdit() ? 'Edit this draft of ' + carrierName() + '. The B/L number and carrier code stay fixed.' : 'A draft of ' + carrierName() + '. A second person approves it before it is issued.' }}</p>
+        <p class="muted" style="margin:0">{{ subtitle() }}</p>
       </header>
       @if (loadError(); as e) {
         <div class="note danger" role="alert">{{ e }}</div>
       }
       @if (ready()) {
-        @if (!isEdit()) {
+        @if (!isEdit() && !copiedFrom()) {
           <section class="panel" aria-label="Read from paper B/L">
             <div class="panel-head"><h2>Read from paper B/L</h2></div>
             <div class="panel-body stack" style="gap:10px">
@@ -196,6 +206,11 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
               }
             </div>
           </section>
+        }
+        @if (copiedFrom(); as source) {
+          <div class="note warn" role="note">
+            Copied from <strong>{{ source }}</strong>. Fill in the highlighted shipment fields (B/L number, booking reference, container number, and seal number if sealed) before saving.
+          </div>
         }
         <form class="stack" style="gap:18px" (submit)="$event.preventDefault(); save()" novalidate>
         <section class="panel">
@@ -305,14 +320,31 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
       }
     </div>
     <ng-template #input let-f>
-      <div class="field" [class.uncertain]="isUncertain(f.field)">
+      <div class="field" [class.wide]="!!f.carrier" [class.uncertain]="isUncertain(f.field)">
         <label [for]="'bl-' + f.field">
           {{ f.label }}
           @if (isUncertain(f.field)) {
             <span class="check-badge">Check value</span>
           }
         </label>
-        <input [id]="'bl-' + f.field" [type]="f.type" [class]="f.mono ? 'input mono' : 'input'" autocomplete="off" [attr.maxlength]="f.maxlength ?? null" [attr.min]="f.type === 'number' ? 0 : null" [disabled]="isEdit() && !!f.lockInEdit" [value]="valueOf(f.field)" (input)="setFrom(f, $any($event.target).value)" [attr.aria-invalid]="isInvalid(f.field) ? 'true' : null" [attr.aria-describedby]="f.hint ? 'bl-' + f.field + '-hint' : null" [attr.list]="f.port ? 'bl-' + f.field + '-ports' : null">
+        @if (f.carrier) {
+          <app-carrier-picker
+            [inputId]="'bl-' + f.field"
+            [carriers]="carriers()"
+            [value]="valueOf(f.field)"
+            [disabled]="isEdit() && !!f.lockInEdit"
+            [invalid]="isInvalid(f.field)"
+            [describedBy]="describedBy(f)"
+            (picked)="setText(f.field, $event)" />
+          @if (legacyCopyCarrierNote(); as legacyNote) {
+            <span class="small copy-mark">{{ legacyNote }}</span>
+          }
+        } @else {
+          <input [id]="'bl-' + f.field" [type]="f.type" [class]="inputClass(f)" autocomplete="off" [attr.maxlength]="f.maxlength ?? null" [attr.min]="f.type === 'number' ? 0 : null" [disabled]="isEdit() && !!f.lockInEdit" [value]="valueOf(f.field)" (input)="setFrom(f, $any($event.target).value)" [attr.aria-invalid]="isInvalid(f.field) ? 'true' : null" [attr.aria-describedby]="describedBy(f)" [attr.list]="f.port ? 'bl-' + f.field + '-ports' : null">
+        }
+        @if (isCopyBlank(f.field)) {
+          <span class="small copy-mark" [id]="'bl-' + f.field + '-copy'">Fill in for the new shipment.</span>
+        }
         @if (f.port) {
           <datalist [id]="'bl-' + f.field + '-ports'">
             @for (p of ports.options(f.field); track p.code) {
@@ -336,6 +368,7 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
     .panel-body { padding: 16px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; align-items: start; }
     .field { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+    .field.wide { grid-column: 1 / -1; max-width: 560px; }
     fieldset.field { border: 0; padding: 0; }
     fieldset.field legend { font-size: 13px; font-weight: 600; margin-bottom: 4px; padding: 0; }
     .to-order { grid-column: 1 / -1; }
@@ -343,12 +376,17 @@ const CARGO_FIELDS: readonly FieldSpec[] = [
     .field.uncertain .input { border-color: #d97706; background: #fffbeb; }
     .check-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; background: #fef3c7; color: #92400e; }
     .paper-note { background: #fffbeb; border: 1px solid #f59e0b; color: #78350f; }
+    .note.warn { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-bd); }
+    .input.copy-blank { background: var(--warn-bg); border-color: var(--warn-bd); }
+    .copy-mark { color: var(--warn-fg); font-weight: 600; }
   `,
   ],
 })
 export class BlNewComponent {
   /** Present when editing an existing draft (`/bls/:id/edit`, CB-70). */
   readonly id = input<string>();
+  /** Present when copying an existing B/L into a new draft (`/bls/new?copy=:id`, CB-69). */
+  readonly copy = input<string>();
 
   private readonly bls = inject(BlApi);
   /** The ports offered in the port fields (CB-63). */
@@ -361,6 +399,7 @@ export class BlNewComponent {
   private readonly router = inject(Router);
   private readonly toast = inject(ToastService);
   private readonly viewer = injectViewer();
+  private readonly latest = new LatestRequest();
 
   protected readonly blFields = BL_FIELDS;
   protected readonly issueFields = ISSUE_FIELDS;
@@ -368,12 +407,17 @@ export class BlNewComponent {
   protected readonly cargoFields = CARGO_FIELDS;
 
   protected readonly isEdit = computed(() => Boolean(this.id()));
+  protected readonly copiedFrom = signal<string | null>(null);
   protected readonly backLink = computed(() => {
-    const id = this.id();
-    return id ? ['/bls', id] : ['/'];
+    const source = this.id() || this.copy();
+    return source ? ['/bls', source] : ['/'];
   });
+  protected readonly backLabel = computed(() =>
+    this.isEdit() || this.copy() ? '← Back to B/L' : '← Bills of lading',
+  );
   protected readonly form = signal<DraftForm>(emptyDraftForm());
   protected readonly organisations = signal<PartyOrganisation[]>([]);
+  protected readonly carriers = signal<CarrierOption[]>([]);
   protected readonly loadError = signal<string | null>(null);
   protected readonly ready = signal(true);
   protected readonly saving = signal(false);
@@ -390,6 +434,26 @@ export class BlNewComponent {
   private readonly refusal = signal<string[]>([]);
 
   protected readonly carrierName = computed(() => this.viewer().organisation);
+  protected readonly legacyCopyCarrierNote = computed(() => {
+    if (this.isEdit() || this.copiedFrom() === null) {
+      return null;
+    }
+    const code = this.form().carrierCode.trim().toUpperCase();
+    const list = this.carriers();
+    if (code === '' || list.length === 0 || isKnownCarrier(code, list)) {
+      return null;
+    }
+    return `Original code ${code} is not on the SMDG list — pick one from the list.`;
+  });
+  protected readonly subtitle = computed(() => {
+    if (this.isEdit()) {
+      return `Edit this draft of ${this.carrierName()}. The B/L number and carrier code stay fixed.`;
+    }
+    if (this.copiedFrom()) {
+      return `A new draft of ${this.carrierName()}, copied from ${this.copiedFrom()}.`;
+    }
+    return `A draft of ${this.carrierName()}. A second person approves it before it is issued.`;
+  });
   protected readonly problems = computed(() => {
     const own = this.formProblems().map(p => p.message);
     return own.length > 0 ? own : this.refusal();
@@ -410,10 +474,56 @@ export class BlNewComponent {
   constructor() {
     effect(() => {
       const id = this.id();
+      const copyId = this.copy();
       untracked(() => {
-        void this.load(id);
+        void this.load(id, copyId);
       });
     });
+  }
+
+  /**
+   * Whether a shipment-specific field of a copied B/L is still empty and marked for entry (CB-69).
+   * @param field the field
+   * @return true while the field needs a new value
+   */
+  protected isCopyBlank(field: keyof DraftForm): boolean {
+    return (
+      this.copiedFrom() !== null &&
+      COPY_BLANK_SET.has(field) &&
+      this.valueOf(field).trim() === ''
+    );
+  }
+
+  /**
+   * CSS classes for a text, date or number input.
+   * @param spec the field
+   * @return the class list
+   */
+  protected inputClass(spec: FieldSpec): string {
+    const parts = ['input'];
+    if (spec.mono) {
+      parts.push('mono');
+    }
+    if (this.isCopyBlank(spec.field)) {
+      parts.push('copy-blank');
+    }
+    return parts.join(' ');
+  }
+
+  /**
+   * The `aria-describedby` ids for an input: its copy mark, its hint, or both.
+   * @param spec the field
+   * @return space-separated element ids, or null
+   */
+  protected describedBy(spec: FieldSpec): string | null {
+    const ids: string[] = [];
+    if (this.isCopyBlank(spec.field)) {
+      ids.push(`bl-${spec.field}-copy`);
+    }
+    if (spec.hint) {
+      ids.push(`bl-${spec.field}-hint`);
+    }
+    return ids.length > 0 ? ids.join(' ') : null;
   }
 
   /**
@@ -565,7 +675,14 @@ export class BlNewComponent {
    */
   protected async save(): Promise<void> {
     const form = this.form();
-    this.formProblems.set(draftProblems(form, this.organisations()));
+    const carriers = this.carriers();
+    this.formProblems.set(
+      draftProblems(
+        form,
+        this.organisations(),
+        carriers.length > 0 && !this.isEdit() ? carriers : undefined,
+      ),
+    );
     this.refusal.set([]);
     if (this.formProblems().length > 0) {
       return;
@@ -599,42 +716,83 @@ export class BlNewComponent {
   }
 
   /**
-   * Loads the organisations and, when editing, the draft's current values (CB-70).
+   * Loads the organisations and, when editing or copying, the source B/L's values (CB-69, CB-70).
    * @param id the B/L's id when editing, undefined for a new B/L
+   * @param copyId the B/L's id when copying into a new draft, undefined otherwise
    * @return when ready
    */
-  private async load(id?: string): Promise<void> {
+  private async load(id?: string, copyId?: string): Promise<void> {
+    const request = this.latest.begin();
     this.loadError.set(null);
     this.formProblems.set([]);
     this.refusal.set([]);
-    if (!id) {
+    this.copiedFrom.set(null);
+    this.selectedPaper.set(null);
+    this.paperSummary.set(null);
+    this.paperWarnings.set([]);
+    this.paperError.set(null);
+    this.uncertainFields.set(new Set());
+    const targetId = id || copyId;
+    if (!targetId) {
       this.ready.set(true);
-      this.form.set(emptyDraftForm());
+      const defaultCarrier = this.auth.me()?.user.organisationCarrierCode ?? '';
+      this.form.set({...emptyDraftForm(), carrierCode: defaultCarrier});
       this.draftRevision.set(undefined);
       try {
-        this.organisations.set(await this.bls.organisations());
+        const [organisations, carriers] = await Promise.all([
+          this.bls.organisations(),
+          this.bls.carriers(),
+        ]);
+        if (this.latest.isCurrent(request)) {
+          this.organisations.set(organisations);
+          this.carriers.set(carriers);
+        }
       } catch (e) {
-        this.loadError.set(toApiError(e).message);
+        if (this.latest.isCurrent(request)) {
+          this.loadError.set(toApiError(e).message);
+        }
       }
       return;
     }
     this.ready.set(false);
     try {
-      const [organisations, record] = await Promise.all([
+      const [organisations, carriers, record] = await Promise.all([
         this.bls.organisations(),
-        this.bls.record(id),
+        this.bls.carriers(),
+        this.bls.record(targetId),
       ]);
+      if (!this.latest.isCurrent(request)) {
+        return;
+      }
       this.organisations.set(organisations);
+      this.carriers.set(carriers);
+      if (record.status === 'archived') {
+        this.loadError.set(
+          id
+            ? 'This B/L is archived and can no longer be changed.'
+            : 'Archived B/Ls cannot be copied.',
+        );
+        return;
+      }
+      if (!id) {
+        const version = record.draft ?? record.current;
+        if (!version) {
+          this.loadError.set('This B/L has no version to copy.');
+          return;
+        }
+        const copied = copyFormOf(version);
+        this.form.set(copied);
+        this.draftRevision.set(undefined);
+        this.copiedFrom.set(record.label ?? `B/L ${record.recordNo}`);
+        this.ready.set(true);
+        void this.ports.search('portOfLoading', copied.portOfLoading);
+        void this.ports.search('portOfDischarge', copied.portOfDischarge);
+        return;
+      }
       const user = {
         id: this.auth.me()?.user.id ?? '',
         perms: this.auth.perms(),
       };
-      if (record.status === 'archived') {
-        this.loadError.set(
-          'This B/L is archived and can no longer be changed.',
-        );
-        return;
-      }
       if (!mayEdit(record.draft, user)) {
         this.loadError.set(
           record.draft === null
@@ -650,7 +808,17 @@ export class BlNewComponent {
       void this.ports.search('portOfLoading', hydrated.portOfLoading);
       void this.ports.search('portOfDischarge', hydrated.portOfDischarge);
     } catch (e) {
-      this.loadError.set(toApiError(e).message);
+      if (!this.latest.isCurrent(request)) {
+        return;
+      }
+      const error = toApiError(e);
+      if (!id && (error.status === 404 || error.status === 400)) {
+        this.loadError.set(
+          'B/L not found. It does not exist, or your organisation cannot copy it.',
+        );
+      } else {
+        this.loadError.set(error.message);
+      }
     }
   }
 }

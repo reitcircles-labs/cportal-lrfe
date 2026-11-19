@@ -4622,6 +4622,11 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 200
+                carrierCode:
+                  type:
+                    - string
+                    - "null"
+                  maxLength: 20
       responses:
         "201":
           description: OK
@@ -4681,6 +4686,11 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 200
+                carrierCode:
+                  type:
+                    - string
+                    - "null"
+                  maxLength: 20
       responses:
         "200":
           description: OK

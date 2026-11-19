@@ -148,7 +148,8 @@ export const ACTIVE_ORGANISATIONS = Object.freeze({
  *   organisations?: object,
  *   modules?: ReadonlyArray<string>,
  *   ports?: object,
- * }} [options] `ports`: the port list (CB-63); none: ports are not checked
+ *   carriers?: object,
+ * }} [options] `ports`: the port list (CB-63); `carriers`: the SMDG carrier list (CB-68)
  * @return {Promise<object>}
  */
 export async function makeHttp(
@@ -160,6 +161,7 @@ export async function makeHttp(
     organisations = ACTIVE_ORGANISATIONS,
     modules = modulesFromSettings({}),
     ports = null,
+    carriers = null,
   } = {},
 ) {
   const {repo, atomic, close, sequelize} = await store.open();
@@ -173,6 +175,7 @@ export async function makeHttp(
     formats: formats ?? formatsFromSettings({}),
     clock: makeClock(),
     ports,
+    carriers,
   });
   let titles = null;
   if (signer) {
@@ -185,6 +188,7 @@ export async function makeHttp(
       audit,
       organisations,
       ports,
+      carriers,
     });
   }
   const app = await buildApp({service, titles, jwtSecret: SECRET});

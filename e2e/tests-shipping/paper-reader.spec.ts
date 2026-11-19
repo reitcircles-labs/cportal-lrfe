@@ -46,7 +46,7 @@ test.describe('Reading paper B/Ls automatically (CB-57)', () => {
         const ref = `PPR${unique().toUpperCase()}`.slice(0, 16);
         const scanPayload = JSON.stringify({
           reference: ref,
-          carrierCode: carrier.code.padEnd(4, 'X').slice(0, 4),
+          carrierCode: 'MSC',
           bookingReference: `BKG-${ref}`,
           toOrder: true,
           shipperName: shipper.name,

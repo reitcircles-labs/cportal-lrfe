@@ -20,6 +20,10 @@ import {
 } from '@lrfe/domain-shipping/title';
 import {buildApp} from './app.js';
 import {
+  DEFAULT_CARRIER_LIST_FILE,
+  loadCarrierList,
+} from '@lrfe/domain-shipping/carriers';
+import {
   DEFAULT_PORT_LIST_FILE,
   loadPortList,
 } from '@lrfe/domain-shipping/ports';
@@ -74,7 +78,17 @@ const events = createEventBus({
 const jwtSecret = env('JWT_SECRET');
 // the port list (CB-63): the pack's UN/LOCODE sea ports, or the install's own file (PORT_LIST_FILE)
 const ports = loadPortList(env('PORT_LIST_FILE', '') || DEFAULT_PORT_LIST_FILE);
-const service = new ShippingRecordsService({repo, events, formats, ports});
+// the SMDG carrier code list (CB-68): the pack's SMDG liner codes, or CARRIER_LIST_FILE
+const carriers = loadCarrierList(
+  env('CARRIER_LIST_FILE', '') || DEFAULT_CARRIER_LIST_FILE,
+);
+const service = new ShippingRecordsService({
+  repo,
+  events,
+  formats,
+  ports,
+  carriers,
+});
 // the trail-entry proof of a chain entry's event, from the audit service (CB-33): title proofs
 const audit = createAuditClient({
   baseUrl: env('AUDIT_URL', 'http://localhost:3506'),
@@ -108,6 +122,7 @@ const titles = new TitleService({
   audit,
   organisations,
   ports,
+  carriers,
   maxSplitChildren,
   platformCode: env('PLATFORM_CODE', 'LRFE'),
 });

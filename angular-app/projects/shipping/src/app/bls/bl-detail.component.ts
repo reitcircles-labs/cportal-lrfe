@@ -28,6 +28,7 @@ import {
   approvalOf,
   issueCommands,
   mayArchive,
+  mayCopy,
   mayEdit,
   maySubmit,
   versionNote,
@@ -164,6 +165,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
           <section class="actions row" aria-label="Actions">
             @if (canEdit()) {
               <a class="btn btn-secondary" [routerLink]="['/bls', v.recordId, 'edit']">Edit</a>
+            }
+            @if (canCopy()) {
+              <a class="btn btn-secondary" [routerLink]="['/bls/new']" [queryParams]="{copy: v.recordId}">Copy</a>
             }
             @if (canSubmit()) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="submit()">Submit for approval</button>
@@ -542,6 +546,13 @@ export class BlDetailComponent {
   protected readonly canEdit = computed(
     () => !this.issued() && mayEdit(this.draft(), this.user()),
   );
+  protected readonly canCopy = computed(() => {
+    const v = this.view();
+    return mayCopy(
+      v === null ? null : {status: v.record.status, roles: v.roles},
+      this.auth.perms(),
+    );
+  });
   protected readonly canSubmit = computed(() =>
     maySubmit(this.draft(), this.auth.perms()),
   );

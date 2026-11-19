@@ -4,7 +4,7 @@
  * issue to the shipper. The record service checks each again; these only decide what the page
  * offers. Tested by bl-actions.test.ts (`npm run test:shipping`).
  */
-import type {BlState, DraftVersion} from './bl.model';
+import type {BlState, DraftVersion, PartyRole} from './bl.model';
 
 /** How a user stands towards a draft in review. */
 export type ApprovalState = 'approve' | 'own-draft' | 'waiting';
@@ -143,6 +143,23 @@ export function mayArchive(
   perms: readonly string[],
 ): boolean {
   return record?.status === 'draft' && perms.includes(DRAFT_PERMISSION);
+}
+
+/**
+ * Whether the user may start a new draft copied from this B/L (CB-69): the permission to
+ * draft, on a non-archived B/L of their own organisation (the carrier), in any state.
+ * @param target the B/L's status and the viewer's roles on it, null when not loaded
+ * @param perms the user's permissions
+ * @return true when the page offers Copy
+ */
+export function mayCopy(
+  target: {status: string; roles: readonly PartyRole[]} | null,
+  perms: readonly string[],
+): boolean {
+  if (target === null || target.status === 'archived') {
+    return false;
+  }
+  return perms.includes(DRAFT_PERMISSION) && target.roles.includes('carrier');
 }
 
 /**

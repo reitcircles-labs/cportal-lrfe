@@ -11,7 +11,7 @@ const MAX_BYTES = 15 * 1024 * 1024;
 
 const FALLBACK_SAMPLE = {
   reference: 'PAPER-2026-001',
-  carrierCode: 'BWML',
+  carrierCode: 'MSC',
   bookingReference: 'BKG-2026-001',
   toOrder: true,
   shipperName: 'Highland Coffee Exporters',

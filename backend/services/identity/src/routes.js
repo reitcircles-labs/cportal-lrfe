@@ -306,14 +306,19 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
   );
   const organisations = {onRequest: app.requirePerm('admin.organisations')};
   const organisationName = str({minLength: 1, maxLength: 200});
+  const carrierCodeField = {type: ['string', 'null'], maxLength: 20};
   app.post(
     '/organisations',
     {
       ...organisations,
-      schema: body({
-        code: str({pattern: ORGANISATION_CODE_PATTERN}),
-        name: organisationName,
-      }),
+      schema: body(
+        {
+          code: str({pattern: ORGANISATION_CODE_PATTERN}),
+          name: organisationName,
+          carrierCode: carrierCodeField,
+        },
+        ['code', 'name'],
+      ),
     },
     async (req, reply) =>
       reply
@@ -330,7 +335,7 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
           type: 'object',
           additionalProperties: false,
           minProperties: 1,
-          properties: {name: organisationName},
+          properties: {name: organisationName, carrierCode: carrierCodeField},
         },
       },
     },

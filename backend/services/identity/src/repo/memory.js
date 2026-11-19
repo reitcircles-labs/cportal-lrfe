@@ -126,6 +126,7 @@ export function createMemoryRepo() {
       const now = new Date();
       const organisation = {
         id: randomUUID(),
+        carrierCode: null,
         status: 'Active',
         createdAt: now,
         updatedAt: now,

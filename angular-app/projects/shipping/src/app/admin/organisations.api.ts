@@ -1,5 +1,6 @@
 import {Injectable, inject} from '@angular/core';
 import {ApiService} from '@lrfe/platform';
+import type {CarrierOption} from '../bls/carrier-picker';
 import {
   newOfficeFor,
   officeOf,
@@ -43,6 +44,33 @@ export class OrganisationsApi {
    */
   create(form: OrganisationForm): Promise<Organisation> {
     return this.api.post<Organisation>('/organisations', form);
+  }
+
+  /**
+   * Lists the SMDG liner carrier codes (CB-68).
+   * @return the carriers, sorted by code
+   */
+  async carriers(): Promise<CarrierOption[]> {
+    const answer = await this.api.get<{items: CarrierOption[]}>(
+      '/records/carriers',
+    );
+    return answer.items;
+  }
+
+  /**
+   * Sets or clears an organisation's default SMDG carrier code (CB-68).
+   * @param id the organisation's id
+   * @param carrierCode the SMDG code, or null to clear
+   * @return the updated organisation
+   */
+  setCarrierCode(
+    id: string,
+    carrierCode: string | null,
+  ): Promise<Organisation> {
+    return this.api.patch<Organisation>(
+      `/organisations/${encodeURIComponent(id)}`,
+      {carrierCode},
+    );
   }
 
   /**
