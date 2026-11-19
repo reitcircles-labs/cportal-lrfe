@@ -1,12 +1,15 @@
 import {expect} from 'chai';
 
 import {
+  DEFAULT_MAX_SPLIT_CHILDREN,
   MODULES,
   MODULES_SETTING,
+  SPLIT_MAX_SETTING,
   TITLE_COMMANDS,
   TitleRefusal,
   allowedCommands,
   applyTitleCommand,
+  maxSplitFromSettings,
   modulesFromSettings,
 } from '../src/title/index.js';
 
@@ -497,6 +500,19 @@ describe('title modules (CB-38)', () => {
       expect(() => read('amendment,split')).to.throw(
         /turns on amendment, which needs negotiable/,
       );
+    });
+
+    it('reads the maximum B/Ls per split (LRFE_BL_SPLIT_MAX, default 10) and rejects invalid values (CB-73)', () => {
+      expect(DEFAULT_MAX_SPLIT_CHILDREN).to.equal(10);
+      expect(SPLIT_MAX_SETTING).to.equal('LRFE_BL_SPLIT_MAX');
+      expect(maxSplitFromSettings({})).to.equal(10);
+      expect(maxSplitFromSettings({[SPLIT_MAX_SETTING]: ' 6 '})).to.equal(6);
+      for (const bad of ['1', '0', '101', 'abc', '2.5']) {
+        expect(
+          () => maxSplitFromSettings({[SPLIT_MAX_SETTING]: bad}),
+          bad,
+        ).to.throw(/LRFE_BL_SPLIT_MAX/);
+      }
     });
   });
 });

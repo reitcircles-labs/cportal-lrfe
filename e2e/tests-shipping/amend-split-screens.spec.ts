@@ -31,6 +31,7 @@ import {
   type SignedIn,
 } from '../support/shipping';
 import {
+  CONTAINER_A,
   CONTAINER_B,
   OTHER_PORT,
   PARENT_PORT,
@@ -378,5 +379,103 @@ test.describe(
       await dismissToasts(page);
       await evidence(page, TICKET, 'The shipper is told it was split');
     });
+
+    test(
+      'carrier sets the split count flexibly, shrinks dropping the last part, and splits into 3 once cargo adds up (CB-73)',
+      {tag: '@CB-73'},
+      async ({page}) => {
+        const flex = await committedBl(
+          `CB73${unique().toUpperCase()}`.slice(0, 16),
+        );
+        const issued = await api.post(`/api/records/${flex.id}/title/issue`, {
+          headers: carrier.clerk.headers,
+          data: {},
+        });
+        expect(issued.status()).toBe(200);
+        const requested = await api.post(
+          `/api/records/${flex.id}/title/surrender-for-amendment`,
+          {headers: shipper.clerk.headers, data: {}},
+        );
+        expect(requested.status()).toBe(200);
+
+        await page.setViewportSize({width: 1440, height: 1100});
+        await signInOnScreen(page, carrier.clerk.email, INVITED_PASSWORD);
+        await page
+          .getByRole('link', {name: `Open ${flex.label}`, exact: true})
+          .click();
+        await expect(
+          page.getByRole('heading', {name: flex.label}),
+        ).toBeVisible();
+        await page.getByRole('button', {name: 'Split', exact: true}).click();
+
+        const panel = page.getByRole('region', {name: 'Split'});
+        const count = panel.getByLabel('Number of new B/Ls');
+        await expect(count).toHaveValue('2');
+        await expect(
+          panel.getByRole('button', {name: 'Remove last B/L'}),
+        ).toBeDisabled();
+
+        // Raise output B/L count directly to 4, fill B/L D, then shrink to 3 (drops D and its entries)
+        await count.fill('4');
+        await count.press('Tab');
+        await expect(panel.getByLabel('Number of B/L D')).toBeVisible();
+        await panel.getByLabel(`B/L D packages of ${CONTAINER_B}`).fill('50');
+        await expect(
+          panel.getByRole('button', {name: 'Split into 4 B/Ls'}),
+        ).toBeVisible();
+
+        await count.fill('3');
+        await count.press('Tab');
+        await expect(panel.getByLabel('Number of B/L D')).toHaveCount(0);
+        await expect(panel.getByLabel('Number of B/L C')).toBeVisible();
+
+        // Clearing or typing an out-of-range value preserves parts / snaps back
+        await count.fill('');
+        await count.press('Tab');
+        await expect(count).toHaveValue('3');
+        await expect(panel.getByLabel('Number of B/L C')).toBeVisible();
+
+        // Divide cargo across 3 B/Ls; button stays disabled until totals match
+        await panel.getByLabel(`B/L A packages of ${CONTAINER_B}`).fill('0');
+        await panel.getByLabel(`B/L A weight of ${CONTAINER_B}`).fill('0');
+        await panel.getByLabel(`B/L B packages of ${CONTAINER_B}`).fill('200');
+        await panel.getByLabel(`B/L B weight of ${CONTAINER_B}`).fill('6000');
+        await panel.getByLabel(`B/L A packages of ${CONTAINER_A}`).fill('200');
+        await panel.getByLabel(`B/L A weight of ${CONTAINER_A}`).fill('6000');
+        await panel.getByLabel(`B/L C packages of ${CONTAINER_A}`).fill('199');
+        await panel.getByLabel(`B/L C weight of ${CONTAINER_A}`).fill('6000');
+        const send = panel.getByRole('button', {name: 'Split into 3 B/Ls'});
+        await expect(send).toBeDisabled();
+        await expect(panel.getByRole('list', {name: 'Problems'})).toContainText(
+          `${CONTAINER_A}: the parts hold 399 packages; the B/L holds 400.`,
+        );
+
+        await panel.getByLabel(`B/L C packages of ${CONTAINER_A}`).fill('200');
+        await expect(panel.getByRole('list', {name: 'Problems'})).toHaveCount(
+          0,
+        );
+        await expect(send).toBeEnabled();
+        await dismissToasts(page);
+        await evidence(
+          page,
+          'CB-73',
+          'Flexible 3-way split with count control and cargo totals',
+        );
+
+        await send.click();
+        await page
+          .getByRole('alertdialog')
+          .getByRole('button', {name: 'Split', exact: true})
+          .click();
+        await expect(page.getByText('B/L split into 3 new B/Ls')).toBeVisible();
+        await expect(fact(page, 'State')).toHaveText('Split');
+        const replaced = fact(page, 'Replaced by');
+        for (const suffix of ['A', 'B', 'C']) {
+          await expect(
+            replaced.getByRole('link', {name: `${flex.recordNo}-${suffix}`}),
+          ).toBeVisible();
+        }
+      },
+    );
   },
 );

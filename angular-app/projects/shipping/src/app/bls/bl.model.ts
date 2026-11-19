@@ -101,6 +101,8 @@ export interface BlTitleView {
   /** The commands the user may run now; CB-44 offers the issue, CB-45..46 the others. */
   allowedCommands: string[];
   roles: PartyRole[];
+  /** Configured maximum number of new B/Ls per split (CB-73, default 10). */
+  maxSplitChildren?: number;
   chain: ChainEntry[];
   /** The names of the organisations the title and its chain name, by id; some may be missing. */
   organisationNames: Record<string, string>;

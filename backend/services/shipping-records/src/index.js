@@ -14,7 +14,10 @@ import {
   startService,
 } from '@lrfe/common';
 import {formatsFromSettings} from '@lrfe/domain-shipping/bill-of-lading';
-import {modulesFromSettings} from '@lrfe/domain-shipping/title';
+import {
+  maxSplitFromSettings,
+  modulesFromSettings,
+} from '@lrfe/domain-shipping/title';
 import {buildApp} from './app.js';
 import {
   DEFAULT_PORT_LIST_FILE,
@@ -33,6 +36,8 @@ const formats = formatsFromSettings(process.env);
 // the B/L title modules on in this install (LRFE_BL_MODULES): an unknown name or a module without
 // the one it needs stops the start here
 const modules = modulesFromSettings(process.env);
+// maximum new B/Ls per split (LRFE_BL_SPLIT_MAX, default 10, CB-73)
+const maxSplitChildren = maxSplitFromSettings(process.env);
 
 const checks = [];
 let repo;
@@ -102,6 +107,7 @@ const titles = new TitleService({
   audit,
   organisations,
   ports,
+  maxSplitChildren,
 });
 
 const app = await buildApp({

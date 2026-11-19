@@ -6,12 +6,15 @@ import {strict as assert} from 'node:assert';
 import {describe, it} from 'node:test';
 
 import {
+  DEFAULT_MAX_SPLIT_PARTS,
   addPart,
   cargoRows,
   firstParts,
   partLetter,
   partSummary,
+  removeLastPart,
   rowAssigned,
+  setPartCount,
   splitConfirmation,
   splitDone,
   splitLabel,
@@ -109,8 +112,41 @@ describe("the parent's cargo", () => {
 });
 
 describe('the parts', () => {
-  it('lettered A, B, C…', () => {
-    assert.deepEqual([0, 1, 2, 25].map(partLetter), ['A', 'B', 'C', 'Z']);
+  it('lettered A..Z, then AA, AB…', () => {
+    assert.deepEqual([0, 1, 2, 25, 26, 27].map(partLetter), [
+      'A',
+      'B',
+      'C',
+      'Z',
+      'AA',
+      'AB',
+    ]);
+  });
+
+  it('sets the output count flexibly (min 2, default max 10, configurable), dropping the last parts on shrink (CB-73)', () => {
+    assert.equal(DEFAULT_MAX_SPLIT_PARTS, 10);
+    const rows = cargoRows(parent());
+    const two = firstParts(rows, 'OCEAN-1001');
+    const four = setPartCount(two, 4, rows, 'OCEAN-1001', 10);
+    assert.deepEqual(
+      four.map(p => p.reference),
+      ['OCEAN-1001-A', 'OCEAN-1001-B', 'OCEAN-1001-C', 'OCEAN-1001-D'],
+    );
+    // Custom maxParts respected; adding past max stops at max
+    const capped = setPartCount(four, 8, rows, 'OCEAN-1001', 5);
+    assert.equal(capped.length, 5);
+    assert.equal(addPart(capped, rows, 'OCEAN-1001', 5).length, 5);
+
+    // Shrinking drops the last part(s) with all their entries
+    four[2].shares[0] = {packages: 50, weight: 1500};
+    four[3].shares[1] = {packages: 20, weight: 600};
+    const shrunk = setPartCount(four, 2, rows, 'OCEAN-1001', 10);
+    assert.deepEqual(
+      shrunk.map(p => p.reference),
+      ['OCEAN-1001-A', 'OCEAN-1001-B'],
+    );
+    assert.equal(removeLastPart(four).length, 3);
+    assert.equal(removeLastPart(two).length, 2);
   });
 
   it('two to start: A with all the cargo, B with none, numbered after the parent', () => {
@@ -251,6 +287,22 @@ describe('what must hold before the split is sent', () => {
     assert.ok(
       splitProblems(rows, fraction, 'OCEAN-1001').includes(
         'B/L B: packages and weights are numbers, zero or more; packages are whole.',
+      ),
+    );
+  });
+
+  it('rejects exceeding the configured maximum number of B/Ls (CB-73)', () => {
+    const rows = cargoRows(parent());
+    const four = setPartCount(
+      firstParts(rows, 'OCEAN-1001'),
+      4,
+      rows,
+      'OCEAN-1001',
+      10,
+    );
+    assert.ok(
+      splitProblems(rows, four, 'OCEAN-1001', 3).includes(
+        'Split into at most 3 B/Ls.',
       ),
     );
   });

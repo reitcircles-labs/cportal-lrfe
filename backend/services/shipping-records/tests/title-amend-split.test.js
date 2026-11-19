@@ -1229,6 +1229,47 @@ for (const store of stores()) {
           );
         });
 
+        it('into more than maxSplitChildren is refused 400 too-many-children, and splitting into 3 succeeds (CB-73)', async () => {
+          const id = await heldForAmendment(ctx, nextReference('SPLIT-MAX'));
+          const viewRes = await ctx.app.inject({
+            method: 'GET',
+            url: `/records/${id}/title`,
+            headers: ctx.as(staffOf(CARRIER)),
+          });
+          expect(viewRes.json().maxSplitChildren).to.equal(10);
+
+          ctx.titles.maxSplitChildren = 2;
+          const three = [
+            blWithCargo(nextReference('M1'), {
+              cargo: [{container: CONTAINER_A, packages: 200, weight: 6000}],
+            }),
+            blWithCargo(nextReference('M2'), {
+              cargo: [{container: CONTAINER_A, packages: 200, weight: 6000}],
+            }),
+            blWithCargo(nextReference('M3'), {
+              cargo: [{container: CONTAINER_B, packages: 200, weight: 6000}],
+            }),
+          ];
+          await expectRefused(
+            ctx,
+            id,
+            () => command(ctx, id, 'split', staffOf(CARRIER), splitBody(three)),
+            {status: 400, code: 'too-many-children'},
+          );
+
+          // With maxSplitChildren at 3, the 3-way split succeeds
+          ctx.titles.maxSplitChildren = 3;
+          const ok = await command(
+            ctx,
+            id,
+            'split',
+            staffOf(CARRIER),
+            splitBody(three),
+          );
+          expect(ok.statusCode, ok.body).to.equal(200);
+          expect(ok.json().children).to.have.length(3);
+        });
+
         it('with missing, empty, non-list or incomplete children is refused 400, nothing recorded', async () => {
           const id = await heldForAmendment(ctx, nextReference('SPLIT-BODY'));
           for (const body of [

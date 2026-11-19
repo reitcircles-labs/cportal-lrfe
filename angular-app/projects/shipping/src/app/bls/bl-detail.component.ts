@@ -82,6 +82,7 @@ import {
   versionHistory,
 } from './bl-format';
 import {BL_SHARED_STYLES} from './bl-shared.styles';
+import {DEFAULT_MAX_SPLIT_PARTS} from './bl-split';
 import {BlSplitComponent} from './bl-split.component';
 import type {BlRecord, BlTitleView, PartyOrganisation} from './bl.model';
 import {LatestRequest} from './latest';
@@ -246,7 +247,7 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             <app-bl-amend [recordId]="v.recordId" [recordNo]="v.record.recordNo" [carrierCode]="v.record.carrierCode" [version]="currentVersion()" [document]="document" [holderName]="returnToName()" (amended)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
           }
           @if (changing() === 'split' && canSplit()) {
-            <app-bl-split [recordId]="v.recordId" [recordNo]="v.record.recordNo" [document]="document" [holderName]="returnToName()" (split)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
+            <app-bl-split [recordId]="v.recordId" [recordNo]="v.record.recordNo" [document]="document" [holderName]="returnToName()" [maxParts]="v.maxSplitChildren ?? defaultMaxSplitParts" (split)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
           }
         }
         @if (shown()) {
@@ -426,6 +427,8 @@ export class BlDetailComponent {
   protected readonly changing = signal<ChangePanel | null>(null);
   /** The holder's button that asks for a change. */
   protected readonly askLabel = ASK_FOR_CHANGE.label;
+  /** Default maximum number of new B/Ls per split (CB-73). */
+  protected readonly defaultMaxSplitParts = DEFAULT_MAX_SPLIT_PARTS;
 
   /** The organisations' names by id, for the parties the version is linked to. */
   private readonly names = signal<Record<string, string>>({});
