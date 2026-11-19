@@ -109,6 +109,7 @@ const titles = new TitleService({
   organisations,
   ports,
   maxSplitChildren,
+  platformCode: env('PLATFORM_CODE', 'LRFE'),
 });
 
 const paperReader = createPaperBlReader({

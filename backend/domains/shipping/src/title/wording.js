@@ -16,6 +16,9 @@ const STATE_NAMES = {
   'with-holder': 'with its holder',
   surrendered: 'surrendered to the carrier',
   'amendment-requested': 'held by the carrier for an amendment',
+  'transfer-pending': 'being transferred to another platform',
+  'transferred-out': 'held on another platform',
+  arrived: 'waiting for the receiving holder to keep or return it',
 };
 
 /** How a reason names each end state, after "This B/L is". */
@@ -53,6 +56,11 @@ const COMMAND_NAMES = {
   amend: {verb: 'amend', done: 'amended'},
   split: {verb: 'split', done: 'split'},
   'switch-to-paper': {verb: 'switch to paper', done: 'switched to paper'},
+  'transfer-out': {
+    verb: 'transfer to another platform',
+    done: 'transferred to another platform',
+  },
+  'accept-incoming': {verb: 'keep', done: 'kept'},
 };
 
 /**

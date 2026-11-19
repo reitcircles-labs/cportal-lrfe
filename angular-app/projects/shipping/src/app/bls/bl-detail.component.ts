@@ -57,8 +57,11 @@ import {
   endorseeChoices,
   endorsementLabel,
   handOverWords,
+  mayAcceptIncoming,
   mayEndorse,
+  mayRetryTransfer,
   mayTransfer,
+  mayTransferOut,
 } from './bl-endorse';
 import {
   type SettlementCommand,
@@ -73,6 +76,7 @@ import {
   changeRequestNote,
   consigneeLabel,
   draftFacts,
+  interopTitleNote,
   kindLabel,
   partyLabel,
   rolesLabel,
@@ -84,7 +88,13 @@ import {
 import {BL_SHARED_STYLES} from './bl-shared.styles';
 import {DEFAULT_MAX_SPLIT_PARTS} from './bl-split';
 import {BlSplitComponent} from './bl-split.component';
-import type {BlRecord, BlTitleView, PartyOrganisation} from './bl.model';
+import type {
+  BlRecord,
+  BlTitleView,
+  ConnectedPlatform,
+  PartyLookupResult,
+  PartyOrganisation,
+} from './bl.model';
 import {LatestRequest} from './latest';
 import {injectViewer} from './viewer';
 
@@ -170,6 +180,12 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             @if (canEndorse() && !endorsing()) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse('endorse')" #endorseOpen>Endorse to…</button>
             }
+            @if (canAcceptIncoming()) {
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="acceptIncoming()">Keep this B/L</button>
+            }
+            @if (canRetryTransfer()) {
+              <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="retryTransfer()">Retry transfer</button>
+            }
             <!-- CB-52: the holder of a blank-endorsed B/L transfers it on -->
             @if (canTransfer() && !endorsing()) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openEndorse('transfer')" #transferOpen>Transfer to…</button>
@@ -203,42 +219,90 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
           <section class="panel" [attr.aria-label]="panelWords().region" #endorsePanel>
             <div class="panel-head"><h2 tabindex="-1">{{ panelWords().heading }}</h2></div>
             <div class="panel-body stack" style="gap:12px">
-              @if (endorseeError(); as e) {
-                <div class="note danger" role="alert">{{ e }}</div>
-              } @else if (endorsees(); as list) {
-                @if (list.length > 0) {
-                  <div class="field" role="radiogroup" aria-labelledby="bl-endorsee-label" aria-describedby="bl-endorsee-hint">
-                    <span id="bl-endorsee-label" class="label">{{ panelWords().pickLabel }}</span>
-                    @for (o of list; track o.id) {
-                      <label class="choice">
-                        <input type="radio" name="bl-endorsee" [value]="o.id" [checked]="o.id === endorsee()" (change)="pickEndorsee(o.id)" />
-                        {{ o.name }}
-                      </label>
-                    }
-                    <span id="bl-endorsee-hint" class="small muted">Organisations registered on the platform.</span>
+              @if (handOver() === 'endorse' && canTransferOut() && platforms().length > 0) {
+                <div class="field" role="radiogroup" aria-label="Endorse target">
+                  <span class="label">Where</span>
+                  <div class="row" style="gap:12px">
+                    <label class="choice">
+                      <input type="radio" name="bl-endorse-target" value="local" [checked]="endorseTarget() === 'local'" (change)="pickEndorseTarget('local')" />
+                      A party on this platform
+                    </label>
+                    <label class="choice">
+                      <input type="radio" name="bl-endorse-target" value="external" [checked]="endorseTarget() === 'external'" (change)="pickEndorseTarget('external')" />
+                      A party on another platform
+                    </label>
                   </div>
-                  <!-- CB-52: by name or in blank, for an endorsement only -->
-                  @if (handOver() === 'endorse') {
-                    <div class="field" role="radiogroup" aria-labelledby="bl-endorse-mode-label">
-                      <span id="bl-endorse-mode-label" class="label">How</span>
-                      <label class="choice">
-                        <input type="radio" name="bl-endorse-mode" value="named" [checked]="endorseMode() === 'named'" (change)="pickMode('named')" />
-                        To this organisation by name
-                      </label>
-                      <label class="choice">
-                        <input type="radio" name="bl-endorse-mode" value="blank" [checked]="endorseMode() === 'blank'" (change)="pickMode('blank')" />
-                        In blank (the B/L names no holder by endorsement)
-                      </label>
+                </div>
+              }
+              @if (endorseTarget() === 'external') {
+                <div class="stack" style="gap:10px">
+                  <div class="field">
+                    <label for="bl-peer-platform">Platform</label>
+                    <select id="bl-peer-platform" class="input" [value]="peerPlatform()" (change)="pickPeerPlatform($any($event.target).value)">
+                      <option value="">Pick a platform</option>
+                      @for (p of platforms(); track p.code) {
+                        <option [value]="p.code" [selected]="p.code === peerPlatform()">{{ p.name }} ({{ p.code }})</option>
+                      }
+                    </select>
+                  </div>
+                  <div class="row" style="align-items:flex-end;gap:10px">
+                    <div class="field" style="flex:1;min-width:200px">
+                      <label for="bl-peer-party">Party code at that platform</label>
+                      <input id="bl-peer-party" class="input mono" autocomplete="off" [value]="peerPartyCode()" (input)="setPeerPartyCode($any($event.target).value)" />
+                    </div>
+                    <button type="button" class="btn btn-secondary" [disabled]="busy() || checkingPeer() || !peerPlatform() || !peerPartyCode().trim()" (click)="checkPeerReceiver()">{{ checkingPeer() ? 'Checking…' : 'Check receiver' }}</button>
+                  </div>
+                  @if (peerLookupError(); as lookupError) {
+                    <div class="note danger" role="alert">{{ lookupError }}</div>
+                  }
+                  @if (peerLookup(); as verified) {
+                    <div class="note info" role="status">
+                      <strong>{{ verified.partyName }}</strong> — confirmed by {{ verified.platformName }}. The other platform and receiver will see this B/L and its full history.
                     </div>
                   }
+                  <div class="row" style="gap:8px">
+                    <button type="button" class="btn btn-primary" [disabled]="busy() || !peerLookup()" (click)="sendExternal()">Send to platform</button>
+                    <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="cancelEndorse()">Cancel</button>
+                  </div>
+                </div>
+              } @else {
+                @if (endorseeError(); as e) {
+                  <div class="note danger" role="alert">{{ e }}</div>
+                } @else if (endorsees(); as list) {
+                  @if (list.length > 0) {
+                    <div class="field" role="radiogroup" aria-labelledby="bl-endorsee-label" aria-describedby="bl-endorsee-hint">
+                      <span id="bl-endorsee-label" class="label">{{ panelWords().pickLabel }}</span>
+                      @for (o of list; track o.id) {
+                        <label class="choice">
+                          <input type="radio" name="bl-endorsee" [value]="o.id" [checked]="o.id === endorsee()" (change)="pickEndorsee(o.id)" />
+                          {{ o.name }}
+                        </label>
+                      }
+                      <span id="bl-endorsee-hint" class="small muted">Organisations registered on the platform.</span>
+                    </div>
+                    <!-- CB-52: by name or in blank, for an endorsement only -->
+                    @if (handOver() === 'endorse') {
+                      <div class="field" role="radiogroup" aria-labelledby="bl-endorse-mode-label">
+                        <span id="bl-endorse-mode-label" class="label">How</span>
+                        <label class="choice">
+                          <input type="radio" name="bl-endorse-mode" value="named" [checked]="endorseMode() === 'named'" (change)="pickMode('named')" />
+                          To this organisation by name
+                        </label>
+                        <label class="choice">
+                          <input type="radio" name="bl-endorse-mode" value="blank" [checked]="endorseMode() === 'blank'" (change)="pickMode('blank')" />
+                          In blank (the B/L names no holder by endorsement)
+                        </label>
+                      </div>
+                    }
+                  }
                 }
+                <!-- present from the start, filled as the panel changes, so that it is read out -->
+                <p [class]="endorseStatusClass()" role="status" aria-live="polite" style="margin:0">{{ endorseStatusText() }}</p>
+                <div class="row" style="gap:8px">
+                  <button type="button" class="btn btn-primary" [disabled]="busy() || endorsee() === ''" (click)="endorse()">{{ panelWords().send }}</button>
+                  <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="cancelEndorse()">Cancel</button>
+                </div>
               }
-              <!-- present from the start, filled as the panel changes, so that it is read out -->
-              <p [class]="endorseStatusClass()" role="status" aria-live="polite" style="margin:0">{{ endorseStatusText() }}</p>
-              <div class="row" style="gap:8px">
-                <button type="button" class="btn btn-primary" [disabled]="busy() || endorsee() === ''" (click)="endorse()">{{ panelWords().send }}</button>
-                <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="cancelEndorse()">Cancel</button>
-              </div>
             </div>
           </section>
         }
@@ -487,6 +551,26 @@ export class BlDetailComponent {
   protected readonly canEndorse = computed(() =>
     mayEndorse(this.view()?.allowedCommands ?? []),
   );
+  protected readonly canTransferOut = computed(() =>
+    mayTransferOut(this.view()?.allowedCommands ?? []),
+  );
+  protected readonly canAcceptIncoming = computed(() =>
+    mayAcceptIncoming(this.view()?.allowedCommands ?? []),
+  );
+  protected readonly canRetryTransfer = computed(() =>
+    mayRetryTransfer(
+      this.view()?.title?.state,
+      this.view()?.roles ?? [],
+      this.auth.perms(),
+    ),
+  );
+  protected readonly platforms = signal<ConnectedPlatform[]>([]);
+  protected readonly endorseTarget = signal<'local' | 'external'>('local');
+  protected readonly peerPlatform = signal('');
+  protected readonly peerPartyCode = signal('');
+  protected readonly peerLookup = signal<PartyLookupResult | null>(null);
+  protected readonly peerLookupError = signal<string | null>(null);
+  protected readonly checkingPeer = signal(false);
   /** The name of the organisation picked, '' for none. */
   protected readonly endorseeName = computed(() => {
     const picked = this.endorsees()?.find(o => o.id === this.endorsee());
@@ -630,6 +714,14 @@ export class BlDetailComponent {
       return 'Archived: this draft is closed and no longer appears in the B/L list.';
     }
     const state = v?.title?.state ?? null;
+    const platformNames: Record<string, string> = {};
+    for (const platform of this.platforms()) {
+      platformNames[platform.code] = platform.name;
+    }
+    const interop = interopTitleNote(v?.title, platformNames);
+    if (interop !== '') {
+      return interop;
+    }
     const ended = titleNote(state) || closeNote(state);
     if (ended !== '' || v === null) {
       return ended;
@@ -981,11 +1073,16 @@ export class BlDetailComponent {
    */
   protected async openEndorse(action: HandOver): Promise<void> {
     this.handOver.set(action);
+    this.endorseTarget.set('local');
+    this.peerPlatform.set('');
+    this.peerPartyCode.set('');
+    this.peerLookup.set(null);
+    this.peerLookupError.set(null);
     this.endorseMode.set('named');
     this.endorsing.set(true);
     this.endorsee.set('');
     this.actionError.set(null);
-    await this.loadEndorsees();
+    await Promise.all([this.loadEndorsees(), this.loadPlatforms()]);
     this.focusAfterRender(() => {
       const panel = this.endorsePanel()?.nativeElement;
       const first = panel?.querySelector<HTMLElement>('input[type=radio]');
@@ -1064,9 +1161,139 @@ export class BlDetailComponent {
   private closeEndorse(): void {
     this.endorsing.set(false);
     this.endorsee.set('');
+    this.endorseTarget.set('local');
+    this.peerPlatform.set('');
+    this.peerPartyCode.set('');
+    this.peerLookup.set(null);
+    this.peerLookupError.set(null);
     this.endorseMode.set('named');
     // an answer still on its way is no longer shown
     this.latestEndorsees.begin();
+  }
+
+  /**
+   * Loads active connected eBL platforms for cross-platform endorsement (CB-55).
+   * @return when loaded
+   */
+  private async loadPlatforms(): Promise<void> {
+    try {
+      this.platforms.set(await this.bls.platforms());
+    } catch {
+      this.platforms.set([]);
+    }
+  }
+
+  /**
+   * Switches between endorsing locally and sending to another platform (CB-55).
+   * @param target local or external
+   */
+  protected pickEndorseTarget(target: 'local' | 'external'): void {
+    this.endorseTarget.set(target);
+    this.peerLookup.set(null);
+    this.peerLookupError.set(null);
+  }
+
+  /**
+   * Selects a peer platform and clears prior receiver lookup (CB-55).
+   * @param code platform code
+   */
+  protected pickPeerPlatform(code: string): void {
+    this.peerPlatform.set(code);
+    this.peerLookup.set(null);
+    this.peerLookupError.set(null);
+  }
+
+  /**
+   * Updates the receiver party code and clears prior confirmation (CB-55).
+   * @param value typed party code
+   */
+  protected setPeerPartyCode(value: string): void {
+    this.peerPartyCode.set(value);
+    this.peerLookup.set(null);
+    this.peerLookupError.set(null);
+  }
+
+  /**
+   * Queries the peer platform for the receiver party's registered name (CB-55).
+   * @return when checked
+   */
+  protected async checkPeerReceiver(): Promise<void> {
+    const platform = this.peerPlatform().trim();
+    const partyCode = this.peerPartyCode().trim();
+    if (!platform || !partyCode) {
+      return;
+    }
+    this.checkingPeer.set(true);
+    this.peerLookup.set(null);
+    this.peerLookupError.set(null);
+    try {
+      this.peerLookup.set(await this.bls.lookupPeerParty(platform, partyCode));
+    } catch (e) {
+      this.peerLookupError.set(toApiError(e).message);
+    } finally {
+      this.checkingPeer.set(false);
+    }
+  }
+
+  /**
+   * Sends the B/L to the verified party on the selected peer platform after confirmation (CB-55).
+   * @return when completed or refused
+   */
+  protected async sendExternal(): Promise<void> {
+    const verified = this.peerLookup();
+    if (!verified) {
+      return;
+    }
+    const label = this.view()?.record.label ?? 'this B/L';
+    const confirmed = await this.confirm.ask({
+      title: `Send ${label} to ${verified.partyName} on ${verified.platformName}?`,
+      body: `${verified.platformName} and ${verified.partyName} will receive this B/L and its full chain of title. Once confirmed, this platform's copy is no longer valid.`,
+      confirmLabel: 'Send to platform',
+    });
+    if (!confirmed) {
+      return;
+    }
+    const done = await this.act('Sent to another platform', () =>
+      this.bls.transferOut(this.id(), {
+        platform: verified.platform,
+        partyCode: verified.partyCode,
+        inBlank: false,
+      }),
+    );
+    if (done) {
+      this.closeEndorse();
+      return;
+    }
+    await this.load(this.id());
+  }
+
+  /**
+   * Keeps an arrived B/L from another platform (CB-55).
+   * @return when accepted
+   */
+  protected async acceptIncoming(): Promise<void> {
+    const label = this.view()?.record.label ?? 'this B/L';
+    const confirmed = await this.confirm.ask({
+      title: `Keep ${label}?`,
+      body: 'This B/L arrived from another platform. Keeping it lets your organisation endorse or surrender it here.',
+      confirmLabel: 'Keep this B/L',
+    });
+    if (!confirmed) {
+      return;
+    }
+    await this.act('B/L kept by your organisation', () =>
+      this.bls.acceptIncoming(this.id()),
+    );
+  }
+
+  /**
+   * Retries a locked outgoing cross-platform transfer with the exact stored envelope (CB-55).
+   * @return when retried
+   */
+  protected async retryTransfer(): Promise<void> {
+    await this.act('Transfer confirmed', () =>
+      this.bls.retryTransfer(this.id()),
+    );
   }
 
   /**
@@ -1193,6 +1420,9 @@ export class BlDetailComponent {
       }
       if (record !== null && view.title === null) {
         void this.loadNames();
+      }
+      if (view.title?.externalPlatform) {
+        void this.loadPlatforms();
       }
     } catch (e) {
       if (!this.latest.isCurrent(request)) {

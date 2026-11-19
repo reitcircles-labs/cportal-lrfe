@@ -38,6 +38,9 @@ The rules live in one table, `TITLE_COMMANDS` (`src/title/table.js`); `applyTitl
 | negotiable | `with-holder` | the holder | |
 | negotiable | `surrendered` | the carrier | |
 | negotiable | `amendment-requested` | the carrier, remembering `returnTo` | |
+| negotiable | `transfer-pending` | the sender, locked until peer confirms (CB-55) | |
+| negotiable | `transferred-out` | none (inactive here, held on another platform, CB-55) | |
+| negotiable | `arrived` | the receiver, waiting for `accept-incoming` (CB-55) | |
 | negotiable | `accomplished` | none | yes |
 | negotiable | `void` | none | yes |
 | negotiable | `switched-to-paper` | none | yes |
@@ -68,6 +71,8 @@ to a name).
 | `amend` | | negotiable | `amendment-requested` | carrier | `with-holder`, holder = `returnTo` |
 | `split` | `children` (≥ 2) | negotiable | `amendment-requested` | carrier | `split`; each child: negotiable, `with-holder`, held by `returnTo`, endorsed as the parent, same carrier |
 | `switch-to-paper` | `confirmBearer?` | negotiable | `issued`, `with-holder` | holder | `switched-to-paper`, no holder |
+| `transfer-out` | `platform`, `partyCode`, `inBlank?` | negotiable | `issued`, `with-holder` | holder | `transfer-pending` (locked until peer confirms), then `transferred-out` (CB-55) |
+| `accept-incoming` | | negotiable | `arrived` | holder | `with-holder` (CB-55) |
 
 The endorsement is kept through surrender, amendment and release. The new document version of an
 amendment, and the children's documents of a split, are the service's business (CB-35, the
@@ -101,7 +106,7 @@ label, needs and commands.
 | Module | Label | Needs | Commands |
 |---|---|---|---|
 | `waybill` | Sea waybills and straight B/Ls | (always on) | `issue` of a sea waybill or straight B/L, `deliver`, `void` of a sea waybill or straight B/L |
-| `negotiable` | Negotiable B/Ls | | `issue` of a B/L to order, `endorse` to a name, `surrender`, `release`, `switch-to-paper`, `void` of a negotiable B/L |
+| `negotiable` | Negotiable B/Ls | | `issue` of a B/L to order, `endorse` to a name, `surrender`, `release`, `switch-to-paper`, `transfer-out`, `accept-incoming`, `void` of a negotiable B/L |
 | `blank-endorsement` | Blank endorsement | `negotiable` | `endorse` with `inBlank` true, `transfer` |
 | `amendment` | Amendment | `negotiable` | `surrender-for-amendment`, `amend` |
 | `split` | Split | `amendment` | `split` |
@@ -183,6 +188,11 @@ found" before any refusal that would tell the B/L's state.
 | `too-many-children` | 400 | `split` into more new B/Ls than `LRFE_BL_SPLIT_MAX` allows (CB-73, default 10) | A B/L can be split into at most 10 new B/Ls |
 | `duplicate-cargo` | 409 | `POST /records/issuance` (CB-56) with a container and seal already on an active issued B/L of the same carrier | Container … is already on an issued B/L (…) |
 | `reading-unavailable` | 503 | `POST /records/read-paper` (CB-57) when the automatic reader provider is enabled without credentials | Automatic reading is not configured on this server yet |
+| `platform-not-found` | 404 | Connected platform code is not in the directory (CB-55) | Connected platform not found |
+| `platform-suspended` | 409 | Connected platform is suspended in the directory (CB-55) | Platform … is suspended |
+| `peer-unavailable` | 502 / 503 | Peer eBL platform unreachable during party lookup (CB-55) | … is not answering. Try again later. |
+| `transfer-pending` | 502 | Outgoing PINT transfer timed out or failed; B/L stays locked for retry (CB-55) | … did not confirm the transfer; the B/L stays locked for retry. |
+| `transfer-refused` | 422 | Peer eBL platform refused the PINT envelope (`BSIG`/`BENV`); B/L unlocked (CB-55) | … refused the transfer (…) |
 | `proof-unavailable` | 503 | `GET /records/:id/title/proof` while the proof on the blockchain cannot be read | The proof on the blockchain cannot be read now: try again later. |
 | `no-number` | 400 | `GET /records/title?number=` with a blank number (CB-47, "Check a B/L by number") | Give the number of the B/L to look for |
 | `unknown-port` | 400 | a new or changed port of loading or discharge (`POST /records`, `PUT /records/:id/draft`, `amend`) is not a sea port of the port list (CB-63; `details.problems`) | This B/L is not valid: XXAAA is not a sea port of the UN/LOCODE list: pick the port of discharge from the list |
@@ -211,6 +221,8 @@ needs `bl.read`, by the carrier, a current or past holder or the consignee.
 | `surrender` | `bl.endorse` |
 | `surrender-for-amendment` | `bl.endorse` |
 | `switch-to-paper` | `bl.endorse` |
+| `transfer-out` | `bl.endorse` |
+| `accept-incoming` | `bl.endorse` |
 
 `issue-from-split` is not a command: it is the first chain entry of a B/L made by a split, written
 by the split ([chain of title](chain-of-title.md)).

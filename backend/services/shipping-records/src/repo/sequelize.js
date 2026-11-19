@@ -1,4 +1,4 @@
-import {Op, QueryTypes, UniqueConstraintError} from 'sequelize';
+import {DataTypes, Op, QueryTypes, UniqueConstraintError} from 'sequelize';
 import {ConflictError, inTransaction} from '@lrfe/common';
 import {defineModels, SCHEMA} from './models.js';
 
@@ -17,7 +17,11 @@ function plain(row) {
  * @return {object}
  */
 function entryOf(row) {
-  return {...row, at: new Date(row.at).toISOString()};
+  const {rawEntry, ...rest} = row;
+  if (rawEntry) {
+    return rawEntry;
+  }
+  return {...rest, at: new Date(rest.at).toISOString()};
 }
 
 /** The 409 for a reference the organisation already holds (unique per organisation: models.js). */
@@ -112,6 +116,29 @@ export function createSequelizeRepo(sequelize) {
       await sequelize.query(
         `CREATE INDEX IF NOT EXISTS "bl_title_entry_hash" ON "${SCHEMA}"."bl_title_entry" ("entryHash")`,
       );
+      // CB-55: add cross-platform transfer columns to bl_title if upgrading an existing install
+      const queryInterface = sequelize.getQueryInterface();
+      const titleTable = {tableName: 'bl_title', schema: SCHEMA};
+      const titleColumns = await queryInterface.describeTable(titleTable);
+      for (const column of [
+        'externalPlatform',
+        'externalParty',
+        'previousState',
+        'previousEndorsement',
+      ]) {
+        if (!titleColumns[column]) {
+          await queryInterface.addColumn(titleTable, column, {
+            type: DataTypes.STRING,
+          });
+        }
+      }
+      const entryTable = {tableName: 'bl_title_entry', schema: SCHEMA};
+      const entryColumns = await queryInterface.describeTable(entryTable);
+      if (!entryColumns.rawEntry) {
+        await queryInterface.addColumn(entryTable, 'rawEntry', {
+          type: DataTypes.JSONB,
+        });
+      }
     },
 
     /**
@@ -591,6 +618,106 @@ export function createSequelizeRepo(sequelize) {
         recordId: v.recordId,
         versionNumber: v.versionNumber,
       }));
+    },
+
+    /**
+     * Connected platforms directory & PINT transfers (CB-55).
+     * @return {!Promise<!Array<object>>}
+     */
+    async listPlatforms() {
+      const rows = await models.Platform.findAll({order: [['code', 'ASC']]});
+      return rows.map(plain);
+    },
+    /**
+     * @param {string} code
+     * @return {!Promise<?object>}
+     */
+    async getPlatform(code) {
+      return plain(await models.Platform.findByPk(code));
+    },
+    /**
+     * @param {object} platform
+     * @return {!Promise<object>}
+     */
+    async createPlatform(platform) {
+      return uniqueToConflict(
+        `Platform ${platform.code} is already registered`,
+        async () => plain(await models.Platform.create(platform)),
+      );
+    },
+    /**
+     * @param {string} code
+     * @param {object} patch
+     * @return {!Promise<?object>}
+     */
+    async updatePlatform(code, patch) {
+      const [n] = await models.Platform.update(patch, {where: {code}});
+      return n ? plain(await models.Platform.findByPk(code)) : null;
+    },
+    /**
+     * Finds a B/L record with its title by carrier code and document reference across all
+     * organisations (for incoming PINT return/conflict checks, CB-55).
+     * @param {string} carrierCode
+     * @param {string} recordNo
+     * @return {!Promise<?{record: object, title: ?object}>}
+     */
+    async findRecordByCarrierAndNo(carrierCode, recordNo) {
+      const rows = await models.Record.findAll({
+        where: {carrierCode, recordNo, status: {[Op.ne]: 'archived'}},
+      });
+      if (rows.length === 0) {
+        return null;
+      }
+      const candidates = await Promise.all(
+        rows.map(async row => {
+          const record = plain(row);
+          const title = plain(await models.Title.findByPk(record.id));
+          return {record, title};
+        }),
+      );
+      return (
+        candidates.find(
+          item =>
+            item.title &&
+            item.title.state !== 'void' &&
+            item.title.state !== 'split',
+        ) ?? candidates[0]
+      );
+    },
+    /**
+     * @param {string} envelopeId
+     * @return {!Promise<?object>}
+     */
+    async getTransferByEnvelopeId(envelopeId) {
+      return plain(await models.PintTransfer.findOne({where: {envelopeId}}));
+    },
+    /**
+     * @param {string} recordId
+     * @return {!Promise<?object>}
+     */
+    async getPendingTransfer(recordId) {
+      return plain(
+        await models.PintTransfer.findOne({
+          where: {recordId, direction: 'out', status: 'pending'},
+          order: [['createdAt', 'DESC']],
+        }),
+      );
+    },
+    /**
+     * @param {object} transfer
+     * @return {!Promise<object>}
+     */
+    async createTransfer(transfer) {
+      return plain(await models.PintTransfer.create(transfer));
+    },
+    /**
+     * @param {string} id
+     * @param {object} patch
+     * @return {!Promise<?object>}
+     */
+    async updateTransfer(id, patch) {
+      const [n] = await models.PintTransfer.update(patch, {where: {id}});
+      return n ? plain(await models.PintTransfer.findByPk(id)) : null;
     },
   };
 }

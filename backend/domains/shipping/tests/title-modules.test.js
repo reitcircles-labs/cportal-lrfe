@@ -171,6 +171,20 @@ const CASES = [
     actor: shipper,
   },
   {
+    module: 'negotiable',
+    label: 'transfer to another platform',
+    title: negotiable('issued'),
+    command: {name: 'transfer-out', platform: 'MERIDIAN', partyCode: 'BANK-01'},
+    actor: shipper,
+  },
+  {
+    module: 'negotiable',
+    label: 'accept incoming B/L',
+    title: negotiable('arrived', {holder: BANK}),
+    command: {name: 'accept-incoming'},
+    actor: bank,
+  },
+  {
     module: 'blank-endorsement',
     label: 'endorse in blank',
     title: negotiable('issued'),
@@ -428,6 +442,7 @@ describe('title modules (CB-38)', () => {
         'endorse',
         'surrender',
         'switch-to-paper',
+        'transfer-out',
       ]);
       const transfer = refusalOf(() =>
         applyTitleCommand(blankEndorsed, {name: 'transfer', to: BUYER}, bank, {

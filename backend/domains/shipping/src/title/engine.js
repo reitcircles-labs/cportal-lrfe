@@ -369,6 +369,27 @@ const EFFECTS = {
     }
     return {title: {...title, state: 'switched-to-paper', holder: null}};
   },
+
+  /**
+   * Locks the B/L while sending to a party on another platform (CB-55), keeping its holder until
+   * the receiving platform confirms.
+   *
+   * @param {!Title} title
+   * @return {{title: !Title}}
+   */
+  'transfer-out': title => ({
+    title: {...title, state: 'transfer-pending'},
+  }),
+
+  /**
+   * Accepts a B/L that arrived from another platform (CB-55), moving it to normal `with-holder`.
+   *
+   * @param {!Title} title
+   * @return {{title: !Title}}
+   */
+  'accept-incoming': title => ({
+    title: {...title, state: 'with-holder'},
+  }),
 };
 
 /**

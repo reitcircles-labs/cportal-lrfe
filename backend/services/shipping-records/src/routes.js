@@ -139,6 +139,8 @@ const titleCommandBody = {
     document: {type: 'object'},
     partyOrganisations: {type: 'object'},
     children: {type: 'array', maxItems: 100, items: titleDocument},
+    platform: {type: 'string', minLength: 1, maxLength: 50},
+    partyCode: {type: 'string', minLength: 1, maxLength: 100},
   },
 };
 
@@ -154,6 +156,8 @@ const TITLE_COMMAND_ARGUMENTS = [
   'document',
   'partyOrganisations',
   'children',
+  'platform',
+  'partyCode',
   ...CARGO_PART_ARGUMENTS,
 ];
 
@@ -581,6 +585,103 @@ export async function recordsRoutes(app, {service}) {
   // check a chain with them, offline (CB-32)
   app.get('/records/title/keys', async () => titlesOf(app).keys());
 
+  // ------------------------------------------------ DCSA PINT cross-platform interop (CB-55)
+
+  app.get('/records/platforms', {onRequest: app.authenticate}, async req => ({
+    items: await titlesOf(app).listPlatforms(
+      (req.user.perms ?? []).includes('admin.organisations'),
+    ),
+  }));
+  app.post(
+    '/records/platforms',
+    {
+      onRequest: app.requirePerm('admin.organisations'),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['code', 'name', 'baseUrl', 'jwks'],
+          properties: {
+            code: {type: 'string', minLength: 1, maxLength: 50},
+            name: {type: 'string', minLength: 1, maxLength: 200},
+            baseUrl: {type: 'string', minLength: 1, maxLength: 500},
+            jwks: {type: 'object'},
+            agreementDate: {type: 'string', maxLength: 50},
+          },
+        },
+      },
+    },
+    async (req, reply) =>
+      reply.code(201).send(await titlesOf(app).createPlatform(req.body)),
+  );
+  app.post(
+    '/records/platforms/:code/suspend',
+    {
+      onRequest: app.requirePerm('admin.organisations'),
+      schema: {
+        params: {
+          type: 'object',
+          required: ['code'],
+          properties: {code: {type: 'string', minLength: 1, maxLength: 50}},
+        },
+      },
+    },
+    async req => titlesOf(app).setPlatformStatus(req.params.code, 'Suspended'),
+  );
+  app.post(
+    '/records/platforms/:code/reactivate',
+    {
+      onRequest: app.requirePerm('admin.organisations'),
+      schema: {
+        params: {
+          type: 'object',
+          required: ['code'],
+          properties: {code: {type: 'string', minLength: 1, maxLength: 50}},
+        },
+      },
+    },
+    async req => titlesOf(app).setPlatformStatus(req.params.code, 'Active'),
+  );
+
+  app.get(
+    '/records/pint/parties',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            partyCode: {type: 'string', maxLength: 100},
+            code: {type: 'string', maxLength: 100},
+          },
+        },
+      },
+    },
+    async req =>
+      titlesOf(app).pintPartyInfo(req.query.partyCode ?? req.query.code ?? ''),
+  );
+  app.get(
+    '/records/pint/lookup-party',
+    {
+      onRequest: app.authenticate,
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['platform', 'partyCode'],
+          properties: {
+            platform: {type: 'string', minLength: 1, maxLength: 50},
+            partyCode: {type: 'string', minLength: 1, maxLength: 100},
+          },
+        },
+      },
+    },
+    async req =>
+      titlesOf(app).lookupPeerParty(req.query.platform, req.query.partyCode),
+  );
+  app.post('/records/pint/transfers', async (req, reply) => {
+    const result = await titlesOf(app).receivePintTransfer(req.body);
+    return reply.code(result.status).send(result.body);
+  });
+
   // ------------------------------------------------ the title (CB-34)
 
   // the B/Ls the session's organisation is party to (CB-42): its drafts, and the B/Ls of which it
@@ -619,6 +720,21 @@ export async function recordsRoutes(app, {service}) {
       const view = await titlesOf(app).read(req.params.id, actorOf(req), {
         withChain: true,
       });
+      return forUser(view, req);
+    },
+  );
+
+  // Retry a locked outgoing cross-platform transfer with the exact stored envelope (CB-55)
+  app.post(
+    '/records/:id/title/retry-transfer',
+    {onRequest: app.requirePerm('bl.endorse'), schema: idParams()},
+    async req => {
+      ownerOf(req);
+      const view = await titlesOf(app).retryTransfer(
+        req.params.id,
+        actorOf(req),
+        {withChain: true},
+      );
       return forUser(view, req);
     },
   );

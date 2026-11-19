@@ -6,6 +6,7 @@ import {describe, it} from 'node:test';
 import {
   carrierOf,
   chainRows,
+  interopTitleNote,
   kindLabel,
   listPortLabel,
   listReceiverLabel,
@@ -440,6 +441,58 @@ describe('list columns: ports, shipper and receiver (CB-72)', () => {
     assert.equal(
       listShipperLabel({...item, shipper: null, shipperName: null}, ME, names),
       '—',
+    );
+  });
+});
+
+describe('cross-platform transfer formatting (CB-55)', () => {
+  it('formats transfer-pending, transferred-out, and arrived notes with platform names', () => {
+    const platforms = {MERIDIAN: 'Meridian eBL'};
+    assert.match(
+      interopTitleNote(
+        {
+          kind: 'negotiable',
+          state: 'transfer-pending',
+          carrier: 'c1',
+          holder: 'h1',
+          endorsement: 'named',
+          consignee: null,
+          externalPlatform: 'MERIDIAN',
+        },
+        platforms,
+      ),
+      /Sending to Meridian eBL/,
+    );
+    assert.match(
+      interopTitleNote(
+        {
+          kind: 'negotiable',
+          state: 'transferred-out',
+          carrier: 'c1',
+          holder: null,
+          endorsement: 'named',
+          consignee: null,
+          externalPlatform: 'MERIDIAN',
+          externalParty: 'BANK-01',
+        },
+        platforms,
+      ),
+      /Held by BANK-01 on Meridian eBL\. This platform's copy is no longer valid/,
+    );
+    assert.match(
+      interopTitleNote(
+        {
+          kind: 'negotiable',
+          state: 'arrived',
+          carrier: 'c1',
+          holder: 'h1',
+          endorsement: 'named',
+          consignee: null,
+          externalPlatform: 'MERIDIAN',
+        },
+        platforms,
+      ),
+      /Arrived from Meridian eBL/,
     );
   });
 });

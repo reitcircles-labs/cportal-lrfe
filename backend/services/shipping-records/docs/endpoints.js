@@ -100,6 +100,55 @@ export const ENDPOINTS = {
         "`{ keys: [{ kty: 'EC', crv: 'P-256', x, y, kid, alg: 'ES256', use: 'sig' }] }`: a JWK set of every version of the platform's signing key, to check the signature of each chain-of-title entry (its `kid` picks the key), also offline. 503 while the platform signature is not set up.",
       auth: 'public',
     },
+    'GET /records/platforms': {
+      tag: 'Records',
+      summary: 'List connected eBL platforms (CB-55)',
+      description:
+        '`{ items }` of registered peer eBL platforms; administrators see all statuses, trade users see active platforms only.',
+    },
+    'POST /records/platforms': {
+      tag: 'Records',
+      status: 201,
+      summary: 'Register a connected eBL platform (CB-55)',
+      description:
+        '`{ code, name, baseUrl, jwks, agreementDate? }`. Adds a peer platform with its public signing keys (admin.organisations).',
+    },
+    'POST /records/platforms/{code}/suspend': {
+      tag: 'Records',
+      summary: 'Suspend a connected eBL platform (CB-55)',
+      description: 'Marks a connected platform Suspended.',
+    },
+    'POST /records/platforms/{code}/reactivate': {
+      tag: 'Records',
+      summary: 'Reactivate a connected eBL platform (CB-55)',
+      description: 'Marks a connected platform Active again.',
+    },
+    'GET /records/pint/parties': {
+      tag: 'Records',
+      auth: 'public',
+      summary: 'DCSA PINT incoming party lookup (CB-55)',
+      description:
+        '`?partyCode=`: returns `{ partyCode, partyName }` for an active admitted non-operator organisation, or 404.',
+    },
+    'GET /records/pint/lookup-party': {
+      tag: 'Records',
+      summary: 'Check a receiver party on a connected peer platform (CB-55)',
+      description:
+        '`?platform=&partyCode=`: queries the active peer platform and returns `{ platform, platformName, partyCode, partyName }`.',
+    },
+    'POST /records/pint/transfers': {
+      tag: 'Records',
+      auth: 'public',
+      summary: 'Receive a signed DCSA PINT B/L transfer envelope (CB-55)',
+      description:
+        'Verifies sender registration, all chain signatures, prior local entries byte-for-byte, document checksum, and active receiver; answers `RECE`, `DUPE`, `BSIG`, or `BENV`.',
+    },
+    'POST /records/{id}/title/retry-transfer': {
+      tag: 'Records',
+      summary: 'Retry a locked outgoing cross-platform transfer (CB-55)',
+      description:
+        'Resends the identical stored PINT envelope while the B/L is in `transfer-pending`.',
+    },
     'GET /records/title': {
       tag: 'Records',
       summary: 'List the B/Ls your organisation is party to',

@@ -11,8 +11,11 @@ import {
   endorseeChoices,
   endorsementLabel,
   handOverWords,
+  mayAcceptIncoming,
   mayEndorse,
+  mayRetryTransfer,
   mayTransfer,
+  mayTransferOut,
 } from './bl-endorse.ts';
 import type {PartyOrganisation} from './bl.model.ts';
 
@@ -220,6 +223,29 @@ describe('what the panel announces (review of CB-45: status notes are read out)'
     assert.match(
       endorseStatus(choices, 'Meridian Trade Bank', 'blank'),
       /no longer names a holder by endorsement/,
+    );
+  });
+
+  it('offers cross-platform transfer, incoming acceptance, and holder-only retry (CB-55)', () => {
+    assert.equal(mayTransferOut(['endorse', 'transfer-out']), true);
+    assert.equal(mayTransferOut(['endorse']), false);
+    assert.equal(mayAcceptIncoming(['accept-incoming']), true);
+    assert.equal(mayAcceptIncoming(['endorse']), false);
+    assert.equal(
+      mayRetryTransfer('transfer-pending', ['holder'], ['bl.endorse']),
+      true,
+    );
+    assert.equal(
+      mayRetryTransfer('transfer-pending', ['carrier'], ['bl.issue']),
+      false,
+    );
+    assert.equal(
+      mayRetryTransfer('transfer-pending', ['holder'], ['bl.read']),
+      false,
+    );
+    assert.equal(
+      mayRetryTransfer('with-holder', ['holder'], ['bl.endorse']),
+      false,
     );
   });
 });

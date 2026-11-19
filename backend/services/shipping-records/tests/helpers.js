@@ -107,7 +107,7 @@ async function openPostgres() {
   const repo = createSequelizeRepo(sequelize);
   await repo.sync();
   await sequelize.query(
-    `TRUNCATE "${SCHEMA}"."bl_title", "${SCHEMA}"."bl_version", "${SCHEMA}"."bill_of_lading" CASCADE`,
+    `TRUNCATE "${SCHEMA}"."bl_pint_transfer", "${SCHEMA}"."bl_platform", "${SCHEMA}"."bl_title_entry", "${SCHEMA}"."bl_title", "${SCHEMA}"."bl_version", "${SCHEMA}"."bill_of_lading" CASCADE`,
   );
   return {
     repo,

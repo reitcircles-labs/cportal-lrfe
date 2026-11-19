@@ -28,6 +28,10 @@ export interface TitleSummary {
   consignee: string | null;
   /** While the carrier holds the B/L for a change, the holder it goes back to (CB-50). */
   returnTo?: string | null;
+  /** External eBL platform code when transferred out or arrived (CB-55). */
+  externalPlatform?: string | null;
+  /** Receiver party code on the external platform when transferred out (CB-55). */
+  externalParty?: string | null;
   /** The version of the B/L its title stands for: the one issued, then each amendment's. */
   issuedVersion?: number;
 }
@@ -164,4 +168,23 @@ export interface PartyOrganisation {
   id: string;
   code: string;
   name: string;
+}
+
+/** A connected eBL platform in the directory (CB-55). */
+export interface ConnectedPlatform {
+  code: string;
+  name: string;
+  baseUrl: string;
+  jwks: {keys: unknown[]};
+  agreementDate?: string | null;
+  status: 'Active' | 'Suspended';
+  createdAt?: string;
+}
+
+/** Result of looking up a receiver party on a connected peer platform (CB-55). */
+export interface PartyLookupResult {
+  platform: string;
+  platformName: string;
+  partyCode: string;
+  partyName: string;
 }

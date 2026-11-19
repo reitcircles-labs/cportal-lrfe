@@ -124,6 +124,11 @@ export function defineModels(sequelize) {
       consignee: text(),
       // while the carrier holds the B/L for an amendment, the holder it goes back to
       returnTo: text(),
+      // cross-platform transfer metadata (CB-55)
+      externalPlatform: text(),
+      externalParty: text(),
+      previousState: text(),
+      previousEndorsement: text(),
       // the committed version issued, and its billOfLadingHash
       issuedVersion: {type: DataTypes.INTEGER, allowNull: false},
       documentHash: {type: DataTypes.STRING(64), allowNull: false},
@@ -166,9 +171,54 @@ export function defineModels(sequelize) {
       // the platform's key that signed it, and its compact JWS over the same content
       kid: {type: DataTypes.STRING, allowNull: false},
       signature: {type: DataTypes.TEXT, allowNull: false},
+      // Verbatim signed entry from a peer platform (CB-55), preserving its original recordId/hash
+      rawEntry: {type: DataTypes.JSONB},
     },
     tableOptions(),
   );
 
-  return {Record, Version, Title, TitleEntry};
+  // Connected eBL platforms directory (CB-55, DCSA PINT).
+  const Platform = sequelize.define(
+    'bl_platform',
+    {
+      code: {type: DataTypes.STRING(50), primaryKey: true},
+      name: {type: DataTypes.STRING, allowNull: false},
+      baseUrl: {type: DataTypes.STRING, allowNull: false},
+      jwks: {type: DataTypes.JSONB, allowNull: false},
+      agreementDate: {type: DataTypes.STRING},
+      status: {
+        type: DataTypes.ENUM('Active', 'Suspended'),
+        allowNull: false,
+        defaultValue: 'Active',
+      },
+      createdAt: {type: DataTypes.DATE, allowNull: false},
+      updatedAt: {type: DataTypes.DATE, allowNull: false},
+    },
+    tableOptions(),
+  );
+
+  // Outgoing and incoming DCSA PINT transfer envelopes (CB-55).
+  const PintTransfer = sequelize.define(
+    'bl_pint_transfer',
+    {
+      id: {type: DataTypes.UUID, primaryKey: true},
+      recordId: {type: DataTypes.UUID, allowNull: false},
+      direction: {type: DataTypes.ENUM('out', 'in'), allowNull: false},
+      envelopeId: {type: DataTypes.UUID, allowNull: false, unique: true},
+      platformCode: {type: DataTypes.STRING(50), allowNull: false},
+      partyCode: {type: DataTypes.STRING, allowNull: false},
+      status: {
+        type: DataTypes.ENUM('pending', 'accepted', 'refused'),
+        allowNull: false,
+      },
+      responseCode: text(),
+      envelope: {type: DataTypes.JSONB, allowNull: false},
+      attempts: {type: DataTypes.INTEGER, allowNull: false, defaultValue: 1},
+      createdAt: {type: DataTypes.DATE, allowNull: false},
+      updatedAt: {type: DataTypes.DATE, allowNull: false},
+    },
+    tableOptions({indexes: [{fields: ['recordId']}]}),
+  );
+
+  return {Record, Version, Title, TitleEntry, Platform, PintTransfer};
 }

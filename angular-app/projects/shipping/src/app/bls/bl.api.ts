@@ -12,6 +12,8 @@ import type {
   BlPage,
   BlRecord,
   BlTitleView,
+  ConnectedPlatform,
+  PartyLookupResult,
   PartyOrganisation,
 } from './bl.model';
 
@@ -283,5 +285,102 @@ export class BlApi {
       mimeType,
       contentBase64,
     });
+  }
+
+  /**
+   * Lists connected eBL platforms (CB-55).
+   * @return connected platforms
+   */
+  async platforms(): Promise<ConnectedPlatform[]> {
+    const answer = await this.api.get<{items: ConnectedPlatform[]}>(
+      '/records/platforms',
+    );
+    return answer.items;
+  }
+
+  /**
+   * Registers a connected eBL platform (CB-55).
+   * @param body platform code, name, baseUrl, and public JWKS
+   * @return created platform
+   */
+  createPlatform(body: {
+    code: string;
+    name: string;
+    baseUrl: string;
+    jwks: {keys: unknown[]};
+    agreementDate?: string;
+  }): Promise<ConnectedPlatform> {
+    return this.api.post<ConnectedPlatform>('/records/platforms', body);
+  }
+
+  /**
+   * Suspends or reactivates a connected eBL platform (CB-55).
+   * @param code platform code
+   * @param action suspend or reactivate
+   * @return updated platform
+   */
+  setPlatformStatus(
+    code: string,
+    action: 'suspend' | 'reactivate',
+  ): Promise<ConnectedPlatform> {
+    return this.api.post<ConnectedPlatform>(
+      `/records/platforms/${encodeURIComponent(code)}/${action}`,
+      {},
+    );
+  }
+
+  /**
+   * Checks a receiver party code on a connected peer platform (CB-55).
+   * @param platform peer platform code
+   * @param partyCode party code on that platform
+   * @return confirmed party name
+   */
+  lookupPeerParty(
+    platform: string,
+    partyCode: string,
+  ): Promise<PartyLookupResult> {
+    return this.api.get<PartyLookupResult>(
+      `/records/pint/lookup-party?platform=${encodeURIComponent(platform)}&partyCode=${encodeURIComponent(partyCode)}`,
+    );
+  }
+
+  /**
+   * Sends a B/L out to a party on another eBL platform (CB-55).
+   * @param id B/L record id
+   * @param body platform code, receiver party code, and optional inBlank
+   * @return updated title view
+   */
+  transferOut(
+    id: string,
+    body: {platform: string; partyCode: string; inBlank?: boolean},
+  ): Promise<BlTitleView> {
+    return this.api.post<BlTitleView>(
+      `/records/${encodeURIComponent(id)}/title/transfer-out`,
+      body,
+    );
+  }
+
+  /**
+   * Retries a locked outgoing cross-platform transfer (CB-55).
+   * @param id B/L record id
+   * @return updated title view
+   */
+  retryTransfer(id: string): Promise<BlTitleView> {
+    return this.api.post<BlTitleView>(
+      `/records/${encodeURIComponent(id)}/title/retry-transfer`,
+      {},
+    );
+  }
+
+  /**
+   * Keeps an arrived B/L from another platform (`arrived` -> `with-holder`, CB-55).
+   * @param id B/L record id
+   * @return updated title view
+   */
+  acceptIncoming(id: string): Promise<BlTitleView> {
+    return this.api.post<BlTitleView>(
+      `/records/${encodeURIComponent(id)}/title/accept-incoming`,
+      {},
+    );
   }
 }
