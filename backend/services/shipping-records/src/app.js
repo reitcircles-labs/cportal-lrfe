@@ -1,4 +1,5 @@
 import {createBaseApp, authPlugin} from '@lrfe/common';
+import {createPaperBlReader} from './paper-reader.js';
 import {recordsRoutes} from './routes.js';
 
 /**
@@ -7,6 +8,7 @@ import {recordsRoutes} from './routes.js';
  * @param {{
  *   service: import('./records.service.js').ShippingRecordsService,
  *   titles?: import('./title.service.js').TitleService,
+ *   paperReader?: object,
  *   jwtSecret: string,
  *   revocations?: object,
  * }} options and Fastify's own options
@@ -15,6 +17,7 @@ import {recordsRoutes} from './routes.js';
 export async function buildApp({
   service,
   titles = null,
+  paperReader = null,
   jwtSecret,
   revocations,
   ...fastifyOptions
@@ -25,6 +28,14 @@ export async function buildApp({
     ...fastifyOptions,
   });
   app.decorate('titles', titles);
+  app.decorate(
+    'paperReader',
+    paperReader ??
+      createPaperBlReader({
+        ports: service?.ports ?? null,
+        organisations: titles?.organisations ?? null,
+      }),
+  );
   await app.register(authPlugin, {secret: jwtSecret, revocations});
   await app.register(recordsRoutes, {service});
   return app;

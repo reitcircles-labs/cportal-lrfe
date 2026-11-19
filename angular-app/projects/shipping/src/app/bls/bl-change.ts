@@ -105,6 +105,8 @@ export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'reference-taken': 'The carrier already has a B/L with that reference.',
   'duplicate-cargo':
     'These containers and seals are already on an issued B/L of this carrier.',
+  'reading-unavailable':
+    'Automatic reading is not configured on this server yet.',
   'own-draft':
     'You drafted or changed this version, so another person must approve it.',
   'not-author': 'Only the person who created this draft may edit it.',

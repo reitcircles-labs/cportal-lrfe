@@ -70,6 +70,18 @@ const issuanceBody = {
   },
 };
 
+/** Paper B/L scan upload for automatic draft extraction (CB-57). */
+const readPaperBody = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['fileName', 'mimeType', 'contentBase64'],
+  properties: {
+    fileName: {type: 'string', minLength: 1, maxLength: 255},
+    mimeType: {type: 'string', minLength: 1, maxLength: 100},
+    contentBase64: {type: 'string', maxLength: 22_000_000},
+  },
+};
+
 /** A review decision reported by bpm. */
 const decisionBody = {
   type: 'object',
@@ -388,6 +400,17 @@ export async function recordsRoutes(app, {service}) {
       );
       return reply.code(201).send({record, title: null, cargoKey});
     },
+  );
+
+  // Automatic paper B/L reading (CB-57): returns extracted fields and uncertain flags without saving
+  app.post(
+    '/records/read-paper',
+    {
+      onRequest: canDraft,
+      bodyLimit: 22 * 1024 * 1024,
+      schema: {body: readPaperBody},
+    },
+    async req => app.paperReader.read(req.body),
   );
 
   app.put(

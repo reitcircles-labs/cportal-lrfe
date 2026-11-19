@@ -11,6 +11,7 @@
     "test": "mocha 'tests/**/*.test.js' --timeout 20000"
   },
   "dependencies": {
+    "@google/genai": "^2.24.0",
     "@lrfe/common": "0.1.0",
     "@lrfe/domain-shipping": "0.1.0",
     "@lrfe/record-contract": "0.1.0",

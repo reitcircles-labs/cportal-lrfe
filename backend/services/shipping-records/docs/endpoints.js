@@ -25,6 +25,13 @@ export const ENDPOINTS = {
       description:
         '`{ format, document, partyOrganisations?, issue?, comment? }`. Validates the document, port list and unique reference, and rejects duplicate active cargo (`409 duplicate-cargo`). With `issue: false` (default), commits version 1 ready for a human approver to issue. With `issue: true` (requires `bl.issue`), also issues and anchors the title atomically. Answers `{ record, title, cargoKey }`.',
     },
+    'POST /records/read-paper': {
+      tag: 'Records',
+      summary:
+        'Read a scanned paper B/L automatically into draft fields (CB-57)',
+      description:
+        '`{ fileName, mimeType, contentBase64 }` (PDF or image, up to 15 MB). Extracts draft fields, matches active organisations and ports, and flags uncertain fields for human confirmation (`{ fileName, fields, uncertain, warnings, summary }`).',
+    },
     'PUT /records/{id}/draft': {
       tag: 'Records',
       summary: "Replace the open draft's B/L, or open a new draft version",

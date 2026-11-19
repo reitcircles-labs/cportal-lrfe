@@ -2,7 +2,7 @@ import {Injectable, inject} from '@angular/core';
 import type {Port} from './bl-ports';
 import {ApiService} from '@lrfe/platform';
 import type {AmendRequest} from './bl-amend';
-import type {DraftRequest} from './bl-draft';
+import type {DraftRequest, PaperReading} from './bl-draft';
 import type {SplitRequest} from './bl-split';
 import type {Jwks, TitleProof} from './bl-check';
 import {endorseRequest, type EndorseMode} from './bl-endorse';
@@ -264,5 +264,24 @@ export class BlApi {
       `/records/${encodeURIComponent(id)}/title/split`,
       request,
     );
+  }
+
+  /**
+   * Reads a scanned paper B/L file automatically into pre-filled draft fields (CB-57).
+   * @param fileName file name
+   * @param mimeType MIME type (PDF or image)
+   * @param contentBase64 base64 file bytes
+   * @return extracted fields, uncertain flags, and summary
+   */
+  readPaper(
+    fileName: string,
+    mimeType: string,
+    contentBase64: string,
+  ): Promise<PaperReading> {
+    return this.api.post<PaperReading>('/records/read-paper', {
+      fileName,
+      mimeType,
+      contentBase64,
+    });
   }
 }

@@ -243,6 +243,70 @@ paths:
       x-access:
         allOf:
           - bl.draft
+  /records/read-paper:
+    post:
+      tags:
+        - Records
+      summary: Read a scanned paper B/L automatically into draft fields (CB-57)
+      description: >-
+        `{ fileName, mimeType, contentBase64 }` (PDF or image, up to 15 MB). Extracts draft fields, matches active organisations and ports,
+        and flags uncertain fields for human confirmation (`{ fileName, fields, uncertain, warnings, summary }`).
+
+
+        **Access:** Signed-in user with permission `bl.draft`.
+      operationId: postRecordsReadPaper
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - fileName
+                - mimeType
+                - contentBase64
+              properties:
+                fileName:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                mimeType:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                contentBase64:
+                  type: string
+                  maxLength: 22000000
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.draft
   /records/{id}/draft:
     put:
       tags:

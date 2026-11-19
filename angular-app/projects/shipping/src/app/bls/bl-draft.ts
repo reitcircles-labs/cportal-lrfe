@@ -485,3 +485,139 @@ export function problemMessages(details: unknown): string[] {
   }
   return lines;
 }
+
+/** Extracted fields returned by automatic paper B/L reading (CB-57). */
+export interface PaperReadingFields extends Partial<DraftForm> {
+  /** Extracted shipper name before organisation id resolution. */
+  shipperName?: string;
+  /** Extracted consignee name before organisation id resolution. */
+  consigneeName?: string;
+}
+
+/** Response of `POST /records/read-paper` (CB-57). */
+export interface PaperReading {
+  /** Uploaded scan file name. */
+  fileName: string;
+  /** Extracted draft fields. */
+  fields: PaperReadingFields;
+  /** Field keys requiring human review. */
+  uncertain: string[];
+  /** Human-readable warnings for unmatched or questionable values. */
+  warnings: string[];
+  /** Plain-English summary of what was read. */
+  summary: string;
+}
+
+/**
+ * Finds an active organisation id by id, code, or exact/partial name (CB-57).
+ * @param raw extracted id, code, or name
+ * @param organisations active organisations
+ * @return matched organisation id or ''
+ */
+function resolveOrganisationId(
+  raw: string | undefined,
+  organisations: readonly PartyOrganisation[],
+): string {
+  const needle = textOf(raw).toLowerCase();
+  if (!needle) {
+    return '';
+  }
+  const exact = organisations.find(
+    org =>
+      org.id.toLowerCase() === needle ||
+      org.code.toLowerCase() === needle ||
+      org.name.toLowerCase() === needle,
+  );
+  if (exact) {
+    return exact.id;
+  }
+  const partial = organisations.find(org =>
+    org.name.toLowerCase().includes(needle),
+  );
+  return partial ? partial.id : '';
+}
+
+/**
+ * Applies an automatic paper B/L reading onto a draft form (CB-57) without saving, resolving
+ * party names to known organisations and returning the set of uncertain fields to highlight.
+ * @param current existing draft form
+ * @param reading response from `POST /records/read-paper`
+ * @param organisations active organisations
+ * @return updated form and set of uncertain DraftForm keys
+ */
+export function applyPaperReading(
+  current: DraftForm,
+  reading: PaperReading,
+  organisations: readonly PartyOrganisation[],
+): {form: DraftForm; uncertainFields: Set<keyof DraftForm>} {
+  const extracted = reading.fields;
+  const toOrder =
+    extracted.toOrder !== undefined
+      ? Boolean(extracted.toOrder)
+      : current.toOrder;
+  const shipperId =
+    textOf(extracted.shipperId) ||
+    resolveOrganisationId(extracted.shipperName, organisations) ||
+    current.shipperId;
+  const consigneeId = toOrder
+    ? ''
+    : textOf(extracted.consigneeId) ||
+      resolveOrganisationId(extracted.consigneeName, organisations) ||
+      current.consigneeId;
+  const next: DraftForm = {
+    reference: textOf(extracted.reference) || current.reference,
+    carrierCode:
+      textOf(extracted.carrierCode).toUpperCase() || current.carrierCode,
+    bookingReference:
+      textOf(extracted.bookingReference) || current.bookingReference,
+    toOrder,
+    shipperId,
+    consigneeId,
+    issuerStreet: textOf(extracted.issuerStreet) || current.issuerStreet,
+    issuerCity: textOf(extracted.issuerCity) || current.issuerCity,
+    issuerCountry:
+      textOf(extracted.issuerCountry).toUpperCase() || current.issuerCountry,
+    vesselName: textOf(extracted.vesselName) || current.vesselName,
+    voyageNumber: textOf(extracted.voyageNumber) || current.voyageNumber,
+    portOfLoading:
+      textOf(extracted.portOfLoading).toUpperCase() || current.portOfLoading,
+    portOfDischarge:
+      textOf(extracted.portOfDischarge).toUpperCase() ||
+      current.portOfDischarge,
+    departureDate: textOf(extracted.departureDate) || current.departureDate,
+    arrivalDate: textOf(extracted.arrivalDate) || current.arrivalDate,
+    containerNumber:
+      textOf(extracted.containerNumber).toUpperCase() ||
+      current.containerNumber,
+    isoEquipmentCode:
+      textOf(extracted.isoEquipmentCode).toUpperCase() ||
+      current.isoEquipmentCode,
+    sealNumber: textOf(extracted.sealNumber) || current.sealNumber,
+    goods: textOf(extracted.goods) || current.goods,
+    hsCode: textOf(extracted.hsCode) || current.hsCode,
+    packages:
+      typeof extracted.packages === 'number' &&
+      Number.isFinite(extracted.packages)
+        ? extracted.packages
+        : current.packages,
+    packageDescription:
+      textOf(extracted.packageDescription) || current.packageDescription,
+    grossWeightKg:
+      typeof extracted.grossWeightKg === 'number' &&
+      Number.isFinite(extracted.grossWeightKg)
+        ? extracted.grossWeightKg
+        : current.grossWeightKg,
+    termsAndConditions:
+      textOf(extracted.termsAndConditions) || current.termsAndConditions,
+  };
+  const validKeys = new Set<keyof DraftForm>(
+    Object.keys(next) as Array<keyof DraftForm>,
+  );
+  const uncertainFields = new Set<keyof DraftForm>();
+  for (const key of reading.uncertain) {
+    if (validKeys.has(key as keyof DraftForm)) {
+      uncertainFields.add(key as keyof DraftForm);
+    }
+  }
+  return {form: next, uncertainFields};
+}
