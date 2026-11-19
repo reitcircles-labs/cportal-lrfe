@@ -103,6 +103,8 @@ export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'child-reference': 'Each new B/L needs its own reference.',
   'cargo-mismatch': "The cargo of the new B/Ls must add up to the B/L's.",
   'reference-taken': 'The carrier already has a B/L with that reference.',
+  'duplicate-cargo':
+    'These containers and seals are already on an issued B/L of this carrier.',
   'own-draft':
     'You drafted or changed this version, so another person must approve it.',
   'not-author': 'Only the person who created this draft may edit it.',

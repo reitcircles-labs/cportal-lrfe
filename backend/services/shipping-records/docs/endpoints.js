@@ -18,6 +18,13 @@ export const ENDPOINTS = {
       description:
         '`{ format, document, partyOrganisations? }`. `format` names a B/L format that is on in this install (`LRFE_BL_FORMATS`, `dcsa-3.0` by default); `document` is the B/L in that format, converted to the internal model (its status is left out). `partyOrganisations` links parties of the document to organisations (`shipper`, `notifyParties.0`). 400 with `details.problems` (every problem, `{ path, message }`) when the B/L is not valid, or for a format that is unknown or not on. 409 when your organisation already has a B/L with the same carrier code and transport document reference (another organisation may draft the same reference; neither sees the other one). 403 for a user of no organisation. Answers the record as `GET /records/{id}` does.',
     },
+    'POST /records/issuance': {
+      tag: 'Records',
+      status: 201,
+      summary: "Submit or issue a B/L from a carrier's system (CB-56)",
+      description:
+        '`{ format, document, partyOrganisations?, issue?, comment? }`. Validates the document, port list and unique reference, and rejects duplicate active cargo (`409 duplicate-cargo`). With `issue: false` (default), commits version 1 ready for a human approver to issue. With `issue: true` (requires `bl.issue`), also issues and anchors the title atomically. Answers `{ record, title, cargoKey }`.',
+    },
     'PUT /records/{id}/draft': {
       tag: 'Records',
       summary: "Replace the open draft's B/L, or open a new draft version",

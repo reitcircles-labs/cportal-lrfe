@@ -257,6 +257,33 @@ export function createMemoryRepo() {
       };
     },
     /**
+     * Active issued B/Ls of a carrier organisation and carrier code (CB-56 duplicate cargo check):
+     * excludes archived, voided, and split-closed records.
+     * @param {string} organisationId
+     * @param {string} carrierCode
+     * @return {!Promise<!Array<{record: object, version: ?object}>>}
+     */
+    async listActiveCarrierIssued(organisationId, carrierCode) {
+      const active = [];
+      for (const record of records.values()) {
+        if (
+          record.status === 'archived' ||
+          record.organisationId !== organisationId ||
+          record.carrierCode !== carrierCode ||
+          !record.currentVersion
+        ) {
+          continue;
+        }
+        const title = titles.get(record.id) ?? null;
+        if (!title || title.state === 'void' || title.state === 'split') {
+          continue;
+        }
+        const version = findVersion(record.id, record.currentVersion) ?? null;
+        active.push({record: clone(record), version: clone(version)});
+      }
+      return active;
+    },
+    /**
      * @param {string} id
      * @param {object} patch
      * @return {!Promise<?object>} the record, or null when there is none

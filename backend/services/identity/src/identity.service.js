@@ -905,6 +905,14 @@ export class IdentityService {
           reason: 'organisation suspended',
         });
       }
+      const keys = await this.repo.listOrganisationApiKeys(id);
+      for (const key of keys.filter(k => k.status === 'Active')) {
+        await this.announceRevoked({
+          sid: key.id,
+          userId: `api-key:${key.id}`,
+          reason: 'organisation suspended',
+        });
+      }
     }
     await this.log(
       'organisation',
@@ -919,6 +927,154 @@ export class IdentityService {
       actor,
     );
     return this.organisationWithCounts(updated);
+  }
+
+  // ---------------------------------------------------------------- organisation API keys (CB-56)
+
+  /** Public representation of an API key (never includes its hash or secret). */
+  publicApiKey(key) {
+    return {
+      id: key.id,
+      organisationId: key.organisationId,
+      name: key.name,
+      prefix: key.prefix,
+      perms: [...(key.perms ?? [])],
+      status: key.status,
+      createdAt: key.createdAt,
+      createdByName: key.createdByName ?? null,
+      revokedAt: key.revokedAt ?? null,
+      lastUsedAt: key.lastUsedAt ?? null,
+    };
+  }
+
+  /** Validate API key permissions: non-empty list of known non-admin permissions. */
+  validateApiKeyPerms(perms) {
+    if (perms === undefined) {
+      const defaults = ['bl.read', 'bl.draft'].filter(isKnownPerm);
+      if (defaults.length > 0) {
+        return defaults;
+      }
+      return PERMS.filter(p => !p.id.startsWith('admin.'))
+        .slice(0, 1)
+        .map(p => p.id);
+    }
+    if (!Array.isArray(perms) || perms.length === 0) {
+      throw new BadRequestError('At least one permission is required');
+    }
+    const clean = [...new Set(perms)];
+    const invalid = clean.filter(
+      p => !isKnownPerm(p) || p.startsWith('admin.'),
+    );
+    if (invalid.length > 0) {
+      throw new BadRequestError(
+        `API keys cannot hold invalid or admin permissions: ${invalid.join(', ')}`,
+      );
+    }
+    return clean;
+  }
+
+  /** Lists all API keys of an organisation (secrets and hashes omitted). */
+  async listOrganisationApiKeys(organisationId) {
+    await this.requireOrganisation(organisationId);
+    const keys = await this.repo.listOrganisationApiKeys(organisationId);
+    return keys.map(k => this.publicApiKey(k));
+  }
+
+  /** Creates an API key for an active organisation and returns its secret once. */
+  async createOrganisationApiKey(organisationId, {name, perms}, actor) {
+    const organisation = await this.requireOrganisation(organisationId);
+    if (organisation.status !== 'Active') {
+      throw new ConflictError('Suspended organisations cannot create API keys');
+    }
+    const cleanName = typeof name === 'string' ? name.trim() : '';
+    if (!cleanName || cleanName.length > 100) {
+      throw new BadRequestError(
+        'API key name must be 1 to 100 characters long',
+      );
+    }
+    const cleanPerms = this.validateApiKeyPerms(perms);
+    const secret = `lrfe_${randomToken(24)}`;
+    const prefix = secret.slice(0, 12);
+    const created = await this.repo.createOrganisationApiKey({
+      organisationId,
+      name: cleanName,
+      prefix,
+      keyHash: sha256(secret),
+      perms: cleanPerms,
+      status: 'Active',
+      createdById: actor?.id ?? null,
+      createdByName: actor?.name ?? null,
+    });
+    await this.log(
+      'organisation',
+      'API key created',
+      `${organisation.code} · ${cleanName}`,
+      `${prefix}… (${cleanPerms.join(', ')})`,
+      actor,
+    );
+    return {...this.publicApiKey(created), secret};
+  }
+
+  /** Revokes an active API key and broadcasts immediate token revocation. */
+  async revokeOrganisationApiKey(organisationId, keyId, actor) {
+    const organisation = await this.requireOrganisation(organisationId);
+    const key = await this.repo.getOrganisationApiKey(keyId);
+    if (!key || key.organisationId !== organisationId) {
+      throw new NotFoundError('API key not found');
+    }
+    if (key.status === 'Revoked') {
+      return this.publicApiKey(key);
+    }
+    const updated = await this.repo.updateOrganisationApiKey(keyId, {
+      status: 'Revoked',
+      revokedAt: this.clock(),
+      revokedById: actor?.id ?? null,
+    });
+    await this.announceRevoked({
+      sid: keyId,
+      userId: `api-key:${keyId}`,
+      reason: 'API key revoked',
+    });
+    await this.log(
+      'organisation',
+      'API key revoked',
+      `${organisation.code} · ${key.name}`,
+      `${key.prefix}…`,
+      actor,
+    );
+    return this.publicApiKey(updated);
+  }
+
+  /** Exchanges a carrier API key secret for short-lived access token claims. */
+  async exchangeApiKey(secret) {
+    const raw = typeof secret === 'string' ? secret.trim() : '';
+    if (!raw.startsWith('lrfe_')) {
+      throw new UnauthorizedError('Invalid or revoked API key');
+    }
+    const key = await this.repo.getOrganisationApiKeyByHash(sha256(raw));
+    if (!key || key.status !== 'Active') {
+      throw new UnauthorizedError('Invalid or revoked API key');
+    }
+    const organisation = await this.repo.getOrganisation(key.organisationId);
+    if (!organisation || organisation.status !== 'Active') {
+      throw new UnauthorizedError('Organisation is not active');
+    }
+    await this.repo.updateOrganisationApiKey(key.id, {
+      lastUsedAt: this.clock(),
+    });
+    return {
+      claims: {
+        typ: 'access',
+        sub: `api-key:${key.id}`,
+        name: `${key.name} (API)`,
+        email: null,
+        roles: [],
+        perms: [...(key.perms ?? [])],
+        org: organisation.id,
+        sid: key.id,
+      },
+      apiKey: this.publicApiKey(key),
+    };
   }
 
   // ---------------------------------------------------------------- users

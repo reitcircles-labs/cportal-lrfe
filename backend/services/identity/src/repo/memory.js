@@ -15,6 +15,7 @@ export function createMemoryRepo() {
   const events = [];
   const offices = new Map();
   const organisations = new Map();
+  const apiKeys = new Map();
   const settings = new Map();
   let policies = null;
   let eventSeq = 0;
@@ -213,6 +214,46 @@ export function createMemoryRepo() {
         items: all.slice(offset, offset + limit).map(clone),
         total: all.length,
       };
+    },
+
+    // organisation API keys (CB-56)
+    async listOrganisationApiKeys(organisationId) {
+      return [...apiKeys.values()]
+        .filter(k => k.organisationId === organisationId)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .map(clone);
+    },
+    async getOrganisationApiKey(id) {
+      return clone(apiKeys.get(id)) ?? null;
+    },
+    async getOrganisationApiKeyByHash(keyHash) {
+      return (
+        clone([...apiKeys.values()].find(k => k.keyHash === keyHash)) ?? null
+      );
+    },
+    async createOrganisationApiKey(data) {
+      const key = {
+        id: randomUUID(),
+        status: 'Active',
+        perms: [],
+        createdById: null,
+        createdByName: null,
+        revokedAt: null,
+        revokedById: null,
+        lastUsedAt: null,
+        createdAt: new Date(),
+        ...clone(data),
+      };
+      apiKeys.set(key.id, key);
+      return clone(key);
+    },
+    async updateOrganisationApiKey(id, patch) {
+      const key = apiKeys.get(id);
+      if (!key) {
+        return null;
+      }
+      Object.assign(key, clone(patch));
+      return clone(key);
     },
   };
 }

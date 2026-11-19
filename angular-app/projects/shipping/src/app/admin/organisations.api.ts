@@ -6,6 +6,7 @@ import {
   type InvitationForm,
   type OfficeRef,
   type Organisation,
+  type OrganisationApiKey,
   type OrganisationForm,
   type StaffMember,
 } from './onboarding';
@@ -90,5 +91,51 @@ export class OrganisationsApi {
       newOfficeFor(organisation, offices),
     );
     return created.id;
+  }
+
+  /**
+   * Lists the API keys of an organisation (secrets omitted, CB-56).
+   * @param organisationId the organisation's id
+   * @return the API keys
+   */
+  async apiKeys(organisationId: string): Promise<OrganisationApiKey[]> {
+    const answer = await this.api.get<{items: OrganisationApiKey[]}>(
+      `/organisations/${organisationId}/api-keys`,
+    );
+    return answer.items;
+  }
+
+  /**
+   * Creates an API key for an organisation (CB-56). The returned `secret` is shown once.
+   * @param organisationId the organisation's id
+   * @param name label for the key
+   * @param perms granted B/L permissions
+   * @return the created API key with its secret
+   */
+  createApiKey(
+    organisationId: string,
+    name: string,
+    perms: string[],
+  ): Promise<OrganisationApiKey> {
+    return this.api.post<OrganisationApiKey>(
+      `/organisations/${organisationId}/api-keys`,
+      {name, perms},
+    );
+  }
+
+  /**
+   * Revokes an API key immediately (CB-56).
+   * @param organisationId the organisation's id
+   * @param keyId the key's id
+   * @return the updated API key
+   */
+  revokeApiKey(
+    organisationId: string,
+    keyId: string,
+  ): Promise<OrganisationApiKey> {
+    return this.api.post<OrganisationApiKey>(
+      `/organisations/${organisationId}/api-keys/${keyId}/revoke`,
+      {},
+    );
   }
 }

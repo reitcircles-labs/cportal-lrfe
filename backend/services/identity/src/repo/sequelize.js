@@ -13,6 +13,19 @@ const OFFICE_FIELDS = [
   'status',
 ];
 const ORGANISATION_FIELDS = ['code', 'name', 'status'];
+const API_KEY_FIELDS = [
+  'organisationId',
+  'name',
+  'prefix',
+  'keyHash',
+  'perms',
+  'status',
+  'createdById',
+  'createdByName',
+  'revokedAt',
+  'revokedById',
+  'lastUsedAt',
+];
 const USER_FIELDS = [
   'name',
   'email',
@@ -263,6 +276,40 @@ export function createSequelizeRepo(sequelize) {
         offset,
       });
       return {items: rows.map(r => r.get({plain: true})), total: count};
+    },
+
+    async listOrganisationApiKeys(organisationId) {
+      return (
+        await m.OrganisationApiKey.findAll({
+          where: {organisationId},
+          order: [['createdAt', 'DESC']],
+        })
+      ).map(r => r.get({plain: true}));
+    },
+    async getOrganisationApiKey(id) {
+      return (
+        (await m.OrganisationApiKey.findByPk(id))?.get({plain: true}) ?? null
+      );
+    },
+    async getOrganisationApiKeyByHash(keyHash) {
+      return (
+        (await m.OrganisationApiKey.findOne({where: {keyHash}}))?.get({
+          plain: true,
+        }) ?? null
+      );
+    },
+    async createOrganisationApiKey(data) {
+      return (
+        await m.OrganisationApiKey.create(pick(data, API_KEY_FIELDS))
+      ).get({plain: true});
+    },
+    async updateOrganisationApiKey(id, patch) {
+      const row = await m.OrganisationApiKey.findByPk(id);
+      if (!row) {
+        return null;
+      }
+      await row.update(pick(patch, API_KEY_FIELDS));
+      return row.get({plain: true});
     },
   };
 }

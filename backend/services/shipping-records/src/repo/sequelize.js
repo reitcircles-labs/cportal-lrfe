@@ -289,6 +289,51 @@ export function createSequelizeRepo(sequelize) {
       return {items, total};
     },
     /**
+     * Active issued B/Ls of a carrier organisation and carrier code (CB-56 duplicate cargo check):
+     * excludes archived, voided, and split-closed records.
+     * @param {string} organisationId
+     * @param {string} carrierCode
+     * @return {!Promise<!Array<{record: object, version: ?object}>>}
+     */
+    async listActiveCarrierIssued(organisationId, carrierCode) {
+      const rows = await sequelize.query(
+        `SELECT r."id"
+         FROM "${SCHEMA}"."bill_of_lading" r
+         INNER JOIN "${SCHEMA}"."bl_title" t ON t."recordId" = r."id"
+         WHERE r."organisationId" = :org
+           AND r."carrierCode" = :carrierCode
+           AND r."status" <> 'archived'
+           AND r."currentVersion" IS NOT NULL
+           AND t."state" NOT IN ('void', 'split')`,
+        {
+          replacements: {org: organisationId, carrierCode},
+          type: QueryTypes.SELECT,
+        },
+      );
+      if (rows.length === 0) {
+        return [];
+      }
+      const ids = rows.map(row => row.id);
+      const records = await models.Record.findAll({where: {id: ids}});
+      const targets = records.map(row => ({
+        recordId: row.id,
+        versionNumber: row.currentVersion,
+      }));
+      if (targets.length === 0) {
+        return [];
+      }
+      const versions = await models.Version.findAll({
+        where: {[Op.or]: targets},
+      });
+      const versionByRecord = new Map(
+        versions.map(row => [row.recordId, plain(row)]),
+      );
+      return records.map(row => ({
+        record: plain(row),
+        version: versionByRecord.get(row.id) ?? null,
+      }));
+    },
+    /**
      * @param {string} id
      * @param {object} patch
      * @return {!Promise<?object>} the record, or null when there is none

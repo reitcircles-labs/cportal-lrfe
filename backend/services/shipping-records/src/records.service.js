@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {
   BadRequestError,
   ConflictError,
@@ -15,6 +15,57 @@ import {sealOf, verifyChain} from '@lrfe/record-contract/seal';
 
 /** The list's status filters: the record's own status, or a draft waiting in review. */
 export const LIST_STATUSES = Object.freeze(['draft', 'committed', 'in_review']);
+
+/**
+ * Canonical container+seal pairs on a DCSA document (CB-56 duplicate-cargo check).
+ * @param {object} document
+ * @return {!Array<{container: string, seal: string, key: string}>}
+ */
+export function cargoSealPairs(document) {
+  const equipments = Array.isArray(document?.utilizedTransportEquipments)
+    ? document.utilizedTransportEquipments
+    : [];
+  const seen = new Map();
+  for (const eq of equipments) {
+    const container =
+      typeof eq?.equipment?.equipmentReference === 'string'
+        ? eq.equipment.equipmentReference.trim()
+        : '';
+    if (!container) {
+      continue;
+    }
+    const seals = Array.isArray(eq.seals)
+      ? eq.seals
+          .map(s => (typeof s?.number === 'string' ? s.number.trim() : ''))
+          .filter(Boolean)
+      : [];
+    if (seals.length === 0) {
+      const key = `${container}:`;
+      seen.set(key, {container, seal: '', key});
+    } else {
+      for (const seal of seals) {
+        const key = `${container}:${seal}`;
+        seen.set(key, {container, seal, key});
+      }
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * Deterministic fingerprint of carrier + container + seal numbers (CB-56).
+ * @param {string} carrierCode
+ * @param {object} document
+ * @return {?string} SHA-256 hex digest, or null when the document names no containers
+ */
+export function cargoKeyOf(carrierCode, document) {
+  const pairs = cargoSealPairs(document);
+  if (pairs.length === 0) {
+    return null;
+  }
+  const canonical = `${carrierCode}|${pairs.map(p => p.key).join('|')}`;
+  return createHash('sha256').update(canonical).digest('hex');
+}
 
 /**
  * Whether a caller sees a record: a user only their organisation's (`organisationId`), a service
@@ -330,6 +381,156 @@ export class ShippingRecordsService {
       );
     });
     return this.getRecord(record.id, organisationId);
+  }
+
+  /**
+   * Validates a carrier issuance request (format, ports, reference uniqueness, and duplicate cargo)
+   * without writing anything (CB-56).
+   * @param {{format: string, document: object, partyOrganisations?: object}} body
+   * @param {string} organisationId
+   * @return {!Promise<{data: object, cargoKey: ?string}>}
+   */
+  async prepareIssuance(body, organisationId) {
+    const data = this.billOfLadingOf(body);
+    this.requirePorts(data.document, null);
+    const {carrierCode, transportDocumentReference: recordNo} = data.document;
+    if (await this.repo.findRecord({organisationId, carrierCode, recordNo})) {
+      throw new ConflictError(
+        `Your organisation already has a B/L with the reference ${recordNo} of carrier ${carrierCode}`,
+      );
+    }
+    const pairs = cargoSealPairs(data.document);
+    if (
+      pairs.length > 0 &&
+      typeof this.repo.listActiveCarrierIssued === 'function'
+    ) {
+      const wanted = new Set(pairs.map(p => p.key));
+      const existing = await this.repo.listActiveCarrierIssued(
+        organisationId,
+        carrierCode,
+      );
+      for (const {record, version} of existing) {
+        const activePairs = cargoSealPairs(version?.data?.document);
+        const clash = activePairs.find(p => wanted.has(p.key));
+        if (clash) {
+          const sealText = clash.seal ? ` with seal ${clash.seal}` : '';
+          throw new ConflictError(
+            `Container ${clash.container}${sealText} is already on an issued B/L (${record.recordNo}). To replace a document, use an amendment.`,
+            {code: 'duplicate-cargo'},
+          );
+        }
+      }
+    }
+    return {data, cargoKey: cargoKeyOf(carrierCode, data.document)};
+  }
+
+  /**
+   * Builds a committed v1 record, its sealed version, and its events in memory for atomic
+   * persistence (CB-56).
+   * @param {object} data validated and converted B/L data
+   * @param {{id: string, name?: string}} actor
+   * @param {string} organisationId
+   * @param {{comment?: string}} [options]
+   * @return {{record: object, version: object, events: !Array<{type: string, data: object}>}}
+   */
+  buildCommittedRecord(data, actor, organisationId, {comment} = {}) {
+    const {carrierCode, transportDocumentReference: recordNo} = data.document;
+    const now = this.clock();
+    const record = {
+      id: randomUUID(),
+      recordNo,
+      carrierCode,
+      label: `B/L ${recordNo} (${carrierCode})`,
+      organisationId,
+      status: 'committed',
+      currentVersion: 1,
+      draftVersion: null,
+      draftState: null,
+      createdAt: now,
+      createdById: actor.id,
+      createdByName: actor.name ?? null,
+      updatedAt: now,
+    };
+    const versionBase = {
+      id: randomUUID(),
+      recordId: record.id,
+      versionNumber: 1,
+      state: 'committed',
+      revision: 1,
+      data,
+      documentHash: billOfLadingHash(data),
+      reviewComment: comment || null,
+      createdAt: now,
+      createdById: actor.id,
+      createdByName: actor.name ?? null,
+      submittedAt: now,
+      submittedById: actor.id,
+      submittedByName: actor.name ?? null,
+      approvedById: actor.id,
+      approvedByName: actor.name ?? null,
+      committedAt: now,
+      previousSeal: null,
+      updatedAt: now,
+      changes: [
+        this.entry(actor, {action: 'create'}),
+        this.entry(actor, {
+          action: 'commit',
+          via: 'carrier-api',
+          ...(comment ? {comment} : {}),
+        }),
+      ],
+    };
+    const version = {...versionBase, seal: sealOf(record, versionBase)};
+    const events = [
+      {type: 'records.record.created', data: eventDataOf(record, version)},
+      {
+        type: 'records.record.committed',
+        data: {
+          recordId: record.id,
+          recordNo: record.recordNo,
+          versionNumber: 1,
+          seal: version.seal,
+          previousSeal: null,
+          submittedBy: {id: actor.id, name: actor.name ?? null},
+          approvedBy: {id: actor.id, name: actor.name ?? null},
+          ...(comment ? {comment} : {}),
+        },
+      },
+    ];
+    return {record, version, events};
+  }
+
+  /**
+   * Writes a prepared committed record and publishes its events inside the active transaction
+   * (CB-56).
+   * @param {{record: object, version: object, events: !Array<{type: string, data: object}>}} prepared
+   * @param {{id: string, name?: string}} actor
+   * @return {!Promise<void>}
+   */
+  async writeCommittedRecord({record, version, events}, actor) {
+    await this.repo.createRecord({record, version});
+    for (const event of events) {
+      await this.publish(event.type, event.data, actor);
+    }
+  }
+
+  /**
+   * Creates a B/L and commits version 1 immediately as an approved/ready version for the carrier
+   * issuance API (CB-56).
+   * @param {object} data validated and converted B/L data
+   * @param {{id: string, name?: string}} actor
+   * @param {string} organisationId
+   * @param {{comment?: string}} [options]
+   * @return {!Promise<object>} the created committed record view
+   */
+  async createCommittedRecord(data, actor, organisationId, {comment} = {}) {
+    const prepared = this.buildCommittedRecord(data, actor, organisationId, {
+      comment,
+    });
+    await this.atomic(async () => {
+      await this.writeCommittedRecord(prepared, actor);
+    });
+    return this.getRecord(prepared.record.id, organisationId);
   }
 
   /**

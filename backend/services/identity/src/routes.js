@@ -134,6 +134,24 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     return {ok: true};
   });
 
+  // Exchange a carrier API key (X-Api-Key header or { apiKey }) for a short-lived access JWT (CB-56)
+  app.post('/auth/api-token', async req => {
+    const header = req.headers['x-api-key'];
+    const bodyKey =
+      req.body && typeof req.body === 'object' ? req.body.apiKey : undefined;
+    const secret =
+      typeof header === 'string' && header.trim() !== '' ? header : bodyKey;
+    const {claims, apiKey} = await service.exchangeApiKey(secret);
+    return {
+      accessToken: app.jwt.sign(claims, {
+        expiresIn: `${accessTtlSeconds}s`,
+      }),
+      expiresIn: accessTtlSeconds,
+      organisationId: apiKey.organisationId,
+      perms: apiKey.perms,
+    };
+  });
+
   app.post(
     '/invitations/accept',
     {
@@ -345,6 +363,63 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
         req.params.id,
         'Active',
         reasonOf(req),
+        actorOf(req),
+      ),
+  );
+  app.get(
+    '/organisations/:id/api-keys',
+    {...organisations, schema: idParam},
+    async req => ({
+      items: await service.listOrganisationApiKeys(req.params.id),
+    }),
+  );
+  app.post(
+    '/organisations/:id/api-keys',
+    {
+      ...organisations,
+      schema: {
+        ...idParam,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name'],
+          properties: {
+            name: str({minLength: 1, maxLength: 100}),
+            perms: {type: 'array', minItems: 1, items: str({maxLength: 50})},
+          },
+        },
+      },
+    },
+    async (req, reply) =>
+      reply
+        .status(201)
+        .send(
+          await service.createOrganisationApiKey(
+            req.params.id,
+            req.body,
+            actorOf(req),
+          ),
+        ),
+  );
+  app.post(
+    '/organisations/:id/api-keys/:keyId/revoke',
+    {
+      ...organisations,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id', 'keyId'],
+          properties: {
+            id: str({format: 'uuid'}),
+            keyId: str({format: 'uuid'}),
+          },
+        },
+      },
+    },
+    async req =>
+      service.revokeOrganisationApiKey(
+        req.params.id,
+        req.params.keyId,
         actorOf(req),
       ),
   );

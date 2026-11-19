@@ -572,6 +572,84 @@ export class TitleService {
   }
 
   /**
+   * Validates, signs, and atomically writes a new committed B/L and its initial issue title +
+   * chain entry in one transaction (CB-56). Leaves nothing stored if signing or persistence fails.
+   * @param {{
+   *   prepared: {record: object, version: object},
+   *   data: object,
+   *   actor: {id: string, name?: string, org?: string},
+   *   organisationId: string,
+   *   writeRecord: function(): !Promise<void>,
+   * }} options
+   * @return {!Promise<object>} the issued title view with chain
+   */
+  async issueCommitted({prepared, data, actor, organisationId, writeRecord}) {
+    if (this.signer === null) {
+      throw notSetUp();
+    }
+    const {record, version} = prepared;
+    const links = data.partyOrganisations ?? {};
+    const issueCommand = {
+      name: 'issue',
+      kind: kindOf(data.document),
+      shipper: links.shipper ?? null,
+      consignee: links.consignee ?? null,
+    };
+    const result = this.run(null, issueCommand, {org: organisationId});
+    await this.requireRegistered(issueCommand);
+    const now = this.clock();
+    const entry = await this.signedEntry({
+      recordId: record.id,
+      stored: null,
+      command: 'issue',
+      actor,
+      title: result.title,
+      documentHash: version.documentHash,
+      at: now,
+    });
+    let saved;
+    let appended;
+    await this.atomic(async () => {
+      await writeRecord();
+      saved = await this.repo.createTitle({
+        recordId: record.id,
+        ...result.title,
+        issuedVersion: version.versionNumber,
+        documentHash: version.documentHash,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      appended = await this.repo.appendTitleEntry(entry);
+      await this.publishEntry(record, appended, actor);
+    });
+    return this.viewOf(record, saved, actor, [appended], {withChain: true});
+  }
+
+  /**
+   * Validates that an issuance document can be issued immediately (signer set up, valid issue
+   * command for this carrier, registered and active shipper/consignee) before anything is written
+   * (CB-56).
+   * @param {object} data converted B/L data
+   * @param {string} organisationId issuing carrier organisation
+   * @return {!Promise<void>}
+   */
+  async validateIssue(data, organisationId) {
+    if (this.signer === null) {
+      throw notSetUp();
+    }
+    const links = data.partyOrganisations ?? {};
+    const issueCommand = {
+      name: 'issue',
+      kind: kindOf(data.document),
+      shipper: links.shipper ?? null,
+      consignee: links.consignee ?? null,
+    };
+    this.run(null, issueCommand, {org: organisationId});
+    await this.requireRegistered(issueCommand);
+  }
+
+  /**
    * What issuing a B/L issues: its current committed version, the hash of its B/L, and the issue
    * command built from it (the kind from the document; the shipper, first holder of a negotiable
    * B/L, and the consignee from the organisations its parties are linked to). 409 when the B/L

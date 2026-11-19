@@ -176,6 +176,73 @@ paths:
           - bl.read
         services:
           - audit
+  /records/issuance:
+    post:
+      tags:
+        - Records
+      summary: Submit or issue a B/L from a carrier's system (CB-56)
+      description: >-
+        `{ format, document, partyOrganisations?, issue?, comment? }`. Validates the document, port list and unique reference, and rejects
+        duplicate active cargo (`409 duplicate-cargo`). With `issue: false` (default), commits version 1 ready for a human approver to
+        issue. With `issue: true` (requires `bl.issue`), also issues and anchors the title atomically. Answers `{ record, title, cargoKey
+        }`.
+
+
+        **Access:** Signed-in user with permission `bl.draft`.
+      operationId: postRecordsIssuance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - format
+                - document
+              properties:
+                format:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                document:
+                  type: object
+                partyOrganisations:
+                  type: object
+                issue:
+                  type: boolean
+                comment:
+                  type: string
+                  maxLength: 4000
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.draft
   /records/{id}/draft:
     put:
       tags:

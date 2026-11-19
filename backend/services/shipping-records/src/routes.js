@@ -58,6 +58,18 @@ const saveDraftBody = {
   },
 };
 
+/** Carrier issuance API request (CB-56): ready-to-issue B/L, or straight-through `issue: true`. */
+const issuanceBody = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['format', 'document'],
+  properties: {
+    ...billOfLadingBody.properties,
+    issue: {type: 'boolean'},
+    comment: {type: 'string', maxLength: 4000},
+  },
+};
+
 /** A review decision reported by bpm. */
 const decisionBody = {
   type: 'object',
@@ -330,6 +342,51 @@ export async function recordsRoutes(app, {service}) {
         organisationId,
       );
       return reply.code(201).send(record);
+    },
+  );
+
+  // Carrier issuance API (CB-56): submits an approved/ready B/L, or issues straight through when `issue: true`
+  app.post(
+    '/records/issuance',
+    {onRequest: canDraft, schema: {body: issuanceBody}},
+    async (req, reply) => {
+      const organisationId = ownerOf(req);
+      const actor = actorOf(req);
+      const shouldIssue = req.body.issue === true;
+      if (shouldIssue && !(req.user.perms ?? []).includes('bl.issue')) {
+        throw new ForbiddenError('Not permitted', {perm: 'bl.issue'});
+      }
+      const {data, cargoKey} = await service.prepareIssuance(
+        req.body,
+        organisationId,
+      );
+      if (shouldIssue) {
+        const prepared = service.buildCommittedRecord(
+          data,
+          actor,
+          organisationId,
+          {comment: req.body.comment},
+        );
+        const applied = await titlesOf(app).issueCommitted({
+          prepared,
+          data,
+          actor,
+          organisationId,
+          writeRecord: () => service.writeCommittedRecord(prepared, actor),
+        });
+        const record = await service.getRecord(
+          prepared.record.id,
+          organisationId,
+        );
+        return reply.code(201).send({record, title: applied.title, cargoKey});
+      }
+      const record = await service.createCommittedRecord(
+        data,
+        actor,
+        organisationId,
+        {comment: req.body.comment},
+      );
+      return reply.code(201).send({record, title: null, cargoKey});
     },
   );
 

@@ -365,3 +365,45 @@ export function invitationInvalidField(
   }
   return null;
 }
+
+/** An API key of an organisation (CB-56); `secret` is returned only when created. */
+export interface OrganisationApiKey {
+  id: string;
+  organisationId: string;
+  name: string;
+  prefix: string;
+  perms: string[];
+  status: 'Active' | 'Revoked';
+  createdAt: string;
+  createdByName?: string | null;
+  revokedAt?: string | null;
+  lastUsedAt?: string | null;
+  secret?: string;
+}
+
+/**
+ * What is wrong with a new API key's name, or null when it can be created (CB-56).
+ * @param name key label
+ * @return validation message or null
+ */
+export function apiKeyProblem(name: string): string | null {
+  const clean = name.trim();
+  if (!clean) {
+    return 'Give the API key a name.';
+  }
+  if (clean.length > 100) {
+    return 'The API key name is at most 100 characters.';
+  }
+  return null;
+}
+
+/**
+ * Permissions granted to a carrier API key (CB-56): read & draft, optionally direct issue.
+ * @param allowIssue whether the key may issue B/Ls directly without a screen approver
+ * @return permissions list
+ */
+export function selectedApiKeyPerms(allowIssue: boolean): string[] {
+  return allowIssue
+    ? ['bl.read', 'bl.draft', 'bl.issue']
+    : ['bl.read', 'bl.draft'];
+}

@@ -174,6 +174,36 @@ export function defineModels(sequelize) {
     opts(),
   );
 
+  /**
+   * An API key belonging to an organisation (CB-56), storing only a SHA-256 hash of its secret.
+   */
+  const OrganisationApiKey = sequelize.define(
+    'organisation_api_key',
+    {
+      id: {
+        type: DataTypes.UUID,
+        primaryKey: true,
+        defaultValue: DataTypes.UUIDV4,
+      },
+      organisationId: {type: DataTypes.UUID, allowNull: false},
+      name: {type: DataTypes.STRING(100), allowNull: false},
+      prefix: {type: DataTypes.STRING(24), allowNull: false},
+      keyHash: {type: DataTypes.STRING(64), allowNull: false, unique: true},
+      perms: {type: DataTypes.JSONB, allowNull: false, defaultValue: []},
+      status: {
+        type: DataTypes.ENUM('Active', 'Revoked'),
+        allowNull: false,
+        defaultValue: 'Active',
+      },
+      createdById: {type: DataTypes.UUID},
+      createdByName: {type: DataTypes.STRING},
+      revokedAt: {type: DataTypes.DATE},
+      revokedById: {type: DataTypes.UUID},
+      lastUsedAt: {type: DataTypes.DATE},
+    },
+    opts({indexes: [{fields: ['organisationId']}]}),
+  );
+
   return {
     User,
     Role,
@@ -184,5 +214,6 @@ export function defineModels(sequelize) {
     AccessEvent,
     Office,
     Organisation,
+    OrganisationApiKey,
   };
 }

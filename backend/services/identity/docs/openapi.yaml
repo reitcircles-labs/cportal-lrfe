@@ -178,6 +178,26 @@ paths:
       security:
         - refreshCookie: []
       x-gateway-path: /api/auth/logout
+  /auth/api-token:
+    post:
+      tags:
+        - Auth
+      summary: Exchange an organisation API key for a short-lived access token
+      description: >-
+        Accepts `X-Api-Key` header or `{ apiKey }`. Returns `{ accessToken, expiresIn, organisationId, perms }` scoped to the key. 401 for
+        an unknown, revoked, or suspended-organisation key.
+
+
+        **Access:** Public: no token needed.
+      operationId: postAuthApiToken
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      security: []
+      x-gateway-path: /api/auth/api-token
   /invitations/accept:
     post:
       tags:
@@ -1422,6 +1442,190 @@ paths:
         allOf:
           - admin.organisations
       x-gateway-path: /api/organisations/{id}/reactivate
+  /organisations/{id}/api-keys:
+    get:
+      tags:
+        - Organisations
+      summary: List API keys of an organisation
+      description: |-
+        Lists `{ items }` without secrets or hashes (CB-56).
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: getOrganisationsIdApiKeys
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+      x-gateway-path: /api/organisations/{id}/api-keys
+    post:
+      tags:
+        - Organisations
+      summary: Create an API key for an active organisation
+      description: |-
+        `{ name, perms? }`. Returns `{ id, name, prefix, perms, status, createdAt, secret }` with the secret shown once (CB-56).
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: postOrganisationsIdApiKeys
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                perms:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    maxLength: 50
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+      x-gateway-path: /api/organisations/{id}/api-keys
+  /organisations/{id}/api-keys/{keyId}/revoke:
+    post:
+      tags:
+        - Organisations
+      summary: Revoke an organisation API key
+      description: |-
+        Revokes the key immediately and emits a session revocation so active tokens stop (CB-56).
+
+        **Access:** Signed-in user with permission `admin.organisations`.
+      operationId: postOrganisationsIdApiKeysKeyIdRevoke
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - admin.organisations
+      x-gateway-path: /api/organisations/{id}/api-keys/{keyId}/revoke
   /roles/permissions:
     put:
       tags:
