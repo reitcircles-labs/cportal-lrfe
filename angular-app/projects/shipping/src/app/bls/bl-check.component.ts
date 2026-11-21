@@ -9,14 +9,15 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import {formatDate} from '@angular/common';
-import {ProofApi, toApiError} from '@lrfe/platform';
+import {DecimalPipe, formatDate} from '@angular/common';
+import {ProofApi, ToastService, toApiError} from '@lrfe/platform';
 
 import {BlApi} from './bl.api';
 import {
   type KeyCheck,
   type StepResult,
   type TitleProof,
+  anchorDetails,
   checkSteps,
   checkSummary,
   keyCheck,
@@ -60,6 +61,7 @@ function browserCrypto(): SubtleCrypto | null {
 @Component({
   selector: 'app-bl-check',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [DecimalPipe],
   template: `
     <section class="panel" aria-labelledby="bl-check-title">
       <div class="panel-head"><h2 id="bl-check-title">Check this B/L</h2></div>
@@ -90,6 +92,52 @@ function browserCrypto(): SubtleCrypto | null {
           }
           <p [class]="keysClass()" style="margin:0">{{ keysText() }}</p>
           <p style="margin:0"><strong>Proof on the blockchain:</strong> {{ statusText() }}</p>
+          @if (anchor(); as a) {
+            @if (!a.pending) {
+              <dl class="kv anchor-facts" aria-label="Blockchain anchoring">
+                @if (a.batch !== null) {
+                  <dt>Batch</dt>
+                  <dd>
+                    {{ a.batch }}@if (a.size !== null) { ({{ a.size }} {{ a.size === 1 ? 'entry' : 'entries' }})}
+                  </dd>
+                }
+                @if (a.tx; as tx) {
+                  <dt>Transaction ID</dt>
+                  <dd class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+                    <span class="mono" [title]="tx">{{ a.txShort }}</span>
+                    <button type="button" class="btn btn-secondary btn-xs" (click)="copyTx(tx)">Copy</button>
+                    @if (a.explorerUrl; as url) {
+                      <a class="btn btn-secondary btn-xs" [href]="url" target="_blank" rel="noopener noreferrer">View on explorer</a>
+                    }
+                  </dd>
+                }
+                @if (a.block !== null) {
+                  <dt>Block</dt>
+                  <dd>
+                    {{ a.block | number }}@if (a.confirmations !== null) { ({{ a.confirmations }} {{ a.confirmations === 1 ? 'confirmation' : 'confirmations' }})}
+                  </dd>
+                }
+                @if (confirmedAtText(); as confirmedAt) {
+                  <dt>Confirmed at</dt>
+                  <dd>{{ confirmedAt }}</dd>
+                }
+                @if (a.network !== null) {
+                  <dt>Network</dt>
+                  <dd>
+                    {{ a.network }}@if (a.label !== null) { · metadata label {{ a.label }}}
+                  </dd>
+                }
+                @if (a.root; as root) {
+                  <dt>Merkle root</dt>
+                  <dd class="mono break-all">{{ root }}</dd>
+                }
+                @if (a.address; as address) {
+                  <dt>Anchoring address</dt>
+                  <dd class="mono break-all">{{ address }}</dd>
+                }
+              </dl>
+            }
+          }
           <div class="offline stack" style="gap:8px">
             <h3>How to verify it offline</h3>
             <ol class="steps">
@@ -124,6 +172,9 @@ function browserCrypto(): SubtleCrypto | null {
     .sig-checked { color: var(--success-fg, inherit); }
     .sig-failed { color: var(--danger-fg); font-weight: 600; }
     .note.info { background: var(--color-neutral-100, #f4f6f8); border: 1px solid var(--color-divider); }
+    .anchor-facts { margin: 0; padding: 12px; border: 1px solid var(--color-divider); border-radius: 8px; background: var(--color-surface-2); }
+    .btn-xs { padding: 4px 10px; font-size: 13px; }
+    .break-all { word-break: break-all; }
   `,
   ],
 })
@@ -139,6 +190,7 @@ export class BlCheckComponent {
 
   private readonly bls = inject(BlApi);
   private readonly proofs = inject(ProofApi);
+  private readonly toast = inject(ToastService);
   private readonly viewer = injectViewer();
   private readonly latest = new LatestRequest();
   private readonly locale = inject(LOCALE_ID);
@@ -198,6 +250,13 @@ export class BlCheckComponent {
     return 'small';
   });
   protected readonly status = computed(() => proofStatus(this.proof()?.anchor));
+  protected readonly anchor = computed(() =>
+    anchorDetails(this.proof()?.anchor),
+  );
+  protected readonly confirmedAtText = computed(() => {
+    const at = this.anchor().confirmedAt;
+    return at ? formatDate(at, 'd MMM y, HH:mm', this.locale) : null;
+  });
   /** The blockchain status as the platform reports it, with when it was confirmed. */
   protected readonly statusText = computed(() => {
     const status = this.status();
@@ -260,6 +319,24 @@ export class BlCheckComponent {
       if (this.latest.isCurrent(request)) {
         this.busy.set(false);
       }
+    }
+  }
+
+  /** Copies a blockchain transaction ID to the clipboard (CB-77). */
+  protected async copyTx(tx: string): Promise<void> {
+    try {
+      const clipboard = globalThis.navigator?.clipboard;
+      if (!clipboard?.writeText) {
+        throw new Error('Clipboard unavailable');
+      }
+      await clipboard.writeText(tx);
+      this.toast.show(
+        'success',
+        'Copied transaction ID',
+        tx.slice(0, 12) + '…',
+      );
+    } catch {
+      this.toast.show('info', 'Copy transaction ID manually', tx);
     }
   }
 

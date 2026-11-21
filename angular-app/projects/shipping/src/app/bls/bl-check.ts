@@ -77,6 +77,24 @@ export interface ProofStatus {
   at: string | null;
 }
 
+/** Structured blockchain anchoring details extracted from the proof's `anchor` (CB-77). */
+export interface AnchorDetails {
+  pending: boolean;
+  status: 'pending' | 'recorded' | 'confirmed';
+  batch: number | null;
+  size: number | null;
+  tx: string | null;
+  txShort: string | null;
+  explorerUrl: string | null;
+  network: string | null;
+  label: number | null;
+  block: number | null;
+  confirmations: number | null;
+  confirmedAt: string | null;
+  root: string | null;
+  address: string | null;
+}
+
 /** The JWS type of a chain entry's signature. */
 const ENTRY_TYP = 'lrfe-title-entry';
 
@@ -385,6 +403,83 @@ export function proofStatus(anchor: unknown): ProofStatus {
     };
   }
   return {state: 'pending', label: 'pending', at: null};
+}
+
+/**
+ * Shortens a 64-char hex hash for display (`abcd1234…5678ef90`).
+ * @param value the hash, or null
+ * @return shortened hash or null
+ */
+function shortHex(value: string | null): string | null {
+  if (value === null || value === '') {
+    return null;
+  }
+  if (value.length <= 20) {
+    return value;
+  }
+  return `${value.slice(0, 8)}…${value.slice(-8)}`;
+}
+
+/** Extracts an optional non-empty string field. */
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+/** Extracts an optional finite number field. */
+function optionalNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Structured blockchain anchoring details from the proof's `anchor` (CB-77).
+ * @param anchor the proof file's anchor object
+ * @return structured fields ready for display in the portal
+ */
+export function anchorDetails(anchor: unknown): AnchorDetails {
+  const status = proofStatus(anchor);
+  const rawAnchor =
+    anchor !== null && typeof anchor === 'object'
+      ? (anchor as {anchor?: unknown}).anchor
+      : null;
+  const info =
+    rawAnchor !== null && typeof rawAnchor === 'object'
+      ? (rawAnchor as Record<string, unknown>)
+      : null;
+  if (status.state === 'pending' || info === null) {
+    return {
+      pending: true,
+      status: 'pending',
+      batch: null,
+      size: null,
+      tx: null,
+      txShort: null,
+      explorerUrl: null,
+      network: null,
+      label: null,
+      block: null,
+      confirmations: null,
+      confirmedAt: null,
+      root: null,
+      address: null,
+    };
+  }
+  const tx = optionalString(info['tx']);
+  return {
+    pending: false,
+    status: status.state,
+    batch: optionalNumber(info['batch']),
+    size: optionalNumber(info['size']),
+    tx,
+    txShort: shortHex(tx),
+    explorerUrl: optionalString(info['explorerUrl']),
+    network: optionalString(info['network']),
+    label: optionalNumber(info['label']),
+    block: optionalNumber(info['block']),
+    confirmations: optionalNumber(info['confirmations']),
+    confirmedAt: optionalString(info['confirmedAt']),
+    root: optionalString(info['root']),
+    address: optionalString(info['address']),
+  };
 }
 
 /**

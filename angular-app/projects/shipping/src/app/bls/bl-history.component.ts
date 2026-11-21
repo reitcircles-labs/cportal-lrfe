@@ -9,15 +9,16 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import {formatDate} from '@angular/common';
+import {DecimalPipe, formatDate} from '@angular/common';
 import {RouterLink} from '@angular/router';
-import {toApiError} from '@lrfe/platform';
+import {ToastService, toApiError} from '@lrfe/platform';
 
 import {BlApi} from './bl.api';
 import type {BlTitleView} from './bl.model';
 import {
   type StepResult,
   type TitleProof,
+  anchorDetails,
   checkSteps,
   proofFileName,
   proofStatus,
@@ -47,7 +48,7 @@ function browserCrypto(): SubtleCrypto | null {
 @Component({
   selector: 'app-bl-history',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [DecimalPipe, RouterLink],
   template: `
     <div class="page stack">
       <p style="margin:0"><a [routerLink]="['/bls', id()]">Back to the B/L</a></p>
@@ -60,6 +61,45 @@ function browserCrypto(): SubtleCrypto | null {
       }
       @if (proof() !== null) {
         <p [class]="summaryClass()" role="status" style="margin:0">{{ summary() }}</p>
+        @if (anchor(); as a) {
+          <section class="panel" aria-labelledby="history-anchor-title">
+            <div class="panel-head"><h2 id="history-anchor-title">Blockchain anchoring</h2></div>
+            <div style="padding:16px">
+              <dl class="kv" style="margin:0">
+                <dt>Status</dt>
+                <dd>{{ anchorStatusLabel() }}</dd>
+                @if (!a.pending) {
+                  @if (a.batch !== null) {
+                    <dt>Batch</dt>
+                    <dd>{{ a.batch }}@if (a.size !== null) { ({{ a.size }} {{ a.size === 1 ? 'entry' : 'entries' }})}</dd>
+                  }
+                  @if (a.tx; as tx) {
+                    <dt>Transaction ID</dt>
+                    <dd class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+                      <span class="mono" [title]="tx">{{ a.txShort }}</span>
+                      <button type="button" class="btn btn-secondary btn-xs" (click)="copyTx(tx)">Copy</button>
+                      @if (a.explorerUrl; as url) {
+                        <a class="btn btn-secondary btn-xs" [href]="url" target="_blank" rel="noopener noreferrer">View on explorer</a>
+                      }
+                    </dd>
+                  }
+                  @if (a.block !== null) {
+                    <dt>Block</dt>
+                    <dd>{{ a.block | number }}@if (a.confirmations !== null) { ({{ a.confirmations }} {{ a.confirmations === 1 ? 'confirmation' : 'confirmations' }})}</dd>
+                  }
+                  @if (a.confirmedAt; as confirmedAt) {
+                    <dt>Confirmed at</dt>
+                    <dd>{{ when(confirmedAt) }}</dd>
+                  }
+                  @if (a.network !== null) {
+                    <dt>Network</dt>
+                    <dd>{{ a.network }}@if (a.label !== null) { · metadata label {{ a.label }}}</dd>
+                  }
+                }
+              </dl>
+            </div>
+          </section>
+        }
         <section class="panel">
           <div class="panel-head row" style="justify-content:space-between;gap:8px">
             <h2>Every step</h2>
@@ -101,6 +141,7 @@ function browserCrypto(): SubtleCrypto | null {
     .tag { margin-left: 6px; font-size: 12px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--color-divider); }
     .sig-checked { color: var(--success-fg, inherit); }
     .sig-failed { color: var(--danger-fg); font-weight: 600; }
+    .btn-xs { padding: 4px 10px; font-size: 13px; }
   `,
   ],
 })
@@ -109,6 +150,7 @@ export class BlHistoryComponent {
   readonly id = input.required<string>();
 
   private readonly bls = inject(BlApi);
+  private readonly toast = inject(ToastService);
   private readonly locale = inject(LOCALE_ID);
   private readonly viewer = injectViewer();
   private readonly latest = new LatestRequest();
@@ -128,6 +170,19 @@ export class BlHistoryComponent {
       : 'Before the split';
   });
   protected readonly status = computed(() => proofStatus(this.proof()?.anchor));
+  protected readonly anchor = computed(() =>
+    anchorDetails(this.proof()?.anchor),
+  );
+  protected readonly anchorStatusLabel = computed(() => {
+    const state = this.status().state;
+    if (state === 'confirmed') {
+      return 'Confirmed on blockchain';
+    }
+    if (state === 'recorded') {
+      return 'Written to blockchain, waiting for confirmation';
+    }
+    return 'Pending: waiting for the next anchoring batch';
+  });
   protected readonly rows = computed<HistoryRow[]>(() => {
     const proof = this.proof();
     const view = this.view();
@@ -185,6 +240,24 @@ export class BlHistoryComponent {
    */
   protected when(at: string): string {
     return formatDate(at, 'd MMM y, HH:mm', this.locale);
+  }
+
+  /** Copies a blockchain transaction ID to the clipboard (CB-77). */
+  protected async copyTx(tx: string): Promise<void> {
+    try {
+      const clipboard = globalThis.navigator?.clipboard;
+      if (!clipboard?.writeText) {
+        throw new Error('Clipboard unavailable');
+      }
+      await clipboard.writeText(tx);
+      this.toast.show(
+        'success',
+        'Copied transaction ID',
+        tx.slice(0, 12) + '…',
+      );
+    } catch {
+      this.toast.show('info', 'Copy transaction ID manually', tx);
+    }
   }
 
   /** Saves the proof file, named with the B/L's number. */
