@@ -28,6 +28,8 @@ export interface TitleSummary {
   consignee: string | null;
   /** While the carrier holds the B/L for a change, the holder it goes back to (CB-50). */
   returnTo?: string | null;
+  /** Why the holder asked for a change, visible to carrier and requester only (CB-85). */
+  changeReason?: string | null;
   /** External eBL platform code when transferred out or arrived (CB-55). */
   externalPlatform?: string | null;
   /** Receiver party code on the external platform when transferred out (CB-55). */

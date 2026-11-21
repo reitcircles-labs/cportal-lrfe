@@ -9,6 +9,7 @@ import {describe, it} from 'node:test';
 import {
   ASK_FOR_CHANGE,
   askForChangeQuestion,
+  changeReasonProblem,
   mayAmend,
   mayAskForChange,
   maySplit,
@@ -22,6 +23,7 @@ import {
 import {
   changeHolderLabel,
   changeRequestNote,
+  changeRequestReason,
   versionHistory,
 } from './bl-format.ts';
 import type {ChainEntry, TitleSummary, Viewer} from './bl.model.ts';
@@ -547,6 +549,43 @@ describe('refusals the service words for developers, and unknown ones (CB-54)', 
     assert.equal(
       REFUSAL_REASONS['draft-open'],
       'A new version of this B/L is being drafted or waits for approval: finish or archive it first.',
+    );
+  });
+});
+
+describe('change request reason wording and visibility (CB-85)', () => {
+  it('requires a non-blank reason up to 2,000 characters', () => {
+    assert.match(changeReasonProblem('') ?? '', /what needs to change/i);
+    assert.match(changeReasonProblem('   ') ?? '', /what needs to change/i);
+    assert.match(changeReasonProblem('x'.repeat(2001)) ?? '', /2,000/);
+    assert.equal(changeReasonProblem('Change destination to DEHAM'), null);
+  });
+
+  it('shows the requested reason only to the carrier and the requesting holder while amendment-requested', () => {
+    const requested = title({
+      state: 'amendment-requested',
+      holder: 'org-carrier',
+      returnTo: 'org-bank',
+      changeReason: 'Change port of discharge to DEHAM',
+    });
+    assert.equal(
+      changeRequestReason(requested, CARRIER),
+      'Change port of discharge to DEHAM',
+    );
+    assert.equal(
+      changeRequestReason(requested, BANK),
+      'Change port of discharge to DEHAM',
+    );
+    assert.equal(changeRequestReason(requested, SHIPPER), null);
+    assert.equal(
+      changeRequestReason(
+        title({
+          state: 'with-holder',
+          changeReason: 'Change port of discharge to DEHAM',
+        }),
+        CARRIER,
+      ),
+      null,
     );
   });
 });

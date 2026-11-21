@@ -464,6 +464,25 @@ function childCountOf(command) {
 }
 
 /**
+ * The `changeReason` patch for a title command (CB-85): sets the trimmed reason on
+ * `surrender-for-amendment`, clears it on `amend` or `void`, and leaves it alone otherwise.
+ * @param {string} name the command name
+ * @param {*} command the API's command
+ * @return {!Object} patch fields for `updateTitle`
+ */
+function changeReasonPatch(name, command) {
+  if (name === 'surrender-for-amendment') {
+    const trimmed =
+      typeof command?.reason === 'string' ? command.reason.trim() : '';
+    return {changeReason: trimmed !== '' ? trimmed : null};
+  }
+  if (name === 'amend' || name === 'void') {
+    return {changeReason: null};
+  }
+  return {};
+}
+
+/**
  * The title engine's service (CB-31, README.md "The title"): the holder ledger of the B/Ls. A
  * title changes only through the state machine of `@lrfe/domain-shipping/title`, and only if
  * nobody changed it since it was read, so of two commands at the same moment exactly one wins.
@@ -808,6 +827,7 @@ export class TitleService {
     if (engineCommand.name === 'amend') {
       amendment = await this.amendmentOf(record, command, actor);
     }
+    const reasonPatch = changeReasonPatch(engineCommand.name, command);
     await this.requireRegistered(engineCommand);
     const now = this.clock();
     const entry = await this.signedEntry({
@@ -846,6 +866,7 @@ export class TitleService {
           {
             ...result.title,
             ...amendment?.titlePatch,
+            ...reasonPatch,
             revision: stored.revision + 1,
             updatedAt: now,
           },
@@ -1122,7 +1143,12 @@ export class TitleService {
       this.requireNoDraft(await this.repo.lockRecord(record.id));
       saved = await this.repo.updateTitle(
         record.id,
-        {...result.title, revision: stored.revision + 1, updatedAt: now},
+        {
+          ...result.title,
+          changeReason: null,
+          revision: stored.revision + 1,
+          updatedAt: now,
+        },
         stored.revision,
       );
       if (!saved) {
@@ -1415,12 +1441,18 @@ export class TitleService {
     if (stored === null) {
       view.allowedCommands = await this.issueAllowed(record, actor);
     } else {
+      const seesChangeReason =
+        stored.state === 'amendment-requested' &&
+        Boolean(stored.changeReason) &&
+        Boolean(actor?.org) &&
+        (actor.org === stored.carrier || actor.org === stored.returnTo);
       view.title = {
         ...titleOf(stored),
         ...(stored.externalPlatform
           ? {externalPlatform: stored.externalPlatform}
           : {}),
         ...(stored.externalParty ? {externalParty: stored.externalParty} : {}),
+        ...(seesChangeReason ? {changeReason: stored.changeReason} : {}),
         issuedVersion: stored.issuedVersion,
         documentHash: stored.documentHash,
         revision: stored.revision,

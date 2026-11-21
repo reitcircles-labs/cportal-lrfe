@@ -37,6 +37,25 @@ export const ASK_FOR_CHANGE: Readonly<ChangeRequestWording> = Object.freeze({
   done: 'B/L sent to the carrier for a change',
 });
 
+/** Maximum length of a change-request reason (CB-85). */
+export const MAX_CHANGE_REASON_LENGTH = 2000;
+
+/**
+ * Validates the holder's reason when asking the carrier for a change (CB-85).
+ * @param reason the typed reason
+ * @return the error message, or null when valid
+ */
+export function changeReasonProblem(reason: string): string | null {
+  const trimmed = reason.trim();
+  if (trimmed === '') {
+    return 'Describe what needs to change before sending to the carrier.';
+  }
+  if (trimmed.length > MAX_CHANGE_REASON_LENGTH) {
+    return 'Keep the reason within 2,000 characters.';
+  }
+  return null;
+}
+
 /** What the page says of a B/L it does not find. */
 const NOT_FOUND =
   'B/L not found. It does not exist, or your organisation is not party to it.';

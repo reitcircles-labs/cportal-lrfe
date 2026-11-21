@@ -132,6 +132,11 @@ export function createSequelizeRepo(sequelize) {
           });
         }
       }
+      if (!titleColumns.changeReason) {
+        await queryInterface.addColumn(titleTable, 'changeReason', {
+          type: DataTypes.TEXT,
+        });
+      }
       const entryTable = {tableName: 'bl_title_entry', schema: SCHEMA};
       const entryColumns = await queryInterface.describeTable(entryTable);
       if (!entryColumns.rawEntry) {

@@ -169,10 +169,11 @@ test.describe(
       await command(bl.id, 'endorse', shipper, {to: buyer.id, inBlank: false});
 
       await ask.click();
-      await page
-        .getByRole('alertdialog')
-        .getByRole('button', {name: 'Send to the carrier'})
-        .click();
+      const askPanel = page.getByRole('region', {name: 'Ask for a change'});
+      await askPanel
+        .getByLabel('What needs to change?')
+        .fill('Update port of discharge to DEHAM');
+      await askPanel.getByRole('button', {name: 'Send to the carrier'}).click();
       await expect(refusalAlert(page)).toContainText(
         'Only the current holder may',
       );

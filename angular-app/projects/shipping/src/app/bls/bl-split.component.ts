@@ -54,6 +54,11 @@ type ShareField = 'packages' | 'weight';
     <section class="panel" aria-label="Split">
       <div class="panel-head"><h2 tabindex="-1">Split {{ recordNo() }} into new B/Ls</h2></div>
       <div class="panel-body stack" style="gap:14px">
+        @if (changeReason(); as reason) {
+          <div class="note info" role="note">
+            <strong>Requested by {{ holderName() }}:</strong> {{ reason }}
+          </div>
+        }
         <p class="muted" style="margin:0">Give each new B/L its number and its share of the cargo. A container may be divided between them: its packages and weights must add up.</p>
         <div class="row" style="align-items:flex-end;gap:10px">
           <div class="field" style="max-width:180px">
@@ -154,6 +159,8 @@ export class BlSplitComponent {
   readonly document = input.required<Record<string, unknown>>();
   /** The name of the holder the new B/Ls are issued to. */
   readonly holderName = input.required<string>();
+  /** The holder's requested change reason, if given (CB-85). */
+  readonly changeReason = input<string | null>(null);
   /** Maximum number of new B/Ls per split (CB-73, default 10). */
   readonly maxParts = input(DEFAULT_MAX_SPLIT_PARTS);
 

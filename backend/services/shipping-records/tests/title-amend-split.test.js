@@ -1793,3 +1793,72 @@ describe('the amendment and split modules (CB-38), memory', () => {
     }
   });
 });
+
+for (const store of stores()) {
+  describe(`change request reason (CB-85), ${store.name}`, () => {
+    let ctx;
+    before(async () => {
+      ctx = await makeHttp(store, {
+        signer: await createLocalSigner(),
+        audit: NOTHING_ANCHORED,
+        organisations: standInIdentity(),
+      });
+    });
+    after(async () => {
+      await ctx?.close();
+    });
+
+    it('stores the requested change reason for carrier and requester, hides it from earlier past holders, and clears it on amend', async () => {
+      const reference = nextReference('REASON-AMD');
+      const id = await endorsedToBank(ctx, reference);
+      const asked = await ok(
+        ctx,
+        id,
+        'surrender-for-amendment',
+        staffOf(BANK),
+        {
+          reason: '  Change port of discharge from NLRTM to DEHAM  ',
+        },
+      );
+      expect(asked.title.changeReason).to.equal(
+        'Change port of discharge from NLRTM to DEHAM',
+      );
+
+      const carrierView = (await read(ctx, id, staffOf(CARRIER))).json();
+      expect(carrierView.title.changeReason).to.equal(
+        'Change port of discharge from NLRTM to DEHAM',
+      );
+      const bankView = (await read(ctx, id, staffOf(BANK))).json();
+      expect(bankView.title.changeReason).to.equal(
+        'Change port of discharge from NLRTM to DEHAM',
+      );
+      // Earlier past holder (shipper) does not see the change request details
+      const shipperView = (await read(ctx, id, staffOf(SHIPPER))).json();
+      expect(shipperView.title.changeReason).to.equal(undefined);
+
+      const amended = await ok(ctx, id, 'amend', staffOf(CARRIER), {
+        format: 'dcsa-3.0',
+        document: amendedDocument(reference),
+      });
+      expect(amended.title.changeReason).to.equal(undefined);
+      const afterCarrier = (await read(ctx, id, staffOf(CARRIER))).json();
+      expect(afterCarrier.title.changeReason).to.equal(undefined);
+    });
+
+    it('clears the change reason when the carrier splits the B/L', async () => {
+      const reference = nextReference('REASON-SPL');
+      const id = await endorsedToBank(ctx, reference);
+      await ok(ctx, id, 'surrender-for-amendment', staffOf(BANK), {
+        reason: 'Split cargo equally into two B/Ls',
+      });
+      const split = await ok(
+        ctx,
+        id,
+        'split',
+        staffOf(CARRIER),
+        splitBody(splitByContainer(nextReference('SA'), nextReference('SB'))),
+      );
+      expect(split.title.changeReason).to.equal(undefined);
+    });
+  });
+}
