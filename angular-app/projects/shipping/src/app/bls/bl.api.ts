@@ -1,7 +1,9 @@
+import {HttpClient, HttpErrorResponse} from '@angular/common/http';
 import {Injectable, inject} from '@angular/core';
+import {firstValueFrom} from 'rxjs';
 import type {Port} from './bl-ports';
 import type {CarrierOption} from './carrier-picker';
-import {ApiService} from '@lrfe/platform';
+import {ApiError, ApiService, toApiError} from '@lrfe/platform';
 import type {AmendRequest} from './bl-amend';
 import type {DraftRequest, PaperReading} from './bl-draft';
 import type {SplitRequest} from './bl-split';
@@ -28,6 +30,7 @@ import type {
 @Injectable({providedIn: 'root'})
 export class BlApi {
   private readonly api = inject(ApiService);
+  private readonly http = inject(HttpClient);
 
   /**
    * A page of the B/Ls the user's organisation is party to, newest first (CB-42).
@@ -231,6 +234,41 @@ export class BlApi {
       `/records/${encodeURIComponent(id)}/title/${encodeURIComponent(command)}`,
       body,
     );
+  }
+
+  /**
+   * Downloads the printable paper B/L PDF once switched to paper (CB-86).
+   * @param id the B/L's id
+   * @return PDF blob
+   */
+  async paperPdf(id: string): Promise<Blob> {
+    try {
+      return await firstValueFrom(
+        this.http.get(
+          `${this.api.base}/records/${encodeURIComponent(id)}/paper`,
+          {
+            responseType: 'blob',
+          },
+        ),
+      );
+    } catch (e) {
+      if (e instanceof HttpErrorResponse && e.error instanceof Blob) {
+        let message = e.statusText || 'Request failed';
+        let details: unknown;
+        try {
+          const body = JSON.parse(await e.error.text()) as {
+            message?: string;
+            details?: unknown;
+          };
+          message = body.message || message;
+          details = body.details;
+        } catch {
+          // Non-JSON error body: keep the HTTP status text.
+        }
+        throw new ApiError(e.status, message, details);
+      }
+      throw toApiError(e);
+    }
   }
 
   /**

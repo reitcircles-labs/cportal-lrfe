@@ -762,6 +762,25 @@ export async function recordsRoutes(app, {service}) {
     },
   );
 
+  // Printable paper B/L PDF copy once switched to paper (CB-86), for the carrier or the
+  // holder that switched it to paper
+  app.get(
+    '/records/:id/paper',
+    {onRequest: canRead, schema: idParams()},
+    async (req, reply) => {
+      ownerOf(req);
+      const {bytes, filename} = await titlesOf(app).paperPdf(
+        req.params.id,
+        actorOf(req),
+      );
+      return reply
+        .header('content-type', 'application/pdf')
+        .header('content-disposition', `attachment; filename="${filename}"`)
+        .header('cache-control', 'no-store')
+        .send(Buffer.from(bytes));
+    },
+  );
+
   // Retry a locked outgoing cross-platform transfer with the exact stored envelope (CB-55)
   app.post(
     '/records/:id/title/retry-transfer',

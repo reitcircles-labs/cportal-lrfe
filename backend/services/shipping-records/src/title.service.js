@@ -27,6 +27,7 @@ import {portProblems} from '@lrfe/domain-shipping/ports';
 import {sealOf} from '@lrfe/record-contract/seal';
 
 import {TITLE_ENTRY_TYP, entryHashOf} from './chain.js';
+import {renderPaperBlPdf} from './paper-pdf.js';
 import {RESERVED_KEYS, UUID_PATTERN, verifyIncomingChain} from './pint.js';
 import {summaryOf} from './records.service.js';
 import {
@@ -1403,6 +1404,68 @@ export class TitleService {
   async read(recordId, actor, {withChain = false} = {}) {
     const {record, stored, chain} = await this.requireVisible(recordId, actor);
     return this.viewOf(record, stored, actor, chain, {withChain});
+  }
+
+  /**
+   * Generates a printable A4 PDF copy of a B/L switched to paper (CB-86). Allowed only when the
+   * B/L's title state is `switched-to-paper` (409 `not-switched-to-paper` otherwise) and only for
+   * the carrier or the holder that switched it to paper (403 `paper-not-permitted` for earlier
+   * past holders; 404 for non-parties).
+   * @param {string} recordId
+   * @param {{id?: string, name?: string, org?: string}} actor
+   * @return {!Promise<{bytes: !Uint8Array, filename: string}>}
+   */
+  async paperPdf(recordId, actor) {
+    const {record, stored, chain} = await this.requireVisible(recordId, actor);
+    if (!stored || stored.state !== 'switched-to-paper') {
+      throw new ConflictError(
+        'Only a B/L switched to paper can generate a printable paper copy',
+        {code: 'not-switched-to-paper'},
+      );
+    }
+    const switchEntry = chain.findLast(
+      entry => entry.command === 'switch-to-paper',
+    );
+    const isCarrier = Boolean(actor?.org) && actor.org === stored.carrier;
+    const isSwitchingHolder =
+      Boolean(actor?.org) &&
+      Boolean(switchEntry?.from) &&
+      actor.org === switchEntry.from;
+    if (!isCarrier && !isSwitchingHolder) {
+      throw new ForbiddenError(
+        'Only the carrier or the holder that switched this B/L to paper can print the paper copy',
+        {code: 'paper-not-permitted'},
+      );
+    }
+    const versionNumber = stored.issuedVersion ?? record.currentVersion;
+    const version = versionNumber
+      ? await this.repo.getVersion(record.id, versionNumber)
+      : null;
+    if (!version) {
+      throw new ConflictError('This B/L has no committed version to print', {
+        code: 'not-committed',
+      });
+    }
+    const partyOrgs = version.data?.partyOrganisations ?? {};
+    const named = [
+      record.organisationId,
+      ...partiesOf(stored),
+      partyOrgs.shipper,
+      partyOrgs.consignee,
+    ];
+    for (const entry of chain) {
+      named.push(entry.from, entry.to, entry.actor?.org);
+    }
+    const organisationNames = await this.namesOf(named);
+    return renderPaperBlPdf({
+      record,
+      version,
+      title: stored,
+      chain,
+      organisationNames,
+      ports: this.ports,
+      carriers: this.carriers,
+    });
   }
 
   /**

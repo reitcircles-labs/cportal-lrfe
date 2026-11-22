@@ -154,3 +154,75 @@ export function closeNote(state: string | null): string {
   }
   return CLOSE_NOTES.get(state) ?? '';
 }
+
+/** Minimal shape of a title view needed to check printable paper B/L access (CB-86). */
+export interface PaperPrintView {
+  title: {state: string} | null;
+  roles: readonly string[];
+  chain: ReadonlyArray<{command: string; from: string | null}>;
+}
+
+/**
+ * Whether the viewer can download or print a paper B/L PDF copy (CB-86): only once the B/L is
+ * `switched-to-paper`, and only for the carrier or the holder that switched it to paper.
+ * @param view the title view, null while loading
+ * @param viewerOrganisationId the viewer's organisation id
+ * @return true when the printable paper B/L copy should be offered
+ */
+export function canPrintPaper(
+  view: PaperPrintView | null,
+  viewerOrganisationId: string | null,
+): boolean {
+  if (
+    view === null ||
+    view.title === null ||
+    view.title.state !== 'switched-to-paper' ||
+    !viewerOrganisationId
+  ) {
+    return false;
+  }
+  if (view.roles.includes('carrier')) {
+    return true;
+  }
+  let switchFrom: string | null = null;
+  for (const entry of view.chain) {
+    if (entry.command === 'switch-to-paper') {
+      switchFrom = entry.from;
+    }
+  }
+  return switchFrom === viewerOrganisationId;
+}
+
+/**
+ * Builds the default PDF filename when saving the printable paper B/L copy (CB-86).
+ * @param recordNo the transport document reference
+ * @param issuedVersion the issued version number when known
+ * @return sanitized filename ending in `.pdf`
+ */
+export function paperFilename(
+  recordNo: string,
+  issuedVersion?: number,
+): string {
+  const safeRef = String(recordNo || 'bl')
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const versionTag =
+    typeof issuedVersion === 'number' && Number.isFinite(issuedVersion)
+      ? `-v${issuedVersion}`
+      : '';
+  return `bl-${safeRef || 'document'}${versionTag}-paper.pdf`;
+}
+
+/**
+ * Explains the printable paper B/L copy on the B/L page, highlighting bearer risk when
+ * endorsed in blank (CB-86).
+ * @param endorsement the title's endorsement, null before issue
+ * @return explanation text for the paper copy callout
+ */
+export function paperCopyNote(endorsement: string | null): string {
+  if (endorsement === 'blank') {
+    return 'Generate a printable PDF copy of this B/L for the paper originals. Because it was endorsed in blank, the paper B/L is a bearer document: whoever holds the paper holds the goods.';
+  }
+  return 'Generate a printable PDF copy of this B/L with its full particulars, cargo details, terms, and electronic chain of title.';
+}

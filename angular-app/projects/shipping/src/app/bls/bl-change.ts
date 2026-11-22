@@ -138,6 +138,10 @@ export const REFUSAL_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'not-author': 'Only the person who created this draft may edit it.',
   'proof-unavailable':
     'The proof on the blockchain cannot be read now: try again later.',
+  'not-switched-to-paper':
+    'A printable paper copy is available only after the B/L has been switched to paper.',
+  'paper-not-permitted':
+    'Only the carrier or the holder that switched this B/L to paper can print the paper copy.',
   'no-number': 'Give the number of the B/L to look for.',
   'unknown-port':
     'A port of the B/L is not a sea port of the port list: pick it from the list.',
