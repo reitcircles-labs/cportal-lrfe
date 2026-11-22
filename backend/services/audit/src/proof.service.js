@@ -256,6 +256,7 @@ export class ProofService {
             ? 'onChain'
             : 'submitted',
       confirmedAt: a.confirmedAt ?? null,
+      explorerUrl: explorerUrl(a.network, a.txHash),
     };
   }
 

@@ -1206,4 +1206,19 @@ describe('proofs and verification (API-658)', () => {
       403,
     );
   });
+
+  it('includes explorerUrl inside proof.anchor for public networks and null for test (CB-77)', async () => {
+    const a = await anchoredRegister();
+    await a.runUntil(x => x.action === 'confirmed');
+    const [anchor] = a.repo.anchors;
+    const previewProof = await a.proofs.proof('trail-entry', '1');
+    assert.equal(
+      previewProof.anchor.explorerUrl,
+      `https://preview.cardanoscan.io/transaction/${anchor.txHash}`,
+    );
+
+    anchor.network = 'test';
+    const testProof = await a.proofs.proof('trail-entry', '1');
+    assert.equal(testProof.anchor.explorerUrl, null);
+  });
 });

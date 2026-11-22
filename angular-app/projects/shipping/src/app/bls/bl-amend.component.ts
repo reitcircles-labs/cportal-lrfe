@@ -45,6 +45,11 @@ import {NO_PORTS, PortOptions, portLabel} from './bl-ports';
     <section class="panel" aria-label="Amend">
       <div class="panel-head"><h2 tabindex="-1">Amend: version {{ version() }} to version {{ version() + 1 }}</h2></div>
       <div class="panel-body stack" style="gap:14px">
+        @if (changeReason(); as reason) {
+          <div class="note info" role="note">
+            <strong>Requested by {{ holderName() }}:</strong> {{ reason }}
+          </div>
+        }
         <div class="grid">
           <div class="field">
             <label for="amend-reference">B/L number</label>
@@ -155,6 +160,8 @@ export class BlAmendComponent {
   readonly document = input.required<Record<string, unknown>>();
   /** The name of the holder the B/L goes back to. */
   readonly holderName = input.required<string>();
+  /** The holder's requested change reason, if given (CB-85). */
+  readonly changeReason = input<string | null>(null);
 
   /** The B/L is amended: the page reads it again and closes the panel. */
   readonly amended = output<void>();

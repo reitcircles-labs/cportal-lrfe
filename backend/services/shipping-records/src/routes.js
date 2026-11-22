@@ -143,6 +143,7 @@ const titleCommandBody = {
     children: {type: 'array', maxItems: 100, items: titleDocument},
     platform: {type: 'string', minLength: 1, maxLength: 50},
     partyCode: {type: 'string', minLength: 1, maxLength: 100},
+    reason: {type: 'string', maxLength: 2000},
   },
 };
 
@@ -160,6 +161,7 @@ const TITLE_COMMAND_ARGUMENTS = [
   'children',
   'platform',
   'partyCode',
+  'reason',
   ...CARGO_PART_ARGUMENTS,
 ];
 

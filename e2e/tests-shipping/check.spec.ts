@@ -62,7 +62,7 @@ test.use({baseURL: SHIPPING_URL});
 
 test.describe(
   'checking a B/L and its proof on the screens (CB-47)',
-  {tag: '@CB-47'},
+  {tag: ['@CB-47', '@CB-77']},
   () => {
     let api: APIRequestContext;
     let admin: SignedIn;
@@ -207,6 +207,17 @@ test.describe(
       await expect(panel).toContainText(
         'Proof on the blockchain: The platform reports: confirmed on the blockchain on ',
       );
+      const anchorList = panel.getByLabel('Blockchain anchoring');
+      await expect(anchorList).toBeVisible();
+      await expect(anchorList).toContainText(/Batch\s*\d+/);
+      await expect(anchorList).toContainText('Transaction ID');
+      await expect(
+        anchorList.getByRole('button', {name: 'Copy'}),
+      ).toBeVisible();
+      await expect(anchorList).toContainText('Network');
+      await expect(anchorList).toContainText('metadata label 8890');
+      await expect(anchorList).toContainText('Merkle root');
+      await expect(anchorList).toContainText('Anchoring address');
 
       // the command names the platform's published wallet and key fingerprint
       const wallet = await (
@@ -240,6 +251,12 @@ test.describe(
       );
       await dismissToasts(page);
       await page.setViewportSize({width: 1440, height: 1700});
+      await anchorList.scrollIntoViewIfNeeded();
+      await evidence(
+        page,
+        'CB-77',
+        'Check this B/L shows structured blockchain anchoring details',
+      );
       await evidence(
         page,
         TICKET,

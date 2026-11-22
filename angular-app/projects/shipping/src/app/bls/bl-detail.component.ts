@@ -42,7 +42,9 @@ import {
 } from './bl-close';
 import {
   ASK_FOR_CHANGE,
+  MAX_CHANGE_REASON_LENGTH,
   askForChangeQuestion,
+  changeReasonProblem,
   mayAmend,
   mayAskForChange,
   maySplit,
@@ -75,6 +77,7 @@ import {
   chainRows,
   changeHolderLabel,
   changeRequestNote,
+  changeRequestReason,
   consigneeLabel,
   draftFacts,
   interopTitleNote,
@@ -197,9 +200,9 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             @for (s of settlements(); track s.name) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="settle(s)">{{ s.label }}</button>
             }
-            <!-- CB-50: the holder asks for a change; the carrier amends or splits the B/L -->
-            @if (canAskForChange()) {
-              <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="askForChange()">{{ askLabel }}</button>
+            <!-- CB-50 / CB-85: the holder asks for a change with a reason; the carrier amends or splits the B/L -->
+            @if (canAskForChange() && !askingChange()) {
+              <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="openAskForChange()" #askOpen>{{ askLabel }}</button>
             }
             @if (canAmend() && changing() === null) {
               <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openChange('amend')">Amend</button>
@@ -310,12 +313,32 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             </div>
           </section>
         }
+        @if (askingChange() && canAskForChange()) {
+          <section class="panel" aria-label="Ask for a change">
+            <div class="panel-head"><h2 tabindex="-1">{{ askQuestion() }}</h2></div>
+            <form class="panel-body stack" style="gap:12px" (submit)="$event.preventDefault(); sendChangeRequest()">
+              <p class="muted" style="margin:0">{{ askBody }}</p>
+              <div class="field">
+                <label for="ask-reason">What needs to change?</label>
+                <textarea id="ask-reason" class="input" rows="3" [attr.maxlength]="maxChangeReasonLength" [value]="askReason()" (input)="setAskReason($any($event.target).value)" [attr.aria-invalid]="askError() ? 'true' : null" aria-describedby="ask-reason-hint" #askReasonInput></textarea>
+                <span id="ask-reason-hint" class="small muted">Tell the carrier which fields or split quantities need updating.</span>
+              </div>
+              @if (askError(); as err) {
+                <div class="note danger" role="alert">{{ err }}</div>
+              }
+              <div class="row" style="gap:8px">
+                <button type="submit" class="btn btn-primary" [disabled]="busy()">{{ askConfirmLabel }}</button>
+                <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="cancelAskForChange()">Cancel</button>
+              </div>
+            </form>
+          </section>
+        }
         @if (changeDocument(); as document) {
           @if (changing() === 'amend' && canAmend()) {
-            <app-bl-amend [recordId]="v.recordId" [recordNo]="v.record.recordNo" [carrierCode]="v.record.carrierCode" [version]="currentVersion()" [document]="document" [holderName]="returnToName()" (amended)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
+            <app-bl-amend [recordId]="v.recordId" [recordNo]="v.record.recordNo" [carrierCode]="v.record.carrierCode" [version]="currentVersion()" [document]="document" [holderName]="returnToName()" [changeReason]="changeReason()" (amended)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
           }
           @if (changing() === 'split' && canSplit()) {
-            <app-bl-split [recordId]="v.recordId" [recordNo]="v.record.recordNo" [document]="document" [holderName]="returnToName()" [maxParts]="v.maxSplitChildren ?? defaultMaxSplitParts" (split)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
+            <app-bl-split [recordId]="v.recordId" [recordNo]="v.record.recordNo" [document]="document" [holderName]="returnToName()" [changeReason]="changeReason()" [maxParts]="v.maxSplitChildren ?? defaultMaxSplitParts" (split)="changeDone()" (stale)="changeStale($event)" (cancelled)="closeChange()" />
           }
         }
         @if (shown()) {
@@ -341,7 +364,12 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
           <div class="panel-head"><h2>B/L</h2></div>
           <div class="panel-body">
             <!-- present from the start, filled once the B/L is surrendered, so that it is read out -->
-            <p [class]="titleNoteClass()" role="status" aria-live="polite" tabindex="-1" #titleNote>{{ titleNoteText() }}</p>
+            <p [class]="titleNoteClass()" role="status" aria-live="polite" tabindex="-1" #titleNote>
+              {{ titleNoteText() }}
+              @if (changeReason(); as reason) {
+                <span class="reason-line"><strong>{{ isCarrierViewer() ? 'Requested change:' : 'Your request:' }}</strong> {{ reason }}</span>
+              }
+            </p>
             @if (pastNote(); as n) {
               <p class="title-note note" role="note">{{ n.message }} ({{ n.at | date: 'd MMM y' }}).</p>
             }
@@ -438,6 +466,7 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
     .field .label { font-weight: 600; font-size: 13px; }
     .choice { display: flex; gap: 8px; align-items: center; cursor: pointer; }
     .title-note { margin: 0 0 12px; }
+    .reason-line { display: block; margin-top: 6px; }
     .warn { display: block; margin-top: 2px; font-size: 13px; color: var(--danger-fg); }
     .versions { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
   `,
@@ -468,6 +497,11 @@ export class BlDetailComponent {
   /** The note on where the B/L stands, which takes the focus after a surrender or release. */
   private readonly titleNoteRef =
     viewChild<ElementRef<HTMLElement>>('titleNote');
+  /** The "Ask for a change" button and textarea, to move focus (CB-85). */
+  private readonly askOpen =
+    viewChild<ElementRef<HTMLButtonElement>>('askOpen');
+  private readonly askReasonInput =
+    viewChild<ElementRef<HTMLTextAreaElement>>('askReasonInput');
   /** The page, to move the focus into a panel of a change (CB-50). */
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -493,8 +527,18 @@ export class BlDetailComponent {
 
   /** The carrier's open panel of a change, null for none (CB-50). */
   protected readonly changing = signal<ChangePanel | null>(null);
-  /** The holder's button that asks for a change. */
+  /** The holder's open "Ask for a change" panel and reason input (CB-85). */
+  protected readonly askingChange = signal(false);
+  protected readonly askReason = signal('');
+  protected readonly askError = signal<string | null>(null);
+  /** The holder's button and wording for asking for a change. */
   protected readonly askLabel = ASK_FOR_CHANGE.label;
+  protected readonly askBody = ASK_FOR_CHANGE.body;
+  protected readonly askConfirmLabel = ASK_FOR_CHANGE.confirmLabel;
+  protected readonly maxChangeReasonLength = MAX_CHANGE_REASON_LENGTH;
+  protected readonly askQuestion = computed(() =>
+    askForChangeQuestion(this.view()?.record.label ?? ''),
+  );
   /** Default maximum number of new B/Ls per split (CB-73). */
   protected readonly defaultMaxSplitParts = DEFAULT_MAX_SPLIT_PARTS;
 
@@ -746,6 +790,14 @@ export class BlDetailComponent {
     }
     return 'title-note note info';
   });
+  /** The requested change reason, visible only to carrier and requester (CB-85). */
+  protected readonly changeReason = computed(() =>
+    changeRequestReason(this.view()?.title ?? null, this.viewer()),
+  );
+  protected readonly isCarrierViewer = computed(() => {
+    const orgId = this.viewer().organisationId;
+    return Boolean(orgId) && this.view()?.title?.carrier === orgId;
+  });
 
   /** The B/L's state as the list gives it, from the title view. */
   private readonly blState = computed(() => {
@@ -994,24 +1046,64 @@ export class BlDetailComponent {
   }
 
   /**
-   * Asks the carrier for a change once the holder confirms what happens: the carrier then holds
-   * the B/L; the focus moves to the note on where it stands. A refusal is shown in plain words,
-   * and the B/L is read again (someone may have acted first).
+   * Opens the "Ask for a change" panel so the holder can state what needs to change (CB-85).
+   */
+  protected openAskForChange(): void {
+    this.askingChange.set(true);
+    this.askReason.set('');
+    this.askError.set(null);
+    this.actionError.set(null);
+    this.closeEndorse();
+    this.closeChange();
+    this.focusAfterRender(() => {
+      this.askReasonInput()?.nativeElement.focus();
+    });
+  }
+
+  /**
+   * Updates the change-request reason text and clears any inline validation error.
+   * @param value the typed text
+   */
+  protected setAskReason(value: string): void {
+    this.askReason.set(value);
+    if (this.askError() !== null) {
+      this.askError.set(changeReasonProblem(value));
+    }
+  }
+
+  /** Closes the "Ask for a change" panel and returns focus to the button that opened it. */
+  protected cancelAskForChange(): void {
+    this.closeAskForChange();
+    this.focusAfterRender(() => {
+      this.askOpen()?.nativeElement.focus();
+    });
+  }
+
+  /** Resets the "Ask for a change" panel state. */
+  private closeAskForChange(): void {
+    this.askingChange.set(false);
+    this.askReason.set('');
+    this.askError.set(null);
+  }
+
+  /**
+   * Sends the change request with the holder's reason to the carrier (CB-85); the carrier then
+   * holds the B/L, and the focus moves to the note on where it stands. A refusal is shown in plain
+   * words, and the B/L is read again (someone may have acted first).
    * @return when the page shows the B/L again
    */
-  protected async askForChange(): Promise<void> {
-    const confirmed = await this.confirm.ask({
-      title: askForChangeQuestion(this.view()?.record.label ?? ''),
-      body: ASK_FOR_CHANGE.body,
-      confirmLabel: ASK_FOR_CHANGE.confirmLabel,
-    });
-    if (!confirmed) {
+  protected async sendChangeRequest(): Promise<void> {
+    const problem = changeReasonProblem(this.askReason());
+    this.askError.set(problem);
+    if (problem !== null) {
       return;
     }
+    const reason = this.askReason().trim();
     this.busy.set(true);
     this.actionError.set(null);
     try {
-      await this.bls.command(this.id(), 'surrender-for-amendment');
+      await this.bls.askForChange(this.id(), reason);
+      this.closeAskForChange();
       this.toast.show(
         'success',
         ASK_FOR_CHANGE.done,
@@ -1020,11 +1112,15 @@ export class BlDetailComponent {
     } catch (e) {
       const refusal = refusalOf(toApiError(e));
       this.actionError.set(refusal.message);
+      await this.load(this.id());
+      if (!this.canAskForChange()) {
+        this.closeAskForChange();
+      }
       return;
     } finally {
       this.busy.set(false);
-      await this.load(this.id());
     }
+    await this.load(this.id());
     this.focusAfterRender(() => {
       this.titleNoteRef()?.nativeElement.focus();
     });
@@ -1083,6 +1179,7 @@ export class BlDetailComponent {
    * @return when they are listed, or why they cannot be
    */
   protected async openEndorse(action: HandOver): Promise<void> {
+    this.closeAskForChange();
     this.handOver.set(action);
     this.endorseTarget.set('local');
     this.peerPlatform.set('');
@@ -1411,6 +1508,7 @@ export class BlDetailComponent {
       this.record.set(null);
       this.closeEndorse();
       this.closeChange();
+      this.closeAskForChange();
     }
     try {
       const view = await this.bls.title(id);

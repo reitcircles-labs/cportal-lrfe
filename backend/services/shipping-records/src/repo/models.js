@@ -124,6 +124,8 @@ export function defineModels(sequelize) {
       consignee: text(),
       // while the carrier holds the B/L for an amendment, the holder it goes back to
       returnTo: text(),
+      // why the holder asked for a change (CB-85); cleared on amend, split or void
+      changeReason: text(),
       // cross-platform transfer metadata (CB-55)
       externalPlatform: text(),
       externalParty: text(),

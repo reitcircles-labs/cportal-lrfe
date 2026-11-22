@@ -202,6 +202,19 @@ export class BlApi {
   }
 
   /**
+   * Asks the carrier for a change with the holder's reason (CB-85).
+   * @param id the B/L's id
+   * @param reason what needs to change
+   * @return the title view after it
+   */
+  askForChange(id: string, reason: string): Promise<BlTitleView> {
+    return this.api.post<BlTitleView>(
+      `/records/${encodeURIComponent(id)}/title/surrender-for-amendment`,
+      {reason},
+    );
+  }
+
+  /**
    * Switches a B/L to paper (the holder) or voids it (the carrier) (CB-51); a blank-endorsed B/L
    * switched to paper carries the bearer confirmation.
    * @param id the B/L's id

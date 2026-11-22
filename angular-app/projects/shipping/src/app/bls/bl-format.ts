@@ -303,6 +303,31 @@ export function changeRequestNote(
 }
 
 /**
+ * The holder's requested change reason while the carrier holds the B/L for a change (CB-85),
+ * shown only to the carrier and the requesting holder.
+ * @param title the title, null before issue
+ * @param viewer who looks at the B/L
+ * @return the reason text, or null
+ */
+export function changeRequestReason(
+  title: TitleSummary | null,
+  viewer: Viewer,
+): string | null {
+  if (title?.state !== CHANGE_STATE || !viewer.organisationId) {
+    return null;
+  }
+  if (
+    viewer.organisationId !== title.carrier &&
+    viewer.organisationId !== title.returnTo
+  ) {
+    return null;
+  }
+  const reason =
+    typeof title.changeReason === 'string' ? title.changeReason.trim() : '';
+  return reason === '' ? null : reason;
+}
+
+/**
  * The holder while the carrier holds the B/L for a change: the carrier, to go back to the one who
  * asked.
  * @param title the title, null before issue

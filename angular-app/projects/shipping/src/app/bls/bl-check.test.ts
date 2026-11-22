@@ -7,6 +7,7 @@ import {createHash, webcrypto} from 'node:crypto';
 import {describe, it} from 'node:test';
 
 import {
+  anchorDetails,
   canonicalJson,
   checkSteps,
   checkSummary,
@@ -722,5 +723,93 @@ describe('a B/L made by a split (added: second review)', () => {
 
   it('says nothing for a B/L of its own', () => {
     assert.equal(splitNote(undefined), null);
+  });
+});
+
+describe('blockchain anchoring details (CB-77)', () => {
+  const transactionId =
+    'a918aa96ebf4b9ba6282956725c4b7a6805e210d954a1a24952f2203faf466a6';
+  const merkleRoot = '11'.repeat(32);
+
+  it('returns pending details before the batch is anchored', () => {
+    assert.deepEqual(anchorDetails({pending: true}), {
+      pending: true,
+      status: 'pending',
+      batch: null,
+      size: null,
+      tx: null,
+      txShort: null,
+      explorerUrl: null,
+      network: null,
+      label: null,
+      block: null,
+      confirmations: null,
+      confirmedAt: null,
+      root: null,
+      address: null,
+    });
+    assert.equal(anchorDetails(null).pending, true);
+    assert.equal(anchorDetails({status: 'waiting'}).pending, true);
+  });
+
+  it('extracts confirmed batch, shortened tx, explorer URL, block, confirmations and metadata', () => {
+    const details = anchorDetails({
+      status: 'confirmed',
+      anchor: {
+        network: 'preview',
+        label: 8890,
+        batch: 13,
+        tx: transactionId,
+        root: merkleRoot,
+        size: 15,
+        address: 'addr_test1qqexample',
+        block: 4874050,
+        confirmations: 13,
+        status: 'confirmed',
+        confirmedAt: '2026-11-20T00:10:00.000Z',
+        explorerUrl: `https://preview.cardanoscan.io/transaction/${transactionId}`,
+      },
+    });
+    assert.deepEqual(details, {
+      pending: false,
+      status: 'confirmed',
+      batch: 13,
+      size: 15,
+      tx: transactionId,
+      txShort: 'a918aa96…faf466a6',
+      explorerUrl: `https://preview.cardanoscan.io/transaction/${transactionId}`,
+      network: 'preview',
+      label: 8890,
+      block: 4874050,
+      confirmations: 13,
+      confirmedAt: '2026-11-20T00:10:00.000Z',
+      root: merkleRoot,
+      address: 'addr_test1qqexample',
+    });
+  });
+
+  it('marks anchored-but-unconfirmed batches as recorded', () => {
+    const details = anchorDetails({
+      status: 'anchored',
+      anchor: {
+        network: 'test',
+        label: 8890,
+        batch: 15,
+        tx: transactionId,
+        root: merkleRoot,
+        size: 3,
+        address: null,
+        block: 4874100,
+        confirmations: 1,
+        status: 'onChain',
+        confirmedAt: null,
+        explorerUrl: null,
+      },
+    });
+    assert.equal(details.pending, false);
+    assert.equal(details.status, 'recorded');
+    assert.equal(details.batch, 15);
+    assert.equal(details.confirmations, 1);
+    assert.equal(details.explorerUrl, null);
   });
 });

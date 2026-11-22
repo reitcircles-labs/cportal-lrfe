@@ -61,7 +61,7 @@ test.use({baseURL: SHIPPING_URL});
 
 test.describe(
   'amending a B/L and splitting it into new B/Ls on the screens (CB-50)',
-  {tag: '@CB-50'},
+  {tag: ['@CB-50', '@CB-85']},
   () => {
     let api: APIRequestContext;
     let admin: SignedIn;
@@ -107,18 +107,37 @@ test.describe(
     }
 
     /**
-     * The holder asks the carrier for a change on the screen, after the confirmation.
+     * The holder asks the carrier for a change on the screen, stating the reason (CB-85).
      * @param page the page, on the B/L as the buyer
+     * @param reason what needs to change
      */
-    async function askForChange(page: Page): Promise<void> {
+    async function askForChange(
+      page: Page,
+      reason = 'Change port of discharge to DEHAM',
+      capture = false,
+    ): Promise<void> {
       await page.getByRole('button', {name: 'Ask for a change'}).click();
-      const dialog = page.getByRole('alertdialog');
-      await expect(dialog).toContainText(
+      const panel = page.getByRole('region', {name: 'Ask for a change'});
+      await expect(panel).toContainText(
         `Ask the carrier to change or split ${bl.label}?`,
       );
-      await expect(dialog).toContainText(ASK_BODY);
-      await evidence(page, TICKET, 'The holder confirms the request');
-      await dialog.getByRole('button', {name: 'Send to the carrier'}).click();
+      await expect(panel).toContainText(ASK_BODY);
+      await panel.getByRole('button', {name: 'Send to the carrier'}).click();
+      await expect(
+        panel.getByText(
+          'Describe what needs to change before sending to the carrier.',
+        ),
+      ).toBeVisible();
+      await panel.getByLabel('What needs to change?').fill(reason);
+      if (capture) {
+        await evidence(page, TICKET, 'The holder confirms the request');
+        await evidence(
+          page,
+          'CB-85',
+          'Holder writes change request reason before sending',
+        );
+      }
+      await panel.getByRole('button', {name: 'Send to the carrier'}).click();
       await expect(fact(page, 'State')).toHaveText('Change requested');
       await expect(fact(page, 'Holder')).toHaveText(
         `${carrier.name}, to go back to ${buyer.name} (your organisation)`,
@@ -129,6 +148,7 @@ test.describe(
             'Change requested: the carrier holds the B/L to change it and give it back to you.',
         }),
       ).toHaveCount(1);
+      await expect(page.getByText(`Your request: ${reason}`)).toBeVisible();
       // nothing more to do for the buyer until the B/L comes back
       await expect(
         page.getByRole('region', {name: 'Actions'}).getByRole('button'),
@@ -175,7 +195,7 @@ test.describe(
       await expect(page.getByRole('button', {name: 'Split'})).toHaveCount(0);
       await dismissToasts(page);
       await evidence(page, TICKET, 'The buyer holds the B/L');
-      await askForChange(page);
+      await askForChange(page, 'Change port of discharge to DEHAM', true);
       const chain = page.getByRole('table', {name: 'Chain of title'});
       await expect(chain.locator('tbody tr').last()).toContainText(
         'Surrendered for amendment',
@@ -196,10 +216,29 @@ test.describe(
           hasText: `${buyer.name} asked for a change. The B/L goes back to them.`,
         }),
       ).toHaveCount(1);
+      await expect(
+        page.getByText('Requested change: Change port of discharge to DEHAM'),
+      ).toBeVisible();
       await expect(page.getByRole('button', {name: 'Split'})).toBeVisible();
+      await dismissToasts(page);
+      await evidence(
+        page,
+        'CB-85',
+        'Carrier sees requested change reason on the B/L page',
+      );
       await page.getByRole('button', {name: 'Amend', exact: true}).click();
 
       const panel = page.getByRole('region', {name: 'Amend'});
+      await expect(panel.getByRole('note')).toContainText(
+        `Requested by ${buyer.name}: Change port of discharge to DEHAM`,
+      );
+      await page.setViewportSize({width: 1440, height: 1500});
+      await evidence(
+        page,
+        'CB-85',
+        'Carrier sees requested change reason inside Amend panel',
+      );
+      await page.setViewportSize({width: 1440, height: 900});
       await expect(panel.getByLabel('B/L number')).toHaveValue(bl.recordNo);
       await expect(panel.getByLabel('B/L number')).toBeDisabled();
       await expect(panel.getByLabel('Carrier code')).toBeDisabled();
@@ -267,6 +306,9 @@ test.describe(
       await expect(page.getByText('Amended after you held it')).toBeVisible();
       await expect(fact(page, 'Version')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText(OTHER_PORT);
+      await expect(page.locator('body')).not.toContainText(
+        'Change port of discharge to DEHAM',
+      );
       await dismissToasts(page);
       await evidence(page, TICKET, 'The shipper is told it was amended');
     });
@@ -275,12 +317,15 @@ test.describe(
       page,
     }) => {
       await openBl(page, buyer);
-      await askForChange(page);
+      await askForChange(page, 'Split cargo equally into two B/Ls');
       await page.getByRole('button', {name: 'Sign out'}).click();
 
       await openBl(page, carrier);
       await page.getByRole('button', {name: 'Split', exact: true}).click();
       const panel = page.getByRole('region', {name: 'Split'});
+      await expect(panel.getByRole('note')).toContainText(
+        `Requested by ${buyer.name}: Split cargo equally into two B/Ls`,
+      );
       const send = panel.getByRole('button', {name: 'Split into 2 B/Ls'});
       // B/L B carries nothing yet
       await expect(send).toBeDisabled();
