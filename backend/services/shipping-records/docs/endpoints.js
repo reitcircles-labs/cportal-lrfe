@@ -181,6 +181,12 @@ export const ENDPOINTS = {
       description:
         '`{ recordId, record, title, allowedCommands, roles, maxSplitChildren, chain, organisationNames }`. `organisationNames`: `{ id: name }` of the organisations the title and its chain name, as identity gives them; one without a name, or every one while identity cannot answer, is left out (the read never fails for a name). `record`: `{ recordNo, carrierCode, label, status, draftState }`, the reference and drafting state of the B/L. `roles`: the roles of your organisation on it (`carrier`, `holder`, `past-holder`, `consignee`). `maxSplitChildren`: configured maximum number of new B/Ls per split (`LRFE_BL_SPLIT_MAX`, 10 by default, CB-73), included when `split` is allowed. `title`: `{ kind, state, carrier, holder, endorsement, consignee, returnTo, issuedVersion, documentHash, revision, createdAt, updatedAt }`, null before issue. `allowedCommands`: the commands your organisation may run on it now (before issue: `issue` for the carrier that owns a B/L with a committed version and none in review). `chain`: the chain-of-title entries, signed, oldest first; `[]` before issue. `splitFrom`: `{ recordId, recordNo }` of the B/L it was split from, only for a B/L made by a split; `splitInto`: `[{ recordId, recordNo }]` of the B/Ls it was split into, by number, only once split (numbers only, never their documents). Before issue only the organisation that owns the B/L sees it; after it the carrier, the current holder, past holders and the consignee. 404 "B/L not found" for anyone else, as for a B/L that does not exist. 403 for a user of no organisation.',
     },
+    'GET /records/{id}/paper': {
+      tag: 'Records',
+      summary: 'Printable paper B/L PDF copy once switched to paper (CB-86)',
+      description:
+        'Generates and streams an A4 `application/pdf` copy of the issued B/L (particulars, parties, voyage/ports, cargo/containers, charges, terms, electronic chain of title, and integrity hashes) with `Content-Disposition: attachment; filename="bl-<ref>-v<n>-paper.pdf"`. Available only when `title.state` is `switched-to-paper` (409 `not-switched-to-paper` otherwise) and only to the carrier or the holder that switched it to paper (403 `paper-not-permitted` for earlier past holders; 404 for non-parties).',
+    },
     'POST /records/{id}/title/{command}': {
       tag: 'Records',
       summary:

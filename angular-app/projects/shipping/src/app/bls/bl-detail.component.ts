@@ -35,10 +35,13 @@ import {
 } from './bl-actions';
 import {
   type CloseCommand,
+  canPrintPaper,
   closeCommands,
   closeConfirmation,
   closeNote,
   closeRequest,
+  paperCopyNote,
+  paperFilename,
 } from './bl-close';
 import {
   ASK_FOR_CHANGE,
@@ -373,6 +376,15 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
             @if (pastNote(); as n) {
               <p class="title-note note" role="note">{{ n.message }} ({{ n.at | date: 'd MMM y' }}).</p>
             }
+            @if (showPaperCopy()) {
+              <div class="paper-copy note" role="region" aria-label="Paper B/L copy">
+                <p style="margin:0 0 8px"><strong>Paper B/L copy</strong> — {{ paperNote() }}</p>
+                <div class="row" style="gap:8px">
+                  <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="downloadPaper()">Download paper B/L (PDF)</button>
+                  <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="printPaper()">Print paper B/L</button>
+                </div>
+              </div>
+            }
             <dl class="kv facts">
               <dt>Reference</dt><dd class="mono">{{ v.record.recordNo }}</dd>
               <dt>Carrier code</dt><dd class="mono">{{ v.record.carrierCode }}</dd>
@@ -466,6 +478,7 @@ const COMMAND_DONE: ReadonlyMap<string, string> = new Map([
     .field .label { font-weight: 600; font-size: 13px; }
     .choice { display: flex; gap: 8px; align-items: center; cursor: pointer; }
     .title-note { margin: 0 0 12px; }
+    .paper-copy { margin: 0 0 12px; }
     .reason-line { display: block; margin-top: 6px; }
     .warn { display: block; margin-top: 2px; font-size: 13px; color: var(--danger-fg); }
     .versions { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
@@ -759,6 +772,14 @@ export class BlDetailComponent {
   protected readonly closings = computed(() =>
     closeCommands(this.view()?.allowedCommands ?? []),
   );
+  /** Whether the viewer can download or print the paper B/L copy (CB-86). */
+  protected readonly showPaperCopy = computed(() =>
+    canPrintPaper(this.view(), this.viewer().organisationId),
+  );
+  /** Guidance text for the printable paper B/L copy callout (CB-86). */
+  protected readonly paperNote = computed(() =>
+    paperCopyNote(this.view()?.title?.endorsement ?? null),
+  );
   /**
    * Where the B/L stands once surrendered, accomplished, switched to paper or void, or held for
    * a change; '' else.
@@ -1043,6 +1064,74 @@ export class BlDetailComponent {
     this.focusAfterRender(() => {
       this.titleNoteRef()?.nativeElement.focus();
     });
+  }
+
+  /**
+   * Downloads the printable paper B/L PDF copy (CB-86).
+   */
+  protected async downloadPaper(): Promise<void> {
+    const v = this.view();
+    if (v === null || this.busy()) {
+      return;
+    }
+    const pdf = await this.fetchPaperPdf(v.recordId);
+    if (pdf === null) {
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(pdf);
+    link.download = paperFilename(v.record.recordNo, v.title?.issuedVersion);
+    link.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(link.href);
+    }, 60_000);
+  }
+
+  /**
+   * Opens the printable paper B/L PDF in a new browser tab for printing (CB-86).
+   */
+  protected async printPaper(): Promise<void> {
+    const v = this.view();
+    if (v === null || this.busy()) {
+      return;
+    }
+    const tab = window.open('', '_blank');
+    const pdf = await this.fetchPaperPdf(v.recordId);
+    if (pdf === null) {
+      tab?.close();
+      return;
+    }
+    if (!tab) {
+      this.toast.show(
+        'warn',
+        'The PDF could not be opened in a new tab',
+        'Allow pop-ups for this site, or use Download paper B/L (PDF) and print it from there.',
+      );
+      return;
+    }
+    const url = URL.createObjectURL(pdf);
+    tab.location.href = url;
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 60_000);
+  }
+
+  /**
+   * Fetches the printable paper B/L PDF bytes, reporting any error in the action banner.
+   * @param recordId the B/L's id
+   * @return PDF blob, or null when the request failed
+   */
+  private async fetchPaperPdf(recordId: string): Promise<Blob | null> {
+    this.busy.set(true);
+    this.actionError.set(null);
+    try {
+      return await this.bls.paperPdf(recordId);
+    } catch (e) {
+      this.actionError.set(refusalOf(toApiError(e)).message);
+      return null;
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   /**

@@ -141,7 +141,9 @@ caller may run now.
 session's organisation, never one named in the request; the body `{to?, inBlank?,
 confirmBearer?}`, an amendment's `{format, document, partyOrganisations?}` or a split's
 `{children}` gives the arguments, anything else in it is ignored (a release naming part of the
-cargo is refused). `GET /records/:id/title` reads it. Both answer `{recordId, record, title,
+cargo is refused). `GET /records/:id/title` reads it. `GET /records/:id/paper` generates a
+printable `application/pdf` copy of the issued B/L once switched to paper (`switched-to-paper`), for
+the carrier or the holder that switched it to paper (CB-86). Both title calls answer `{recordId, record, title,
 allowedCommands, roles, chain}` (`record` and `roles` since CB-42), `chain` being the chain-of-title entries (`[]` before issue). The command's name is
 looked up in a Map (`OFFERED_COMMANDS` in `src/title.service.js`): an unknown one is 400
 `unknown-command`. Permissions (shipping pack): `bl.issue` for `issue`, `void`, `release`,

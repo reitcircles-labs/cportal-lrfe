@@ -5,11 +5,14 @@ import {strict as assert} from 'node:assert';
 import {describe, it} from 'node:test';
 
 import {
+  canPrintPaper,
   closeCommands,
   closeConfirmation,
   closeNote,
   closeRequest,
   needsBearerConfirmation,
+  paperCopyNote,
+  paperFilename,
 } from './bl-close.ts';
 
 describe('what the page offers', () => {
@@ -103,5 +106,56 @@ describe('the note on a closed B/L', () => {
     assert.equal(closeNote('with-holder'), '');
     assert.equal(closeNote('accomplished'), '');
     assert.equal(closeNote(null), '');
+  });
+});
+
+describe('printable paper B/L copy (CB-86)', () => {
+  const baseView = {
+    title: {state: 'switched-to-paper', endorsement: 'named'},
+    roles: ['past-holder'],
+    chain: [
+      {seq: 1, command: 'issue', from: null, to: 'org-shipper'},
+      {seq: 2, command: 'endorse', from: 'org-shipper', to: 'org-buyer'},
+      {seq: 3, command: 'switch-to-paper', from: 'org-buyer', to: null},
+    ],
+  };
+
+  it('offers printing only when switched-to-paper and only to the carrier or the holder who switched it', () => {
+    assert.equal(canPrintPaper(baseView, 'org-buyer'), true);
+    assert.equal(
+      canPrintPaper({...baseView, roles: ['carrier']}, 'org-carrier'),
+      true,
+    );
+    assert.equal(canPrintPaper(baseView, 'org-shipper'), false);
+    assert.equal(canPrintPaper(baseView, null), false);
+    assert.equal(canPrintPaper(null, 'org-buyer'), false);
+    assert.equal(
+      canPrintPaper(
+        {...baseView, title: {state: 'with-holder', endorsement: 'named'}},
+        'org-buyer',
+      ),
+      false,
+    );
+    assert.equal(
+      canPrintPaper(
+        {...baseView, title: {state: 'void', endorsement: 'none'}},
+        'org-carrier',
+      ),
+      false,
+    );
+  });
+
+  it('formats a safe PDF filename from the reference and version', () => {
+    assert.equal(
+      paperFilename('CBL-2026-001', 2),
+      'bl-CBL-2026-001-v2-paper.pdf',
+    );
+    assert.equal(paperFilename('BL/2026 01'), 'bl-BL_2026_01-paper.pdf');
+  });
+
+  it('explains the paper copy and warns about bearer risk when blank-endorsed', () => {
+    assert.match(paperCopyNote('blank'), /bearer document/);
+    assert.match(paperCopyNote('named'), /printable PDF copy/i);
+    assert.doesNotMatch(paperCopyNote('named'), /bearer document/);
   });
 });

@@ -1449,6 +1449,62 @@ paths:
       x-access:
         allOf:
           - bl.read
+  /records/{id}/paper:
+    get:
+      tags:
+        - Records
+      summary: Printable paper B/L PDF copy once switched to paper (CB-86)
+      description: >-
+        Generates and streams an A4 `application/pdf` copy of the issued B/L (particulars, parties, voyage/ports, cargo/containers, charges,
+        terms, electronic chain of title, and integrity hashes) with `Content-Disposition: attachment; filename="bl-<ref>-v<n>-paper.pdf"`.
+        Available only when `title.state` is `switched-to-paper` (409 `not-switched-to-paper` otherwise) and only to the carrier or the
+        holder that switched it to paper (403 `paper-not-permitted` for earlier past holders; 404 for non-parties).
+
+
+        **Access:** Signed-in user with permission `bl.read`.
+      operationId: getRecordsIdPaper
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Invalid request (failed validation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing, invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - bearerAuth: []
+      x-access:
+        allOf:
+          - bl.read
   /records/{id}/title/retry-transfer:
     post:
       tags:

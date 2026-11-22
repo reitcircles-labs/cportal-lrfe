@@ -197,6 +197,8 @@ found" before any refusal that would tell the B/L's state.
 | `no-number` | 400 | `GET /records/title?number=` with a blank number (CB-47, "Check a B/L by number") | Give the number of the B/L to look for |
 | `unknown-port` | 400 | a new or changed port of loading or discharge (`POST /records`, `PUT /records/:id/draft`, `amend`) is not a sea port of the port list (CB-63; `details.problems`) | This B/L is not valid: XXAAA is not a sea port of the UN/LOCODE list: pick the port of discharge from the list |
 | `unknown-carrier-code` | 400 | a new or amended B/L (`POST /records`, `amend`) names a carrier code not on the SMDG list (CB-68; `details.problems`) | This B/L is not valid: BWML is not on the SMDG liner code list: pick the carrier code from the list |
+| `not-switched-to-paper` | 409 | `GET /records/:id/paper` (CB-86) when the B/L is not in `switched-to-paper` | Only a B/L switched to paper can generate a printable paper copy |
+| `paper-not-permitted` | 403 | `GET /records/:id/paper` (CB-86) by an earlier past holder who is neither the carrier nor the holder that switched it | Only the carrier or the holder that switched this B/L to paper can print the paper copy |
 
 An invalid document (`amend`, `split`) is refused 400 with every problem in `details.problems`,
 as when a B/L is drafted.
