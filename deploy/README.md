@@ -359,6 +359,12 @@ trail, so it takes longer on a large trail (audit takes no new events until it i
 other audit replicas only after the first one is up). Sign-in sessions from
 before keep working until they expire.
 
+**Upgrading to the maximum session age (CB-100).** The data is kept; no setting is needed. A
+session must be renewed by signing in again 12 hours after sign-in by default; an administrator
+changes it under Administration → Security policies ("Maximum session age", 1 to 168 hours).
+The first start adds the sign-in time to existing sessions, taken from when each was created;
+sessions older than the maximum age then end at their next renewal, and those users sign in again.
+
 From a version that kept the AI's page text in the database (before API-798): intake moves it
 into encrypted files beside the scans by itself when it starts (while OpenBao is sealed it tries
 again every minute; its log says "page text moved into encrypted files"). Documents filed before

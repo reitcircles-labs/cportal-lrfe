@@ -35,7 +35,12 @@ import {createMailer, invitationEmail} from './mailer.js';
 import {DEFAULT_ORGANISATION_KEY} from './seed.js';
 import {generateSecret, otpauthUrl, verifyTotp} from './totp.js';
 
+/** The shortest and longest maximum session age a site may set, in hours (CB-100). */
+const MIN_SESSION_AGE_HOURS = 1;
+const MAX_SESSION_AGE_HOURS = 168;
+
 const SYSTEM = {id: null, name: 'System'};
+const HOUR_MS = 60 * 60_000;
 const normEmail = email =>
   String(email || '')
     .trim()
@@ -108,7 +113,8 @@ export class IdentityService {
     return {
       roles,
       sod,
-      policies: policies ?? DEFAULT_POLICIES,
+      // a setting added after the policies were first saved reads its default (CB-100)
+      policies: {...DEFAULT_POLICIES, ...policies},
       offices,
       organisations,
     };
@@ -347,6 +353,8 @@ export class IdentityService {
       id: sid,
       userId: user.id,
       refreshHash: sha256(secret),
+      // the sign-in time, kept through refreshes: the maximum session age counts from it (CB-100)
+      startedAt: now,
       lastSeenAt: now,
       revokedAt: null,
       ip: ip ?? null,
@@ -394,7 +402,10 @@ export class IdentityService {
     };
   }
 
-  /** Rotate a refresh token. Enforces the idle timeout policy and the user's current status. */
+  /**
+   * Rotate a refresh token. Enforces the idle timeout and maximum session age policies and the
+   * user's current status.
+   */
   async refresh(refreshToken) {
     const [sid, secret] = String(refreshToken || '').split('.');
     const expired = () =>
@@ -420,6 +431,20 @@ export class IdentityService {
           'Session expired',
           user.name,
           `Idle for more than ${ctx.policies.timeout} minutes`,
+        );
+      }
+      throw expired();
+    }
+    // Even an active session ends after the maximum age: the user signs in again (CB-100).
+    const ageMs = now - new Date(session.startedAt);
+    if (ageMs > ctx.policies.maxSessionAge * HOUR_MS) {
+      await this.repo.updateSession(sid, {revokedAt: now});
+      if (user) {
+        await this.log(
+          'session',
+          'Session expired',
+          user.name,
+          `Older than the maximum session age of ${ctx.policies.maxSessionAge} hours`,
         );
       }
       throw expired();
@@ -1554,6 +1579,19 @@ export class IdentityService {
       );
     }
     const ctx = await this.context();
+    // A save without the maximum session age keeps the current value (CB-100).
+    const maxSessionAge = Object.hasOwn(p, 'maxSessionAge')
+      ? p.maxSessionAge
+      : ctx.policies.maxSessionAge;
+    if (
+      !Number.isInteger(maxSessionAge) ||
+      maxSessionAge < MIN_SESSION_AGE_HOURS ||
+      maxSessionAge > MAX_SESSION_AGE_HOURS
+    ) {
+      throw new BadRequestError(
+        `policies.maxSessionAge must be a whole number of hours between ${MIN_SESSION_AGE_HOURS} and ${MAX_SESSION_AGE_HOURS}`,
+      );
+    }
     const unknown = sod.filter(r => !ctx.sod.some(x => x.id === r.id));
     if (unknown.length) {
       throw new BadRequestError(
@@ -1571,6 +1609,9 @@ export class IdentityService {
     }
     if (old.timeout !== p.timeout) {
       ch.push(`Session timeout ${old.timeout} → ${p.timeout} min`);
+    }
+    if (old.maxSessionAge !== maxSessionAge) {
+      ch.push(`Maximum session age ${old.maxSessionAge} → ${maxSessionAge} h`);
     }
     if (old.fourEyes !== p.fourEyes) {
       ch.push('Four-eyes finalization ' + (p.fourEyes ? 'on' : 'off'));
@@ -1609,6 +1650,7 @@ export class IdentityService {
       eid: p.eid,
       ipAllow: p.ipAllow,
       timeout: p.timeout,
+      maxSessionAge,
       fourEyes: p.fourEyes,
     };
     await this.repo.savePolicies(nextPolicies);

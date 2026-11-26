@@ -134,3 +134,26 @@ test('the session survives a page reload, and signing out ends it', async ({
   await page.goto('/#/link');
   await expect(page).toHaveURL(/#\/login\?returnUrl=%2Flink/);
 });
+
+test(
+  'an active user keeps working: each reload renews the session as before (CB-100)',
+  {tag: '@CB-100'},
+  async ({page}) => {
+    // The maximum session age (12 h by default) is far off, so nothing changes for an active user.
+    // A session older than the maximum age is refused by the unit tests, where time can be moved on.
+    const user = userByRole('rec');
+    await enterPassword(page, user.email);
+    await enterCode(page, codeFor(secretOf(user.email)));
+    await expect(page).toHaveURL(/#\/link$/);
+
+    for (let i = 0; i < 3; i++) {
+      const renewed = page.waitForResponse(r =>
+        r.url().endsWith('/api/auth/refresh'),
+      );
+      await page.reload();
+      expect((await renewed).status()).toBe(200);
+      await expect(page).toHaveURL(/#\/link$/);
+      await expect(page.locator('aside.sidebar')).toContainText(user.name);
+    }
+  },
+);

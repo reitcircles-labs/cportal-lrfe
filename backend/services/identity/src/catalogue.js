@@ -416,6 +416,8 @@ export const DEFAULT_POLICIES = {
   eid: true,
   ipAllow: false,
   timeout: 30,
+  // the maximum age of a session in whole hours, counted from sign-in (CB-100)
+  maxSessionAge: 12,
   fourEyes: true,
 };
 

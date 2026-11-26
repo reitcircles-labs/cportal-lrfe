@@ -436,14 +436,21 @@ test(
       hasText: 'Scan operators cannot file what they capture',
     });
 
-    // A longer idle timeout and an extra duty rule: no other test depends on either.
+    // CB-100: the maximum session age shows its default, 12 hours.
+    await expect(
+      page.locator('.seg-opt', {hasText: '12 h'}).locator('input'),
+    ).toBeChecked();
+
+    // A longer idle timeout, a longer maximum session age and an extra duty rule: no other test
+    // depends on any of them.
     await page.locator('.seg-opt', {hasText: '60 min'}).click();
+    await page.locator('.seg-opt', {hasText: '24 h'}).click();
     await rule.locator('input').check();
     await expect(rule).toContainText('affected'); // users holding both permissions are counted
     await evidence(
       page,
       'API-607',
-      'Policies: 60 min timeout and an extra duty rule, unsaved',
+      'Policies: 60 min timeout, 24 h maximum session age and an extra duty rule, unsaved',
     );
     await page.getByRole('button', {name: 'Save policies'}).click();
     await confirmWith(page, 'Save policies');
@@ -451,6 +458,9 @@ test(
     await page.reload();
     await expect(
       page.locator('.seg-opt', {hasText: '60 min'}).locator('input'),
+    ).toBeChecked();
+    await expect(
+      page.locator('.seg-opt', {hasText: '24 h'}).locator('input'),
     ).toBeChecked();
     await expect(rule.locator('input')).toBeChecked();
 
@@ -484,6 +494,7 @@ test(
     await expect(toast(page, 'Permission matrix saved')).toBeVisible();
     await page.goto('/#/admin/policies');
     await page.locator('.seg-opt', {hasText: '30 min'}).click();
+    await page.locator('.seg-opt', {hasText: '12 h'}).click();
     await rule.locator('input').uncheck();
     await page.getByRole('button', {name: 'Save policies'}).click();
     await confirmWith(page, 'Save policies');
@@ -508,6 +519,16 @@ test(
     await expect(
       action(log, 'Policy updated').filter({
         hasText: 'Session timeout 60 → 30 min',
+      }),
+    ).toHaveCount(1);
+    await expect(
+      action(log, 'Policy updated').filter({
+        hasText: 'Maximum session age 12 → 24 h',
+      }),
+    ).toHaveCount(1);
+    await expect(
+      action(log, 'Policy updated').filter({
+        hasText: 'Maximum session age 24 → 12 h',
       }),
     ).toHaveCount(1);
     await evidence(

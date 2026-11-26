@@ -481,6 +481,8 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
               eid: {type: 'boolean'},
               ipAllow: {type: 'boolean'},
               timeout: {type: 'integer'},
+              // whole hours 1–168; left out, the current value is kept (CB-100)
+              maxSessionAge: {type: 'integer'},
               fourEyes: {type: 'boolean'},
             },
           },

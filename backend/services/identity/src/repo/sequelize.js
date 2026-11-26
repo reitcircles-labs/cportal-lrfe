@@ -98,6 +98,23 @@ export function createSequelizeRepo(sequelize) {
           type: DataTypes.STRING(4),
         });
       }
+      // CB-100: the sign-in time of each session. A session from before gets its creation time
+      // (the upgrade time if none is stored); the column is NOT NULL once filled. A start that
+      // stopped half-way (column added, still optional) finishes the step on the next start.
+      const session = {tableName: 'session', schema: SCHEMA};
+      const startedAt = (await q.describeTable(session)).startedAt;
+      if (!startedAt || startedAt.allowNull) {
+        if (!startedAt) {
+          await q.addColumn(session, 'startedAt', {type: DataTypes.DATE});
+        }
+        await sequelize.query(
+          `UPDATE "${SCHEMA}"."session" SET "startedAt" = COALESCE("createdAt", NOW()) WHERE "startedAt" IS NULL`,
+        );
+        await q.changeColumn(session, 'startedAt', {
+          type: DataTypes.DATE,
+          allowNull: false,
+        });
+      }
       for (const kind of ['office', 'organisation']) {
         await sequelize.query(
           `ALTER TYPE "${SCHEMA}"."enum_access_event_kind" ADD VALUE IF NOT EXISTS '${kind}'`,

@@ -43,7 +43,7 @@ export const ENDPOINTS = {
       auth: 'refresh-cookie',
       summary: 'New access token from the refresh cookie',
       description:
-        'Rotates the refresh cookie. 401 when the session ended (idle timeout, sign-out, suspension, replayed token).',
+        'Rotates the refresh cookie. 401 when the session ended (idle timeout, maximum session age, sign-out, suspension, replayed token).',
     },
     'POST /auth/logout': {
       tag: 'Auth',
@@ -249,7 +249,8 @@ export const ENDPOINTS = {
     'PUT /policies': {
       tag: 'Policies',
       summary: 'Save policies and switch rules on or off',
-      description: 'Returns `{ policies, sod, changes }`.',
+      description:
+        'Returns `{ policies, sod, changes }`. `maxSessionAge`: the maximum age of a session in whole hours (1–168, default 12), counted from sign-in; left out, the current value is kept.',
     },
   },
 };

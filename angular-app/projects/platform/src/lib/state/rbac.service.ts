@@ -69,6 +69,8 @@ export interface Policies {
   eid: boolean;
   ipAllow: boolean;
   timeout: number;
+  /** The maximum age of a session in whole hours, counted from sign-in (CB-100). */
+  maxSessionAge: number;
   fourEyes: boolean;
 }
 export type AccessKind =
@@ -134,6 +136,7 @@ export class RbacService {
     eid: true,
     ipAllow: false,
     timeout: 30,
+    maxSessionAge: 12,
     fourEyes: true,
   });
   readonly log = signal<AccessEvent[]>([]);

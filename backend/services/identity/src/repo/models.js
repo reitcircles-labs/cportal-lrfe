@@ -97,6 +97,8 @@ export function defineModels(sequelize) {
       id: {type: DataTypes.UUID, primaryKey: true},
       userId: {type: DataTypes.UUID, allowNull: false},
       refreshHash: {type: DataTypes.STRING, allowNull: false},
+      // the sign-in time, kept through refreshes; the maximum session age counts from it (CB-100)
+      startedAt: {type: DataTypes.DATE, allowNull: false},
       lastSeenAt: {type: DataTypes.DATE, allowNull: false},
       revokedAt: {type: DataTypes.DATE},
       ip: {type: DataTypes.STRING},

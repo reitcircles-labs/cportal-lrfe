@@ -210,7 +210,9 @@ Sign-in responses: `{ accessToken, expiresIn, me }`; the refresh token is set as
   (e.g. land-records refuses to let the finalizer sign off the same record).
 - **Lock-out guard**: no change (roles, suspension, matrix) may leave zero active users holding
   `admin.roles`. Nobody can change their own roles or status.
-- **Sessions**: idle timeout comes from the security policy and is enforced on refresh. Refresh
+- **Sessions**: idle timeout and maximum session age (`maxSessionAge`, whole hours 1–168,
+  default 12, counted from sign-in: CB-100) come from the security policy and are enforced on
+  refresh; a session over either is ended and logged as "Session expired". Refresh
   tokens rotate on every use; replaying an old one revokes the session. Suspending a user
   revokes all their sessions. Permission changes reach a user at their next refresh (≤ 15 min).
 - **MFA**: TOTP (authenticator app), implemented with `node:crypto` against the RFC 6238
