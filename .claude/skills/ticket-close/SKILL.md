@@ -10,7 +10,7 @@ The rules are in `CLAUDE.md`; this is the order, with the agents that keep the m
 1. **Checks you run yourself:** `npm run -s lint`, `npm run -s format:check` (root), the touched
    packages' unit tests, `cd backend && npm run -s docs:check` if routes changed. Read only totals.
 2. **e2e** (when the ticket touches behaviour): the `e2e-runner` agent, in the background, with the
-   checkout and its ports: the suite in memory and on PostgreSQL, and `npm run evidence -- <KEY>`
+   checkout and its ports: the suite of the product the ticket touches (shipping, land, or both for shared code; `docs/ai-workflow/e2e.md`, "Which suite") in memory and on PostgreSQL, and `npm run evidence -- <KEY>`
    (or `--spec <file>`) when the ticket has screens. Wait for its report.
 3. **Screenshots:** the `ui-evidence-checker` agent with the evidence folder and the reference (the
    ticket's agreed design, the storyline section). Fix what it finds and repeat 2–3. Don't open the
