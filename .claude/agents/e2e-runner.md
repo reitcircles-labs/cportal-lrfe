@@ -23,6 +23,14 @@ Nothing runs without a log the user can follow. First of all:
 
 Read `docs/ai-workflow/e2e.md` first: it has the commands, the project order and the known pitfalls.
 
+- **Only the suite(s) of the product touched** (`docs/ai-workflow/e2e.md`, "Which suite"): shipping
+  only → the shipping suite (`npm run -s test:shipping`, in memory and with `E2E_DB=postgres`); land
+  only → the land suite; shared code → both. Run what the brief names; if it names none, decide with
+  `git diff --name-only origin/main` and that table, and say which you chose. Never add the other
+  product's suite "while at it".
+- **Waiting costs a turn per check:** keep the foreground wait below at its full length (one call
+  per ~10 minutes); never poll in short loops or read the log between checks.
+
 - Work in the checkout the brief names, with its ports (`CLAUDE.md`, "Ports per checkout"):
   `E2E_API_PORT`/`E2E_WEB_PORT` for anything but the main checkout.
 - Before running: if a `package-lock.json` changed since `node_modules` was installed (in
@@ -51,8 +59,9 @@ Read `docs/ai-workflow/e2e.md` first: it has the commands, the project order and
   "still running": call it again. "no run going": the run died (read the end of `full.log`, an
   environment failure). Only after the last line, go on to the next run or the report.
 - Never print a whole log. Runs:
-  `npx playwright test` (memory), `npm run -s test:postgres`, `npm run -s test:docker` (with
-  `EDRMS_SEARCH=…` when the brief says), one spec with `npm run evidence -- <KEY> --spec <file>`
+  land: `npx playwright test` (memory), `npm run -s test:postgres`; shipping: `npm run -s
+  test:shipping`, `E2E_DB=postgres npm run -s test:shipping`; `npm run -s test:docker` (with
+  `EDRMS_SEARCH=…`) only when the brief says, one spec with `npm run evidence -- <KEY> --spec <file>`
   when screenshots are wanted. Read the totals from the last line of `progress.log`.
 - For each failure: read only its block (`grep -nE "^\s+[0-9]+\) \[" -A16 .progress/full.log`) and its
   `error-context.md`, and say whether the cause is the product (an assertion about behaviour), the

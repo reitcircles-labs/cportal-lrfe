@@ -2,7 +2,21 @@
 
 The full guide is `e2e/README.md`; this page is what a ticket needs, in the order it needs it.
 
-## The runs a ticket needs
+## Which suite: the product the ticket touches
+
+The land registry and the shipping product each have their own suite. A ticket runs only the
+suite(s) of what it changes, which saves time and tokens:
+
+| The diff touches | Runs |
+| --- | --- |
+| Shipping only: `angular-app/projects/shipping`, `backend/domains/shipping`, `e2e/tests-shipping` | the **shipping suite** (below) |
+| Land only: `angular-app/projects/land-registry`, `backend/domains/land`, `land-records`, `e2e/tests` | the **land suite** |
+| Shared: `angular-app/projects/platform`, `backend/packages`, `backend/services`, `e2e/stack`, `e2e/support`, lock files | **both** suites |
+
+The brief to the `e2e-runner` agent names the suite(s); when in doubt, `git diff --name-only
+origin/main` decides by this table. The docker run (release images) is for releases, not tickets.
+
+## The land suite
 
 From `e2e/`, with the checkout's ports (`CLAUDE.md`, "Ports per checkout"):
 
@@ -23,9 +37,9 @@ npm run -s test:docker > .progress/full.log 2>&1                   # the contain
   shows up as `ERR_MODULE_NOT_FOUND` in a host-side spec (the API docs check), not as a product failure.
 - Release images: `node demo/release.mjs test --version <v>` (the docker e2e, its log written as it runs).
 
-## The shipping run (CB-28)
+## The shipping suite (CB-28)
 
-The shipping product's backend has its own run, API only (no web app), on the same ports:
+The shipping product has its own suite on the same ports (it also serves the shipping app):
 
 ```bash
 npm run -s test:shipping > .progress/shipping.log 2>&1                  # in memory
@@ -36,8 +50,8 @@ It starts the stack with `E2E_DOMAIN=shipping` (every service on the shipping pa
 shipping-records on the API port + 13 instead of land-records) and runs `e2e/tests-shipping/`
 with `playwright.shipping.config.ts`, one worker. Its users are the shipping pack's demo users,
 signed in by the spec itself (not `support/catalogue.ts`, which is land's). It writes the same
-`progress.log`, so not beside a land run in the same checkout. A ticket that touches the shared
-services or the shipping product runs it too.
+`progress.log`, so not beside a land run in the same checkout. Which tickets run it: the table in
+"Which suite" above.
 
 ## Projects and order
 
