@@ -48,6 +48,10 @@ jobs:
       - name: Lint guard
         if: ${{ !cancelled() }}
         run: npm run test:lint-guard
+      # The branch keeper's decisions and guards (API-851): never push, rebase or touch main.
+      - name: Branch keeper
+        if: ${{ !cancelled() }}
+        run: npm run test:branch-keeper
       - name: Findings per area
         if: ${{ !cancelled() }}
         run: npm run -s lint:report >> "$GITHUB_STEP_SUMMARY"

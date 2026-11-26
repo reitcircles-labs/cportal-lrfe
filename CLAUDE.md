@@ -18,7 +18,8 @@ services 3501–3509, `npm run dev`); product code in `backend/domains/{land,shi
   message starts with the ticket key (`API-123 …`) and ends with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - **One branch ↔ one directory.** New work: `git fetch origin`, then a new branch off `origin/main`, named for the
-  epic or ticket. Parallel work goes in a separate clone (`~/projects/cportal-lrfe-<epic>`), never a second
+  epic or ticket. Parallel work, only when the user asks for it, goes in a separate clone (`~/projects/cportal-lrfe-<epic>`)
+  registered with the branch keeper (`docs/ai-workflow/branch-keeper.md`), never a second
   branch in the same directory.
 - **When an epic is done, stop:** list the branch and its commits, and ask the user whether to open its
   PR with `pr-opener` (their call), then to merge. No new work in that directory until they confirm, and check `origin/main` contains it.
@@ -32,7 +33,7 @@ services 3501–3509, `npm run dev`); product code in `backend/domains/{land,shi
 Starting: the `new-checkout` skill. Closing: the `ticket-close` skill. Agents in `.claude/agents/`:
 `reviewer` (the review gate), `e2e-runner`, `ui-evidence-checker`, `jira-reporter`, `demo-release`,
 `scale-tester`, `pr-opener` (push and PR, then the checks), `notifier` (emails the user when work waits on their decision),
-`builder` (builds a ticket from its agreed design, test first), `test-writer` (writes a core ticket's tests before its code), `log-cleaner` (removes finished runs' logs; also every 3 h by cron).
+`builder` (builds a ticket from its agreed design, test first), `test-writer` (writes a core ticket's tests before its code), `log-cleaner` (removes finished runs' logs; also every 3 h by cron), `branch-keeper` (started by `scripts/branch-keeper.mjs` when a parallel ticket branch needs fixing after main moved).
 Every agent keeps a progress log `~/lrfe-data/<ticket>/<agent>.log` and gives its `tail -f` first: nothing runs without one.
 
 1. Read the ticket and its "Agreed design"/"Done when"; move it to In Progress (transition 11). A new
