@@ -225,6 +225,21 @@ compose file, where its port is not published; never use a count larger than the
 `TRUST_PROXY=true` (trust every caller) and any other value stop the gateway at start with a message.
 The gateway passes on to the services only the client address it trusts.
 
+Sign-in is protected against guessing (CB-101). The settings below go in `.env`; a value that is not
+a whole number above 0 stops the service at start with a message naming it.
+
+- Per client address, at the gateway: `SIGN_IN_RATE_LIMIT_MAX` (default 60) requests on the password
+  step and as many on the code step per `SIGN_IN_RATE_LIMIT_WINDOW_MS` (default 60000, a minute), and
+  `REFRESH_RATE_LIMIT_MAX` (default 600) session refreshes in the same window; above that the answer
+  is "Too many requests". An office whose users all reach the server from one address shares these
+  allowances: raise them there if needed.
+- Per user, in identity: one sign-in accepts `MFA_MAX_WRONG_CODES_PER_CHALLENGE` (default 5) wrong
+  authenticator codes, then the user must enter the password again; `MFA_LOCKOUT_WRONG_CODES`
+  (default 10) wrong codes within `MFA_LOCKOUT_WINDOW_MINUTES` (default 15) lock the user's code step
+  for `MFA_LOCKOUT_MINUTES` (default 15), even with the right code. A successful sign-in clears the
+  count. Wrong codes and each lockout are in the access log. The counts are kept in memory: restarting
+  identity clears them.
+
 ## D. Encryption at rest with OpenBao (on by default)
 
 edrms, intake and extracts encrypt every file they store (the scans, the filed documents, the

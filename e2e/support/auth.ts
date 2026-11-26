@@ -34,6 +34,23 @@ export function saveSecrets(secrets: Record<string, string>) {
 
 export const codeFor = (secret: string) => totp(secret);
 
+/**
+ * A 6-digit code that is wrong for `secret` now: none of the codes the server accepts (the current
+ * one and one step of clock drift either side).
+ */
+export function wrongCodeFor(secret: string): string {
+  const now = Date.now();
+  const accepted = new Set(
+    [-30_000, 0, 30_000].map(drift => totp(secret, now + drift)),
+  );
+  for (const candidate of ['000000', '111111', '222222', '333333']) {
+    if (!accepted.has(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error('unreachable: at most three codes are accepted');
+}
+
 /** Users created during a test (support/admin.ts) enrol in that test's worker; their secrets live here. */
 const created = new Map<string, string>();
 export const rememberSecret = (email: string, secret: string) =>

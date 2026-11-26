@@ -339,6 +339,13 @@ produces the codes from then on.
 4. Type the 6-digit code the app shows (it changes every 30 seconds). You are signed in.
 5. Every later sign-in asks for the app's current code.
 
+**Wrong codes (CB-101):** after 5 wrong codes in one sign-in the user enters the password again;
+10 wrong codes within 15 minutes lock the user's code step for 15 minutes, even with the right code
+("Too many wrong codes, try again in N minutes"). A successful sign-in clears the count. Wrong
+codes and each lockout appear in the access log. The numbers are settings
+(`MFA_MAX_WRONG_CODES_PER_CHALLENGE`, `MFA_LOCKOUT_WRONG_CODES`, `MFA_LOCKOUT_WINDOW_MINUTES`,
+`MFA_LOCKOUT_MINUTES`); the counts are kept in memory, so restarting identity clears them.
+
 **Lost phone:** an administrator opens **Users → the user → Reset MFA**; the user sets up the app
 again at their next sign-in. For the only administrator, see below.
 

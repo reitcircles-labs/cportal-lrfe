@@ -89,3 +89,23 @@ export async function makeApp(opts) {
 
 /** The authenticator code for `secret` at the test clock's time. */
 export const codeFor = (secret, clock) => totp(secret, clock().getTime());
+
+/**
+ * A 6-digit code that is wrong for `secret` at the test clock's time: none of the codes the
+ * server accepts (the current one and one step of clock drift either side).
+ * @param {string} secret
+ * @param {function(): !Date} clock
+ * @return {string}
+ */
+export function wrongCodeFor(secret, clock) {
+  const at = clock().getTime();
+  const accepted = new Set(
+    [-30_000, 0, 30_000].map(drift => totp(secret, at + drift)),
+  );
+  for (let n = 0; ; n++) {
+    const candidate = String(n).padStart(6, '0');
+    if (!accepted.has(candidate)) {
+      return candidate;
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import {
   actorOf,
   domain,
@@ -85,8 +86,9 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     async (req, reply) => {
       const result = await service.login({...req.body, ip: req.ip});
       if (result.next === 'done') return signedIn(reply, result);
+      // the challenge's own id (jti): wrong codes are counted per challenge (CB-101)
       const challenge = app.jwt.sign(
-        {typ: MFA_TOKEN_TYPE, sub: result.userId},
+        {typ: MFA_TOKEN_TYPE, sub: result.userId, jti: randomUUID()},
         {expiresIn: '5m'},
       );
       const {userId, ...rest} = result;
@@ -104,7 +106,8 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
       } catch {
         throw new UnauthorizedError('Sign-in expired, start again');
       }
-      if (payload.typ !== MFA_TOKEN_TYPE) {
+      // a challenge without an id was issued before CB-101 (at most 5 minutes earlier)
+      if (payload.typ !== MFA_TOKEN_TYPE || typeof payload.jti !== 'string') {
         throw new UnauthorizedError('Sign-in expired, start again');
       }
       return signedIn(
@@ -113,6 +116,7 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
           userId: payload.sub,
           code: req.body.code,
           ip: req.ip,
+          challenge: {id: payload.jti, expiresAt: payload.exp * 1000},
         }),
       );
     },

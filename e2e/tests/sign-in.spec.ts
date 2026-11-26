@@ -1,14 +1,20 @@
 /**
  * The sign-in screen: password, authenticator code, first-time enrolment, refusals, sign-out.
  */
-import {expect, test, type Page} from '@playwright/test';
+import {
+  expect,
+  test,
+  type Page,
+  type PlaywrightWorkerArgs,
+} from '@playwright/test';
 import {
   MATRIX_USERS,
   MFA_UI_USER,
   demoUser,
   userByRole,
 } from '../support/catalogue';
-import {apiSignIn, codeFor, secretOf} from '../support/auth';
+import {apiSignIn, codeFor, secretOf, wrongCodeFor} from '../support/auth';
+import {NEW_USER_PASSWORD, adminApi, createUser} from '../support/admin';
 import {DEMO_PASSWORD} from '../stack/config.mjs';
 
 async function enterPassword(
@@ -157,3 +163,57 @@ test(
     }
   },
 );
+
+test.describe('wrong authenticator codes (CB-101)', {tag: '@CB-101'}, () => {
+  /** A user of the test's own: the per-user count of wrong codes must not touch the demo users. */
+  async function freshUser(playwright: PlaywrightWorkerArgs['playwright']) {
+    const admin = await adminApi(playwright, test.info().project.use.baseURL!);
+    const user = await createUser(admin, ['rec'], 'codes');
+    await admin.dispose();
+    return user;
+  }
+
+  test('a wrong code once or twice, then the right one, signs in as before', async ({
+    page,
+    playwright,
+  }) => {
+    const user = await freshUser(playwright);
+    await enterPassword(page, user.email, NEW_USER_PASSWORD);
+    for (let i = 0; i < 2; i++) {
+      await enterCode(page, wrongCodeFor(secretOf(user.email)));
+      // The screen empties the field once the server has answered; the alert may still be the last one.
+      await expect(page.getByLabel('6-digit code')).toHaveValue('');
+      await expect(page.getByRole('alert')).toHaveText(
+        'Invalid authenticator code',
+      );
+    }
+    await enterCode(page, codeFor(secretOf(user.email)));
+    await expect(page.locator('aside.sidebar')).toContainText(user.name);
+  });
+
+  test('after five wrong codes this sign-in is refused, and signing in again works', async ({
+    page,
+    playwright,
+  }) => {
+    const user = await freshUser(playwright);
+    await enterPassword(page, user.email, NEW_USER_PASSWORD);
+    for (let i = 0; i < 5; i++) {
+      await enterCode(page, wrongCodeFor(secretOf(user.email)));
+      // The screen empties the field once the server has answered; the alert may still be the last one.
+      await expect(page.getByLabel('6-digit code')).toHaveValue('');
+      await expect(page.getByRole('alert')).toHaveText(
+        'Invalid authenticator code',
+      );
+    }
+    await enterCode(page, codeFor(secretOf(user.email)));
+    await expect(page.getByRole('alert')).toHaveText(
+      'Too many wrong codes: sign in again',
+    );
+    await expect(page.locator('aside.sidebar')).toHaveCount(0);
+
+    await page.getByRole('button', {name: 'Use a different account'}).click();
+    await enterPassword(page, user.email, NEW_USER_PASSWORD);
+    await enterCode(page, codeFor(secretOf(user.email)));
+    await expect(page.locator('aside.sidebar')).toContainText(user.name);
+  });
+});

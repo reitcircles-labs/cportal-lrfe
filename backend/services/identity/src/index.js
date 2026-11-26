@@ -8,11 +8,13 @@ import {
   envBool,
   envInt,
   envOneOf,
+  envPositiveInt,
   healthCheck,
   orgFromEnv,
   startService,
 } from '@lrfe/common';
 import {buildApp} from './app.js';
+import {DEFAULT_CODE_GUARD_LIMITS} from './code-guard.js';
 import {IdentityService} from './identity.service.js';
 import {createMailer} from './mailer.js';
 import {createMemoryRepo} from './repo/memory.js';
@@ -94,12 +96,33 @@ const events = createEventBus({
   outbox,
 });
 const accessTtlSeconds = envInt('ACCESS_TOKEN_TTL_SECONDS', 900);
+// Limits on guessing authenticator codes (CB-101), counted in this process's memory: a restart
+// clears the counts. A value that is not a whole number above 0 stops identity here.
+const codeGuard = {
+  maxWrongCodesPerChallenge: envPositiveInt(
+    'MFA_MAX_WRONG_CODES_PER_CHALLENGE',
+    DEFAULT_CODE_GUARD_LIMITS.maxWrongCodesPerChallenge,
+  ),
+  lockoutWrongCodes: envPositiveInt(
+    'MFA_LOCKOUT_WRONG_CODES',
+    DEFAULT_CODE_GUARD_LIMITS.lockoutWrongCodes,
+  ),
+  lockoutWindowMinutes: envPositiveInt(
+    'MFA_LOCKOUT_WINDOW_MINUTES',
+    DEFAULT_CODE_GUARD_LIMITS.lockoutWindowMinutes,
+  ),
+  lockoutMinutes: envPositiveInt(
+    'MFA_LOCKOUT_MINUTES',
+    DEFAULT_CODE_GUARD_LIMITS.lockoutMinutes,
+  ),
+};
 const service = new IdentityService({
   repo,
   mailer,
   events,
   config: {
     accessTtlSeconds,
+    codeGuard,
     // in invitation emails and as the authenticator app's entry (API-712), the pack's when unset
     issuer: orgFromEnv(process.env, CATALOGUE.organisation).fullName,
     exposeInviteLinks: envBool('IDENTITY_EXPOSE_INVITE_LINKS', false),

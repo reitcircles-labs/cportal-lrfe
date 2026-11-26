@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {
+  AppError,
   BadRequestError,
   ConflictError,
   ForbiddenError,
@@ -31,6 +32,7 @@ import {
   sha256,
   safeEqual,
 } from './crypto.js';
+import {CodeGuard} from './code-guard.js';
 import {createMailer, invitationEmail} from './mailer.js';
 import {DEFAULT_ORGANISATION_KEY} from './seed.js';
 import {generateSecret, otpauthUrl, verifyTotp} from './totp.js';
@@ -94,9 +96,12 @@ export class IdentityService {
       inviteUrlBase: 'http://localhost:4200/#/invite',
       // how long an access token lives; a revocation is kept until the last one has expired
       accessTtlSeconds: 900,
+      // limits on guessing authenticator codes (CB-101); the defaults when not given
+      codeGuard: undefined,
       ...config,
     };
     this.dummyHash = null;
+    this.codeGuard = new CodeGuard({clock, limits: this.config.codeGuard});
   }
 
   // ---------------------------------------------------------------- helpers
@@ -305,8 +310,17 @@ export class IdentityService {
     };
   }
 
-  /** Step 2 of sign-in: verify a TOTP code (and complete enrolment if this is the first one). */
-  async verifyMfa({userId, code, ip}) {
+  /**
+   * Step 2 of sign-in: verify a TOTP code (and complete enrolment if this is the first one) sent on
+   * `challenge`, the step-1 challenge's id and expiry time in ms (the HTTP route always gives it).
+   * Guessing is limited (CB-101): a challenge is void after a number of wrong codes (401), and a
+   * user with too many wrong codes in the window is locked out of this step for a while (429), the
+   * right code included.
+   * @param {{userId: string, code: string, ip: (string|undefined),
+   *     challenge: ({id: string, expiresAt: number}|undefined)}} attempt
+   * @return {!Promise<!Object>} the new session, as startSession returns it
+   */
+  async verifyMfa({userId, code, ip, challenge}) {
     const user = await this.repo.getUser(userId);
     if (
       !user ||
@@ -317,16 +331,41 @@ export class IdentityService {
     }
     const enrolling = !user.mfaEnrolled;
     const secret = enrolling ? user.pendingMfaSecret : user.mfaSecret;
+    // From the check of the limits to counting the result nothing is awaited, so codes sent at the
+    // same time cannot all slip under a limit.
+    const refusal = this.codeGuard.refusal(user.id, challenge);
+    if (refusal?.reason === 'locked') {
+      const minutes = refusal.minutesLeft === 1 ? 'minute' : 'minutes';
+      throw new AppError(
+        429,
+        `Too many wrong codes, try again in ${refusal.minutesLeft} ${minutes}`,
+      );
+    }
+    if (refusal) {
+      throw new UnauthorizedError('Too many wrong codes: sign in again');
+    }
     // TODO: remember the last accepted time step per user to block code replay within the window.
     if (!secret || !verifyTotp(secret, code, this.clock().getTime())) {
+      const locked = this.codeGuard.recordWrong(user.id, challenge);
       await this.log(
         'denied',
         'MFA failed',
         user.name,
         'Invalid authenticator code',
       );
+      if (locked) {
+        const limits = this.codeGuard.limits;
+        await this.log(
+          'denied',
+          'MFA locked',
+          user.name,
+          `${limits.lockoutWrongCodes} wrong codes in ${limits.lockoutWindowMinutes} min: ` +
+            `code step locked for ${limits.lockoutMinutes} min`,
+        );
+      }
       throw new UnauthorizedError('Invalid authenticator code');
     }
+    this.codeGuard.recordSuccess(user.id);
     let current = user;
     if (enrolling) {
       current = await this.repo.updateUser(user.id, {

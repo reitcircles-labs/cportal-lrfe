@@ -147,6 +147,16 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
   10 a minute; the count is kept in memory, per gateway instance). Anything else under it is 404.
   Request logs show its path with `<token>` in place of the token (`createBaseApp` in
   `@lrfe/common` does this for every service given a `logger`).
+- **Sign-in is limited per client address** at the gateway (CB-101): `POST /api/auth/login` and
+  `/api/auth/mfa` each `SIGN_IN_RATE_LIMIT_MAX` requests per `SIGN_IN_RATE_LIMIT_WINDOW_MS` (by
+  default 60 a minute, 60000 ms), `/api/auth/refresh` `REFRESH_RATE_LIMIT_MAX` (by default 600) in the
+  same window; 429 above, counted in memory per gateway instance. Identity limits code guessing per
+  user: `MFA_MAX_WRONG_CODES_PER_CHALLENGE` (default 5) wrong codes void a sign-in challenge (401);
+  `MFA_LOCKOUT_WRONG_CODES` (default 10) wrong codes within `MFA_LOCKOUT_WINDOW_MINUTES` (default 15)
+  lock the user's code step for `MFA_LOCKOUT_MINUTES` (default 15; 429 "Too many wrong codes, try
+  again in N minutes"). A successful sign-in clears the count; the counts are in identity's memory
+  (a restart clears them); wrong codes and lockouts go to the access log. The e2e stack raises the
+  gateway limits (its tests share one address).
 - **Every service verifies the JWT and checks permissions itself** (`app.authenticate`,
   `app.requirePerm(...)` from `@lrfe/common`), with the shared `JWT_SECRET`. The frontend's
   route guards are only for display. Guards are registered as `onRequest` hooks, so an

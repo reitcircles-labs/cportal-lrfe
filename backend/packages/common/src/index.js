@@ -1,6 +1,7 @@
 export {
   env,
   envInt,
+  envPositiveInt,
   envBool,
   envList,
   envOneOf,

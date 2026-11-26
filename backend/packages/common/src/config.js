@@ -26,6 +26,24 @@ export function envInt(name, fallback) {
   return value;
 }
 
+/**
+ * An env var read as a whole number above zero (a limit, a count, a duration); the fallback when
+ * unset. Anything else (0, -1, "abc", "12abc", "1.5") throws, naming the setting, so a service
+ * stops at start rather than run without the limit.
+ * @param {string} name
+ * @param {number} fallback
+ * @return {number}
+ */
+export function envPositiveInt(name, fallback) {
+  const raw = env(name, String(fallback)).trim();
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+    throw new Error(
+      `Environment variable ${name} must be a whole number above 0, got "${raw}"`,
+    );
+  }
+  return Number(raw);
+}
+
 /** An env var read as a yes/no switch: 1, true, yes and on mean yes, anything else no. */
 export function envBool(name, fallback) {
   const raw = env(name, fallback === undefined ? undefined : String(fallback));

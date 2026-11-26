@@ -3,10 +3,17 @@ import {
   env,
   envInt,
   envList,
+  envPositiveInt,
   recordServiceOf,
   startService,
 } from '@lrfe/common';
-import {PUBLIC_RATE_LIMIT, buildApp, trustProxyFrom} from './app.js';
+import {
+  PUBLIC_RATE_LIMIT,
+  REFRESH_RATE_LIMIT,
+  SIGN_IN_RATE_LIMIT,
+  buildApp,
+  trustProxyFrom,
+} from './app.js';
 
 // the product's record service (CB-4): land-records at RECORDS_URL for land, shipping-records at
 // SHIPPING_RECORDS_URL for shipping (CB-28)
@@ -14,6 +21,20 @@ const recordService = recordServiceOf(domain);
 const recordUpstream = recordService
   ? {[recordService.name]: recordService.url}
   : {};
+
+// the sign-in limits per client address (CB-101); anything but a whole number above 0 stops here
+const signInWindow = envPositiveInt(
+  'SIGN_IN_RATE_LIMIT_WINDOW_MS',
+  SIGN_IN_RATE_LIMIT.timeWindow,
+);
+const signInRateLimit = {
+  max: envPositiveInt('SIGN_IN_RATE_LIMIT_MAX', SIGN_IN_RATE_LIMIT.max),
+  timeWindow: signInWindow,
+};
+const refreshRateLimit = {
+  max: envPositiveInt('REFRESH_RATE_LIMIT_MAX', REFRESH_RATE_LIMIT.max),
+  timeWindow: signInWindow,
+};
 
 const app = await buildApp({
   upstreams: {
@@ -34,6 +55,8 @@ const app = await buildApp({
       PUBLIC_RATE_LIMIT.timeWindow,
     ),
   },
+  signInRateLimit,
+  refreshRateLimit,
   // the proxies in front whose X-Forwarded-For is believed (CB-105): a hop count or addresses
   trustProxy: trustProxyFrom(env('TRUST_PROXY', '')),
   logger: {level: env('LOG_LEVEL', 'info')},

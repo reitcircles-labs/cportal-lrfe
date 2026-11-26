@@ -120,7 +120,9 @@ test.describe(
         await page
           .getByLabel('Name of the organisation')
           .fill(organisation.name);
-        await page.getByLabel('Code').fill(organisation.code.toLowerCase());
+        await page
+          .getByLabel('Code', {exact: true})
+          .fill(organisation.code.toLowerCase());
         if (i === 0) {
           await dismissToasts(page);
           await evidence(page, 'CB-43', 'Adding the carrier');
