@@ -303,6 +303,26 @@ export function afterAgent(status, dirty, behind) {
 }
 
 /**
+ * Splits the registered checkouts into those whose directory still exists and those deleted
+ * since, which the keeper unregisters.
+ * @param {string[]} checkouts the registered checkouts
+ * @param {function(string): boolean} exists whether a directory exists
+ * @return {{kept: string[], gone: string[]}}
+ */
+export function splitGone(checkouts, exists) {
+  const kept = [];
+  const gone = [];
+  for (const dir of checkouts) {
+    if (exists(dir)) {
+      kept.push(dir);
+    } else {
+      gone.push(dir);
+    }
+  }
+  return {kept, gone};
+}
+
+/**
  * Runs git in a checkout, through the guard. The only place the keeper runs git.
  * @param {string} dir the checkout
  * @param {string[]} args the git arguments
@@ -682,12 +702,30 @@ function takeLock() {
   }
 }
 
+/**
+ * Unregisters the checkouts whose directory was deleted, so that a removed clone leaves the
+ * registry by itself.
+ */
+function forgetGone() {
+  const current = registry();
+  const {kept, gone} = splitGone(current.checkouts, existsSync);
+  if (gone.length === 0) {
+    return;
+  }
+  current.checkouts = kept;
+  writeFileSync(REGISTRY, `${JSON.stringify(current, null, 2)}\n`);
+  for (const dir of gone) {
+    log(dir, 'directory deleted, no longer keeping it');
+  }
+}
+
 /** Checks every registered checkout, one run at a time. */
 function runAll() {
   if (!takeLock()) {
     return;
   }
   try {
+    forgetGone();
     for (const dir of registry().checkouts) {
       try {
         keep(dir);
