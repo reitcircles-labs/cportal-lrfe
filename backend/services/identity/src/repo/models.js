@@ -107,6 +107,8 @@ export function defineModels(sequelize) {
       lastSeenAt: {type: DataTypes.DATE, allowNull: false},
       revokedAt: {type: DataTypes.DATE},
       ip: {type: DataTypes.STRING},
+      // opened with 2FA (CB-103); null for a session stored before, which is never refused for it
+      twoFactor: {type: DataTypes.BOOLEAN},
     },
     opts({indexes: [{fields: ['userId']}]}),
   );

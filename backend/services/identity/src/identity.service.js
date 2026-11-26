@@ -588,6 +588,13 @@ export class IdentityService {
     });
   }
 
+  /**
+   * Opens a session for a signed-in user and records whether it was opened with 2FA (CB-103).
+   * @param {!Object} user the user signing in
+   * @param {{ip: (?string|undefined), method: string}} options the client address and the sign-in
+   *     method: 'MFA' (an authenticator code, or the set-up after a setup code) or 'password'
+   * @return {!Promise<!Object>} the refresh token, the access token claims and the user's view
+   */
   async startSession(user, {ip, method}) {
     const now = this.clock();
     const sid = randomUUID();
@@ -601,6 +608,8 @@ export class IdentityService {
       lastSeenAt: now,
       revokedAt: null,
       ip: ip ?? null,
+      // opened with 2FA; kept through refreshes (CB-103)
+      twoFactor: method === 'MFA',
     });
     const current = await this.repo.updateUser(user.id, {lastActiveAt: now});
     const ctx = await this.context();
@@ -646,8 +655,12 @@ export class IdentityService {
   }
 
   /**
-   * Rotate a refresh token. Enforces the idle timeout and maximum session age policies and the
-   * user's current status.
+   * Rotate a refresh token. Enforces the idle timeout and maximum session age policies, the
+   * user's current status and 2FA: a session opened without 2FA ends once 2FA is mandatory or
+   * the user has an authenticator (CB-103). Its access token is not revoked: it runs out by
+   * itself (at most 15 minutes).
+   * @param {string} refreshToken the refresh token, `<session id>.<secret>`
+   * @return {!Promise<!Object>} the new refresh token, the access token claims and the user's view
    */
   async refresh(refreshToken) {
     const [sid, secret] = String(refreshToken || '').split('.');
@@ -701,6 +714,17 @@ export class IdentityService {
       organisation?.status === 'Suspended'
     ) {
       await this.repo.updateSession(sid, {revokedAt: now});
+      throw expired();
+    }
+    // A session stored before CB-103 has no record of 2FA and is left alone.
+    if (session.twoFactor === false && (ctx.policies.mfa || user.mfaEnrolled)) {
+      await this.repo.updateSession(sid, {revokedAt: now});
+      await this.log(
+        'session',
+        'Session expired',
+        user.name,
+        'Opened without two-factor sign-in, which is now required',
+      );
       throw expired();
     }
     const next = randomToken();

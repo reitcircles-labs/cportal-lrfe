@@ -116,7 +116,8 @@ export function createSequelizeRepo(sequelize) {
       // (the upgrade time if none is stored); the column is NOT NULL once filled. A start that
       // stopped half-way (column added, still optional) finishes the step on the next start.
       const session = {tableName: 'session', schema: SCHEMA};
-      const startedAt = (await q.describeTable(session)).startedAt;
+      const sessionColumns = await q.describeTable(session);
+      const startedAt = sessionColumns.startedAt;
       if (!startedAt || startedAt.allowNull) {
         if (!startedAt) {
           await q.addColumn(session, 'startedAt', {type: DataTypes.DATE});
@@ -128,6 +129,11 @@ export function createSequelizeRepo(sequelize) {
           type: DataTypes.DATE,
           allowNull: false,
         });
+      }
+      // CB-103: whether a session was opened with 2FA. A session from before keeps null and is
+      // never refused for missing 2FA.
+      if (!sessionColumns.twoFactor) {
+        await q.addColumn(session, 'twoFactor', {type: DataTypes.BOOLEAN});
       }
       for (const kind of ['office', 'organisation']) {
         await sequelize.query(
