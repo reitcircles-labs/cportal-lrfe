@@ -40,6 +40,8 @@ import {totp} from '../src/totp.js';
 const REPO_DIR = join(IDENTITY_DIR, '..', '..', '..');
 
 const MINUTE = 60_000;
+/** One time step of the authenticator codes. */
+const STEP_MS = 30_000;
 const NAKALE = 'm.nakale@oag.gov.na';
 const GAWASEB = 'j.gawaseb@deeds.gov.na';
 
@@ -110,6 +112,8 @@ async function signInApp() {
     const step = await enrolmentStep(email);
     const res = await sendCode(step.challenge, codeFor(step.secret, clock));
     expect(res.statusCode, `enrolment of ${email}`).to.equal(200);
+    // the enrolment code is used up (CB-104): the next sign-in takes the next step's code
+    clock.advance(STEP_MS);
     return step.secret;
   }
 
@@ -470,6 +474,8 @@ describe('2FA code guessing: per-challenge limit and per-user lockout (CB-101)',
       await t.wrongCodesAcrossChallenges(NAKALE, secret, 9);
       expectSignedIn(await t.rightCodeOnFreshChallenge(NAKALE, secret));
       await t.wrongCodesAcrossChallenges(NAKALE, secret, 9);
+      // a code is accepted once (CB-104): the next sign-in takes the next step's code
+      t.clock.advance(STEP_MS);
       expectSignedIn(await t.rightCodeOnFreshChallenge(NAKALE, secret));
     });
   });

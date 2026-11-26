@@ -173,6 +173,8 @@ const service = new IdentityService({
     accessTtlSeconds,
     codeGuard,
     setupCodeTtlHours,
+    // end-to-end tests only (NODE_ENV=test): the demo users it seeded may reuse a code (CB-104)
+    demoMfaKey,
     // in invitation emails and as the authenticator app's entry (API-712), the pack's when unset
     issuer: orgFromEnv(process.env, CATALOGUE.organisation).fullName,
     exposeInviteLinks: envBool('IDENTITY_EXPOSE_INVITE_LINKS', false),

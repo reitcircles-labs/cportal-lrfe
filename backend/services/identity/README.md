@@ -27,7 +27,7 @@ Settings come from `services/identity/.env` (copy `backend/.env_example`):
 | `SEED_DEMO_PASSWORD` | when set, creates the domain pack's fictitious demo users with this password (the land pack has 14) |
 | `SETUP_CODE_TTL_HOURS` | how long an administrator's one-time setup code works, in hours (default 72; CB-102) |
 | `SETUP_CODE_FILE` | where the setup codes given at start (first administrator, demo users) are written, mode 0600 (default `./tmp/setup-codes.txt`; CB-102) |
-| `SEED_DEMO_MFA_KEY` | end-to-end tests only, refused unless `NODE_ENV=test`: the demo users are created with their authenticators set up, each secret derived from this key (`demoMfaSecret` in `src/seed.js`) |
+| `SEED_DEMO_MFA_KEY` | end-to-end tests only, refused unless `NODE_ENV=test`: the demo users are created with their authenticators set up, each secret derived from this key (`demoMfaSecret` in `src/seed.js`); those users (and only they) may also reuse an authenticator code, as the parallel tests sign them in within one 30 s step (CB-104) |
 | `COOKIE_SECURE` | `false` only while serving over plain `http://localhost` |
 | `IDENTITY_INVITE_URL_BASE` | start of the link in invitation emails: the address users open the app at, e.g. `https://lr.example.com/#/invite` |
 | `IDENTITY_EXPOSE_INVITE_LINKS` | dev only: also show the invitation link to the admin (needed while email is not set up) |

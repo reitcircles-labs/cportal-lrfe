@@ -13,7 +13,13 @@ import {
   demoUser,
   userByRole,
 } from '../support/catalogue';
-import {apiSignIn, codeFor, secretOf, wrongCodeFor} from '../support/auth';
+import {
+  apiSignIn,
+  codeFor,
+  freshCodeFor,
+  secretOf,
+  wrongCodeFor,
+} from '../support/auth';
 import {NEW_USER_PASSWORD, adminApi, createUser} from '../support/admin';
 import {DEMO_PASSWORD} from '../stack/config.mjs';
 
@@ -195,7 +201,7 @@ test.describe('wrong authenticator codes (CB-101)', {tag: '@CB-101'}, () => {
         'Invalid authenticator code',
       );
     }
-    await enterCode(page, codeFor(secretOf(user.email)));
+    await enterCode(page, await freshCodeFor(secretOf(user.email)));
     await expect(page.locator('aside.sidebar')).toContainText(user.name);
   });
 
@@ -213,7 +219,7 @@ test.describe('wrong authenticator codes (CB-101)', {tag: '@CB-101'}, () => {
         'Invalid authenticator code',
       );
     }
-    await enterCode(page, codeFor(secretOf(user.email)));
+    await enterCode(page, await freshCodeFor(secretOf(user.email)));
     await expect(page.getByRole('alert')).toHaveText(
       'Too many wrong codes: sign in again',
     );
@@ -221,7 +227,34 @@ test.describe('wrong authenticator codes (CB-101)', {tag: '@CB-101'}, () => {
 
     await page.getByRole('button', {name: 'Use a different account'}).click();
     await enterPassword(page, user.email, NEW_USER_PASSWORD);
-    await enterCode(page, codeFor(secretOf(user.email)));
+    await enterCode(page, await freshCodeFor(secretOf(user.email)));
     await expect(page.locator('aside.sidebar')).toContainText(user.name);
   });
 });
+
+test(
+  'a code is accepted once: signing in again with it is refused, the next one signs in (CB-104)',
+  {tag: '@CB-104'},
+  async ({page, playwright}) => {
+    // a user of the test's own: the seeded demo users may reuse a code (test-only)
+    const admin = await adminApi(playwright, test.info().project.use.baseURL!);
+    const user = await createUser(admin, ['rec'], 'replay');
+    await admin.dispose();
+    const secret = secretOf(user.email);
+    const code = await freshCodeFor(secret);
+    await enterPassword(page, user.email, NEW_USER_PASSWORD);
+    await enterCode(page, code);
+    await expect(page.locator('aside.sidebar')).toContainText(user.name);
+    await page.getByRole('button', {name: 'Sign out'}).click();
+    await expect(page).toHaveURL(/#\/login/);
+
+    await enterPassword(page, user.email, NEW_USER_PASSWORD);
+    await enterCode(page, code);
+    await expect(page.getByRole('alert')).toHaveText(
+      'Invalid authenticator code',
+    );
+    await expect(page.locator('aside.sidebar')).toHaveCount(0);
+    await enterCode(page, await freshCodeFor(secret));
+    await expect(page.locator('aside.sidebar')).toContainText(user.name);
+  },
+);

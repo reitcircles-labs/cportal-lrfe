@@ -44,6 +44,8 @@ export function defineModels(sequelize) {
       // the one-time setup code an administrator gave (CB-102): only its hash, and until when it works
       setupCodeHash: {type: DataTypes.STRING},
       setupCodeExpiresAt: {type: DataTypes.DATE},
+      // the time step of the last accepted authenticator code: a code is accepted once (CB-104)
+      mfaLastStep: {type: DataTypes.INTEGER},
       inviteHash: {type: DataTypes.STRING, unique: true},
       inviteExpiresAt: {type: DataTypes.DATE},
       lastActiveAt: {type: DataTypes.DATE},

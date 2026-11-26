@@ -13,7 +13,7 @@ import {
   type APIRequestContext,
   type PlaywrightWorkerArgs,
 } from '@playwright/test';
-import {apiSignIn, codeFor, rememberSecret} from './auth';
+import {apiSignIn, freshCodeFor, rememberSecret} from './auth';
 import {userByRole, type RoleId} from './catalogue';
 import {MAIL_DIR} from '../stack/config.mjs';
 
@@ -130,7 +130,11 @@ export async function createUser(
   const {next, secret} = await accepted.json();
   expect(next, 'two-factor sign-in is required').toBe('mfa-enroll');
   const activated = await admin.api.post('/api/invitations/accept', {
-    data: {token, password: NEW_USER_PASSWORD, code: codeFor(secret)},
+    data: {
+      token,
+      password: NEW_USER_PASSWORD,
+      code: await freshCodeFor(secret),
+    },
   });
   expect(activated.status(), await activated.text()).toBe(200);
   rememberSecret(email, secret);

@@ -38,14 +38,14 @@ import {
   createMailer,
   invitationEmail,
 } from './mailer.js';
-import {DEFAULT_ORGANISATION_KEY} from './seed.js';
+import {DEFAULT_ORGANISATION_KEY, demoMfaSecret} from './seed.js';
 import {
   DEFAULT_SETUP_CODE_TTL_HOURS,
   issueSetupCode,
   normaliseSetupCode,
   setupCodeHash,
 } from './setup-code.js';
-import {generateSecret, otpauthUrl, verifyTotp} from './totp.js';
+import {generateSecret, matchTotpStep, otpauthUrl} from './totp.js';
 
 /** The shortest and longest maximum session age a site may set, in hours (CB-100). */
 const MIN_SESSION_AGE_HOURS = 1;
@@ -110,6 +110,8 @@ export class IdentityService {
       accessTtlSeconds: 900,
       // limits on guessing authenticator codes (CB-101); the defaults when not given
       codeGuard: undefined,
+      // end-to-end tests only (SEED_DEMO_MFA_KEY): its seeded demo users may reuse a code (CB-104)
+      demoMfaKey: undefined,
       ...config,
     };
     this.dummyHash = null;
@@ -325,6 +327,8 @@ export class IdentityService {
    * Guessing is limited (CB-101): a challenge is void after a number of wrong codes (401), and a
    * user with too many wrong codes in the window is locked out of this step for a while (429), the
    * right code included.
+   * A code is accepted once (CB-104): a code for the time step last accepted, or an earlier one, is
+   * refused like a wrong code.
    * @param {{userId: string, code: string, ip: (string|undefined),
    *     challenge: ({id: string, expiresAt: number}|undefined)}} attempt
    * @return {!Promise<!Object>} the new session, as startSession returns it
@@ -341,18 +345,24 @@ export class IdentityService {
       }
     }
     const secret = enrolling ? user.pendingMfaSecret : user.mfaSecret;
-    // From the check of the limits to counting the result nothing is awaited, so codes sent at the
-    // same time cannot all slip under a limit.
+    // From the check of the limits to counting a wrong code nothing is awaited, so codes sent at
+    // the same time cannot all slip under a limit. Only a right code that loses a race to record its
+    // step is counted after an await; its sender already has the code.
     this.assertCodeStepOpen(user, challenge);
-    // TODO: remember the last accepted time step per user to block code replay within the window.
-    if (!secret || !verifyTotp(secret, code, this.clock().getTime())) {
-      await this.recordWrongCode(
-        user,
-        challenge,
-        'MFA failed',
-        'Invalid authenticator code',
-      );
-      throw new UnauthorizedError('Invalid authenticator code');
+    // a code is accepted once (CB-104): a replay is refused like a wrong code
+    const step = secret
+      ? matchTotpStep(secret, code, this.clock().getTime())
+      : null;
+    const checkReuse = !enrolling && !this.isSeededTestUser(user);
+    if (step === null || (checkReuse && !this.isNewCodeStep(user, step))) {
+      await this.refuseCode(user, challenge);
+    }
+    if (checkReuse) {
+      // the step is recorded in one step of the store: of two sign-ins racing with it, one goes on
+      const recorded = await this.repo.recordMfaStep(user.id, step);
+      if (!recorded) {
+        await this.refuseCode(user, challenge);
+      }
     }
     this.codeGuard.recordSuccess(user.id);
     let current = user;
@@ -361,6 +371,7 @@ export class IdentityService {
       const enrolled = await this.repo.enrolWithSetupCode(user.id, {
         setupCodeHash: setupCode,
         secret,
+        step,
       });
       if (!enrolled) {
         throw new UnauthorizedError('Sign-in expired, start again');
@@ -445,6 +456,51 @@ export class IdentityService {
       return null;
     }
     return user.setupCodeHash;
+  }
+
+  /**
+   * Whether `step` is later than the last time step a code of `user` was accepted for (CB-104).
+   * @param {!Object} user
+   * @param {number} step
+   * @return {boolean}
+   */
+  isNewCodeStep(user, step) {
+    const last = user.mfaLastStep ?? null;
+    return last === null || step > last;
+  }
+
+  /**
+   * Test-only (CB-104): whether `user`'s authenticator is the one the end-to-end tests' seeding
+   * gave them (SEED_DEMO_MFA_KEY, which identity refuses unless NODE_ENV=test). The tests sign the
+   * same demo users in from parallel workers within one time step, so these users may reuse a
+   * code; everything else about the code check is unchanged. Without the key, and for every user
+   * who set up an authenticator the normal way, a code is accepted once.
+   * @param {!Object} user
+   * @return {boolean}
+   */
+  isSeededTestUser(user) {
+    const key = this.config.demoMfaKey;
+    if (!key || !user.mfaSecret) {
+      return false;
+    }
+    return user.mfaSecret === demoMfaSecret(key, user.email);
+  }
+
+  /**
+   * Refuses an authenticator code that is wrong or was used before (CB-104): both are answered,
+   * counted (CB-101) and written to the access log alike.
+   * @param {!Object} user
+   * @param {({id: string, expiresAt: number}|undefined)} challenge
+   * @return {!Promise<void>} always rejects, with the wrong-code error
+   */
+  async refuseCode(user, challenge) {
+    await this.recordWrongCode(
+      user,
+      challenge,
+      'MFA failed',
+      'Invalid authenticator code',
+    );
+    throw new UnauthorizedError('Invalid authenticator code');
   }
 
   /**
@@ -1568,20 +1624,19 @@ export class IdentityService {
     if (withAuthenticator) {
       this.assertCodeStepOpen(user);
       const secret = user.pendingMfaSecret;
-      if (!secret || !verifyTotp(secret, code, this.clock().getTime())) {
-        await this.recordWrongCode(
-          user,
-          undefined,
-          'MFA failed',
-          'Invalid authenticator code',
-        );
-        throw new UnauthorizedError('Invalid authenticator code');
+      const step = secret
+        ? matchTotpStep(secret, code, this.clock().getTime())
+        : null;
+      if (step === null) {
+        await this.refuseCode(user, undefined);
       }
       this.codeGuard.recordSuccess(user.id);
+      // the step of the code that set it up counts as used (CB-104)
       Object.assign(patch, {
         mfaEnrolled: true,
         mfaSecret: secret,
         pendingMfaSecret: null,
+        mfaLastStep: step,
       });
     }
     await this.repo.updateUser(user.id, patch);
@@ -1701,6 +1756,8 @@ export class IdentityService {
     await this.repo.updateUser(id, {
       mfaEnrolled: false,
       mfaSecret: null,
+      // the next authenticator starts afresh (CB-104)
+      mfaLastStep: null,
     });
     const {setupCode, expiresAt} = await this.issueSetupCode(user);
     await this.repo.revokeUserSessions(id, this.clock());

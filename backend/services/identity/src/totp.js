@@ -60,14 +60,39 @@ export function hotp(secret, counter, digits = DIGITS) {
 export const totp = (secret, at = Date.now(), digits = DIGITS) =>
   hotp(secret, Math.floor(at / 1000 / STEP), digits);
 
-/** Accept the current code and ±`window` steps of clock drift. */
-export function verifyTotp(secret, code, at = Date.now(), window = 1) {
-  if (!/^\d{6}$/.test(String(code))) return false;
+/**
+ * The time step `code` belongs to, when it is the code of the current step or of one within
+ * ±`window` steps of clock drift (CB-104: the caller refuses a step it accepted before).
+ * @param {string} secret
+ * @param {*} code the code as typed
+ * @param {number=} at the time in ms
+ * @param {number=} window the steps of drift accepted either side
+ * @return {?number} the accepted time step, or null when the code is not accepted
+ */
+export function matchTotpStep(secret, code, at = Date.now(), window = 1) {
+  if (!/^\d{6}$/.test(String(code))) {
+    return null;
+  }
   const counter = Math.floor(at / 1000 / STEP);
   for (let d = -window; d <= window; d++) {
-    if (hotp(secret, counter + d) === String(code)) return true;
+    if (hotp(secret, counter + d) === String(code)) {
+      return counter + d;
+    }
   }
-  return false;
+  return null;
+}
+
+/**
+ * Accept the current code and ±`window` steps of clock drift. Does not remember used codes: sign-in
+ * uses matchTotpStep and refuses a step accepted before.
+ * @param {string} secret
+ * @param {*} code
+ * @param {number=} at
+ * @param {number=} window
+ * @return {boolean}
+ */
+export function verifyTotp(secret, code, at = Date.now(), window = 1) {
+  return matchTotpStep(secret, code, at, window) !== null;
 }
 
 /** The otpauth:// link an authenticator app reads from the QR code. */

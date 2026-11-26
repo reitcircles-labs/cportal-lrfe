@@ -45,6 +45,7 @@ export async function resetPassword(
       mfaEnrolled: false,
       mfaSecret: null,
       pendingMfaSecret: null,
+      mfaLastStep: null,
     });
   }
   let updated = await repo.updateUser(user.id, patch);

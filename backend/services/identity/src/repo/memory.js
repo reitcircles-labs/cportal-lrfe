@@ -50,6 +50,7 @@ export function createMemoryRepo() {
         pendingMfaSecret: null,
         setupCodeHash: null,
         setupCodeExpiresAt: null,
+        mfaLastStep: null,
         inviteHash: null,
         inviteExpiresAt: null,
         lastActiveAt: null,
@@ -69,11 +70,12 @@ export function createMemoryRepo() {
      * Sets up the user's authenticator with `secret` only while the user has none and still holds
      * the setup code of `setupCodeHash`, which is used up (CB-102). Checked and changed without
      * awaiting, so two sign-ins with the same code set up one authenticator at most.
+     * The time step of the code that set it up is recorded as the last accepted one (CB-104).
      * @param {string} id
-     * @param {{setupCodeHash: string, secret: string}} enrolment
+     * @param {{setupCodeHash: string, secret: string, step: number}} enrolment
      * @return {!Promise<boolean>} whether this call set it up
      */
-    async enrolWithSetupCode(id, {setupCodeHash, secret}) {
+    async enrolWithSetupCode(id, {setupCodeHash, secret, step}) {
       const user = users.get(id);
       if (!user || user.mfaEnrolled || user.setupCodeHash !== setupCodeHash) {
         return false;
@@ -84,7 +86,24 @@ export function createMemoryRepo() {
         pendingMfaSecret: null,
         setupCodeHash: null,
         setupCodeExpiresAt: null,
+        mfaLastStep: step,
       });
+      return true;
+    },
+    /**
+     * Records `step` as the user's last accepted authenticator time step, only when it is later
+     * than the one recorded (or none is), so a code is accepted once (CB-104). Checked and changed
+     * without awaiting, so of two sign-ins with the same code one records it.
+     * @param {string} id
+     * @param {number} step
+     * @return {!Promise<boolean>} whether this call recorded it
+     */
+    async recordMfaStep(id, step) {
+      const user = users.get(id);
+      if (!user || (user.mfaLastStep !== null && user.mfaLastStep >= step)) {
+        return false;
+      }
+      user.mfaLastStep = step;
       return true;
     },
 

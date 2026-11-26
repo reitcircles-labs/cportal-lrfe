@@ -10,7 +10,7 @@ import {
   type Page,
   type PlaywrightWorkerArgs,
 } from '@playwright/test';
-import {codeFor, readSecrets, wrongCodeFor} from '../support/auth';
+import {freshCodeFor, readSecrets, wrongCodeFor} from '../support/auth';
 import {
   INVITED_PASSWORD,
   demoEmails,
@@ -74,7 +74,7 @@ test.describe('wrong authenticator codes', {tag: '@CB-101'}, () => {
         'Invalid authenticator code',
       );
     }
-    await enterCode(page, codeFor(secret));
+    await enterCode(page, await freshCodeFor(secret));
     await expect(page.getByRole('button', {name: 'Sign out'})).toBeVisible();
   });
 
@@ -92,7 +92,7 @@ test.describe('wrong authenticator codes', {tag: '@CB-101'}, () => {
         'Invalid authenticator code',
       );
     }
-    await enterCode(page, codeFor(secret));
+    await enterCode(page, await freshCodeFor(secret));
     await expect(page.getByRole('alert')).toHaveText(
       'Too many wrong codes: sign in again',
     );
@@ -100,7 +100,7 @@ test.describe('wrong authenticator codes', {tag: '@CB-101'}, () => {
 
     await page.getByRole('button', {name: 'Use a different account'}).click();
     await enterPassword(page, email);
-    await enterCode(page, codeFor(secret));
+    await enterCode(page, await freshCodeFor(secret));
     await expect(page.getByRole('button', {name: 'Sign out'})).toBeVisible();
   });
 });

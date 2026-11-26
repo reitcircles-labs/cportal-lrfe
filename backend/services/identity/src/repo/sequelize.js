@@ -1,4 +1,4 @@
-import {DataTypes} from 'sequelize';
+import {DataTypes, Op} from 'sequelize';
 import {inTransaction} from '@lrfe/common';
 import {defineModels, SCHEMA} from './models.js';
 
@@ -39,6 +39,7 @@ const USER_FIELDS = [
   'pendingMfaSecret',
   'setupCodeHash',
   'setupCodeExpiresAt',
+  'mfaLastStep',
   'inviteHash',
   'inviteExpiresAt',
   'lastActiveAt',
@@ -96,6 +97,10 @@ export function createSequelizeRepo(sequelize) {
       }
       if (!userColumns.setupCodeExpiresAt) {
         await q.addColumn(user, 'setupCodeExpiresAt', {type: DataTypes.DATE});
+      }
+      // CB-104: the time step of the last accepted authenticator code
+      if (!userColumns.mfaLastStep) {
+        await q.addColumn(user, 'mfaLastStep', {type: DataTypes.INTEGER});
       }
       if (!(await q.describeTable(office)).organisationId) {
         await q.addColumn(office, 'organisationId', {type: DataTypes.UUID});
@@ -250,11 +255,12 @@ export function createSequelizeRepo(sequelize) {
      * Sets up the user's authenticator with `secret` only while the user has none and still holds
      * the setup code of `setupCodeHash`, which is used up (CB-102). In one statement, so two
      * sign-ins with the same code set up one authenticator at most.
+     * The time step of the code that set it up is recorded as the last accepted one (CB-104).
      * @param {string} id
-     * @param {{setupCodeHash: string, secret: string}} enrolment
+     * @param {{setupCodeHash: string, secret: string, step: number}} enrolment
      * @return {!Promise<boolean>} whether this call set it up
      */
-    async enrolWithSetupCode(id, {setupCodeHash, secret}) {
+    async enrolWithSetupCode(id, {setupCodeHash, secret, step}) {
       const [count] = await m.User.update(
         {
           mfaEnrolled: true,
@@ -262,8 +268,30 @@ export function createSequelizeRepo(sequelize) {
           pendingMfaSecret: null,
           setupCodeHash: null,
           setupCodeExpiresAt: null,
+          mfaLastStep: step,
         },
         {where: {id, setupCodeHash, mfaEnrolled: false}},
+      );
+      return count === 1;
+    },
+
+    /**
+     * Records `step` as the user's last accepted authenticator time step, only when it is later
+     * than the one recorded (or none is), so a code is accepted once (CB-104). In one statement,
+     * so of two sign-ins with the same code one records it.
+     * @param {string} id
+     * @param {number} step
+     * @return {!Promise<boolean>} whether this call recorded it
+     */
+    async recordMfaStep(id, step) {
+      const [count] = await m.User.update(
+        {mfaLastStep: step},
+        {
+          where: {
+            id,
+            [Op.or]: [{mfaLastStep: null}, {mfaLastStep: {[Op.lt]: step}}],
+          },
+        },
       );
       return count === 1;
     },

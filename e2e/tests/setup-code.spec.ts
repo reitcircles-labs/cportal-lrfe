@@ -16,7 +16,7 @@ import {
   type PlaywrightWorkerArgs,
 } from '@playwright/test';
 import {userByRole} from '../support/catalogue';
-import {codeFor, secretOf, signedInPage} from '../support/auth';
+import {codeFor, freshCodeFor, secretOf, signedInPage} from '../support/auth';
 import {
   NEW_USER_PASSWORD,
   adminApi,
@@ -175,7 +175,8 @@ test.describe('authenticator setup with a one-time setup code', tag, () => {
     await page.getByRole('button', {name: 'Go to sign-in'}).click();
 
     await enterPassword(page, email);
-    await page.getByLabel('6-digit code').fill(codeFor(secret));
+    // the activation's code is used up (CB-104)
+    await page.getByLabel('6-digit code').fill(await freshCodeFor(secret));
     await page.getByRole('button', {name: 'Verify and sign in'}).click();
     await expect(page.locator('aside.sidebar')).toBeVisible();
   });

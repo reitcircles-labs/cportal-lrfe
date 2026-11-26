@@ -34,7 +34,66 @@ export function saveSecrets(secrets: Record<string, string>) {
   writeFileSync(SECRETS_FILE, JSON.stringify(secrets, null, 2));
 }
 
-export const codeFor = (secret: string) => totp(secret);
+/** One time step of the authenticator codes, in ms. */
+const STEP_MS = 30_000;
+
+/**
+ * The last time step this worker handed out a code for, per secret (CB-104: the server accepts a
+ * code once, so a user created during a test cannot sign in twice with the same code).
+ */
+const lastSteps = new Map<string, number>();
+
+/**
+ * The code of `secret`'s time step `step`, remembered as used.
+ * @param secret the authenticator secret
+ * @param step the time step
+ * @return the 6-digit code
+ */
+function codeOfStep(secret: string, step: number): string {
+  lastSteps.set(secret, Math.max(step, lastSteps.get(secret) ?? step));
+  return totp(secret, step * STEP_MS);
+}
+
+/**
+ * The code of `secret` now, as an authenticator app shows it.
+ * @param secret the authenticator secret
+ * @return the 6-digit code
+ */
+export function codeFor(secret: string): string {
+  return codeOfStep(secret, Math.floor(Date.now() / STEP_MS));
+}
+
+/** Time left in a step under which the previous step's code is not used: it may expire on the way. */
+const MIN_STEP_LEFT_MS = 2_000;
+
+/**
+ * A code of `secret` the server has not accepted yet (CB-104), for users created during a test:
+ * the earliest step inside the server's window of one step of clock drift that this worker has not
+ * used for it (the previous step's code only while the step has 2 s or more left), so a new user
+ * has three codes before any wait. When this worker used them all, it waits for the next step,
+ * adding the wait to the test's time limit. The seeded demo users do not need it: the server lets them reuse a code
+ * (SEED_DEMO_MFA_KEY).
+ * @param secret the authenticator secret
+ * @return the 6-digit code
+ */
+export async function freshCodeFor(secret: string): Promise<string> {
+  for (;;) {
+    const now = Date.now();
+    const current = Math.floor(now / STEP_MS);
+    const stepLeft = (current + 1) * STEP_MS - now;
+    const earliest = stepLeft >= MIN_STEP_LEFT_MS ? current - 1 : current;
+    const next = Math.max(
+      earliest,
+      (lastSteps.get(secret) ?? earliest - 1) + 1,
+    );
+    if (next <= current + 1) {
+      return codeOfStep(secret, next);
+    }
+    const wait = (current + 1) * STEP_MS - now + 100;
+    test.info().setTimeout(test.info().timeout + wait);
+    await new Promise(resolve => setTimeout(resolve, wait));
+  }
+}
 
 /**
  * The authenticator secret the stack's seeding gave a demo user (CB-102).
@@ -94,8 +153,13 @@ export async function apiSignIn(
   expect(body.next, `${email} should already be enrolled (auth.setup.ts)`).toBe(
     'mfa',
   );
+  // a user created during the test needs a code not used yet (CB-104); a demo user may reuse one
+  const secret = secretOf(email);
+  const code = created.has(email)
+    ? await freshCodeFor(secret)
+    : codeFor(secret);
   const step2 = await request.post('/api/auth/mfa', {
-    data: {challenge: body.challenge, code: codeFor(secretOf(email))},
+    data: {challenge: body.challenge, code},
   });
   expect(
     step2.status(),

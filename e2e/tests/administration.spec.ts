@@ -9,7 +9,7 @@
  */
 import {expect, test, type Locator, type Page} from '@playwright/test';
 import {userByRole} from '../support/catalogue';
-import {apiSignIn, codeFor, signedInPage} from '../support/auth';
+import {apiSignIn, codeFor, freshCodeFor, signedInPage} from '../support/auth';
 import {
   NEW_USER_PASSWORD,
   adminApi,
@@ -208,7 +208,8 @@ test(
     await expect(page.getByLabel('Email')).toHaveValue(person.email);
     await page.getByLabel('Password').fill(NEW_USER_PASSWORD);
     await page.getByRole('button', {name: 'Sign in', exact: true}).click();
-    await page.getByLabel('6-digit code').fill(codeFor(key));
+    // the activation's code is used up (CB-104)
+    await page.getByLabel('6-digit code').fill(await freshCodeFor(key));
     await page.getByRole('button', {name: 'Verify and sign in'}).click();
     await expect(page).toHaveURL(/#\/link$/);
     await expect(page.locator('aside.sidebar')).toContainText(person.name);

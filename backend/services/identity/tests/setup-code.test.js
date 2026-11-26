@@ -37,6 +37,8 @@ const REVIEWER = 'a.mwandingi@deeds.gov.na';
 const OTHER_SCAN = 's.nangolo@deeds.gov.na';
 
 const MINUTE = 60_000;
+/** One time step of the authenticator codes. */
+const STEP_MS = 30_000;
 const HOUR = 60 * MINUTE;
 const NEW_PASSWORD = 'a new password for the invitee';
 
@@ -429,8 +431,10 @@ describe('authenticator setup with a one-time setup code (CB-102)', () => {
     });
 
     it('once set up, the next sign-in asks for the authenticator code, never for a setup code', async () => {
-      const {giveCode, setUp, signInWithCode} = await setupApp();
+      const {giveCode, setUp, signInWithCode, clock} = await setupApp();
       const secret = await setUp(SCAN, await giveCode(SCAN));
+      // the set-up code is used up (CB-104): the sign-in takes the next step's code
+      clock.advance(STEP_MS);
       const {token} = await signInWithCode(SCAN, secret);
       expect(token).to.be.a('string');
     });
@@ -649,10 +653,12 @@ describe('authenticator setup with a one-time setup code (CB-102)', () => {
 
   describe("the administrator's reset", () => {
     it("ends all of the user's sessions", async () => {
-      const {enrolDirectly, signInWithCode, resetTwoFactor, refresh} =
+      const {enrolDirectly, signInWithCode, resetTwoFactor, refresh, clock} =
         await setupApp();
       const secret = await enrolDirectly(SCAN);
       const first = await signInWithCode(SCAN, secret);
+      // a code is accepted once (CB-104): the second sign-in takes the next step's code
+      clock.advance(STEP_MS);
       const second = await signInWithCode(SCAN, secret);
       await resetTwoFactor(SCAN);
       for (const session of [first, second]) {
@@ -1007,6 +1013,8 @@ describe('authenticator setup with a one-time setup code (CB-102)', () => {
         payload: {email, password: NEW_PASSWORD},
       });
       expect(login.json().next).to.equal('mfa');
+      // the invitation's code is used up (CB-104): the sign-in takes the next step's code
+      ctx.clock.advance(STEP_MS);
       const signedIn = await ctx.sendCode(
         login.json().challenge,
         codeFor(secret, ctx.clock),
