@@ -24,9 +24,10 @@ one renames and the other uses, code one needs from the other), and the cost sho
    `git clone <origin url> ~/projects/cportal-lrfe-<epic>`, the branch off `origin/main`, `git config`
    user.name and user.email as in this checkout, `npm ci` in the root, `backend/`, `angular-app/`, `e2e/`.
    Give it free ports (`CLAUDE.md`, "Ports per checkout": 3700/4400, 3800/4500, …) and use them for
-   every e2e or load-test run there. Before the second of the parallel PRs is merged: rebase it on
-   the updated `origin/main` and run its tests again, since the two can break each other without a
-   conflict.
+   every e2e or load-test run there. Register it with the branch keeper
+   (`node scripts/branch-keeper.mjs register <clone>`, `docs/ai-workflow/branch-keeper.md`): it
+   merges each new `main` into the branch and keeps it green, so the two branches never meet only at
+   merge time. Unregister it when its PR is merged.
 5. Move the first ticket to In Progress (project API: transition 11; project CB: transition 21,
    check with `listJiraIssueTransitions` for others) and write a memory note: the directory, the
    branch, its ports, the epic.
