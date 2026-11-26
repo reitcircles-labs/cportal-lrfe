@@ -6,6 +6,7 @@ import {describe, it} from 'node:test';
 import {
   ONBOARDING_PERMS,
   apiKeyProblem,
+  copyApiKey,
   cleanInvitation,
   cleanOrganisation,
   freeOfficeCode,
@@ -398,5 +399,40 @@ describe('carrier API key helpers (CB-56)', () => {
       'bl.draft',
       'bl.issue',
     ]);
+  });
+});
+
+describe('copyApiKey: copy the new API key with one click (CB-121)', () => {
+  it('writes the key to the clipboard and confirms without showing the key', async () => {
+    const written: string[] = [];
+    const clipboard = {
+      writeText: async (text: string) => {
+        written.push(text);
+      },
+    };
+    const toast = await copyApiKey('lrfe_secret123', clipboard);
+    assert.deepEqual(written, ['lrfe_secret123']);
+    assert.equal(toast.kind, 'success');
+    assert.equal(toast.title, 'API key copied');
+    assert.ok(!`${toast.title} ${toast.detail}`.includes('lrfe_secret123'));
+  });
+
+  it('asks to copy by hand when the browser blocks the clipboard', async () => {
+    const blocked = {
+      writeText: async () => {
+        throw new Error('NotAllowedError');
+      },
+    };
+    const toast = await copyApiKey('lrfe_secret123', blocked);
+    assert.equal(toast.kind, 'info');
+    assert.equal(toast.title, 'Copy the API key by hand');
+    assert.ok(!`${toast.title} ${toast.detail}`.includes('lrfe_secret123'));
+  });
+
+  it('asks to copy by hand when there is no clipboard', async () => {
+    const toast = await copyApiKey('lrfe_secret123', undefined);
+    assert.equal(toast.kind, 'info');
+    assert.equal(toast.title, 'Copy the API key by hand');
+    assert.ok(!`${toast.title} ${toast.detail}`.includes('lrfe_secret123'));
   });
 });

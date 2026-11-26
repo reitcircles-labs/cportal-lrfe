@@ -409,3 +409,46 @@ export function selectedApiKeyPerms(allowIssue: boolean): string[] {
     ? ['bl.read', 'bl.draft', 'bl.issue']
     : ['bl.read', 'bl.draft'];
 }
+
+/** The part of the browser's clipboard that copying needs. */
+export interface ClipboardWriter {
+  writeText(text: string): Promise<void>;
+}
+
+/** The notification shown after copying an API key: never contains the key itself. */
+export interface CopyNotice {
+  kind: 'success' | 'info';
+  title: string;
+  detail: string;
+}
+
+/**
+ * Copies a newly created API key to the clipboard (CB-121) and says how it went. The key is
+ * never put in the notice: notifications can be seen over the user's shoulder.
+ * @param secret the API key, shown only once
+ * @param clipboard the browser's clipboard, absent when the browser offers none
+ * @return the notice to show
+ */
+export async function copyApiKey(
+  secret: string,
+  clipboard: ClipboardWriter | undefined,
+): Promise<CopyNotice> {
+  const byHand: CopyNotice = {
+    kind: 'info',
+    title: 'Copy the API key by hand',
+    detail: 'Copying is not available here. Select the key and copy it.',
+  };
+  if (!clipboard) {
+    return byHand;
+  }
+  try {
+    await clipboard.writeText(secret);
+  } catch {
+    return byHand;
+  }
+  return {
+    kind: 'success',
+    title: 'API key copied',
+    detail: 'Paste it into your own secret store now.',
+  };
+}

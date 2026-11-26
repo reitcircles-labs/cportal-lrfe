@@ -23,6 +23,7 @@ import {CarrierPickerComponent} from '../bls/carrier-picker.component';
 import {LatestRequest} from '../bls/latest';
 import {
   apiKeyProblem,
+  copyApiKey,
   cleanInvitation,
   invitationInvalidField,
   invitationProblem,
@@ -159,7 +160,12 @@ interface StaffRow {
             @if (createdSecret(); as secret) {
               <div class="note secret-box" role="status">
                 <strong>API key created — save it now (it is shown only once):</strong>
-                <div class="mono" style="margin-top:6px;word-break:break-all">{{ secret }}</div>
+                <div class="secret-row">
+                  <div class="mono secret-text">{{ secret }}</div>
+                  <button type="button" class="btn btn-secondary copy-btn" aria-label="Copy API key" title="Copy API key" (click)="copyKey(secret)">
+                    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                  </button>
+                </div>
               </div>
             }
             @if (o.status === 'Active') {
@@ -231,6 +237,9 @@ interface StaffRow {
     .role { display: flex; gap: 10px; align-items: flex-start; min-height: 44px; }
     .role input { margin-top: 3px; }
     .secret-box { background: var(--color-surface-2); border: 1px solid var(--color-divider); }
+    .secret-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    .secret-text { flex: 0 1 auto; min-width: 0; word-break: break-all; }
+    .copy-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 6px; line-height: 0; }
     @media (max-width: 720px) { .who { grid-template-columns: 1fr; } }
   `,
   ],
@@ -466,6 +475,16 @@ export class OrganisationDetailComponent {
     } finally {
       this.keyBusy.set(false);
     }
+  }
+
+  /**
+   * Copies the newly created API key to the clipboard and confirms it (CB-121).
+   * @param secret the API key shown once
+   * @return when the notice is shown
+   */
+  protected async copyKey(secret: string): Promise<void> {
+    const notice = await copyApiKey(secret, globalThis.navigator?.clipboard);
+    this.toast.show(notice.kind, notice.title, notice.detail);
   }
 
   /**
