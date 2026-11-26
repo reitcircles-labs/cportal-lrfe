@@ -15,6 +15,10 @@ services:
     user: "${E2E_UID:?}:${E2E_GID:?}"
     environment:
       SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:?}
+      # the demo users start with their authenticators set up, derived from this key (CB-102);
+      # identity honours it only for tests
+      NODE_ENV: test
+      SEED_DEMO_MFA_KEY: ${SEED_DEMO_MFA_KEY:?}
       MAIL_TRANSPORT: file
       MAIL_FILE_DIR: /mail
       MAIL_FROM: Deeds Registry (e2e) <noreply@example.com>

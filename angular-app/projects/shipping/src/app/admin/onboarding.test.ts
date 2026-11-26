@@ -66,6 +66,7 @@ function user(name: string, organisationId: string | null): StaffMember {
     roles: ['bld'],
     status: 'Invited',
     organisationId,
+    mfa: false,
   };
 }
 

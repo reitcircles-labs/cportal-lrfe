@@ -1,5 +1,5 @@
 import {expect} from 'chai';
-import {makeService, codeFor, PASSWORD} from './helpers.js';
+import {makeService, codeFor, setupCodeStep, PASSWORD} from './helpers.js';
 
 const ADMIN = 'p.hamutenya@deeds.gov.na';
 const SCAN = 'k.iipinge@deeds.gov.na';
@@ -70,10 +70,12 @@ describe('IdentityService', () => {
       );
     });
 
-    it('enrols MFA on first sign-in when policy requires it, then asks for a code', async () => {
+    it('enrols MFA with a setup code when policy requires it, then asks for a code', async () => {
       const {service, clock, user} = await makeService({mfa: true});
-      const first = await service.login({email: SCAN, password: PASSWORD});
-      expect(first.next).to.equal('mfa-enroll');
+      // CB-102: the password alone leads to the setup-code step, never to a secret
+      const step1 = await service.login({email: SCAN, password: PASSWORD});
+      expect(step1).to.deep.equal({next: 'setup-code', userId: step1.userId});
+      const first = await setupCodeStep(service, SCAN);
       expect(first.otpauthUrl).to.include('otpauth://totp/');
       await rejects(
         service.verifyMfa({userId: first.userId, code: '000000'}),
@@ -367,7 +369,9 @@ describe('IdentityService', () => {
         mfaSecret: 'ABC',
       });
       const res = await service.resetMfa((await user(SCAN)).id, actor);
-      expect(res.mfa).to.equal(false);
+      // CB-102: the answer is the user and a one-time setup code
+      expect(res.user.mfa).to.equal(false);
+      expect(res.setupCode).to.match(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
       expect((await user(SCAN)).mfaSecret).to.equal(null);
     });
   });

@@ -19,6 +19,7 @@ import {mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {userInfo} from 'node:os';
 import {join} from 'node:path';
 import {
+  DEMO_MFA_KEY,
   DEMO_PASSWORD,
   E2E_ORG,
   MAIL_DIR,
@@ -79,6 +80,8 @@ const env = {
   // the time zone of the dates on the extract and its check page (API-786)
   LRFE_TIME_ZONE: 'Africa/Windhoek',
   SEED_DEMO_PASSWORD: DEMO_PASSWORD,
+  // the demo users' authenticators, set up directly by the seeding (CB-102)
+  SEED_DEMO_MFA_KEY: DEMO_MFA_KEY,
   E2E_UID: String(mailUser.uid),
   E2E_GID: String(mailUser.gid),
   E2E_MAIL_DIR: MAIL_DIR,

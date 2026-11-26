@@ -83,6 +83,22 @@ export class OrganisationsApi {
   }
 
   /**
+   * A one-time setup code for a staff member (CB-102): "Reset 2FA" (mfa-reset, which also ends
+   * their sessions) or "Give setup code" (setup-code, for a member without an authenticator).
+   * @param userId the staff member's id
+   * @param action the route
+   * @return the code and until when it works, shown once
+   */
+  setupCode(
+    userId: string,
+    action: 'mfa-reset' | 'setup-code',
+  ): Promise<{setupCode: string; expiresAt: string}> {
+    return this.api.post<{setupCode: string; expiresAt: string}>(
+      `/users/${encodeURIComponent(userId)}/${action}`,
+    );
+  }
+
+  /**
    * Invites a person into an organisation. Identity puts every user who is not a system
    * administrator into an office, so the organisation's first active office is used, made first
    * when it has none (named after the organisation, with a code no other office has).

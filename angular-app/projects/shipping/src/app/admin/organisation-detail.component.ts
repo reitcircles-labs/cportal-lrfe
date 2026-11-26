@@ -11,8 +11,10 @@ import {DatePipe} from '@angular/common';
 import {RouterLink} from '@angular/router';
 import {
   ConfirmService,
+  GivenSetupCode,
   NATIONAL_ROLES,
   RbacService,
+  SetupCodeDialogComponent,
   ToastService,
   toApiError,
 } from '@lrfe/platform';
@@ -52,7 +54,12 @@ interface StaffRow {
  */
 @Component({
   selector: 'app-organisation-detail',
-  imports: [DatePipe, RouterLink, CarrierPickerComponent],
+  imports: [
+    DatePipe,
+    RouterLink,
+    CarrierPickerComponent,
+    SetupCodeDialogComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page stack" style="gap:18px">
@@ -102,6 +109,7 @@ interface StaffRow {
                   <th>Email</th>
                   <th>Roles</th>
                   <th>Status</th>
+                  <th>2FA</th>
                 </tr>
               </thead>
               <tbody>
@@ -111,9 +119,14 @@ interface StaffRow {
                     <td class="small">{{ r.member.email }}</td>
                     <td>{{ r.roles }}</td>
                     <td><span [class]="'tag ' + r.tagClass">{{ r.member.status }}</span></td>
+                    <td><div class="twofa">
+                      @if (r.member.mfa) { <span class="pill">set up</span> } @else if (r.member.status !== 'Invited') { <span class="pill warn">not set up</span> }
+                      @if (r.member.mfa) { <button type="button" class="btn btn-ghost btn-sm" [disabled]="codeBusy()" (click)="resetTwoFactor(r.member)">Reset 2FA</button> }
+                      @else if (r.member.status === 'Active') { <button type="button" class="btn btn-ghost btn-sm" [disabled]="codeBusy()" (click)="giveSetupCode(r.member)">Give setup code</button> }
+                    </div></td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="4" class="muted" style="padding:22px 16px">{{ loading() ? 'Loading…' : 'No staff yet.' }}</td></tr>
+                  <tr><td colspan="5" class="muted" style="padding:22px 16px">{{ loading() ? 'Loading…' : 'No staff yet.' }}</td></tr>
                 }
               </tbody>
             </table>
@@ -228,6 +241,7 @@ interface StaffRow {
         <p class="muted" role="status">Loading…</p>
       }
     </div>
+    @if (given(); as g) { <app-setup-code-dialog [given]="g" (done)="given.set(null)" /> }
   `,
   styles: [
     BL_SHARED_STYLES,
@@ -239,6 +253,10 @@ interface StaffRow {
     .secret-box { background: var(--color-surface-2); border: 1px solid var(--color-divider); }
     .secret-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
     .secret-text { flex: 0 1 auto; min-width: 0; word-break: break-all; }
+    .twofa { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .pill { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--color-divider); white-space: nowrap; }
+    .pill.warn { border-color: var(--warn); color: var(--warn-fg); }
+    .btn-sm { min-height: 28px; padding: 2px 8px; font-size: 13px; }
     .copy-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 6px; line-height: 0; }
     @media (max-width: 720px) { .who { grid-template-columns: 1fr; } }
   `,
@@ -273,6 +291,9 @@ export class OrganisationDetailComponent {
   protected readonly keyBusy = signal(false);
   protected readonly keyError = signal<string | null>(null);
   protected readonly createdSecret = signal<string | null>(null);
+  /** The one-time setup code being shown, once (CB-102). */
+  protected readonly given = signal<GivenSetupCode | null>(null);
+  protected readonly codeBusy = signal(false);
   /** The field the form's problem is in, marked invalid for screen readers. */
   protected readonly invalid = signal<'name' | 'email' | 'roles' | null>(null);
 
@@ -302,6 +323,55 @@ export class OrganisationDetailComponent {
    */
   protected tagClass(status: StaffMember['status']): string {
     return statusTagClass(status);
+  }
+
+  /**
+   * "Reset 2FA" of a staff member, after confirmation (CB-102): their authenticator stops working,
+   * they are signed out everywhere, and the one-time setup code to give them is shown.
+   * @param member the staff member
+   * @return when it is done
+   */
+  protected async resetTwoFactor(member: StaffMember): Promise<void> {
+    const confirmed = await this.confirm.ask({
+      title: `Reset 2FA for ${member.name}?`,
+      body: 'Their authenticator stops working and they are signed out everywhere. You get a one-time setup code to give them.',
+      confirmLabel: 'Reset and show setup code',
+      tone: 'danger',
+    });
+    if (confirmed) {
+      await this.showSetupCode(member, 'mfa-reset');
+    }
+  }
+
+  /**
+   * "Give setup code" to a staff member without an authenticator (CB-102).
+   * @param member the staff member
+   * @return when it is done
+   */
+  protected async giveSetupCode(member: StaffMember): Promise<void> {
+    await this.showSetupCode(member, 'setup-code');
+  }
+
+  /**
+   * Asks identity for a staff member's setup code, shows it once and reloads the staff list.
+   * @param member the staff member
+   * @param action the route: mfa-reset or setup-code
+   * @return when it is done
+   */
+  private async showSetupCode(
+    member: StaffMember,
+    action: 'mfa-reset' | 'setup-code',
+  ): Promise<void> {
+    this.codeBusy.set(true);
+    try {
+      const answer = await this.organisationsApi.setupCode(member.id, action);
+      this.given.set({name: member.name, ...answer});
+      await this.load(this.id());
+    } catch (e) {
+      this.toast.show('danger', 'No setup code given', toApiError(e).message);
+    } finally {
+      this.codeBusy.set(false);
+    }
   }
 
   /**

@@ -1,7 +1,8 @@
 /**
- * Signing in during tests. Every demo user's authenticator is enrolled once by tests/auth.setup.ts,
- * which keeps the secrets in .auth/totp.json; the tests then compute the 6-digit code the way an
- * authenticator app does.
+ * Signing in during tests. Every demo user starts with an authenticator set up by the stack's
+ * seeding (CB-102: SEED_DEMO_MFA_KEY), its secret derived from a key the tests share
+ * (demoSecretOf); tests/auth.setup.ts checks them and keeps the secrets in .auth/totp.json. The
+ * tests then compute the 6-digit code the way an authenticator app does.
  *
  * Browser sessions cannot be saved and reused between tests (Playwright's storageState): the
  * refresh token rotates on every use and the server revokes a session whose old token comes back.
@@ -17,8 +18,9 @@ import {
   type Browser,
   type Page,
 } from '@playwright/test';
+import {demoMfaSecret} from '../../backend/services/identity/src/seed.js';
 import {totp} from '../../backend/services/identity/src/totp.js';
-import {DEMO_PASSWORD, E2E_DIR} from '../stack/config.mjs';
+import {DEMO_MFA_KEY, DEMO_PASSWORD, E2E_DIR} from '../stack/config.mjs';
 
 const SECRETS_FILE = join(E2E_DIR, '.auth', 'totp.json');
 
@@ -33,6 +35,15 @@ export function saveSecrets(secrets: Record<string, string>) {
 }
 
 export const codeFor = (secret: string) => totp(secret);
+
+/**
+ * The authenticator secret the stack's seeding gave a demo user (CB-102).
+ * @param email the demo user's email
+ * @return the secret
+ */
+export function demoSecretOf(email: string): string {
+  return demoMfaSecret(DEMO_MFA_KEY, email);
+}
 
 /**
  * A 6-digit code that is wrong for `secret` now: none of the codes the server accepts (the current
@@ -60,7 +71,7 @@ export function secretOf(email: string): string {
   const secret = created.get(email) ?? readSecrets()[email];
   if (!secret) {
     throw new Error(
-      `No authenticator secret for ${email}: the setup project (auth.setup.ts) enrols the demo users first`,
+      `No authenticator secret for ${email}: the setup project (auth.setup.ts) checks the demo users first`,
     );
   }
   return secret;

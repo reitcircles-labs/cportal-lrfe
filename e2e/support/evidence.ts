@@ -65,10 +65,11 @@ export async function evidence(page: Page, ticket: string, title: string) {
     .replace(/^-|-$/g, '')
     .slice(0, 60);
   const file = `${basename(info.file)}~${String(info.line).padStart(5, '0')}~${String(shots.length + 1).padStart(2, '0')}~${slug}.png`;
-  // an authenticator's setup key and QR code are secrets: never in a picture (CB-48)
+  // an authenticator's setup key and QR code are secrets: never in a picture (CB-48). Only the
+  // visible ones: a key folded away in a closed section would get its box drawn over other text.
   await page.screenshot({
     path: join(parts, file),
-    mask: [page.locator('code.key'), page.locator('img.qr')],
+    mask: [page.locator('code.key:visible'), page.locator('img.qr:visible')],
   });
   shots.push({
     file,

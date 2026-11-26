@@ -1,7 +1,14 @@
 import {expect} from 'chai';
 import {Sequelize} from 'sequelize';
 import {ensureSchema} from '@lrfe/common';
-import {makeService, makeApp, makeClock, codeFor, PASSWORD} from './helpers.js';
+import {
+  makeService,
+  makeApp,
+  makeClock,
+  codeFor,
+  enrolWithSetupCode,
+  PASSWORD,
+} from './helpers.js';
 import {DEFAULT_POLICIES} from '../src/catalogue.js';
 import {defineModels, SCHEMA} from '../src/repo/models.js';
 import {createSequelizeRepo} from '../src/repo/sequelize.js';
@@ -292,11 +299,9 @@ describe('maximum session age (CB-100)', () => {
 
     it('the user signs in again with password and authenticator code and gets a fresh session', async () => {
       const {service, clock, user} = await setup({mfa: true});
-      const enrol = await service.login({email: SCAN, password: PASSWORD});
-      const first = await service.verifyMfa({
-        userId: enrol.userId,
-        code: codeFor(enrol.secret, clock),
-      });
+      // CB-102: the authenticator is set up with a setup code
+      const {session: first} = await enrolWithSetupCode(service, clock, SCAN);
+      const enrol = {userId: first.claims.sub};
       const token = await keepActive(
         service,
         clock,

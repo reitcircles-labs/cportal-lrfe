@@ -1,7 +1,7 @@
 import {expect} from 'chai';
 import {Sequelize} from 'sequelize';
 import {ensureSchema} from '@lrfe/common';
-import {makeService, makeApp, PASSWORD} from './helpers.js';
+import {makeService, makeApp, setupCodeStep, PASSWORD} from './helpers.js';
 import {createMemoryRepo} from '../src/repo/memory.js';
 import {createSequelizeRepo} from '../src/repo/sequelize.js';
 import {SCHEMA} from '../src/repo/models.js';
@@ -542,8 +542,8 @@ describe('organisations (CB-19)', () => {
     );
     const scan = await repo.getUserByEmail(SCAN);
     await repo.updateUser(scan.id, {organisationId: bank.id});
-    const first = await service.login({email: SCAN, password: PASSWORD});
-    expect(first.next).to.equal('mfa-enroll');
+    // CB-102: the authenticator step comes after the setup code
+    await setupCodeStep(service, SCAN);
     await service.setOrganisationStatus(bank.id, 'Suspended', '', actor);
     await rejects(
       service.verifyMfa({userId: scan.id, code: '000000'}),

@@ -96,7 +96,7 @@ npm run dev:gateway
 docker compose up -d postgres
 npm run db:setup                           # every service's schema and tables (or DB_SYNC=true per service)
 npm run seed:identity                      # creates schema "identity", tables, roles, admin
-npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password: see services/identity/README.md
+npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password or phone (prints a setup code): see services/identity/README.md
 npm run dev:identity
 ```
 
@@ -147,8 +147,8 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
   10 a minute; the count is kept in memory, per gateway instance). Anything else under it is 404.
   Request logs show its path with `<token>` in place of the token (`createBaseApp` in
   `@lrfe/common` does this for every service given a `logger`).
-- **Sign-in is limited per client address** at the gateway (CB-101): `POST /api/auth/login` and
-  `/api/auth/mfa` each `SIGN_IN_RATE_LIMIT_MAX` requests per `SIGN_IN_RATE_LIMIT_WINDOW_MS` (by
+- **Sign-in is limited per client address** at the gateway (CB-101): `POST /api/auth/login`,
+  `/api/auth/mfa` and `/api/auth/setup-code` (CB-102) each `SIGN_IN_RATE_LIMIT_MAX` requests per `SIGN_IN_RATE_LIMIT_WINDOW_MS` (by
   default 60 a minute, 60000 ms), `/api/auth/refresh` `REFRESH_RATE_LIMIT_MAX` (by default 600) in the
   same window; 429 above, counted in memory per gateway instance. Identity limits code guessing per
   user: `MFA_MAX_WRONG_CODES_PER_CHALLENGE` (default 5) wrong codes void a sign-in challenge (401);
@@ -157,6 +157,16 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
   again in N minutes"). A successful sign-in clears the count; the counts are in identity's memory
   (a restart clears them); wrong codes and lockouts go to the access log. The e2e stack raises the
   gateway limits (its tests share one address).
+- **The password alone never sets up an authenticator** (CB-102). A user without one enters a
+  one-time setup code an administrator gave (`POST /users/:id/mfa-reset` or `/setup-code`, which
+  answer with it once) before the QR step; new users set it up while accepting the invitation. The
+  code is XXXX-XXXX without look-alike characters, stored only as a hash bound to the user, used up
+  when the authenticator is set up, voided by a newer one, and valid for `SETUP_CODE_TTL_HOURS`
+  (default 72) hours; wrong setup codes count towards the lockout above. It is never logged: the
+  only codes given outside the admin screens are the first administrator's and the demo users' at
+  their creation, written to the file `SETUP_CODE_FILE` (mode 0600; identity's log says only where
+  it is), and the seed and `reset-password --reset-mfa` scripts', on their own terminal. The e2e stack seeds its demo users with their
+  authenticators set up (`SEED_DEMO_MFA_KEY`, honoured only with `NODE_ENV=test`).
 - **Every service verifies the JWT and checks permissions itself** (`app.authenticate`,
   `app.requirePerm(...)` from `@lrfe/common`), with the shared `JWT_SECRET`. The frontend's
   route guards are only for display. Guards are registered as `onRequest` hooks, so an

@@ -1,11 +1,20 @@
-import {spawn} from 'node:child_process';
-import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
-import {createServer} from 'node:net';
-import {tmpdir} from 'node:os';
-import {dirname, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {expect} from 'chai';
-import {makeApp, codeFor, wrongCodeFor, PASSWORD} from './helpers.js';
+import {
+  makeApp,
+  codeFor,
+  wrongCodeFor,
+  SETUP_ACTOR,
+  PASSWORD,
+} from './helpers.js';
+import {
+  ADMIN_EMAIL,
+  ADMIN_PASSWORD,
+  IDENTITY_DIR,
+  runIdentityExpectingExit,
+  startIdentity,
+} from './identity-process.js';
 import {totp} from '../src/totp.js';
 
 /**
@@ -28,7 +37,6 @@ import {totp} from '../src/totp.js';
  * a user of its own (an invited one), never a shared demo user.
  */
 
-const IDENTITY_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_DIR = join(IDENTITY_DIR, '..', '..', '..');
 
 const MINUTE = 60_000;
@@ -72,13 +80,37 @@ async function signInApp() {
     });
   }
 
-  /** Enrols `email`'s authenticator (first sign-in) and returns its secret. */
-  async function enrol(email) {
+  /**
+   * The setup-code step of `email`'s sign-in without an authenticator (CB-102): an administrator
+   * gives a setup code, then the password and the code are sent. Returns the response.
+   */
+  async function setupCodeStep(email) {
     const step1 = await passwordStep(email);
-    expect(step1.next).to.equal('mfa-enroll');
-    const res = await sendCode(step1.challenge, codeFor(step1.secret, clock));
+    expect(step1.next).to.equal('setup-code');
+    const {setupCode} = await ctx.service.giveSetupCode(
+      (await ctx.user(email)).id,
+      SETUP_ACTOR,
+    );
+    return app.inject({
+      method: 'POST',
+      url: '/auth/setup-code',
+      payload: {challenge: step1.challenge, setupCode},
+    });
+  }
+
+  /** The authenticator step after the setup code: { challenge, secret } (not enrolled yet). */
+  async function enrolmentStep(email) {
+    const res = await setupCodeStep(email);
+    expect(res.statusCode, `setup code of ${email}: ${res.body}`).to.equal(200);
+    return res.json();
+  }
+
+  /** Enrols `email`'s authenticator (first sign-in, with a setup code) and returns its secret. */
+  async function enrol(email) {
+    const step = await enrolmentStep(email);
+    const res = await sendCode(step.challenge, codeFor(step.secret, clock));
     expect(res.statusCode, `enrolment of ${email}`).to.equal(200);
-    return step1.secret;
+    return step.secret;
   }
 
   /** A fresh challenge for an enrolled user. */
@@ -118,6 +150,8 @@ async function signInApp() {
     ...ctx,
     passwordStep,
     sendCode,
+    setupCodeStep,
+    enrolmentStep,
     enrol,
     challengeFor,
     wrongCodes,
@@ -159,110 +193,6 @@ function tamperedChallenge(challenge, changes) {
     'base64url',
   );
   return `${header}.${changed}.${signature}`;
-}
-
-/** A free TCP port on the loopback address. */
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const {port} = server.address();
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-const ADMIN_EMAIL = 'admin@example.org';
-const ADMIN_PASSWORD = 'a long bootstrap password for the test';
-
-/**
- * Starts identity as the install does (`node src/index.js`), in memory, with a bootstrap
- * administrator and `settings` added to the environment, from an empty working directory so no
- * local .env file adds to them. Resolves once /health answers; rejects with the process output when
- * it exits first.
- * @param {!Object<string, string>} settings
- * @return {!Promise<{url: string, stop: function(): !Promise<void>}>}
- */
-async function startIdentity(settings) {
-  const port = await freePort();
-  const cwd = mkdtempSync(join(tmpdir(), 'cb101-identity-'));
-  const childEnv = {...process.env};
-  for (const name of Object.keys(SETTINGS)) {
-    delete childEnv[name];
-  }
-  const child = spawn(process.execPath, [join(IDENTITY_DIR, 'src/index.js')], {
-    cwd,
-    env: {
-      ...childEnv,
-      HOST: '127.0.0.1',
-      PORT: String(port),
-      LOG_LEVEL: 'warn',
-      LRFE_DOMAIN: 'land',
-      IDENTITY_STORE: 'memory',
-      EVENT_BUS_DRIVER: 'log',
-      MAIL_TRANSPORT: 'none',
-      JWT_SECRET: 'cb101-identity-secret-cb101-identity-secret',
-      COOKIE_SECURE: 'false',
-      BOOTSTRAP_ADMIN_EMAIL: ADMIN_EMAIL,
-      BOOTSTRAP_ADMIN_PASSWORD: ADMIN_PASSWORD,
-      ...settings,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let output = '';
-  child.stdout.on('data', chunk => {
-    output += chunk;
-  });
-  child.stderr.on('data', chunk => {
-    output += chunk;
-  });
-  const exited = new Promise(resolve => {
-    child.once('exit', code => resolve(code));
-  });
-  const url = `http://127.0.0.1:${port}`;
-  const stop = async () => {
-    if (child.exitCode === null) {
-      child.kill('SIGTERM');
-      await exited;
-    }
-    rmSync(cwd, {recursive: true, force: true});
-  };
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      await stop();
-      throw new Error(
-        `identity exited (${child.exitCode}) before it was up: ${output}`,
-      );
-    }
-    try {
-      const res = await fetch(`${url}/health`);
-      if (res.ok) {
-        return {url, stop};
-      }
-    } catch {
-      // not listening yet
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  await stop();
-  throw new Error(`identity did not come up in 15 s: ${output}`);
-}
-
-/**
- * Starts identity with `settings` and reports whether it stopped on its own.
- * @param {!Object<string, string>} settings
- * @return {!Promise<{listened: boolean, output: string}>}
- */
-async function runIdentityExpectingExit(settings) {
-  try {
-    const {stop} = await startIdentity(settings);
-    await stop();
-    return {listened: true, output: ''};
-  } catch (err) {
-    return {listened: false, output: err.message};
-  }
 }
 
 describe('2FA code guessing: per-challenge limit and per-user lockout (CB-101)', () => {
@@ -440,18 +370,12 @@ describe('2FA code guessing: per-challenge limit and per-user lockout (CB-101)',
     it('wrong codes while enrolling the authenticator count towards the same lock (the count is per user, not per kind of code)', async () => {
       const t = await signInApp();
       // two enrolment attempts with five wrong codes each: the user never finishes enrolling
-      let secret;
       for (let i = 0; i < 2; i++) {
-        const step1 = await t.passwordStep(NAKALE);
-        expect(step1.next).to.equal('mfa-enroll');
-        secret = step1.secret;
-        await t.wrongCodes(step1.challenge, secret, 5);
+        const step = await t.enrolmentStep(NAKALE);
+        await t.wrongCodes(step.challenge, step.secret, 5);
       }
-      const step1 = await t.passwordStep(NAKALE);
-      expect(step1.next).to.equal('mfa-enroll');
-      expectLocked(
-        await t.sendCode(step1.challenge, codeFor(step1.secret, t.clock)),
-      );
+      // CB-102: the setup code that leads to the authenticator step is refused too
+      expectLocked(await t.setupCodeStep(NAKALE));
     });
 
     it('wrong codes while signing in and while enrolling again add up for the same user', async () => {
@@ -463,13 +387,10 @@ describe('2FA code guessing: per-challenge limit and per-user lockout (CB-101)',
         id: null,
         name: 'System',
       });
-      const enrolling = await t.passwordStep(NAKALE);
-      expect(enrolling.next).to.equal('mfa-enroll');
+      const enrolling = await t.enrolmentStep(NAKALE);
       await t.wrongCodes(enrolling.challenge, enrolling.secret, 5);
-      const again = await t.passwordStep(NAKALE);
-      expectLocked(
-        await t.sendCode(again.challenge, codeFor(again.secret, t.clock)),
-      );
+      // CB-102: the setup code that leads to the authenticator step is refused too
+      expectLocked(await t.setupCodeStep(NAKALE));
     });
 
     it('the lock is per user: while one user is locked, another signs in normally', async () => {
@@ -606,13 +527,39 @@ describe('2FA code guessing: per-challenge limit and per-user lockout (CB-101)',
       }
     });
 
-    /** Password step of the bootstrap administrator (who enrols the authenticator on first sign-in). */
-    async function adminPasswordStep() {
+    /**
+     * The bootstrap administrator's first sign-in up to the setup code (CB-102): the password, then
+     * the setup code identity wrote to its setup-code file at start (not to its console or log:
+     * design decision 9). Returns the setup-code response.
+     */
+    async function adminSetupCodeStep() {
       const res = await fetch(`${identity.url}/auth/login`, {
         method: 'POST',
         headers: {'content-type': 'application/json'},
         body: JSON.stringify({email: ADMIN_EMAIL, password: ADMIN_PASSWORD}),
       });
+      expect(res.status).to.equal(200);
+      const body = await res.json();
+      expect(body.next).to.equal('setup-code');
+      const printed = new RegExp(
+        `Setup code for ${ADMIN_EMAIL}: ([A-Z0-9]{4}-[A-Z0-9]{4})`,
+      ).exec(
+        readFileSync(join(identity.cwd, 'tmp', 'setup-codes.txt'), 'utf8'),
+      );
+      expect(printed, 'the setup code written at start').to.not.equal(null);
+      return fetch(`${identity.url}/auth/setup-code`, {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({
+          challenge: body.challenge,
+          setupCode: printed[1],
+        }),
+      });
+    }
+
+    /** The bootstrap administrator's authenticator step: { challenge, secret } to enrol. */
+    async function adminPasswordStep() {
+      const res = await adminSetupCodeStep();
       expect(res.status).to.equal(200);
       const body = await res.json();
       expect(body.next).to.equal('mfa-enroll');
@@ -653,10 +600,8 @@ describe('2FA code guessing: per-challenge limit and per-user lockout (CB-101)',
       }
       const second = await adminPasswordStep();
       await sendCode(second.challenge, wrongCodeFor(second.secret, now));
-      const third = await adminPasswordStep();
-      expect(await sendCode(third.challenge, rightCode(third.secret))).to.equal(
-        429,
-      );
+      // CB-102: locked, the setup code that leads to the authenticator step is refused too
+      expect((await adminSetupCodeStep()).status).to.equal(429);
     });
 
     it('with no setting, the defaults apply: four wrong codes, then the right code, sign in', async () => {

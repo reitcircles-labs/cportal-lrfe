@@ -182,7 +182,7 @@ export function invitationEmail(
     link,
     '',
     `The link works once and expires on ${until}.${resend ? ' Earlier invitation links no longer work.' : ''}`,
-    'At your first sign-in you will set up an authenticator app on your phone for the 6-digit codes.',
+    'When you activate your account you will set up an authenticator app on your phone for the 6-digit codes.',
     '',
     'If you did not expect this invitation, you can ignore this email.',
   ].join('\n');
@@ -201,8 +201,42 @@ export function invitationEmail(
 <p style="margin:24px 0"><a href="${esc(link)}" style="background:#1d4ed8;color:#ffffff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Activate my account</a></p>
 <p style="font-size:13px;color:#4b5563">Or copy this link into your browser:<br><span style="word-break:break-all">${esc(link)}</span></p>
 <p style="font-size:13px;color:#4b5563">The link works once and expires on ${esc(until)}.${resend ? ' Earlier invitation links no longer work.' : ''}
-At your first sign-in you will set up an authenticator app on your phone for the 6-digit codes.</p>
+When you activate your account you will set up an authenticator app on your phone for the 6-digit codes.</p>
 <p style="font-size:13px;color:#4b5563">If you did not expect this invitation, you can ignore this email.</p>
 </body></html>`;
   return {subject, text, html};
+}
+
+/**
+ * The notice emailed to a user after an authenticator was added to their account (CB-102), so a
+ * person who did not add it can tell an administrator. It holds no code and no secret.
+ * @param {{name: string, issuer: string, at: !Date}} notice
+ * @return {{subject: string, text: string, html: string}}
+ */
+export function authenticatorAddedEmail({name, issuer, at}) {
+  const when = at.toUTCString().replace(/:\d\d GMT$/, ' UTC');
+  const subject = 'A new authenticator was added to your account';
+  const lines = [
+    `Hello ${name},`,
+    '',
+    `A new authenticator was added to your account at ${issuer} on ${when}. From now on it gives the 6-digit codes for your sign-in.`,
+    '',
+    'If this was you, there is nothing to do.',
+    'If it was not you, contact your administrator at once: they can reset two-factor sign-in for your account.',
+  ];
+  const esc = s =>
+    String(s).replace(
+      /[&<>"']/g,
+      c =>
+        ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[
+          c
+        ],
+    );
+  const html = `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2937;max-width:560px;margin:0 auto;padding:24px">
+<p>Hello ${esc(name)},</p>
+<p>A new authenticator was added to your account at <b>${esc(issuer)}</b> on ${esc(when)}. From now on it gives the 6-digit codes for your sign-in.</p>
+<p>If this was you, there is nothing to do.</p>
+<p><b>If it was not you, contact your administrator at once:</b> they can reset two-factor sign-in for your account.</p>
+</body></html>`;
+  return {subject, text: lines.join('\n'), html};
 }

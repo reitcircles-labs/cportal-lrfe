@@ -11,6 +11,7 @@ import {AuthService} from './auth.service';
 import {ToastService} from './toast.service';
 import {ApiError, ApiService} from '../api/api.service';
 import {PRODUCT_CONFIG} from '../product';
+import type {GivenSetupCode} from '../shared/setup-code-dialog.component';
 
 export interface Perm {
   id: string;
@@ -351,18 +352,48 @@ export class RbacService {
     }
   }
 
-  async resetMfa(uid: string) {
+  /**
+   * "Reset 2FA" (CB-102): the user's authenticator stops working and their sessions end; the
+   * answer is a one-time setup code to give them, shown once.
+   * @param uid the user's id
+   * @return the code, or null when the reset failed (a toast says why)
+   */
+  async resetMfa(uid: string): Promise<GivenSetupCode | null> {
+    return this.setupCode(uid, 'mfa-reset', '2FA not reset');
+  }
+
+  /**
+   * "Give setup code" (CB-102): a one-time setup code for a user without an authenticator, shown
+   * once; it voids any code given before.
+   * @param uid the user's id
+   * @return the code, or null when it could not be given (a toast says why)
+   */
+  async giveSetupCode(uid: string): Promise<GivenSetupCode | null> {
+    return this.setupCode(uid, 'setup-code', 'No setup code given');
+  }
+
+  /**
+   * Asks identity for a user's setup code, then reloads the users and the access log.
+   * @param uid the user's id
+   * @param action the route: mfa-reset or setup-code
+   * @param failure the toast's title when it fails
+   * @return the code, or null on failure
+   */
+  private async setupCode(
+    uid: string,
+    action: 'mfa-reset' | 'setup-code',
+    failure: string,
+  ): Promise<GivenSetupCode | null> {
     const u = this.users().find(x => x.id === uid)!;
     try {
-      await this.api.post(`/users/${uid}/mfa-reset`);
-      this.toast.show(
-        'info',
-        'MFA reset for ' + u.name,
-        'They will enrol a new authenticator at next sign-in.',
+      const res = await this.api.post<{setupCode: string; expiresAt: string}>(
+        `/users/${uid}/${action}`,
       );
       await Promise.all([this.loadUsers(), this.loadLog()]);
+      return {name: u.name, setupCode: res.setupCode, expiresAt: res.expiresAt};
     } catch (e) {
-      this.fail('MFA not reset', e);
+      this.fail(failure, e);
+      return null;
     }
   }
 

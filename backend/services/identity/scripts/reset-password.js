@@ -2,14 +2,19 @@
 //
 //   npm run reset-password -w @lrfe/identity -- <email>                 asks for the new password
 //   npm run reset-password -w @lrfe/identity -- <email> --from-env      uses BOOTSTRAP_ADMIN_PASSWORD
-//   npm run reset-password -w @lrfe/identity -- <email> --reset-mfa     also re-enrol the authenticator
+//   npm run reset-password -w @lrfe/identity -- <email> --reset-mfa     also reset the authenticator:
+//                                                                       prints a one-time setup code
 //
 // Uses DB_CONNECTION_STRING from services/identity/.env (npm -w runs in that directory). Without a
 // terminal the password is read from the first line of stdin.
 import {createInterface} from 'node:readline';
-import {createSequelize} from '@lrfe/common';
+import {createSequelize, envPositiveInt} from '@lrfe/common';
 import {createSequelizeRepo} from '../src/repo/sequelize.js';
 import {MIN_PASSWORD_LENGTH, resetPassword} from '../src/reset-password.js';
+import {
+  DEFAULT_SETUP_CODE_TTL_HOURS,
+  setupCodeLine,
+} from '../src/setup-code.js';
 
 const args = process.argv.slice(2);
 const flags = new Set(args.filter(a => a.startsWith('--')));
@@ -73,18 +78,27 @@ let sequelize;
 try {
   const password = await getPassword();
   sequelize = createSequelize();
-  const {user, warnings} = await resetPassword(createSequelizeRepo(sequelize), {
-    email,
-    password,
-    resetMfa: flags.has('--reset-mfa'),
-  });
+  const setupCodeTtlHours = envPositiveInt(
+    'SETUP_CODE_TTL_HOURS',
+    DEFAULT_SETUP_CODE_TTL_HOURS,
+  );
+  const {user, warnings, setupCode} = await resetPassword(
+    createSequelizeRepo(sequelize),
+    {
+      email,
+      password,
+      resetMfa: flags.has('--reset-mfa'),
+      setupCodeTtlHours,
+    },
+  );
   console.log(
     `Password reset for ${user.name} <${user.email}>; their sessions were ended.`,
   );
   if (flags.has('--reset-mfa')) {
     console.log(
-      'MFA reset: they enrol a new authenticator at the next sign-in.',
+      'MFA reset: they set up a new authenticator at the next sign-in, with this code.',
     );
+    console.log(setupCodeLine(user.email, setupCode, setupCodeTtlHours));
   }
   for (const w of warnings) console.warn(`Note: ${w}`);
 } catch (err) {

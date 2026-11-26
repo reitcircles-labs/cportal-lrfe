@@ -13,11 +13,11 @@ Administration **Users**, **Offices**, **Roles & permissions**, **Security polic
 | You can | You cannot |
 |---|---|
 | Add, edit, suspend and reactivate offices | Upload, review, file or correct documents |
-| Invite users, change their roles and office, suspend them, reset their MFA | Create or finalize land records |
+| Invite users, change their roles and office, suspend them, reset their 2FA or give them a setup code | Create or finalize land records |
 | Change what each role may do; set security policies | Change your own roles or status |
 | Read the access log | Leave the system without an administrator (the portal refuses) |
 
-Inviting users, roles, suspension and MFA resets are explained step by step in
+Inviting users, roles, suspension, **Reset 2FA** and **Give setup code** are explained step by step in
 [Inviting users and assigning roles](../inviting-users-and-assigning-roles.md). This guide covers the
 rest and the test accounts testers need.
 
@@ -29,7 +29,7 @@ Testers need one account per role ([Test accounts](../testing-the-portal.md#test
 |---|---|---|
 | 1 | **Users → Invite user**: the tester's name, a plus address (e.g. `tester+scan@your-domain`), office **WDH · Deeds Registry · Windhoek**, role **Scan operator**; **Create invitation** | "Invitation sent to …"; the user listed as **Invited** |
 | 2 | Repeat for Metadata reviewer (twice: the second approves corrections), Records officer, Registrar, Auditor | One invited user per role |
-| 3 | After the tester activates each account | Status **Active**, MFA ✓ |
+| 3 | After the tester activates each account (they set up the authenticator on the invitation page) | Status **Active**, 2FA **set up** |
 
 The invite dialog's **Role** list starts on "Metadata reviewer": check it before creating the
 invitation.

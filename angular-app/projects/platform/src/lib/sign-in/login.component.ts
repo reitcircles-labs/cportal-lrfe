@@ -1,6 +1,5 @@
 import {
   Component,
-  computed,
   inject,
   signal,
   ChangeDetectionStrategy,
@@ -12,12 +11,19 @@ import {ThemeService} from '../state/theme.service';
 import {IconComponent} from '../shared/icon.component';
 import {SiteConfigService} from '../state/site-config.service';
 import {PRODUCT_CONFIG} from '../product';
+import {AuthenticatorEnrolComponent} from './authenticator-enrol.component';
 import {hasLogoPlace} from './logo-place';
 
-/** Sign-in: password, then the authenticator code (enrolling one the first time). */
+/** The steps of the sign-in form. */
+type Step = 'password' | 'setup-code' | 'mfa' | 'mfa-enroll';
+
+/**
+ * Sign-in: password, then the authenticator code. A user without an authenticator enters the
+ * setup code an administrator gave, then sets one up (CB-102): the password alone never does.
+ */
 @Component({
   selector: 'app-login',
-  imports: [IconComponent],
+  imports: [AuthenticatorEnrolComponent, IconComponent],
   template: `
     <div class="wrap">
       <section class="hero">
@@ -72,6 +78,20 @@ import {hasLogoPlace} from './logo-place';
           </form>
         }
 
+        @if (step() === 'setup-code') {
+          <form class="card" (submit)="$event.preventDefault(); submitSetupCode()">
+            <div class="stack" style="gap:4px">
+              <h2 style="margin:0">Enter your setup code</h2>
+              <span class="muted" style="font-size:14px">Your authenticator isn't set up yet. Enter the setup code your administrator gave you.</span>
+            </div>
+            <div class="field"><label for="setup-code">Setup code</label><input id="setup-code" class="input code setup" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="XXXX-XXXX" [value]="setupCode()" (input)="setupCode.set($any($event.target).value)" required autofocus></div>
+            @if (error()) { <div class="err" role="alert">{{ error() }}</div> }
+            <button class="btn btn-primary" type="submit" [disabled]="busy() || !setupCode().trim()" style="min-height:44px;font-size:15px">{{ busy() ? 'Checking…' : 'Continue' }}</button>
+            <p class="small muted" style="margin:0;text-align:center">No code? Ask your administrator for one.</p>
+            <button class="btn btn-ghost" type="button" (click)="restart()">Use a different account</button>
+          </form>
+        }
+
         @if (step() === 'mfa' || step() === 'mfa-enroll') {
           <form class="card" (submit)="$event.preventDefault(); submitCode()">
             <div class="stack" style="gap:4px">
@@ -79,25 +99,7 @@ import {hasLogoPlace} from './logo-place';
               <span class="muted" style="font-size:14px">{{ step() === 'mfa-enroll' ? 'Multi-factor authentication is required. Add this account to an authenticator app (Google Authenticator, Microsoft Authenticator, …), then enter the 6-digit code it shows.' : 'Open your authenticator app and enter the 6-digit code for the ' + site.config().orgName + '.' }}</span>
             </div>
             @if (step() === 'mfa-enroll') {
-              <div class="enrol">
-                @if (qr()) {
-                  <span class="small"><b>1.</b> In your authenticator app, add an account and <b>scan this QR code</b>.</span>
-                  <img class="qr" [src]="qr()" width="200" height="200" alt="QR code that adds this account to an authenticator app">
-                  <a class="small" [href]="otpauthUrl()">On this phone? Open it in the authenticator app instead</a>
-                }
-                <details class="manual" [open]="!qr()">
-                  <summary class="small">{{ qr() ? "Can't scan? Type the setup key instead" : 'Type this setup key into your authenticator app' }}</summary>
-                  <div class="stack" style="gap:6px;margin-top:8px">
-                    <span class="small muted">Choose “enter a setup key”; type: time-based</span>
-                    <div class="row" style="gap:8px;align-items:center;flex-wrap:nowrap">
-                      <code class="key">{{ groupedSecret() }}</code>
-                      <button class="btn btn-secondary" type="button" style="flex:none" (click)="copyKey()">{{ copied() ? 'Copied' : 'Copy' }}</button>
-                    </div>
-                    @if (!qr()) { <a class="small" [href]="otpauthUrl()">Open in an authenticator app on this device</a> }
-                  </div>
-                </details>
-                <span class="small"><b>2.</b> Enter the 6-digit code the app shows.</span>
-              </div>
+              <app-authenticator-enrol [secret]="secret()" [otpauthUrl]="otpauthUrl()" />
             }
             <div class="field"><label for="code">6-digit code</label><input id="code" class="input code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" [value]="code()" (input)="onCode($any($event.target))" required autofocus></div>
             @if (error()) { <div class="err" role="alert">{{ error() }}</div> }
@@ -140,12 +142,8 @@ import {hasLogoPlace} from './logo-place';
     .err { padding: 10px 12px; border-radius: 8px; background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-bd); font-size: 13.5px; }
     .note { padding: 10px 12px; border-radius: 8px; background: var(--color-accent-100); font-size: 13.5px; }
     .note.warn { background: var(--warn-bg); }
-    .enrol { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px dashed var(--color-neutral-400); border-radius: 10px; }
-    .key { font-family: ui-monospace, monospace; font-size: 17px; letter-spacing: .06em; overflow-wrap: anywhere; }
-    /* always dark on white with a quiet zone, also in dark mode, so every camera can read it */
-    .qr { align-self: center; width: 200px; height: 200px; background: #fff; padding: 8px; border-radius: 8px; box-sizing: content-box; image-rendering: pixelated; }
-    .manual summary { cursor: pointer; color: var(--color-accent-700); }
     .code { font-size: 22px; letter-spacing: .3em; text-align: center; font-variant-numeric: tabular-nums; }
+    .code.setup { letter-spacing: .14em; text-transform: uppercase; font-family: ui-monospace, monospace; }
     @media (max-width: 960px) {
       .wrap { grid-template-columns: 1fr; }
       .hero-in { padding: 28px 24px; gap: 24px; }
@@ -170,25 +168,19 @@ export class LoginComponent {
     r => r.path === 'check-a-proof',
   );
 
-  step = signal<'password' | 'mfa' | 'mfa-enroll'>('password');
+  readonly step = signal<Step>('password');
   email = signal('');
   password = signal('');
+  /** The administrator's one-time setup code, as typed (CB-102). */
+  readonly setupCode = signal('');
   code = signal('');
   busy = signal(false);
   error = signal('');
   notice = signal('');
   noticeWarn = signal(false);
   private challenge = '';
-  private secret = signal('');
+  protected readonly secret = signal('');
   otpauthUrl = signal('');
-  groupedSecret = computed(() =>
-    this.secret()
-      .replace(/(.{4})/g, '$1 ')
-      .trim(),
-  );
-  /** The otpauth:// link as a QR image (data: URL), drawn in the browser: the secret never leaves it. */
-  qr = signal<string | null>(null);
-  copied = signal(false);
 
   constructor() {
     const q = this.route.snapshot.queryParamMap;
@@ -211,17 +203,40 @@ export class LoginComponent {
       const res = await this.auth.login(this.email().trim(), this.password());
       if (res.next === 'done') return this.enter();
       this.challenge = res.challenge;
-      if (res.next === 'mfa-enroll') {
-        this.secret.set(res.secret);
-        this.otpauthUrl.set(res.otpauthUrl);
-        this.drawQr(res.otpauthUrl);
-      }
+      this.setupCode.set('');
       this.code.set('');
       this.password.set('');
       this.step.set(res.next);
     } catch (caught) {
       const e = caught as ApiError;
       this.error.set(e?.message || 'Sign-in failed');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  /** The setup code (CB-102): the right one leads to setting up the authenticator. */
+  async submitSetupCode() {
+    this.busy.set(true);
+    this.error.set('');
+    try {
+      const res = await this.auth.verifySetupCode(
+        this.challenge,
+        this.setupCode().trim(),
+      );
+      this.challenge = res.challenge;
+      this.secret.set(res.secret);
+      this.otpauthUrl.set(res.otpauthUrl);
+      this.setupCode.set('');
+      this.code.set('');
+      this.step.set('mfa-enroll');
+    } catch (caught) {
+      const e = caught as ApiError;
+      if (e?.status === 401 && /expired, start again/i.test(e.message)) {
+        this.error.set('That took too long. Start again.');
+      } else {
+        this.error.set(e?.message || 'Invalid setup code');
+      }
     } finally {
       this.busy.set(false);
     }
@@ -257,42 +272,9 @@ export class LoginComponent {
     this.code.set('');
     this.error.set('');
     this.challenge = '';
+    this.setupCode.set('');
     this.secret.set('');
     this.otpauthUrl.set('');
-    this.qr.set(null);
-    this.copied.set(false);
-  }
-
-  /** If the QR code cannot be drawn, the setup key is shown open instead. */
-  private async drawQr(url: string) {
-    this.qr.set(null);
-    try {
-      // loaded only for enrolment, not with the app. qrcode is a CommonJS package: depending on how it
-      // is bundled its functions are named exports or sit on `default` (the dev server in CI mode).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const qrcode: any = await import('qrcode');
-      const toDataURL: typeof import('qrcode').toDataURL =
-        qrcode.toDataURL ?? qrcode.default?.toDataURL;
-      const image = await toDataURL(url, {
-        errorCorrectionLevel: 'M',
-        margin: 0,
-        width: 400,
-        color: {dark: '#000000', light: '#ffffff'},
-      });
-      if (this.otpauthUrl() === url) this.qr.set(image);
-    } catch {
-      /* fallback: the setup key */
-    }
-  }
-
-  async copyKey() {
-    try {
-      await navigator.clipboard.writeText(this.secret());
-      this.copied.set(true);
-      setTimeout(() => this.copied.set(false), 2000);
-    } catch {
-      /* clipboard blocked (e.g. plain http on a non-localhost address): the key stays visible to copy by hand */
-    }
   }
 
   private enter() {

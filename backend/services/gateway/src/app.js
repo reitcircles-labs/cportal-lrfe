@@ -110,13 +110,15 @@ export const REFRESH_RATE_LIMIT = {max: 600, timeWindow: 60_000};
 const SIGN_IN_ENDPOINTS = new Map([
   ['/api/auth/login', 'login'],
   ['/api/auth/mfa', 'mfa'],
+  // the setup code of a user without an authenticator (CB-102), with its own allowance
+  ['/api/auth/setup-code', 'setup-code'],
   ['/api/auth/refresh', 'refresh'],
 ]);
 
 /**
- * The sign-in endpoint a request is for ('login', 'mfa' or 'refresh'), or null. The path is read
- * as the services will route it, so another spelling of it (percent-encoded, dot segments, repeated
- * or trailing slashes, upper case, a query string) is counted the same.
+ * The sign-in endpoint a request is for ('login', 'mfa', 'setup-code' or 'refresh'), or null. The
+ * path is read as the services will route it, so another spelling of it (percent-encoded, dot
+ * segments, repeated or trailing slashes, upper case, a query string) is counted the same.
  * @param {string} url the request URL as received
  * @return {?string}
  */
@@ -360,8 +362,8 @@ function signInRateLimitHook({signIn, refresh}) {
  *   upstreams:   { identity: 'http://localhost:3501', ... }
  *   corsOrigins: allowed browser origins (not needed when the app is served from the same origin)
  *   publicRateLimit: { max, timeWindow } for PUBLIC_ROUTES, per client address
- *   signInRateLimit: { max, timeWindow } for each of POST /api/auth/login and /api/auth/mfa, per
- *                    client address
+ *   signInRateLimit: { max, timeWindow } for each of POST /api/auth/login, /api/auth/mfa and
+ *                    /api/auth/setup-code, per client address
  *   refreshRateLimit: { max, timeWindow } for /api/auth/refresh, per client address
  *   routes:      the routing table (this install's ROUTES by default)
  *   trustProxy:  the proxies whose X-Forwarded-For is believed (trustProxyFrom; loopback by default)

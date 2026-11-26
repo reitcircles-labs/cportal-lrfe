@@ -53,13 +53,17 @@ earlier links stop working.)
 
 1. Opens the email **"You have been invited to Deeds Registry Namibia"** and clicks **Activate my
    account**.
-2. Chooses a password of at least 12 characters.
-3. Signs in with their email and that password.
-4. Scans the QR code with an authenticator app on their phone (or, if they cannot scan, types
-   the setup key shown under **"Can't scan? Type the setup key instead"**), then enters the
-   6-digit code the app shows.
+2. Chooses a password of at least 12 characters and clicks **Continue**.
+3. On the same page, **"Set up your authenticator"**: scans the QR code with an authenticator app
+   on their phone (or, if they cannot scan, types the setup key shown under **"Can't scan? Type
+   the setup key instead"**), enters the 6-digit code the app shows and clicks **Activate
+   account**. The invitation link is the proof: the authenticator is set up before the link is
+   used up.
+4. **"Your account is ready"** → **Go to sign-in**, and signs in with the password and the code.
 5. The app opens on their role's start page. From now on, each sign-in asks for the current code
    from the app.
+
+An email "A new authenticator was added to your account" confirms the setup.
 
 ## Changing a user's roles
 
@@ -76,7 +80,24 @@ administration rights.
   ends at once: their next click takes them to the sign-in page. Use this when someone leaves, or
   their access must stop.
 - **Reactivate** gives them back the same roles.
-- A user who lost their phone: **Reset MFA**; they scan a new QR code at their next sign-in.
+- A user who lost their phone: **Reset 2FA** on their row in **Users**, see below.
+
+## Reset 2FA and Give setup code
+
+The **2FA** column shows **set up** or **not set up** for each user. The password alone never sets
+up an authenticator: a user without one needs a **one-time setup code** from you.
+
+- **Reset 2FA** (users with an authenticator, e.g. a lost or new phone): confirm **Reset and show
+  setup code**. Their authenticator stops working at once and they are signed out everywhere.
+- **Give setup code** (active users shown **not set up**, e.g. after two-step sign-in was switched
+  on): no confirmation needed; any code given before stops working. Invited users get neither: they
+  set up their authenticator when they accept the invitation.
+
+The code (e.g. `K7QM-2XPD`) is shown **once**, with a **Copy** button. Give it to the person
+yourself, in person or by phone; don't send it by email. It works for one setup, for 72 hours (a
+server setting, `SETUP_CODE_TTL_HOURS`). At their next sign-in they enter the password, then the
+code at **"Enter your setup code"**, then scan the new QR code. Wrong codes count towards the
+sign-in lockout. The access log records who reset or gave a code to whom, never the code.
 
 Every invitation, role change, suspension and sign-in is listed under **Access log**.
 
@@ -108,9 +129,9 @@ address you can read.
 |---|---|---|---|
 | 1 | Administrator (normal window) | Sign in. **Users → Invite user**: name "LR Test One", email `info+lrtest1@reitcircles.com`, role **Scan operator**, **Create invitation** | "Invitation sent to LR Test One · Emailed to …"; the user listed as **Invited** |
 | 2 | You | Open the `info@` inbox | "You have been invited to Deeds Registry Namibia" from `noreply@reitcircles.com`, with an **Activate my account** button |
-| 3 | New user (incognito window) | Click the button, choose a password (12+ characters) | The sign-in page, with "Your account is active" |
-| 4 | New user | Sign in, scan the QR code, enter the 6-digit code | The app opens on **Capture**. The menu shows only scan-operator screens: Dashboard, Capture, Documents (EDRMS), Process & schema |
-| 5 | Administrator | Refresh **Users** | The test user is **Active** and MFA enrolled |
+| 3 | New user (incognito window) | Click the button, choose a password (12+ characters), **Continue**; scan the QR code, enter the 6-digit code, **Activate account** | "Your account is ready" |
+| 4 | New user | **Go to sign-in**, sign in with the password and the app's code | The app opens on **Capture**. The menu shows only scan-operator screens: Dashboard, Capture, Documents (EDRMS), Process & schema |
+| 5 | Administrator | Refresh **Users** | The test user is **Active**, 2FA **set up** |
 | 6 | Administrator | **Manage** → change the role to **Metadata reviewer** → **Save roles** | Roles saved |
 | 7 | New user | Sign out and in again (or wait up to 15 minutes) | The app opens on **Verify metadata**; the menu now also has Verify metadata and Land record. Capture is still listed (reviewers may look) but uploading is disabled |
 | 8 | Administrator | **Manage** → tick **Metadata reviewer** and **Auditor · read-only** → **Save roles** | A duty-conflict warning: "Reviewers cannot audit documents they can file". Try **Cancel**, then save anyway |

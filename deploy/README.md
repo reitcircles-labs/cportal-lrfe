@@ -152,6 +152,20 @@ Docker, in the folder the bundle is unpacked in.
    repository: `angular-app/docs/user-guide/`). The bootstrap administrator is created only once, on
    an empty database; afterwards `BOOTSTRAP_ADMIN_PASSWORD` can be removed from `.env`.
 
+   The password alone never sets up an authenticator (CB-102). When identity creates the
+   administrator it writes a **one-time setup code** for them, once, to a file inside its container
+   that only its user can read (never to its log, which says only where the file is):
+
+   ```bash
+   docker compose exec identity cat /data/identity/setup-codes.txt
+   ```
+
+   Sign in with the email and password, enter that code at **"Enter your setup code"**, then scan
+   the QR code. The code works once and for `SETUP_CODE_TTL_HOURS` (default 72) hours; if it has
+   expired, print a new one with `reset-password --reset-mfa` (`backend/services/identity/README.md`).
+   With `SEED_DEMO_PASSWORD` set, a fresh install writes one setup code per demo user to the same
+   file. The file is lost when the identity container is recreated: read it after the first start.
+
 ### An existing PostgreSQL server
 
 By default the portal brings its own PostgreSQL (profile `postgres`, data in the `pgdata` volume).
@@ -239,6 +253,11 @@ a whole number above 0 stops the service at start with a message naming it.
   for `MFA_LOCKOUT_MINUTES` (default 15), even with the right code. A successful sign-in clears the
   count. Wrong codes and each lockout are in the access log. The counts are kept in memory: restarting
   identity clears them.
+- Setting up an authenticator (CB-102): a user without one needs a one-time setup code from an
+  administrator (**Reset 2FA** or **Give setup code**), valid for `SETUP_CODE_TTL_HOURS` (default 72)
+  hours and for one setup; wrong setup codes count with the wrong codes above. New users set up
+  their authenticator while accepting the invitation. The setup-code step has the code step's
+  allowance per client address at the gateway.
 
 ## D. Encryption at rest with OpenBao (on by default)
 

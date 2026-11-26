@@ -41,6 +41,9 @@ export function defineModels(sequelize) {
       // TODO: encrypt MFA secrets at rest (KMS / envelope key) before production.
       mfaSecret: {type: DataTypes.STRING},
       pendingMfaSecret: {type: DataTypes.STRING},
+      // the one-time setup code an administrator gave (CB-102): only its hash, and until when it works
+      setupCodeHash: {type: DataTypes.STRING},
+      setupCodeExpiresAt: {type: DataTypes.DATE},
       inviteHash: {type: DataTypes.STRING, unique: true},
       inviteExpiresAt: {type: DataTypes.DATE},
       lastActiveAt: {type: DataTypes.DATE},

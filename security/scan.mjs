@@ -223,7 +223,6 @@ function startTarget() {
 }
 
 const API = `http://127.0.0.1:${process.env.E2E_API_PORT}`;
-const secrets = new Map();
 
 /** A JSON request to the install's gateway; throws on an answer other than 200. */
 async function post(path, body) {
@@ -239,18 +238,20 @@ async function post(path, body) {
 }
 
 /**
- * Signs in the first active demo user that holds only `role`, enrolling its authenticator the
- * first time, as the e2e tests do (tests/auth.setup.ts). Returns a fresh access token.
+ * Signs in the first active demo user that holds only `role`, with the authenticator the test
+ * install's seeding set up (CB-102: SEED_DEMO_MFA_KEY), as the e2e tests do (tests/auth.setup.ts).
+ * Returns a fresh access token.
  *
  * @param {string} role a role id, e.g. "rec"
  * @return {Promise<string>} the access token
  */
 async function signIn(role) {
-  const [{DEMO_USERS}, {totp}, {DEMO_PASSWORD}] = await Promise.all([
-    import('../backend/services/identity/src/seed.js'),
-    import('../backend/services/identity/src/totp.js'),
-    import('../e2e/stack/config.mjs'),
-  ]);
+  const [{DEMO_USERS, demoMfaSecret}, {totp}, {DEMO_MFA_KEY, DEMO_PASSWORD}] =
+    await Promise.all([
+      import('../backend/services/identity/src/seed.js'),
+      import('../backend/services/identity/src/totp.js'),
+      import('../e2e/stack/config.mjs'),
+    ]);
   const user = DEMO_USERS.find(
     u => u.status === 'Active' && u.roles.length === 1 && u.roles[0] === role,
   );
@@ -262,12 +263,9 @@ async function signIn(role) {
   if (step1.accessToken) {
     return step1.accessToken;
   }
-  if (step1.next === 'mfa-enroll') {
-    secrets.set(email, step1.secret);
-  }
   const step2 = await post('/api/auth/mfa', {
     challenge: step1.challenge,
-    code: totp(secrets.get(email)),
+    code: totp(demoMfaSecret(DEMO_MFA_KEY, email)),
   });
   return step2.accessToken;
 }

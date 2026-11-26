@@ -18,7 +18,8 @@ on a fresh shipping stack, with only the demo users and the screens (screenshots
   below. Do not rehearse on the install you will show: B/L numbers are unique, and the B/L of a rehearsal stays in
   everyone's list.
 - **Your phone** has the authenticator app, and you know the demo password (`grep SEED_DEMO_PASSWORD deploy/.env`). It
-  is never written in this document. Each demo user sets up the authenticator at their first sign-in; do that once for
+  is never written in this document. Each demo user sets up the authenticator at their first sign-in, with the
+  one-time setup code the fresh install wrote for them (README.md, "Prepare the demo users"); do that once for
   all seven before the demo (README.md, "A shipping install"), so that the demo itself only needs the 6-digit codes.
 - **Anchoring is on** (README.md, "Anchoring for the demo"), with `ANCHOR_PERIOD=5m`: the check at the end shows the
   proof confirmed on the blockchain only once the batch after the release is out.

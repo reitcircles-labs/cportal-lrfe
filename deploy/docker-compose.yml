@@ -150,6 +150,10 @@ services:
       MFA_LOCKOUT_WRONG_CODES: ${MFA_LOCKOUT_WRONG_CODES:-10}
       MFA_LOCKOUT_WINDOW_MINUTES: ${MFA_LOCKOUT_WINDOW_MINUTES:-15}
       MFA_LOCKOUT_MINUTES: ${MFA_LOCKOUT_MINUTES:-15}
+      # how long an administrator's one-time setup code works, in hours (CB-102)
+      SETUP_CODE_TTL_HOURS: ${SETUP_CODE_TTL_HOURS:-72}
+      # the setup codes given at start (first administrator, demo users), readable only by identity
+      SETUP_CODE_FILE: /data/identity/setup-codes.txt
       # invitation email: smtp | file | none (backend/services/identity/README.md in the source repository)
       MAIL_TRANSPORT: ${MAIL_TRANSPORT:-none}
       MAIL_FILE_DIR: /data/mail

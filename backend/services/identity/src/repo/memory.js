@@ -48,6 +48,8 @@ export function createMemoryRepo() {
         mfaEnrolled: false,
         mfaSecret: null,
         pendingMfaSecret: null,
+        setupCodeHash: null,
+        setupCodeExpiresAt: null,
         inviteHash: null,
         inviteExpiresAt: null,
         lastActiveAt: null,
@@ -62,6 +64,28 @@ export function createMemoryRepo() {
       if (!user) return null;
       Object.assign(user, clone(patch));
       return clone(user);
+    },
+    /**
+     * Sets up the user's authenticator with `secret` only while the user has none and still holds
+     * the setup code of `setupCodeHash`, which is used up (CB-102). Checked and changed without
+     * awaiting, so two sign-ins with the same code set up one authenticator at most.
+     * @param {string} id
+     * @param {{setupCodeHash: string, secret: string}} enrolment
+     * @return {!Promise<boolean>} whether this call set it up
+     */
+    async enrolWithSetupCode(id, {setupCodeHash, secret}) {
+      const user = users.get(id);
+      if (!user || user.mfaEnrolled || user.setupCodeHash !== setupCodeHash) {
+        return false;
+      }
+      Object.assign(user, {
+        mfaEnrolled: true,
+        mfaSecret: secret,
+        pendingMfaSecret: null,
+        setupCodeHash: null,
+        setupCodeExpiresAt: null,
+      });
+      return true;
     },
 
     // settings (key → JSON value)

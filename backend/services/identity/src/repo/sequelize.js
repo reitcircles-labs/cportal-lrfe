@@ -37,6 +37,8 @@ const USER_FIELDS = [
   'mfaEnrolled',
   'mfaSecret',
   'pendingMfaSecret',
+  'setupCodeHash',
+  'setupCodeExpiresAt',
   'inviteHash',
   'inviteExpiresAt',
   'lastActiveAt',
@@ -87,6 +89,13 @@ export function createSequelizeRepo(sequelize) {
       // CB-19: the organisation of each user and office (filled in by the seed)
       if (!userColumns.organisationId) {
         await q.addColumn(user, 'organisationId', {type: DataTypes.UUID});
+      }
+      // CB-102: the one-time setup code of a user without an authenticator
+      if (!userColumns.setupCodeHash) {
+        await q.addColumn(user, 'setupCodeHash', {type: DataTypes.STRING});
+      }
+      if (!userColumns.setupCodeExpiresAt) {
+        await q.addColumn(user, 'setupCodeExpiresAt', {type: DataTypes.DATE});
       }
       if (!(await q.describeTable(office)).organisationId) {
         await q.addColumn(office, 'organisationId', {type: DataTypes.UUID});
@@ -235,6 +244,28 @@ export function createSequelizeRepo(sequelize) {
         if (patch.roles) await setRoles(id, patch.roles, transaction);
         return toUser(row, patch.roles || (await rolesOf(id, transaction)));
       });
+    },
+
+    /**
+     * Sets up the user's authenticator with `secret` only while the user has none and still holds
+     * the setup code of `setupCodeHash`, which is used up (CB-102). In one statement, so two
+     * sign-ins with the same code set up one authenticator at most.
+     * @param {string} id
+     * @param {{setupCodeHash: string, secret: string}} enrolment
+     * @return {!Promise<boolean>} whether this call set it up
+     */
+    async enrolWithSetupCode(id, {setupCodeHash, secret}) {
+      const [count] = await m.User.update(
+        {
+          mfaEnrolled: true,
+          mfaSecret: secret,
+          pendingMfaSecret: null,
+          setupCodeHash: null,
+          setupCodeExpiresAt: null,
+        },
+        {where: {id, setupCodeHash, mfaEnrolled: false}},
+      );
+      return count === 1;
     },
 
     async listRoles() {

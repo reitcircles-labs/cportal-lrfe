@@ -90,6 +90,14 @@ export const DEMO_PASSWORD =
   process.env.E2E_DEMO_PASSWORD || 'e2e-demo-password-2026';
 
 /**
+ * The key from which the stack's seeding derives each demo user's authenticator secret (identity's
+ * SEED_DEMO_MFA_KEY, honoured only with NODE_ENV=test; CB-102): the demo users start with their
+ * authenticators set up, and the tests compute the same secrets (support/auth.ts), so they never
+ * depend on the setup codes a fresh install prints. Not a secret: the stack is for tests only.
+ */
+export const DEMO_MFA_KEY = 'e2e-only-demo-authenticator-key';
+
+/**
  * The organisation of the test install in containers (API-712, start-docker.mjs): other texts than
  * the defaults, so the tests see the site's settings arrive in every place; a quote and a backslash
  * check the escaping. The tests' own stack uses the defaults (angular-app/projects/land-registry/public/config.json).

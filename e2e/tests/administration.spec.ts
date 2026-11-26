@@ -170,9 +170,10 @@ test(
     await admin.getByLabel('Search users').fill(person.email);
     const row = admin.locator('tbody tr', {hasText: person.email});
     await expect(row).toContainText('Invited');
-    await expect(row).toContainText('Not enrolled');
+    await expect(row).toContainText('not set up');
 
-    // The invitee opens the link from the email, chooses a password, then signs in and sets up MFA.
+    // The invitee opens the link from the email, chooses a password and sets up the authenticator
+    // on the same page (CB-102), then signs in with both.
     const link = await inviteLink(person.email);
     const context = await browser.newContext({
       baseURL: test.info().project.use.baseURL,
@@ -189,13 +190,7 @@ test(
       'API-607',
       'Invite: the invitee chooses a password from the email link',
     );
-    await page.getByRole('button', {name: 'Activate account'}).click();
-    await expect(
-      page.getByText('Your account is active. Sign in with your new password.'),
-    ).toBeVisible();
-    await expect(page.getByLabel('Email')).toHaveValue(person.email);
-    await page.getByLabel('Password').fill(NEW_USER_PASSWORD);
-    await page.getByRole('button', {name: 'Sign in', exact: true}).click();
+    await page.getByRole('button', {name: 'Continue'}).click();
     await expect(
       page.getByRole('heading', {name: 'Set up your authenticator'}),
     ).toBeVisible();
@@ -204,6 +199,15 @@ test(
       /\s/g,
       '',
     );
+    await page.getByLabel('6-digit code').fill(codeFor(key));
+    await page.getByRole('button', {name: 'Activate account'}).click();
+    await expect(
+      page.getByRole('heading', {name: 'Your account is ready'}),
+    ).toBeVisible();
+    await page.getByRole('button', {name: 'Go to sign-in'}).click();
+    await expect(page.getByLabel('Email')).toHaveValue(person.email);
+    await page.getByLabel('Password').fill(NEW_USER_PASSWORD);
+    await page.getByRole('button', {name: 'Sign in', exact: true}).click();
     await page.getByLabel('6-digit code').fill(codeFor(key));
     await page.getByRole('button', {name: 'Verify and sign in'}).click();
     await expect(page).toHaveURL(/#\/link$/);
@@ -219,7 +223,7 @@ test(
     await again.goto(appPath(link));
     await again.getByLabel('New password').fill(NEW_USER_PASSWORD);
     await again.getByLabel('Repeat password').fill(NEW_USER_PASSWORD);
-    await again.getByRole('button', {name: 'Activate account'}).click();
+    await again.getByRole('button', {name: 'Continue'}).click();
     await expect(again.getByRole('alert')).toContainText(
       'This invitation is invalid or has expired',
     );
@@ -227,7 +231,7 @@ test(
     await admin.reload();
     await admin.getByLabel('Search users').fill(person.email);
     await expect(row).toContainText('Active');
-    await expect(row.locator('.ok')).toBeVisible(); // MFA enrolled
+    await expect(row).not.toContainText('not set up'); // authenticator set up
     await evidence(
       admin,
       'API-607',

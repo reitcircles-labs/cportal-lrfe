@@ -3,16 +3,18 @@
  * gateway, and an organisation with a B/L clerk of its own, made by the administrator through the
  * API (CB-34).
  *
- * The shipping run has no setup project: a user enrols the authenticator on their first sign-in,
- * and the secret is kept in .auth/totp.json (support/auth.ts) so that a later spec signs the same
- * user in again. The shipping run has one worker, so the file is never written twice at once.
+ * The shipping run has no setup project: the demo users start with the authenticators the stack's
+ * seeding set up (CB-102, support/auth.ts demoSecretOf); an invited user sets one up while
+ * accepting the invitation, and its secret is kept in .auth/totp.json so that a later spec signs
+ * the same user in again. The shipping run has one worker, so the file is never written twice at
+ * once.
  */
 import {createHmac} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {expect, type APIRequestContext, type Page} from '@playwright/test';
 import {appPath, invitationEmail, officeCode, unique} from './admin';
-import {codeFor, readSecrets, saveSecrets} from './auth';
+import {codeFor, demoSecretOf, readSecrets, saveSecrets} from './auth';
 import {identity} from '../../backend/domains/shipping/src/identity.js';
 import {
   DEMO_PASSWORD,
@@ -37,6 +39,21 @@ const DEMO_USERS: DemoUser[] = (identity as {demoUsers: DemoUser[]}).demoUsers;
  */
 export function demoEmails(role: string): string[] {
   return DEMO_USERS.filter(u => u.roles.includes(role)).map(u => u.email);
+}
+
+/**
+ * The authenticator secret of a user: a demo user's from the stack's seeding (CB-102), else the
+ * one kept when they accepted their invitation.
+ * @param email the user's email
+ * @return the secret
+ */
+export function secretFor(email: string): string {
+  if (DEMO_USERS.some(u => u.email === email)) {
+    return demoSecretOf(email);
+  }
+  const secret = readSecrets()[email];
+  expect(secret, `the authenticator secret of ${email}`).toBeTruthy();
+  return secret;
 }
 
 /**
@@ -86,8 +103,8 @@ export function serviceToken(service: string): string {
 }
 
 /**
- * Signs a user in through the API: password, then the authenticator, enrolling it on the first
- * sign-in of a fresh stack and keeping its secret for later sign-ins.
+ * Signs a user in through the API: password, then the authenticator, with the secret kept for the
+ * user (an invited user's, from the invitation) or else the demo user's from the stack's seeding.
  * @param api the request context, on the gateway
  * @param email the user's email
  * @param password the user's password (the demo password by default)
@@ -103,15 +120,8 @@ export async function signIn(
     200,
   );
   const first = await login.json();
-  let secret: string;
-  if (first.next === 'mfa-enroll') {
-    secret = first.secret;
-    saveSecrets({...readSecrets(), [email]: secret});
-  } else {
-    expect(first.next, `sign-in of ${email}`).toBe('mfa');
-    secret = readSecrets()[email];
-    expect(secret, `the authenticator secret of ${email}`).toBeTruthy();
-  }
+  expect(first.next, `sign-in of ${email}`).toBe('mfa');
+  const secret = secretFor(email);
   const mfa = await api.post('/api/auth/mfa', {
     data: {challenge: first.challenge, code: codeFor(secret)},
   });
@@ -146,6 +156,14 @@ export async function acceptInvitation(
     data: {token, password: INVITED_PASSWORD},
   });
   expect(accepted.status(), await accepted.text()).toBe(200);
+  // CB-102: the authenticator is set up with the invitation, before the link is used up
+  const {next, secret} = await accepted.json();
+  expect(next, 'two-factor sign-in is required').toBe('mfa-enroll');
+  const activated = await api.post('/api/invitations/accept', {
+    data: {token, password: INVITED_PASSWORD, code: codeFor(secret)},
+  });
+  expect(activated.status(), await activated.text()).toBe(200);
+  saveSecrets({...readSecrets(), [email]: secret});
 }
 
 /**
@@ -220,8 +238,7 @@ export async function signInOnScreen(
   email: string,
   password: string,
 ): Promise<void> {
-  const secret = readSecrets()[email];
-  expect(secret, `the authenticator secret of ${email}`).toBeTruthy();
+  const secret = secretFor(email);
   await page.goto('/#/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);

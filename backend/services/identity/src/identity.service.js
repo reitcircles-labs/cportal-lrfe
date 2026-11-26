@@ -33,8 +33,18 @@ import {
   safeEqual,
 } from './crypto.js';
 import {CodeGuard} from './code-guard.js';
-import {createMailer, invitationEmail} from './mailer.js';
+import {
+  authenticatorAddedEmail,
+  createMailer,
+  invitationEmail,
+} from './mailer.js';
 import {DEFAULT_ORGANISATION_KEY} from './seed.js';
+import {
+  DEFAULT_SETUP_CODE_TTL_HOURS,
+  issueSetupCode,
+  normaliseSetupCode,
+  setupCodeHash,
+} from './setup-code.js';
 import {generateSecret, otpauthUrl, verifyTotp} from './totp.js';
 
 /** The shortest and longest maximum session age a site may set, in hours (CB-100). */
@@ -91,6 +101,8 @@ export class IdentityService {
     this.config = {
       issuer: DEFAULT_ORG_FULL_NAME,
       inviteTtlHours: 72,
+      // how long an administrator's one-time setup code works (CB-102)
+      setupCodeTtlHours: DEFAULT_SETUP_CODE_TTL_HOURS,
       minPasswordLength: 12,
       exposeInviteLinks: false,
       inviteUrlBase: 'http://localhost:4200/#/invite',
@@ -245,9 +257,11 @@ export class IdentityService {
 
   /**
    * Step 1 of sign-in. Returns one of:
-   *   { next: 'mfa', userId }                                    enrolled user must send a TOTP code
-   *   { next: 'mfa-enroll', userId, secret, otpauthUrl }         MFA required by policy, not yet enrolled
-   *   { next: 'done', refreshToken, claims, me }                 signed in
+   *   { next: 'mfa', userId }                    enrolled user must send a TOTP code
+   *   { next: 'setup-code', userId }             MFA required by policy, not yet enrolled: the
+   *                                              administrator's setup code first (CB-102)
+   *   { next: 'done', refreshToken, claims, me } signed in
+   * The password alone never gives an authenticator secret (CB-102).
    */
   async login({email, password, ip}) {
     const user = await this.repo.getUserByEmail(normEmail(email));
@@ -295,14 +309,7 @@ export class IdentityService {
     const {policies} = await this.context();
     if (user.mfaEnrolled) return {next: 'mfa', userId: user.id};
     if (policies.mfa) {
-      const secret = generateSecret();
-      await this.repo.updateUser(user.id, {pendingMfaSecret: secret});
-      return {
-        next: 'mfa-enroll',
-        userId: user.id,
-        secret,
-        otpauthUrl: otpauthUrl(secret, user.email, this.config.issuer),
-      };
+      return {next: 'setup-code', userId: user.id};
     }
     return {
       next: 'done',
@@ -313,6 +320,8 @@ export class IdentityService {
   /**
    * Step 2 of sign-in: verify a TOTP code (and complete enrolment if this is the first one) sent on
    * `challenge`, the step-1 challenge's id and expiry time in ms (the HTTP route always gives it).
+   * Enrolment needs the setup code that led to it (verifySetupCode) to be still valid; it is used
+   * up here, once (CB-102).
    * Guessing is limited (CB-101): a challenge is void after a number of wrong codes (401), and a
    * user with too many wrong codes in the window is locked out of this step for a while (429), the
    * right code included.
@@ -321,6 +330,97 @@ export class IdentityService {
    * @return {!Promise<!Object>} the new session, as startSession returns it
    */
   async verifyMfa({userId, code, ip, challenge}) {
+    const user = await this.signingInUser(userId);
+    const enrolling = !user.mfaEnrolled;
+    // enrolling needs the setup code that led to this step, still valid and unused (CB-102)
+    let setupCode = null;
+    if (enrolling) {
+      setupCode = this.validSetupCodeOf(user);
+      if (!setupCode) {
+        throw new UnauthorizedError('Sign-in expired, start again');
+      }
+    }
+    const secret = enrolling ? user.pendingMfaSecret : user.mfaSecret;
+    // From the check of the limits to counting the result nothing is awaited, so codes sent at the
+    // same time cannot all slip under a limit.
+    this.assertCodeStepOpen(user, challenge);
+    // TODO: remember the last accepted time step per user to block code replay within the window.
+    if (!secret || !verifyTotp(secret, code, this.clock().getTime())) {
+      await this.recordWrongCode(
+        user,
+        challenge,
+        'MFA failed',
+        'Invalid authenticator code',
+      );
+      throw new UnauthorizedError('Invalid authenticator code');
+    }
+    this.codeGuard.recordSuccess(user.id);
+    let current = user;
+    if (enrolling) {
+      // the setup code is used up here, once: of two sign-ins racing with it, one sets up
+      const enrolled = await this.repo.enrolWithSetupCode(user.id, {
+        setupCodeHash: setupCode,
+        secret,
+      });
+      if (!enrolled) {
+        throw new UnauthorizedError('Sign-in expired, start again');
+      }
+      current = await this.repo.getUser(user.id);
+      await this.authenticatorAdded(user);
+    }
+    return this.startSession(current, {ip, method: 'MFA'});
+  }
+
+  /**
+   * Step 2 of sign-in for a user without an authenticator while two-factor sign-in is required
+   * (CB-102): the one-time setup code an administrator gave. The right code leads to the
+   * authenticator step: a new secret to enrol, which only a code from it sets up. A wrong or
+   * expired code counts towards the user's lockout of wrong codes (CB-101), like a wrong
+   * authenticator code; a right one does not clear the count (only a completed sign-in does). The
+   * code is used up when the authenticator is set up (verifyMfa), so stopping at the QR step lets
+   * the user start again with the same code while it is valid.
+   * @param {{userId: string, setupCode: *, challenge: {id: string, expiresAt: number}}} attempt
+   * @return {!Promise<{userId: string, secret: string, otpauthUrl: string}>}
+   */
+  async verifySetupCode({userId, setupCode, challenge}) {
+    const user = await this.signingInUser(userId);
+    if (user.mfaEnrolled) {
+      throw new UnauthorizedError('Sign-in expired, start again');
+    }
+    this.assertCodeStepOpen(user, challenge);
+    const stored = this.validSetupCodeOf(user);
+    const typed = normaliseSetupCode(setupCode);
+    const right =
+      stored !== null &&
+      typed !== null &&
+      safeEqual(setupCodeHash(user.id, typed), stored);
+    if (!right) {
+      await this.recordWrongCode(
+        user,
+        challenge,
+        'Setup code failed',
+        'Wrong or expired setup code',
+      );
+      throw new UnauthorizedError(
+        'This setup code is wrong or has expired. Ask your administrator for a new one.',
+      );
+    }
+    const secret = generateSecret();
+    await this.repo.updateUser(user.id, {pendingMfaSecret: secret});
+    return {
+      userId: user.id,
+      secret,
+      otpauthUrl: otpauthUrl(secret, user.email, this.config.issuer),
+    };
+  }
+
+  /**
+   * The user of a sign-in's later step, who must still be allowed to sign in.
+   * @param {string} userId
+   * @return {!Promise<!Object>}
+   * @throws {UnauthorizedError} when the user is gone, not active or in a suspended organisation
+   */
+  async signingInUser(userId) {
     const user = await this.repo.getUser(userId);
     if (
       !user ||
@@ -329,10 +429,32 @@ export class IdentityService {
     ) {
       throw new UnauthorizedError('Sign-in expired, start again');
     }
-    const enrolling = !user.mfaEnrolled;
-    const secret = enrolling ? user.pendingMfaSecret : user.mfaSecret;
-    // From the check of the limits to counting the result nothing is awaited, so codes sent at the
-    // same time cannot all slip under a limit.
+    return user;
+  }
+
+  /**
+   * The hash of the user's setup code while it may be used (given and not expired), else null.
+   * @param {!Object} user
+   * @return {?string}
+   */
+  validSetupCodeOf(user) {
+    if (!user.setupCodeHash || !user.setupCodeExpiresAt) {
+      return null;
+    }
+    if (new Date(user.setupCodeExpiresAt) < this.clock()) {
+      return null;
+    }
+    return user.setupCodeHash;
+  }
+
+  /**
+   * Refuses a code step the limits on guessing close (CB-101): 429 while the user is locked out,
+   * 401 once the challenge used up its wrong codes. Synchronous, so nothing is awaited between
+   * this check and counting the result.
+   * @param {!Object} user
+   * @param {({id: string, expiresAt: number}|undefined)} challenge
+   */
+  assertCodeStepOpen(user, challenge) {
     const refusal = this.codeGuard.refusal(user.id, challenge);
     if (refusal?.reason === 'locked') {
       const minutes = refusal.minutesLeft === 1 ? 'minute' : 'minutes';
@@ -344,44 +466,70 @@ export class IdentityService {
     if (refusal) {
       throw new UnauthorizedError('Too many wrong codes: sign in again');
     }
-    // TODO: remember the last accepted time step per user to block code replay within the window.
-    if (!secret || !verifyTotp(secret, code, this.clock().getTime())) {
-      const locked = this.codeGuard.recordWrong(user.id, challenge);
+  }
+
+  /**
+   * Counts a wrong code (authenticator or setup code) towards the limits and writes it, and the
+   * lockout it may cause, to the access log. Never the code itself.
+   * @param {!Object} user
+   * @param {({id: string, expiresAt: number}|undefined)} challenge
+   * @param {string} action the access log's action, e.g. "MFA failed"
+   * @param {string} detail
+   */
+  async recordWrongCode(user, challenge, action, detail) {
+    const locked = this.codeGuard.recordWrong(user.id, challenge);
+    await this.log('denied', action, user.name, detail);
+    if (locked) {
+      const limits = this.codeGuard.limits;
       await this.log(
         'denied',
-        'MFA failed',
+        'MFA locked',
         user.name,
-        'Invalid authenticator code',
+        `${limits.lockoutWrongCodes} wrong codes in ${limits.lockoutWindowMinutes} min: ` +
+          `code step locked for ${limits.lockoutMinutes} min`,
       );
-      if (locked) {
-        const limits = this.codeGuard.limits;
-        await this.log(
-          'denied',
-          'MFA locked',
-          user.name,
-          `${limits.lockoutWrongCodes} wrong codes in ${limits.lockoutWindowMinutes} min: ` +
-            `code step locked for ${limits.lockoutMinutes} min`,
-        );
-      }
-      throw new UnauthorizedError('Invalid authenticator code');
     }
-    this.codeGuard.recordSuccess(user.id);
-    let current = user;
-    if (enrolling) {
-      current = await this.repo.updateUser(user.id, {
-        mfaSecret: secret,
-        mfaEnrolled: true,
-        pendingMfaSecret: null,
+  }
+
+  /**
+   * After an authenticator was set up: the access log, and a best-effort email to the user
+   * (CB-102). Nothing waits for the email, and a mail failure never stops the sign-in.
+   * @param {!Object} user
+   */
+  async authenticatorAdded(user) {
+    await this.log(
+      'user',
+      'MFA enrolled',
+      user.name,
+      'Authenticator app',
+      this.selfActor(user),
+    );
+    if (!this.mailer.enabled) {
+      return;
+    }
+    const notice = authenticatorAddedEmail({
+      name: user.name,
+      issuer: this.config.issuer,
+      at: this.clock(),
+    });
+    Promise.resolve()
+      .then(() => this.mailer.send({to: user.email, ...notice}))
+      .catch(() => {
+        // best effort: the user is signed in either way
       });
-      await this.log(
-        'user',
-        'MFA enrolled',
-        user.name,
-        'Authenticator app',
-        this.selfActor(user),
-      );
-    }
-    return this.startSession(current, {ip, method: 'MFA'});
+  }
+
+  /**
+   * A new one-time setup code for `user` (CB-102): stored only as its hash with its expiry,
+   * replacing any earlier code and any authenticator secret shown before.
+   * @param {!Object} user
+   * @return {!Promise<{setupCode: string, expiresAt: !Date}>} the code, to show once
+   */
+  async issueSetupCode(user) {
+    return issueSetupCode(this.repo, user.id, {
+      now: this.clock(),
+      ttlHours: this.config.setupCodeTtlHours,
+    });
   }
 
   async startSession(user, {ip, method}) {
@@ -1372,7 +1520,16 @@ export class IdentityService {
     }
   }
 
-  async acceptInvite({token, password}) {
+  /**
+   * Accepting an invitation. While two-factor sign-in is required the authenticator is set up
+   * here, before the link is used up (CB-102): the link is the proof the password alone is not.
+   * Without `code` the answer is the authenticator's secret ({ next: 'mfa-enroll', email, secret,
+   * otpauthUrl }) and the account stays invited; with the code from it the account is activated
+   * with the authenticator. Wrong codes count towards the user's lockout of wrong codes (CB-101).
+   * @param {{token: string, password: string, code: (string|undefined)}} acceptance
+   * @return {!Promise<!Object>} { email } once active
+   */
+  async acceptInvite({token, password, code}) {
     const user = token
       ? await this.repo.getUserByInviteHash(sha256(String(token)))
       : null;
@@ -1390,12 +1547,44 @@ export class IdentityService {
         `Password must be at least ${this.config.minPasswordLength} characters`,
       );
     }
-    await this.repo.updateUser(user.id, {
+    const {policies} = await this.context();
+    const withAuthenticator = policies.mfa && !user.mfaEnrolled;
+    if (withAuthenticator && code === undefined) {
+      const secret = generateSecret();
+      await this.repo.updateUser(user.id, {pendingMfaSecret: secret});
+      return {
+        next: 'mfa-enroll',
+        email: user.email,
+        secret,
+        otpauthUrl: otpauthUrl(secret, user.email, this.config.issuer),
+      };
+    }
+    const patch = {
       passwordHash: await hashPassword(password),
       status: 'Active',
       inviteHash: null,
       inviteExpiresAt: null,
-    });
+    };
+    if (withAuthenticator) {
+      this.assertCodeStepOpen(user);
+      const secret = user.pendingMfaSecret;
+      if (!secret || !verifyTotp(secret, code, this.clock().getTime())) {
+        await this.recordWrongCode(
+          user,
+          undefined,
+          'MFA failed',
+          'Invalid authenticator code',
+        );
+        throw new UnauthorizedError('Invalid authenticator code');
+      }
+      this.codeGuard.recordSuccess(user.id);
+      Object.assign(patch, {
+        mfaEnrolled: true,
+        mfaSecret: secret,
+        pendingMfaSecret: null,
+      });
+    }
+    await this.repo.updateUser(user.id, patch);
     await this.log(
       'user',
       'Invitation accepted',
@@ -1403,6 +1592,9 @@ export class IdentityService {
       user.email,
       this.selfActor(user),
     );
+    if (withAuthenticator) {
+      await this.authenticatorAdded(user);
+    }
     return {email: user.email};
   }
 
@@ -1491,21 +1683,77 @@ export class IdentityService {
     return this.publicUser(updated, ctx);
   }
 
+  /**
+   * "Reset 2FA" (CB-102): the user's authenticator stops working, their sessions end at once, and
+   * the administrator gets a one-time setup code to give them, shown only in this answer.
+   * Invited users set up their authenticator when they accept the invitation.
+   * @param {string} id
+   * @param {!Object} actor
+   * @return {!Promise<{user: !Object, setupCode: string, expiresAt: !Date}>}
+   */
   async resetMfa(id, actor) {
     const user = await this.requireUser(id);
-    const updated = await this.repo.updateUser(id, {
+    if (user.status === 'Invited') {
+      throw new ConflictError(
+        'Invited users set up their authenticator when they accept the invitation',
+      );
+    }
+    await this.repo.updateUser(id, {
       mfaEnrolled: false,
       mfaSecret: null,
-      pendingMfaSecret: null,
     });
+    const {setupCode, expiresAt} = await this.issueSetupCode(user);
+    await this.repo.revokeUserSessions(id, this.clock());
+    await this.announceRevoked({userId: id, reason: 'authenticator reset'});
     await this.log(
       'user',
       'MFA reset',
       user.name,
-      'Must re-enrol at next sign-in',
+      `Sessions ended; setup code given, valid for ${this.config.setupCodeTtlHours} hours`,
       actor,
     );
-    return this.publicUser(updated, await this.context());
+    const updated = await this.repo.getUser(id);
+    return {
+      user: this.publicUser(updated, await this.context()),
+      setupCode,
+      expiresAt,
+    };
+  }
+
+  /**
+   * "Give setup code" (CB-102): a one-time setup code for an active user without an authenticator,
+   * shown only in this answer. A new code voids the one given before.
+   * @param {string} id
+   * @param {!Object} actor
+   * @return {!Promise<{user: !Object, setupCode: string, expiresAt: !Date}>}
+   */
+  async giveSetupCode(id, actor) {
+    const user = await this.requireUser(id);
+    if (user.status !== 'Active') {
+      throw new ConflictError(
+        user.status === 'Invited'
+          ? 'Invited users set up their authenticator when they accept the invitation'
+          : 'Only active users can be given a setup code',
+      );
+    }
+    if (user.mfaEnrolled) {
+      throw new ConflictError(
+        'This user has an authenticator: reset 2FA to give a setup code',
+      );
+    }
+    const {setupCode, expiresAt} = await this.issueSetupCode(user);
+    await this.log(
+      'user',
+      'Setup code given',
+      user.name,
+      `One use, valid for ${this.config.setupCodeTtlHours} hours`,
+      actor,
+    );
+    return {
+      user: this.publicUser(user, await this.context()),
+      setupCode,
+      expiresAt,
+    };
   }
 
   // ---------------------------------------------------------------- roles (fixed set, editable permissions)

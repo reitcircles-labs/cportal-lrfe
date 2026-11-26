@@ -7,7 +7,7 @@ import {IdentityService} from '../src/identity.service.js';
 import {createMemoryRepo} from '../src/repo/memory.js';
 import {seedIdentity} from '../src/seed.js';
 import {createMailer, invitationEmail} from '../src/mailer.js';
-import {makeClock, PASSWORD} from './helpers.js';
+import {codeFor, makeClock, PASSWORD} from './helpers.js';
 
 const ADMIN = {id: 'admin-1', name: 'Paulus Hamutenya'};
 
@@ -31,11 +31,12 @@ async function makeService(mailer, config = {}) {
   const events = createEventBus({driver: 'memory', source: 'identity'});
   const published = [];
   events.subscribe('*', e => published.push(e));
+  const clock = makeClock();
   const service = new IdentityService({
     repo,
     events,
     mailer,
-    clock: makeClock(),
+    clock,
     config,
   });
   const office = await repo.createOffice({
@@ -43,7 +44,7 @@ async function makeService(mailer, config = {}) {
     name: 'Deeds Registry · Windhoek',
     type: 'registry',
   });
-  return {repo, service, published, office};
+  return {repo, service, published, office, clock};
 }
 
 const linkIn = text => text.match(/https?:\/\/\S+token=[\w-]+/)[0];
@@ -51,7 +52,7 @@ const linkIn = text => text.match(/https?:\/\/\S+token=[\w-]+/)[0];
 describe('invitation email', () => {
   it('emails the invitation link; the link activates the account', async () => {
     const mailer = fakeMailer();
-    const {service, office} = await makeService(mailer);
+    const {service, office, clock} = await makeService(mailer);
     const res = await service.invite(
       {
         name: 'Nangula Shikongo',
@@ -77,7 +78,17 @@ describe('invitation email', () => {
     const link = linkIn(m.text);
     expect(m.html).to.include(link.replace(/&/g, '&amp;'));
     const token = new URL(link.replace('#/', '')).searchParams.get('token');
-    await service.acceptInvite({token, password: 'a long new password'});
+    // two-factor sign-in is required by default: the authenticator is set up with the invitation
+    // (CB-102)
+    const {secret} = await service.acceptInvite({
+      token,
+      password: 'a long new password',
+    });
+    await service.acceptInvite({
+      token,
+      password: 'a long new password',
+      code: codeFor(secret, clock),
+    });
     expect(
       (
         await service.login({

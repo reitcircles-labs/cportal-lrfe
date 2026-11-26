@@ -91,7 +91,7 @@ test('an invited user who has not activated cannot sign in with a password', asy
   await expect(page.getByRole('alert')).toHaveText('Wrong email or password');
 });
 
-test('first sign-in sets up the authenticator from the setup key', async ({
+test('after a reset, the setup code leads to setting up the authenticator from the setup key', async ({
   page,
   playwright,
 }) => {
@@ -103,12 +103,20 @@ test('first sign-in sets up the authenticator from the setup key', async ({
   const headers = {authorization: `Bearer ${token}`};
   const {users} = await (await admin.get('/api/users', {headers})).json();
   const target = users.find((u: {email: string}) => u.email === MFA_UI_USER);
-  expect(
-    (await admin.post(`/api/users/${target.id}/mfa-reset`, {headers})).status(),
-  ).toBe(200);
+  const reset = await admin.post(`/api/users/${target.id}/mfa-reset`, {
+    headers,
+  });
+  expect(reset.status()).toBe(200);
+  // CB-102: the password alone never sets up an authenticator; the administrator's code does
+  const {setupCode} = await reset.json();
   await admin.dispose();
 
   await enterPassword(page, MFA_UI_USER);
+  await expect(
+    page.getByRole('heading', {name: 'Enter your setup code'}),
+  ).toBeVisible();
+  await page.getByLabel('Setup code').fill(setupCode);
+  await page.getByRole('button', {name: 'Continue'}).click();
   await expect(
     page.getByRole('heading', {name: 'Set up your authenticator'}),
   ).toBeVisible();

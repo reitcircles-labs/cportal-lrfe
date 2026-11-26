@@ -39,6 +39,7 @@ import {join, resolve} from 'node:path';
 import {
   BACKEND_DIR,
   BAO_DIR,
+  DEMO_MFA_KEY,
   DEMO_PASSWORD,
   E2E_BAO,
   E2E_DOMAIN,
@@ -78,6 +79,8 @@ const COMMON = {
   INTAKE_STORAGE: 'memory',
   EXTRACTION_PROVIDER: 'mock',
   SEED_DEMO_PASSWORD: DEMO_PASSWORD,
+  // the demo users' authenticators, set up directly by the seeding (CB-102, with NODE_ENV=test)
+  SEED_DEMO_MFA_KEY: DEMO_MFA_KEY,
   MAIL_TRANSPORT: 'file',
   MAIL_FILE_DIR: MAIL_DIR,
   MAIL_FROM: 'Deeds Registry (e2e) <noreply@example.com>',

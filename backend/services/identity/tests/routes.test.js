@@ -1,5 +1,5 @@
 import {expect} from 'chai';
-import {makeApp, codeFor, PASSWORD} from './helpers.js';
+import {makeApp, codeFor, SETUP_ACTOR, PASSWORD} from './helpers.js';
 
 describe('identity HTTP API', () => {
   it('login → me → refresh (cookie) → logout', async () => {
@@ -61,14 +61,25 @@ describe('identity HTTP API', () => {
   });
 
   it('two-step MFA sign-in with a challenge token', async () => {
-    const {app, clock} = await makeApp({mfa: true});
+    const {app, clock, service, user} = await makeApp({mfa: true});
     const step1 = await app.inject({
       method: 'POST',
       url: '/auth/login',
       payload: {email: 'm.nakale@oag.gov.na', password: PASSWORD},
     });
-    expect(step1.json()).to.include({next: 'mfa-enroll'});
+    // CB-102: without an authenticator, the setup code comes before the authenticator step
+    expect(step1.json()).to.include({next: 'setup-code'});
     expect(step1.json()).to.not.have.property('userId');
+    const {setupCode} = await service.giveSetupCode(
+      (await user('m.nakale@oag.gov.na')).id,
+      SETUP_ACTOR,
+    );
+    const enrol = await app.inject({
+      method: 'POST',
+      url: '/auth/setup-code',
+      payload: {challenge: step1.json().challenge, setupCode},
+    });
+    expect(enrol.json()).to.include({next: 'mfa-enroll'});
 
     const bad = await app.inject({
       method: 'POST',
@@ -81,8 +92,8 @@ describe('identity HTTP API', () => {
       method: 'POST',
       url: '/auth/mfa',
       payload: {
-        challenge: step1.json().challenge,
-        code: codeFor(step1.json().secret, clock),
+        challenge: enrol.json().challenge,
+        code: codeFor(enrol.json().secret, clock),
       },
     });
     expect(step2.statusCode).to.equal(200);

@@ -15,6 +15,8 @@ import {
 } from './catalogue.js';
 
 const MFA_TOKEN_TYPE = 'mfa';
+/** The challenge of the setup-code step (CB-102): never accepted by the authenticator step. */
+const SETUP_TOKEN_TYPE = 'setup';
 
 const str = (extra = {}) => ({type: 'string', ...extra});
 const body = (properties, required = Object.keys(properties)) => ({
@@ -86,13 +88,64 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     async (req, reply) => {
       const result = await service.login({...req.body, ip: req.ip});
       if (result.next === 'done') return signedIn(reply, result);
-      // the challenge's own id (jti): wrong codes are counted per challenge (CB-101)
-      const challenge = app.jwt.sign(
-        {typ: MFA_TOKEN_TYPE, sub: result.userId, jti: randomUUID()},
-        {expiresIn: '5m'},
-      );
+      const type =
+        result.next === 'setup-code' ? SETUP_TOKEN_TYPE : MFA_TOKEN_TYPE;
       const {userId, ...rest} = result;
-      return {...rest, challenge};
+      return {...rest, challenge: challengeFor(type, userId)};
+    },
+  );
+
+  /**
+   * A sign-in step's challenge: signed, valid 5 minutes, with its own id (jti), by which wrong
+   * codes are counted per challenge (CB-101).
+   * @param {string} type MFA_TOKEN_TYPE or SETUP_TOKEN_TYPE
+   * @param {string} userId
+   * @return {string}
+   */
+  function challengeFor(type, userId) {
+    return app.jwt.sign(
+      {typ: type, sub: userId, jti: randomUUID()},
+      {expiresIn: '5m'},
+    );
+  }
+
+  /**
+   * The payload of a challenge of `type` this service signed.
+   * @param {string} challenge
+   * @param {string} type
+   * @return {!Object}
+   * @throws {UnauthorizedError} when it is not one, or has expired
+   */
+  function verifiedChallenge(challenge, type) {
+    let payload;
+    try {
+      payload = app.jwt.verify(challenge);
+    } catch {
+      throw new UnauthorizedError('Sign-in expired, start again');
+    }
+    // a challenge without an id was issued before CB-101 (at most 5 minutes earlier)
+    if (payload.typ !== type || typeof payload.jti !== 'string') {
+      throw new UnauthorizedError('Sign-in expired, start again');
+    }
+    return payload;
+  }
+
+  // a user without an authenticator: the administrator's setup code, then the QR step (CB-102)
+  app.post(
+    '/auth/setup-code',
+    {schema: body({challenge: str(), setupCode: str({maxLength: 64})})},
+    async req => {
+      const payload = verifiedChallenge(req.body.challenge, SETUP_TOKEN_TYPE);
+      const {userId, ...rest} = await service.verifySetupCode({
+        userId: payload.sub,
+        setupCode: req.body.setupCode,
+        challenge: {id: payload.jti, expiresAt: payload.exp * 1000},
+      });
+      return {
+        next: 'mfa-enroll',
+        ...rest,
+        challenge: challengeFor(MFA_TOKEN_TYPE, userId),
+      };
     },
   );
 
@@ -100,16 +153,7 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
     '/auth/mfa',
     {schema: body({challenge: str(), code: str({pattern: '^\\d{6}$'})})},
     async (req, reply) => {
-      let payload;
-      try {
-        payload = app.jwt.verify(req.body.challenge);
-      } catch {
-        throw new UnauthorizedError('Sign-in expired, start again');
-      }
-      // a challenge without an id was issued before CB-101 (at most 5 minutes earlier)
-      if (payload.typ !== MFA_TOKEN_TYPE || typeof payload.jti !== 'string') {
-        throw new UnauthorizedError('Sign-in expired, start again');
-      }
+      const payload = verifiedChallenge(req.body.challenge, MFA_TOKEN_TYPE);
       return signedIn(
         reply,
         await service.verifyMfa({
@@ -171,10 +215,15 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
   app.post(
     '/invitations/accept',
     {
-      schema: body({
-        token: str({maxLength: 200}),
-        password: str({maxLength: 1024}),
-      }),
+      schema: body(
+        {
+          token: str({maxLength: 200}),
+          password: str({maxLength: 1024}),
+          // the authenticator's code, when two-factor sign-in is required (CB-102)
+          code: str({pattern: '^\\d{6}$'}),
+        },
+        ['token', 'password'],
+      ),
     },
     async req => service.acceptInvite(req.body),
   );
@@ -226,8 +275,12 @@ export async function identityRoutes(app, {service, accessTtlSeconds, cookie}) {
   app.post('/users/:id/reactivate', {...users, schema: idParam}, async req =>
     service.setStatus(req.params.id, 'Active', reasonOf(req), actorOf(req)),
   );
+  // both answer with a one-time setup code, shown only there (CB-102)
   app.post('/users/:id/mfa-reset', {...users, schema: idParam}, async req =>
     service.resetMfa(req.params.id, actorOf(req)),
+  );
+  app.post('/users/:id/setup-code', {...users, schema: idParam}, async req =>
+    service.giveSetupCode(req.params.id, actorOf(req)),
   );
   app.post('/users/:id/invitation', {...users, schema: idParam}, async req =>
     service.resendInvite(req.params.id, actorOf(req)),

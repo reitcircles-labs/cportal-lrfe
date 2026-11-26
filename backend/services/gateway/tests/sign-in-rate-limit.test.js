@@ -25,11 +25,18 @@ import {buildApp} from '../src/app.js';
 const GATEWAY_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_DIR = join(GATEWAY_DIR, '..', '..', '..');
 
-const SIGN_IN_PATHS = ['/api/auth/login', '/api/auth/mfa', '/api/auth/refresh'];
+// CB-102 added the setup-code step, limited like the code step
+const SIGN_IN_PATHS = [
+  '/api/auth/login',
+  '/api/auth/mfa',
+  '/api/auth/setup-code',
+  '/api/auth/refresh',
+];
 /** The default allowance per address and window of each sign-in endpoint. */
 const DEFAULT_MAX = {
   '/api/auth/login': 60,
   '/api/auth/mfa': 60,
+  '/api/auth/setup-code': 60,
   '/api/auth/refresh': 600,
 };
 

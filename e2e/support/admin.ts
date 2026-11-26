@@ -96,7 +96,10 @@ export interface NewUser {
   roles: RoleId[];
 }
 
-/** Invite → activate → enrol MFA, all through the API. The user can then sign in like a demo user. */
+/**
+ * Invite → activate with the authenticator (CB-102: set up while accepting the invitation), all
+ * through the API. The user can then sign in like a demo user.
+ */
 export async function createUser(
   admin: AdminApi,
   roles: RoleId[],
@@ -124,17 +127,12 @@ export async function createUser(
     data: {token, password: NEW_USER_PASSWORD},
   });
   expect(accepted.status(), await accepted.text()).toBe(200);
-
-  const login = await (
-    await admin.api.post('/api/auth/login', {
-      data: {email, password: NEW_USER_PASSWORD},
-    })
-  ).json();
-  expect(login.next).toBe('mfa-enroll');
-  const enrolled = await admin.api.post('/api/auth/mfa', {
-    data: {challenge: login.challenge, code: codeFor(login.secret)},
+  const {next, secret} = await accepted.json();
+  expect(next, 'two-factor sign-in is required').toBe('mfa-enroll');
+  const activated = await admin.api.post('/api/invitations/accept', {
+    data: {token, password: NEW_USER_PASSWORD, code: codeFor(secret)},
   });
-  expect(enrolled.status()).toBe(200);
-  rememberSecret(email, login.secret);
+  expect(activated.status(), await activated.text()).toBe(200);
+  rememberSecret(email, secret);
   return {id: user.id, name, email, roles};
 }
