@@ -1,3 +1,4 @@
+import {isIP} from 'node:net';
 import cors from '@fastify/cors';
 import proxy from '@fastify/http-proxy';
 import rateLimit from '@fastify/rate-limit';
@@ -92,13 +93,84 @@ export const PUBLIC_ROUTES = [
 /** How many public requests one client address may make in `timeWindow` ms, by default. */
 export const PUBLIC_RATE_LIMIT = {max: 10, timeWindow: 60_000};
 
+/** The proxies trusted when TRUST_PROXY is not set: only one on this machine (loopback). */
+export const LOOPBACK_PROXIES = Object.freeze(['127.0.0.1', '::1']);
+
+/**
+ * Whether `entry` is an IP address or a CIDR range of one (e.g. 10.0.0.0/8, fd00::/8).
+ * @param {string} entry
+ * @return {boolean}
+ */
+function isAddressOrRange(entry) {
+  const [address, prefix, ...extra] = entry.split('/');
+  const version = isIP(address);
+  if (version === 0 || extra.length > 0) {
+    return false;
+  }
+  if (prefix === undefined) {
+    return true;
+  }
+  const maxPrefix = version === 4 ? 32 : 128;
+  return /^\d{1,3}$/.test(prefix) && Number(prefix) <= maxPrefix;
+}
+
+/**
+ * The proxies whose X-Forwarded-For the gateway believes (CB-105), from the setting TRUST_PROXY:
+ * a hop count (e.g. 2: the site's nginx and the web container), or a comma-separated list of
+ * addresses and CIDR ranges. Not set: only a proxy on this machine. `true` (every caller) would let
+ * any client choose its own address, so it is refused like any other value that is neither.
+ * @param {string | undefined} value the setting as written, undefined or empty when not set
+ * @return {number | !Array<string>} Fastify's trustProxy option
+ * @throws {Error} when the value is unsafe or not valid
+ */
+export function trustProxyFrom(value) {
+  const trimmed = (value ?? '').trim();
+  if (trimmed === '') {
+    return [...LOOPBACK_PROXIES];
+  }
+  if (/^\d+$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+  const entries = trimmed
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+  const invalid = entries.filter(entry => !isAddressOrRange(entry));
+  if (entries.length === 0 || invalid.length > 0) {
+    throw new Error(
+      `TRUST_PROXY must be a hop count or a comma-separated list of proxy addresses or CIDR ` +
+        `ranges, got "${trimmed}" (trusting every caller, "true", is unsafe: any client could ` +
+        `choose its own address)`,
+    );
+  }
+  return entries;
+}
+
+/**
+ * Fastify's trustProxy as a function for a hop count: the caller and the `hops - 1` addresses it
+ * appended last are proxies. Fastify (5.12) given the number itself believes no X-Forwarded-For.
+ * @param {number | !Array<string> | function(string, number): boolean} trustProxy
+ * @return {!Array<string> | function(string, number): boolean}
+ */
+function trustProxyOption(trustProxy) {
+  if (typeof trustProxy !== 'number') {
+    return trustProxy;
+  }
+  return (_address, hop) => hop < trustProxy;
+}
+
 /**
  * `Expect: 100-continue` (sent by curl and many clients on large uploads) is answered by the
  * gateway's own HTTP server; forwarding it makes the upstream client (undici) fail the request.
+ * The services believe X-Forwarded-For (they only take requests from the gateway): it is replaced
+ * by the client address the gateway trusts, so nothing a client wrote in it reaches them (CB-105).
+ * @param {!Object} req the request on the gateway
+ * @param {!Object<string, string>} headers the headers to send on
+ * @return {!Object<string, string>} the headers the service gets
  */
-function dropHopHeaders(_req, headers) {
+function dropHopHeaders(req, headers) {
   const {expect, ...rest} = headers;
-  return rest;
+  return {...rest, 'x-forwarded-for': req.ip};
 }
 
 /** A public request goes on without the caller's credentials: it never acts as a signed-in user. */
@@ -147,17 +219,19 @@ async function publicRoutes(scope, {upstreams, rateLimit: limit}) {
  *   corsOrigins: allowed browser origins (not needed when the app is served from the same origin)
  *   publicRateLimit: { max, timeWindow } for PUBLIC_ROUTES, per client address
  *   routes:      the routing table (this install's ROUTES by default)
+ *   trustProxy:  the proxies whose X-Forwarded-For is believed (trustProxyFrom; loopback by default)
  */
 export async function buildApp({
   upstreams,
   corsOrigins = [],
   publicRateLimit = PUBLIC_RATE_LIMIT,
   routes = ROUTES,
+  trustProxy = [...LOOPBACK_PROXIES],
   ...fastifyOptions
 }) {
   const app = createBaseApp({
     name: 'gateway',
-    trustProxy: true,
+    trustProxy: trustProxyOption(trustProxy),
     ...fastifyOptions,
   });
   if (corsOrigins.length) {

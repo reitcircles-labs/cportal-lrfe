@@ -209,6 +209,22 @@ server {
 With HTTPS, keep `COOKIE_SECURE=true`. Only a test install opened over plain `http://` needs
 `COOKIE_SECURE=false` (and `LRFE_BIND=0.0.0.0` to be reached from other machines).
 
+The client's address (on sessions, in the access log, for the limit on public requests) is taken from
+`X-Forwarded-For`, but only as far as the proxies the gateway trusts wrote it: what a client writes in
+that header itself is ignored. `TRUST_PROXY` in `.env` says how many proxies stand in front of the
+gateway, or which ones:
+
+- `2` (the default): the server above and the web container, the setup described here.
+- `1`: the web port opened to other machines without the server above (`LRFE_BIND=0.0.0.0`). Keep
+  `2` there and any client could choose the address it is logged under.
+- a comma-separated list of proxy addresses or ranges, e.g. `10.0.0.0/8, 172.16.0.0/12`: the proxies
+  trusted by address, for a load balancer in front with more hops.
+
+A hop count holds only while the gateway can be reached through those proxies alone, as in this
+compose file, where its port is not published; never use a count larger than the proxies there are.
+`TRUST_PROXY=true` (trust every caller) and any other value stop the gateway at start with a message.
+The gateway passes on to the services only the client address it trusts.
+
 ## D. Encryption at rest with OpenBao (on by default)
 
 edrms, intake and extracts encrypt every file they store (the scans, the filed documents, the

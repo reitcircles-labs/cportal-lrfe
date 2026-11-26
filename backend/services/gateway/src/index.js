@@ -6,7 +6,7 @@ import {
   recordServiceOf,
   startService,
 } from '@lrfe/common';
-import {PUBLIC_RATE_LIMIT, buildApp} from './app.js';
+import {PUBLIC_RATE_LIMIT, buildApp, trustProxyFrom} from './app.js';
 
 // the product's record service (CB-4): land-records at RECORDS_URL for land, shipping-records at
 // SHIPPING_RECORDS_URL for shipping (CB-28)
@@ -34,6 +34,8 @@ const app = await buildApp({
       PUBLIC_RATE_LIMIT.timeWindow,
     ),
   },
+  // the proxies in front whose X-Forwarded-For is believed (CB-105): a hop count or addresses
+  trustProxy: trustProxyFrom(env('TRUST_PROXY', '')),
   logger: {level: env('LOG_LEVEL', 'info')},
 });
 

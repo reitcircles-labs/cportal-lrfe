@@ -450,6 +450,9 @@ services:
       AUDIT_URL: http://audit:3506
       EXTRACTS_URL: http://extracts:3507
       CORS_ORIGINS: ${LRFE_PUBLIC_URL}
+      # the proxies in front whose X-Forwarded-For is believed (CB-105): 2 hops, the site's nginx
+      # and the web container; 1 when the web port is opened without the site's nginx (README, C)
+      TRUST_PROXY: ${TRUST_PROXY:-2}
     healthcheck: *healthcheck
     depends_on:
       identity: { condition: service_healthy }
