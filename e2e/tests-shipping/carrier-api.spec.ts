@@ -25,7 +25,7 @@ test.describe('Carrier issuance API (CB-56)', () => {
 
   test(
     'creates an API key, issues a B/L via the API (appearing on screen), blocks duplicate cargo, and revokes the key',
-    {tag: '@CB-56'},
+    {tag: ['@CB-56', '@CB-121']},
     async ({page, playwright}) => {
       test.setTimeout(240_000);
       const api = await playwright.request.newContext({baseURL: GATEWAY_URL});
@@ -58,6 +58,24 @@ test.describe('Carrier issuance API (CB-56)', () => {
         const secretText =
           (await secretBox.locator('.mono').textContent())?.trim() ?? '';
         expect(secretText).toMatch(/^lrfe_/);
+
+        // Copy the new key with one click (CB-121)
+        await page
+          .context()
+          .grantPermissions(['clipboard-read', 'clipboard-write']);
+        await dismissToasts(page);
+        await secretBox.getByRole('button', {name: 'Copy API key'}).click();
+        await expect(
+          page.locator('.toast', {hasText: 'API key copied'}).last(),
+        ).toBeVisible();
+        expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+          secretText,
+        );
+        await evidence(
+          page,
+          'CB-121',
+          'API key copied with the copy button, with its notification',
+        );
         await dismissToasts(page);
         await keysSection.scrollIntoViewIfNeeded();
         await evidence(
