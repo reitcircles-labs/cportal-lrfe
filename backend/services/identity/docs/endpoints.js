@@ -28,7 +28,7 @@ export const ENDPOINTS = {
       summary: 'Sign in with email and password',
       description:
         'Signed in: `{ accessToken, expiresIn, me }` and the refresh cookie is set. ' +
-        'When MFA is required: `{ next: "mfa", challenge }`, or on first use `{ next: "mfa-enroll", challenge, secret, otpauthUrl }`; continue with POST /auth/mfa. ' +
+        'When MFA is required: `{ next: "mfa", challenge }` (continue with POST /auth/mfa), or for a user without an authenticator `{ next: "setup-code", challenge }` (continue with POST /auth/setup-code): the password alone never gives an authenticator secret. ' +
         'Wrong email or password, or a user who is not active: 401/403.',
     },
     'POST /auth/mfa': {
@@ -36,14 +36,24 @@ export const ENDPOINTS = {
       auth: 'public',
       summary: 'Second step: the 6-digit authenticator code',
       description:
-        'Takes the `challenge` from /auth/login. On first use this also enrols the authenticator. Returns `{ accessToken, expiresIn, me }` and sets the refresh cookie.',
+        'Takes the `challenge` from /auth/login, or from /auth/setup-code when setting up the authenticator: that first code enrols it and uses up the setup code. Returns `{ accessToken, expiresIn, me }` and sets the refresh cookie.',
+    },
+    'POST /auth/setup-code': {
+      tag: 'Auth',
+      auth: 'public',
+      summary:
+        'Second step for a user without an authenticator: the one-time setup code',
+      description:
+        '`{ challenge, setupCode }`: the challenge from /auth/login (next "setup-code") and the code an administrator gave (POST /users/{id}/setup-code or /mfa-reset). Lower case and a missing dash are accepted. ' +
+        'Returns `{ next: "mfa-enroll", challenge, secret, otpauthUrl }`; continue with POST /auth/mfa. ' +
+        'A wrong or expired code: 401, counted with wrong authenticator codes towards the lockout (429).',
     },
     'POST /auth/refresh': {
       tag: 'Auth',
       auth: 'refresh-cookie',
       summary: 'New access token from the refresh cookie',
       description:
-        'Rotates the refresh cookie. 401 when the session ended (idle timeout, sign-out, suspension, replayed token).',
+        'Rotates the refresh cookie. 401 when the session ended (idle timeout, maximum session age, sign-out, suspension, replayed token).',
     },
     'POST /auth/logout': {
       tag: 'Auth',
@@ -69,7 +79,9 @@ export const ENDPOINTS = {
       auth: 'public',
       summary: 'Accept an invitation and set a password',
       description:
-        'Token from the invitation link; password at least 12 characters. Returns `{ email }`; the user then signs in.',
+        'Token from the invitation link; password at least 12 characters. Returns `{ email }`; the user then signs in. ' +
+        'When MFA is required the authenticator is set up here: `{ token, password }` returns `{ next: "mfa-enroll", email, secret, otpauthUrl }` and the account stays invited; ' +
+        "`{ token, password, code }` with the authenticator's 6-digit code activates it.",
     },
 
     'GET /catalogue': {
@@ -124,7 +136,14 @@ export const ENDPOINTS = {
     'POST /users/{id}/mfa-reset': {
       tag: 'Users',
       summary: "Reset a user's MFA",
-      description: 'They enrol a new authenticator at their next sign-in.',
+      description:
+        'Their authenticator stops working and their sessions end. Returns `{ user, setupCode, expiresAt }`: the one-time setup code (shown only here) with which they set up a new one at the next sign-in. 409 for an invited user.',
+    },
+    'POST /users/{id}/setup-code': {
+      tag: 'Users',
+      summary: 'Give a one-time setup code to a user without an authenticator',
+      description:
+        'For an active user who has no authenticator. Returns `{ user, setupCode, expiresAt }`: the code (shown only here) voids any earlier one. 409 for a user with an authenticator, an invited or a suspended user.',
     },
     'POST /users/{id}/invitation': {
       tag: 'Users',
@@ -249,7 +268,8 @@ export const ENDPOINTS = {
     'PUT /policies': {
       tag: 'Policies',
       summary: 'Save policies and switch rules on or off',
-      description: 'Returns `{ policies, sod, changes }`.',
+      description:
+        'Returns `{ policies, sod, changes }`. `maxSessionAge`: the maximum age of a session in whole hours (1–168, default 12), counted from sign-in; left out, the current value is kept.',
     },
   },
 };

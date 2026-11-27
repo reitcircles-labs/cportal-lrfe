@@ -1,5 +1,5 @@
 import {expect} from 'chai';
-import {makeService, codeFor, PASSWORD} from './helpers.js';
+import {makeService, codeFor, enrolWithSetupCode, PASSWORD} from './helpers.js';
 import {resetPassword} from '../src/reset-password.js';
 
 const ADMIN = 'p.hamutenya@deeds.gov.na';
@@ -46,28 +46,33 @@ describe('resetPassword (command line)', () => {
     });
   });
 
-  it('keeps MFA unless asked; with resetMfa the user enrols again', async () => {
+  it('keeps MFA unless asked; with resetMfa the user enrols again with a printed setup code', async () => {
     const {service, repo, clock} = await makeService({mfa: true});
-    const first = await service.login({email: ADMIN, password: PASSWORD});
-    await service.verifyMfa({
-      userId: first.userId,
-      code: codeFor(first.secret, clock),
-    });
+    await enrolWithSetupCode(service, clock, ADMIN);
 
     await resetPassword(repo, {email: ADMIN, password: NEW_PASSWORD, clock});
     expect(
       (await service.login({email: ADMIN, password: NEW_PASSWORD})).next,
     ).to.equal('mfa');
 
-    await resetPassword(repo, {
+    const reset = await resetPassword(repo, {
       email: ADMIN,
       password: NEW_PASSWORD,
       resetMfa: true,
       clock,
     });
-    expect(
-      (await service.login({email: ADMIN, password: NEW_PASSWORD})).next,
-    ).to.equal('mfa-enroll');
+    // CB-102: the way back in is a one-time setup code, printed by the script
+    expect(reset.setupCode).to.match(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    const step1 = await service.login({email: ADMIN, password: NEW_PASSWORD});
+    expect(step1.next).to.equal('setup-code');
+    const step2 = await service.verifySetupCode({
+      userId: step1.userId,
+      setupCode: reset.setupCode,
+    });
+    await service.verifyMfa({
+      userId: step1.userId,
+      code: codeFor(step2.secret, clock),
+    });
     const {items} = await repo.listAccessEvents({kind: 'user'});
     expect(items.map(e => e.action)).to.include('MFA reset');
   });

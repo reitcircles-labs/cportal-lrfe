@@ -152,6 +152,20 @@ Docker, in the folder the bundle is unpacked in.
    repository: `angular-app/docs/user-guide/`). The bootstrap administrator is created only once, on
    an empty database; afterwards `BOOTSTRAP_ADMIN_PASSWORD` can be removed from `.env`.
 
+   The password alone never sets up an authenticator (CB-102). When identity creates the
+   administrator it writes a **one-time setup code** for them, once, to a file inside its container
+   that only its user can read (never to its log, which says only where the file is):
+
+   ```bash
+   docker compose exec identity cat /data/identity/setup-codes.txt
+   ```
+
+   Sign in with the email and password, enter that code at **"Enter your setup code"**, then scan
+   the QR code. The code works once and for `SETUP_CODE_TTL_HOURS` (default 72) hours; if it has
+   expired, print a new one with `reset-password --reset-mfa` (`backend/services/identity/README.md`).
+   With `SEED_DEMO_PASSWORD` set, a fresh install writes one setup code per demo user to the same
+   file. The file is lost when the identity container is recreated: read it after the first start.
+
 ### An existing PostgreSQL server
 
 By default the portal brings its own PostgreSQL (profile `postgres`, data in the `pgdata` volume).
@@ -208,6 +222,42 @@ server {
 
 With HTTPS, keep `COOKIE_SECURE=true`. Only a test install opened over plain `http://` needs
 `COOKIE_SECURE=false` (and `LRFE_BIND=0.0.0.0` to be reached from other machines).
+
+The client's address (on sessions, in the access log, for the limit on public requests) is taken from
+`X-Forwarded-For`, but only as far as the proxies the gateway trusts wrote it: what a client writes in
+that header itself is ignored. `TRUST_PROXY` in `.env` says how many proxies stand in front of the
+gateway, or which ones:
+
+- `2` (the default): the server above and the web container, the setup described here.
+- `1`: the web port opened to other machines without the server above (`LRFE_BIND=0.0.0.0`). Keep
+  `2` there and any client could choose the address it is logged under.
+- a comma-separated list of proxy addresses or ranges, e.g. `10.0.0.0/8, 172.16.0.0/12`: the proxies
+  trusted by address, for a load balancer in front with more hops.
+
+A hop count holds only while the gateway can be reached through those proxies alone, as in this
+compose file, where its port is not published; never use a count larger than the proxies there are.
+`TRUST_PROXY=true` (trust every caller) and any other value stop the gateway at start with a message.
+The gateway passes on to the services only the client address it trusts.
+
+Sign-in is protected against guessing (CB-101). The settings below go in `.env`; a value that is not
+a whole number above 0 stops the service at start with a message naming it.
+
+- Per client address, at the gateway: `SIGN_IN_RATE_LIMIT_MAX` (default 60) requests on the password
+  step and as many on the code step per `SIGN_IN_RATE_LIMIT_WINDOW_MS` (default 60000, a minute), and
+  `REFRESH_RATE_LIMIT_MAX` (default 600) session refreshes in the same window; above that the answer
+  is "Too many requests". An office whose users all reach the server from one address shares these
+  allowances: raise them there if needed.
+- Per user, in identity: one sign-in accepts `MFA_MAX_WRONG_CODES_PER_CHALLENGE` (default 5) wrong
+  authenticator codes, then the user must enter the password again; `MFA_LOCKOUT_WRONG_CODES`
+  (default 10) wrong codes within `MFA_LOCKOUT_WINDOW_MINUTES` (default 15) lock the user's code step
+  for `MFA_LOCKOUT_MINUTES` (default 15), even with the right code. A successful sign-in clears the
+  count. Wrong codes and each lockout are in the access log. The counts are kept in memory: restarting
+  identity clears them.
+- Setting up an authenticator (CB-102): a user without one needs a one-time setup code from an
+  administrator (**Reset 2FA** or **Give setup code**), valid for `SETUP_CODE_TTL_HOURS` (default 72)
+  hours and for one setup; wrong setup codes count with the wrong codes above. New users set up
+  their authenticator while accepting the invitation. The setup-code step has the code step's
+  allowance per client address at the gateway.
 
 ## D. Encryption at rest with OpenBao (on by default)
 
@@ -358,6 +408,12 @@ The same first start builds an audit index (`trail_entry_actor_org`) that reads 
 trail, so it takes longer on a large trail (audit takes no new events until it is built; start
 other audit replicas only after the first one is up). Sign-in sessions from
 before keep working until they expire.
+
+**Upgrading to the maximum session age (CB-100).** The data is kept; no setting is needed. A
+session must be renewed by signing in again 12 hours after sign-in by default; an administrator
+changes it under Administration → Security policies ("Maximum session age", 1 to 168 hours).
+The first start adds the sign-in time to existing sessions, taken from when each was created;
+sessions older than the maximum age then end at their next renewal, and those users sign in again.
 
 From a version that kept the AI's page text in the database (before API-798): intake moves it
 into encrypted files beside the scans by itself when it starts (while OpenBao is sealed it tries

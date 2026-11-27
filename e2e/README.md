@@ -216,6 +216,10 @@ writes only with roles that must be refused, so it leaves the stack's data as it
   authenticator code, then the page opens already signed in. Sessions cannot be saved and reused
   between tests (Playwright's `storageState`): the refresh token changes on every use and the
   server ends a session whose old token comes back.
+- A code is accepted once (CB-104). The seeded demo users are exempt (`SEED_DEMO_MFA_KEY`, test
+  only), so `codeFor` is enough for them; a user created during a test signs in with
+  `await freshCodeFor(secret)`, which gives a code not used yet and waits for the next 30 s step
+  when it has to.
 - Don't wait with `waitForLoadState('networkidle')`: a scan shown in the PDF viewer is a request that
   never finishes in the headless browser. Use `trackApi(page)` from `support/api-idle.ts`, which
   waits for the app's API calls only.

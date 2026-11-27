@@ -18,6 +18,7 @@ import {
   installsFor,
   isTestCommand,
   mergeMessage,
+  splitGone,
   ticketKey,
 } from './branch-keeper.mjs';
 
@@ -313,5 +314,24 @@ describe('agentAlive and afterAgent: an agent that ended', () => {
         /^the agent ended without a result \(conflict/,
       );
     }
+  });
+});
+
+describe('splitGone: deleted checkouts leave the registry', () => {
+  it('keeps the checkouts whose directory exists and lists the deleted ones', () => {
+    const existing = new Set(['/p/cportal-lrfe', '/p/cportal-lrfe-cb']);
+    const result = splitGone(
+      ['/p/cportal-lrfe', '/p/cportal-lrfe-old', '/p/cportal-lrfe-cb'],
+      dir => existing.has(dir),
+    );
+    assert.deepEqual(result, {
+      kept: ['/p/cportal-lrfe', '/p/cportal-lrfe-cb'],
+      gone: ['/p/cportal-lrfe-old'],
+    });
+  });
+
+  it('changes nothing when every directory exists', () => {
+    const result = splitGone(['/p/a', '/p/b'], () => true);
+    assert.deepEqual(result, {kept: ['/p/a', '/p/b'], gone: []});
   });
 });

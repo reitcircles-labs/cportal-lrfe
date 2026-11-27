@@ -46,11 +46,22 @@ interface Session {
   me: Me;
 }
 
-/** Result of the password step: signed in, or a second (MFA) step is needed. */
+/** The authenticator step of a user setting one up: the secret to add, as a link for the QR code. */
+export interface EnrolStep {
+  next: 'mfa-enroll';
+  challenge: string;
+  secret: string;
+  otpauthUrl: string;
+}
+
+/**
+ * Result of the password step: signed in, or a second step is needed: the authenticator code, or
+ * for a user without an authenticator the administrator's setup code first (CB-102).
+ */
 export type LoginStep =
   | {next: 'done'}
   | {next: 'mfa'; challenge: string}
-  | {next: 'mfa-enroll'; challenge: string; secret: string; otpauthUrl: string};
+  | {next: 'setup-code'; challenge: string};
 
 const initials = (name: string) =>
   name
@@ -127,6 +138,21 @@ export class AuthService {
       return {next: 'done'};
     }
     return res;
+  }
+
+  /**
+   * The setup-code step (CB-102): the one-time code an administrator gave leads to the
+   * authenticator step.
+   * @param challenge the password step's challenge
+   * @param setupCode the code as typed
+   * @return the authenticator step
+   */
+  verifySetupCode(challenge: string, setupCode: string): Promise<EnrolStep> {
+    return this.api.post<EnrolStep>(
+      '/auth/setup-code',
+      {challenge, setupCode},
+      {noRetry: true},
+    );
   }
 
   async verifyMfa(challenge: string, code: string): Promise<void> {

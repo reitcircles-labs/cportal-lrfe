@@ -16,8 +16,6 @@
       "Read(**/out-tsc/**)",
       "Read(**/coverage/**)",
       "Read(**/.cache/**)",
-      "Read(**/test-results/**)",
-      "Read(**/playwright-report/**)",
       "Read(**/security/.reports/**)"
     ]
   }

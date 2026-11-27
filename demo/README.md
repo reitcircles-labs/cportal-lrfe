@@ -62,9 +62,14 @@ For a fresh start it must end with **READY** and show, under Data, *0 batches, 0
 ### 3. Prepare the demo users
 
 The check lists each demo user whose authenticator is not set up yet (all of them after step 1). Sign in once as each
-user you will show (`http://localhost:8088`, through the SSH tunnel) and set up the authenticator app. A fresh start
-removes the earlier set-ups: delete the old entries for the portal in the authenticator app first, or there are two per
-user. The demo password: `grep SEED_DEMO_PASSWORD deploy/.env`.
+user you will show (`http://localhost:8088`, through the SSH tunnel) and set up the authenticator app. The password
+alone does not set one up (CB-102): a fresh install writes a one-time setup code per demo user, once, to a file
+only identity can read (`cd deploy && docker compose exec identity cat /data/identity/setup-codes.txt`; never in
+its log); enter it at "Enter your setup code",
+then scan the QR code. Each code works once, for 72 hours (`SETUP_CODE_TTL_HOURS`); after that, an administrator gives
+a new one under Users (**Give setup code**). A fresh start removes the earlier set-ups: delete the old entries for the
+portal in the authenticator app first, or there are two per user. The demo password:
+`grep SEED_DEMO_PASSWORD deploy/.env`.
 
 The users of the storyline ([STORYLINE.md](STORYLINE.md)):
 

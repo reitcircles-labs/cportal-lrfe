@@ -13,11 +13,11 @@ Administration **Users**, **Offices**, **Roles & permissions**, **Security polic
 | You can | You cannot |
 |---|---|
 | Add, edit, suspend and reactivate offices | Upload, review, file or correct documents |
-| Invite users, change their roles and office, suspend them, reset their MFA | Create or finalize land records |
+| Invite users, change their roles and office, suspend them, reset their 2FA or give them a setup code | Create or finalize land records |
 | Change what each role may do; set security policies | Change your own roles or status |
 | Read the access log | Leave the system without an administrator (the portal refuses) |
 
-Inviting users, roles, suspension and MFA resets are explained step by step in
+Inviting users, roles, suspension, **Reset 2FA** and **Give setup code** are explained step by step in
 [Inviting users and assigning roles](../inviting-users-and-assigning-roles.md). This guide covers the
 rest and the test accounts testers need.
 
@@ -29,7 +29,7 @@ Testers need one account per role ([Test accounts](../testing-the-portal.md#test
 |---|---|---|
 | 1 | **Users → Invite user**: the tester's name, a plus address (e.g. `tester+scan@your-domain`), office **WDH · Deeds Registry · Windhoek**, role **Scan operator**; **Create invitation** | "Invitation sent to …"; the user listed as **Invited** |
 | 2 | Repeat for Metadata reviewer (twice: the second approves corrections), Records officer, Registrar, Auditor | One invited user per role |
-| 3 | After the tester activates each account | Status **Active**, MFA ✓ |
+| 3 | After the tester activates each account (they set up the authenticator on the invitation page) | Status **Active**, 2FA **set up** |
 
 The invite dialog's **Role** list starts on "Metadata reviewer": check it before creating the
 invitation.
@@ -66,6 +66,7 @@ Some boxes are locked so that the portal always keeps an administrator.
 | Allow sign-in with national eID | On | Not connected yet |
 | Restrict to government network | Off | Not enforced yet |
 | Idle session timeout | 30 min | Users are signed out after this long without activity |
+| Maximum session age | 12 h | Users must sign in again (with their authenticator code when MFA is required) this long after they signed in, even when active. Applies to sessions already running. The screen offers 4, 8, 12 or 24 hours; the setting takes any whole number of hours from 1 to 168 |
 | Four-eyes finalization | On | The person who approves a land record must differ from the reviewers who filed its documents (the reviewer who first filed each document; correcting a document later adds nobody). They don't get the approval task, and can't approve it. The submitter can never approve their own record, whatever this setting. Switching it on applies to new submissions, and on approval also to records already in review: if someone it leaves out approves a record that was already in review, the approval isn't applied, and the submitter withdraws the record and submits it again. Switching it off gives the task back to those people only once the record is submitted again |
 | Segregation of duties | 3 of 4 rules on | Pairs of permissions no one should hold together; each shows how many users are affected |
 

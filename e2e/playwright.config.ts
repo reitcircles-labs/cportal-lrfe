@@ -68,6 +68,8 @@ const containers: PlaywrightTestConfig['webServer'] = {
 const BATCHES_OF_THEIR_OWN = /(ownership-extracts|check-extract)\.spec\.ts/;
 /** The spec that stops the search service (API-802): other specs wait for its indexing. */
 const STOPS_SEARCH = /search-connection\.spec\.ts/;
+/** The spec that makes 2FA optional for a while (CB-103): it changes how every user signs in, so it runs alone, last. */
+const SWITCHES_TWO_FACTOR = /session-two-factor\.spec\.ts/;
 
 export default defineConfig({
   testDir: './tests',
@@ -95,7 +97,7 @@ export default defineConfig({
       name: 'chromium',
       use: {...devices['Desktop Chrome'], channel: 'chromium'},
       dependencies: ['setup'],
-      testIgnore: [BATCHES_OF_THEIR_OWN, STOPS_SEARCH],
+      testIgnore: [BATCHES_OF_THEIR_OWN, STOPS_SEARCH, SWITCHES_TWO_FACTOR],
     },
     // tests that put their own batch on the test blockchain run after all the others: a batch takes
     // every version waiting, so made in parallel it would take the batch another test expects (API-692)
@@ -120,6 +122,14 @@ export default defineConfig({
       testMatch: STOPS_SEARCH,
       use: {...devices['Desktop Chrome'], channel: 'chromium'},
       dependencies: ['extract check'],
+    },
+    // making 2FA optional for a while changes how users without an authenticator sign in and accept
+    // invitations: last, alone, so no other spec meets the switch (CB-103)
+    {
+      name: 'two-factor switch',
+      testMatch: SWITCHES_TWO_FACTOR,
+      use: {...devices['Desktop Chrome'], channel: 'chromium'},
+      dependencies: ['search connection'],
     },
   ],
   webServer: process.env.E2E_DOCKER ? containers : ownStack,

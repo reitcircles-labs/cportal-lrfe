@@ -43,6 +43,10 @@ node scripts/branch-keeper.mjs status                                     # one 
 node scripts/branch-keeper.mjs unregister ~/projects/cportal-lrfe-<epic> # when its PR is merged
 ```
 
+Every clone made for a ticket is registered as soon as it is on its ticket branch (the
+`new-checkout` skill does it). A registered directory that no longer exists (the clone was
+deleted) is unregistered by the next `run`, which writes a line to that checkout's log.
+
 `register` refuses a checkout that is not on a ticket branch (`api-123-…`, `cb-45-…`) and records
 the `node` and `claude` programs to use, since cron has a short `PATH`.
 

@@ -145,6 +145,15 @@ services:
       SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
       IDENTITY_EXPOSE_INVITE_LINKS: ${IDENTITY_EXPOSE_INVITE_LINKS:-false}
       IDENTITY_INVITE_URL_BASE: ${LRFE_PUBLIC_URL:?set LRFE_PUBLIC_URL in .env (the address users open, e.g. https://deeds.example.gov)}/#/invite
+      # limits on guessing the authenticator code (CB-101, README section C)
+      MFA_MAX_WRONG_CODES_PER_CHALLENGE: ${MFA_MAX_WRONG_CODES_PER_CHALLENGE:-5}
+      MFA_LOCKOUT_WRONG_CODES: ${MFA_LOCKOUT_WRONG_CODES:-10}
+      MFA_LOCKOUT_WINDOW_MINUTES: ${MFA_LOCKOUT_WINDOW_MINUTES:-15}
+      MFA_LOCKOUT_MINUTES: ${MFA_LOCKOUT_MINUTES:-15}
+      # how long an administrator's one-time setup code works, in hours (CB-102)
+      SETUP_CODE_TTL_HOURS: ${SETUP_CODE_TTL_HOURS:-72}
+      # the setup codes given at start (first administrator, demo users), readable only by identity
+      SETUP_CODE_FILE: /data/identity/setup-codes.txt
       # invitation email: smtp | file | none (backend/services/identity/README.md in the source repository)
       MAIL_TRANSPORT: ${MAIL_TRANSPORT:-none}
       MAIL_FILE_DIR: /data/mail
@@ -450,6 +459,13 @@ services:
       AUDIT_URL: http://audit:3506
       EXTRACTS_URL: http://extracts:3507
       CORS_ORIGINS: ${LRFE_PUBLIC_URL}
+      # the proxies in front whose X-Forwarded-For is believed (CB-105): 2 hops, the site's nginx
+      # and the web container; 1 when the web port is opened without the site's nginx (README, C)
+      TRUST_PROXY: ${TRUST_PROXY:-2}
+      # sign-in requests per client address per window (CB-101, README section C)
+      SIGN_IN_RATE_LIMIT_MAX: ${SIGN_IN_RATE_LIMIT_MAX:-60}
+      SIGN_IN_RATE_LIMIT_WINDOW_MS: ${SIGN_IN_RATE_LIMIT_WINDOW_MS:-60000}
+      REFRESH_RATE_LIMIT_MAX: ${REFRESH_RATE_LIMIT_MAX:-600}
     healthcheck: *healthcheck
     depends_on:
       identity: { condition: service_healthy }

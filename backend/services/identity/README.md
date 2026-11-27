@@ -25,6 +25,9 @@ Settings come from `services/identity/.env` (copy `backend/.env_example`):
 | `JWT_SECRET` | signs access tokens; must be the same in every service |
 | `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | the first administrator (see below) |
 | `SEED_DEMO_PASSWORD` | when set, creates the domain pack's fictitious demo users with this password (the land pack has 14) |
+| `SETUP_CODE_TTL_HOURS` | how long an administrator's one-time setup code works, in hours (default 72; CB-102) |
+| `SETUP_CODE_FILE` | where the setup codes given at start (first administrator, demo users) are written, mode 0600 (default `./tmp/setup-codes.txt`; CB-102) |
+| `SEED_DEMO_MFA_KEY` | end-to-end tests only, refused unless `NODE_ENV=test`: the demo users are created with their authenticators set up, each secret derived from this key (`demoMfaSecret` in `src/seed.js`); those users (and only they) may also reuse an authenticator code, as the parallel tests sign them in within one 30 s step (CB-104) |
 | `COOKIE_SECURE` | `false` only while serving over plain `http://localhost` |
 | `IDENTITY_INVITE_URL_BASE` | start of the link in invitation emails: the address users open the app at, e.g. `https://lr.example.com/#/invite` |
 | `IDENTITY_EXPOSE_INVITE_LINKS` | dev only: also show the invitation link to the admin (needed while email is not set up) |
@@ -39,8 +42,18 @@ Settings come from `services/identity/.env` (copy `backend/.env_example`):
 `BOOTSTRAP_ADMIN_*` settings are ignored: changing `BOOTSTRAP_ADMIN_PASSWORD` later does **not**
 change the admin's password. Use the reset command below instead.
 
+When it creates the administrator, identity writes a **one-time setup code** for them, once, to the
+file `SETUP_CODE_FILE` (default `tmp/setup-codes.txt` in its working directory; the compose install:
+`/data/identity/setup-codes.txt`, read with `docker compose exec identity cat <file>`), readable only
+by its user: `Setup code for <email>: XXXX-XXXX (…)`. Never on its console or in its log, which says
+only where the file is. The password alone never sets up an
+authenticator (CB-102): at the first sign-in the administrator enters this code at "Enter your setup
+code", then scans the QR code. The seed script (`npm run seed -w @lrfe/identity`), run by hand,
+prints it on its own terminal instead. Lost or expired: `reset-password --reset-mfa` (below) prints a new one.
+
 **Demo users** are created when `SEED_DEMO_PASSWORD` is set: any of the domain pack's that don't exist yet
-get that password (existing users are never changed). For example `p.hamutenya@deeds.gov.na`
+get that password (existing users are never changed), and each active one gets a one-time setup code,
+written once to the same file as the administrator's. For example `p.hamutenya@deeds.gov.na`
 (administrator), `d.garoeb@deeds.gov.na` (scan operator + reviewer), `a.mwandingi@deeds.gov.na`
 (reviewer), from the land pack; the full list is in `backend/domains/land/src/identity/demo-users.js`.
 They are fictitious and share one password, so
@@ -324,10 +337,19 @@ a test server; a production server would run them as system services (systemd) o
 ## Setting up MFA (the 6-digit code)
 
 MFA is required by default (**Admin → Security policies**). Nobody generates codes for users:
-each user links an authenticator app to their account once, at their first sign-in, and the app
-produces the codes from then on.
+each user links an authenticator app to their account once, and the app produces the codes from
+then on. The password alone never links one (CB-102): it takes a second proof.
 
-1. Sign in with email and password (invited users: after accepting the invitation).
+- **New users** set it up while accepting the invitation: after choosing the password, the same
+  page shows the QR code (steps 2 to 4 below), and the account is active once the app's code is
+  accepted.
+- **Anyone else without an authenticator** (after a **Reset 2FA**, or when MFA becomes required)
+  needs a **one-time setup code** from an administrator: **Users → Give setup code** (or **Reset
+  2FA**), shown once to the administrator, who gives it in person or by phone, never by email. It
+  works once, for `SETUP_CODE_TTL_HOURS` (default 72) hours; a new code voids the earlier one.
+
+1. Sign in with email and password, then enter the setup code at **"Enter your setup code"**
+   (capitals and the dash are optional).
 2. The screen shows **"Set up your authenticator"** with a **QR code**.
 3. In an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, Authy,
    1Password): **Add account → Scan a QR code**, and point the camera at the screen.
@@ -339,8 +361,20 @@ produces the codes from then on.
 4. Type the 6-digit code the app shows (it changes every 30 seconds). You are signed in.
 5. Every later sign-in asks for the app's current code.
 
-**Lost phone:** an administrator opens **Users → the user → Reset MFA**; the user sets up the app
-again at their next sign-in. For the only administrator, see below.
+After the setup a best-effort email "A new authenticator was added to your account" goes to the
+user (a mail failure never stops the sign-in), so someone who did not add it can tell an
+administrator.
+
+**Wrong codes (CB-101):** after 5 wrong codes in one sign-in the user enters the password again;
+10 wrong codes within 15 minutes lock the user's code step for 15 minutes, even with the right code
+("Too many wrong codes, try again in N minutes"). A successful sign-in clears the count. Wrong
+codes and each lockout appear in the access log; wrong setup codes count too. The numbers are settings
+(`MFA_MAX_WRONG_CODES_PER_CHALLENGE`, `MFA_LOCKOUT_WRONG_CODES`, `MFA_LOCKOUT_WINDOW_MINUTES`,
+`MFA_LOCKOUT_MINUTES`); the counts are kept in memory, so restarting identity clears them.
+
+**Lost phone:** an administrator clicks **Reset 2FA** on the user's row and confirms: the old
+authenticator stops working, the user is signed out everywhere, and the administrator is shown a
+one-time setup code to give them. For the only administrator, see below.
 
 **Local development only:** MFA can be switched off under Admin → Security policies.
 
@@ -353,8 +387,9 @@ authenticator from the admin's first sign-in is lost. From `backend/`:
 npm run reset-password -- admin@deeds.gov.na --from-env --reset-mfa
 ```
 
-This sets the admin's password to `BOOTSTRAP_ADMIN_PASSWORD` and clears the old authenticator.
-Then sign in with that password and set up MFA as above. If the authenticator still works and
+This sets the admin's password to `BOOTSTRAP_ADMIN_PASSWORD`, clears the old authenticator and
+prints a one-time setup code. Then sign in with that password, enter the code and set up MFA as
+above. If the authenticator still works and
 only the password is wrong, leave out `--reset-mfa`.
 
 ## Resetting a password (and MFA) from the command line
@@ -365,7 +400,7 @@ authenticator is lost. Run from `backend/`:
 ```bash
 npm run reset-password -- admin@deeds.gov.na                # asks for the new password twice (hidden)
 npm run reset-password -- admin@deeds.gov.na --from-env     # uses BOOTSTRAP_ADMIN_PASSWORD from .env
-npm run reset-password -- admin@deeds.gov.na --reset-mfa    # also re-enrol the authenticator
+npm run reset-password -- admin@deeds.gov.na --reset-mfa    # also reset the authenticator (prints a setup code)
 npm run reset-password -- admin@deeds.gov.na --from-env --reset-mfa   # both: the usual admin fix
 ```
 
@@ -377,8 +412,8 @@ running. It:
 
 - sets the new password (at least 12 characters, as in the app);
 - ends the user's open sessions;
-- with `--reset-mfa`, clears the enrolled authenticator, so the user is shown a new QR code at
-  the next sign-in;
+- with `--reset-mfa`, clears the enrolled authenticator and prints a one-time setup code (valid for
+  `SETUP_CODE_TTL_HOURS`), with which the user sets up a new one at the next sign-in;
 - records "Password reset" (and "MFA reset") in the access log, by "System (command line)".
 
 It does not change the user's status or roles. It warns when the user still cannot sign in
@@ -387,7 +422,7 @@ password.
 
 Anyone who can run this command can take over any account, so on a shared server limit who
 has shell access and can read `.env`. Administrators who can sign in should use the admin
-screens instead: **Users → user → Reset MFA** (passwords are set by users themselves, when
+screens instead: **Users → Reset 2FA** (passwords are set by users themselves, when
 they accept an invitation).
 
 ## Code
@@ -399,6 +434,8 @@ they accept an invitation).
 | `src/catalogue.js` | the fixed permissions, six roles and segregation-of-duties rules |
 | `src/seed.js` | roles, policies, bootstrap admin, demo users (runs on every start; idempotent) |
 | `src/reset-password.js`, `scripts/reset-password.js` | the reset command |
+| `src/setup-code.js` | one-time setup codes (CB-102): making, normalising, hashing, issuing, the console line |
+| `src/code-guard.js` | the limits on guessing codes (CB-101) |
 | `src/mailer.js` | outgoing email (SMTP / file / none) and the invitation email |
 | `src/catalogue.js` | permissions, roles, duty rules, office types and the default offices |
 | `scripts/nginx-cportal-lrfe.conf` | nginx site serving the app over HTTPS |

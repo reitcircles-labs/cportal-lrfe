@@ -96,7 +96,7 @@ npm run dev:gateway
 docker compose up -d postgres
 npm run db:setup                           # every service's schema and tables (or DB_SYNC=true per service)
 npm run seed:identity                      # creates schema "identity", tables, roles, admin
-npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password: see services/identity/README.md
+npm run reset-password -- admin@deeds.gov.na [--reset-mfa]   # lost password or phone (prints a setup code): see services/identity/README.md
 npm run dev:identity
 ```
 
@@ -147,6 +147,26 @@ are described in words, not as schemas. To try a protected endpoint in Swagger U
   10 a minute; the count is kept in memory, per gateway instance). Anything else under it is 404.
   Request logs show its path with `<token>` in place of the token (`createBaseApp` in
   `@lrfe/common` does this for every service given a `logger`).
+- **Sign-in is limited per client address** at the gateway (CB-101): `POST /api/auth/login`,
+  `/api/auth/mfa` and `/api/auth/setup-code` (CB-102) each `SIGN_IN_RATE_LIMIT_MAX` requests per `SIGN_IN_RATE_LIMIT_WINDOW_MS` (by
+  default 60 a minute, 60000 ms), `/api/auth/refresh` `REFRESH_RATE_LIMIT_MAX` (by default 600) in the
+  same window; 429 above, counted in memory per gateway instance. Identity limits code guessing per
+  user: `MFA_MAX_WRONG_CODES_PER_CHALLENGE` (default 5) wrong codes void a sign-in challenge (401);
+  `MFA_LOCKOUT_WRONG_CODES` (default 10) wrong codes within `MFA_LOCKOUT_WINDOW_MINUTES` (default 15)
+  lock the user's code step for `MFA_LOCKOUT_MINUTES` (default 15; 429 "Too many wrong codes, try
+  again in N minutes"). A successful sign-in clears the count; the counts are in identity's memory
+  (a restart clears them); wrong codes and lockouts go to the access log. The e2e stack raises the
+  gateway limits (its tests share one address).
+- **The password alone never sets up an authenticator** (CB-102). A user without one enters a
+  one-time setup code an administrator gave (`POST /users/:id/mfa-reset` or `/setup-code`, which
+  answer with it once) before the QR step; new users set it up while accepting the invitation. The
+  code is XXXX-XXXX without look-alike characters, stored only as a hash bound to the user, used up
+  when the authenticator is set up, voided by a newer one, and valid for `SETUP_CODE_TTL_HOURS`
+  (default 72) hours; wrong setup codes count towards the lockout above. It is never logged: the
+  only codes given outside the admin screens are the first administrator's and the demo users' at
+  their creation, written to the file `SETUP_CODE_FILE` (mode 0600; identity's log says only where
+  it is), and the seed and `reset-password --reset-mfa` scripts', on their own terminal. The e2e stack seeds its demo users with their
+  authenticators set up (`SEED_DEMO_MFA_KEY`, honoured only with `NODE_ENV=test`).
 - **Every service verifies the JWT and checks permissions itself** (`app.authenticate`,
   `app.requirePerm(...)` from `@lrfe/common`), with the shared `JWT_SECRET`. The frontend's
   route guards are only for display. Guards are registered as `onRequest` hooks, so an
@@ -210,7 +230,9 @@ Sign-in responses: `{ accessToken, expiresIn, me }`; the refresh token is set as
   (e.g. land-records refuses to let the finalizer sign off the same record).
 - **Lock-out guard**: no change (roles, suspension, matrix) may leave zero active users holding
   `admin.roles`. Nobody can change their own roles or status.
-- **Sessions**: idle timeout comes from the security policy and is enforced on refresh. Refresh
+- **Sessions**: idle timeout and maximum session age (`maxSessionAge`, whole hours 1–168,
+  default 12, counted from sign-in: CB-100) come from the security policy and are enforced on
+  refresh; a session over either is ended and logged as "Session expired". Refresh
   tokens rotate on every use; replaying an old one revokes the session. Suspending a user
   revokes all their sessions. Permission changes reach a user at their next refresh (≤ 15 min).
 - **MFA**: TOTP (authenticator app), implemented with `node:crypto` against the RFC 6238

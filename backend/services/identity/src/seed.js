@@ -1,3 +1,4 @@
+import {createHmac} from 'node:crypto';
 import {orgFromEnv} from '@lrfe/common';
 import {
   CATALOGUE,
@@ -6,10 +7,26 @@ import {
   organisationCodeOf,
 } from './catalogue.js';
 import {hashPassword} from './crypto.js';
+import {base32Encode} from './totp.js';
 
 const CATALOGUE_KEY = 'catalogue.version';
 /** The setting that holds the id of the default organisation (CB-19). */
 export const DEFAULT_ORGANISATION_KEY = 'organisations.default';
+
+/**
+ * The authenticator secret of a demo user enrolled directly by the end-to-end tests' seeding
+ * (SEED_DEMO_MFA_KEY, CB-102): derived from the key and the email, so the tests compute the same
+ * secret without reading anything from the server.
+ * @param {string} key
+ * @param {string} email
+ * @return {string} the secret, base32 like every authenticator secret
+ */
+export function demoMfaSecret(key, email) {
+  const digest = createHmac('sha256', key)
+    .update(String(email).toLowerCase())
+    .digest();
+  return base32Encode(digest.subarray(0, 20));
+}
 
 /** The demo users of this install's domain pack (fictitious), created with a demo password. */
 export const DEMO_USERS = CATALOGUE.demoUsers;
@@ -23,6 +40,9 @@ export const DEMO_USERS = CATALOGUE.demoUsers;
  *                 password (invited demo users get no password and stay Invited)
  *   offices:      [{ code, name, type, address, contact }] created only if no office exists yet
  *                 (DEFAULT_OFFICES at start-up); once any office exists, never touched again
+ *   demoMfaKey:   end-to-end tests only (SEED_DEMO_MFA_KEY with NODE_ENV=test): each demo user
+ *                 created now gets an authenticator directly, its secret demoMfaSecret(key, email),
+ *                 so the tests never depend on setup codes printed on the console (CB-102)
  *   catalogue:    the catalogue to seed (catalogueOf(pack)), this install's by default
  *   organisationName: the default organisation's name when it is created (CB-19): the site's
  *                 organisation name (LRFE_ORG_NAME) by default, else the pack's (CB-48: on a
@@ -32,12 +52,17 @@ export const DEMO_USERS = CATALOGUE.demoUsers;
  * its code and name, created when missing; a demo user of one is put into it and its office.
  * Every office and user without an organisation is put into the default organisation, which is
  * created first when the database has none (an empty database, or one from before organisations).
+ *
+ * Returns the active users it created without an authenticator (the first administrator, the demo
+ * users): the caller gives each a one-time setup code, printed once (CB-102).
+ * @return {!Promise<{created: !Array<{id: string, email: string}>}>}
  */
 export async function seedIdentity(
   repo,
   {
     admin,
     demoPassword,
+    demoMfaKey,
     offices,
     catalogue = CATALOGUE,
     organisationName = orgFromEnv(process.env, catalogue.organisation).name,
@@ -95,8 +120,9 @@ export async function seedIdentity(
     log(`offices created: ${offices.map(o => o.code).join(', ')}`);
   }
 
+  const newUsers = [];
   if (admin && (await repo.listUsers()).length === 0) {
-    await repo.createUser({
+    const user = await repo.createUser({
       name: admin.name,
       email: admin.email.toLowerCase(),
       office: admin.office || 'ICT',
@@ -104,6 +130,7 @@ export async function seedIdentity(
       status: 'Active',
       passwordHash: await hashPassword(admin.password),
     });
+    newUsers.push({id: user.id, email: user.email});
     log(`bootstrap admin ${admin.email} created`);
   }
 
@@ -124,7 +151,14 @@ export async function seedIdentity(
         user.organisationId = home.organisationId;
         user.officeId = home.officeId;
       }
-      await repo.createUser(user);
+      if (demoMfaKey && u.status !== 'Invited') {
+        user.mfaEnrolled = true;
+        user.mfaSecret = demoMfaSecret(demoMfaKey, u.email);
+      }
+      const saved = await repo.createUser(user);
+      if (saved.status === 'Active' && !saved.mfaEnrolled) {
+        newUsers.push({id: saved.id, email: saved.email});
+      }
       log(`demo user ${u.email} created`);
     }
   }
@@ -135,6 +169,7 @@ export async function seedIdentity(
       `default organisation: ${assigned.offices} office(s) and ${assigned.users} user(s) added`,
     );
   }
+  return {created: newUsers};
 }
 
 /**

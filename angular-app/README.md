@@ -103,7 +103,7 @@ The sidebar role switcher changes the acting user and jumps to that role's queue
 - **Admin screens** (System administrator role):
   - `#/admin/users`: users with search and filters, invite, a side panel to assign roles with a live preview of effective permissions and duty-conflict warnings, suspend or reactivate, reset MFA.
   - `#/admin/roles`: role cards, an editable permission matrix with conflict highlighting, save or discard with confirmation, custom roles (clone or empty).
-  - `#/admin/policies`: MFA, eID, network restriction, session timeout, four-eyes finalization, segregation-of-duties rules with the number of users affected.
+  - `#/admin/policies`: MFA, eID, network restriction, session timeout, maximum session age, four-eyes finalization, segregation-of-duties rules with the number of users affected.
   - `#/admin/log`: every role, user, policy, sign-in and access-denied event.
 - Matrix edits apply immediately. For example, remove "Finalize records" from Records officer, switch role, and the button is locked.
 

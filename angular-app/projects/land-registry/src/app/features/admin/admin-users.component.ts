@@ -9,9 +9,11 @@ import {RouterLink} from '@angular/router';
 import {
   AppUser,
   ConfirmService,
+  GivenSetupCode,
   IconComponent,
   NATIONAL_ROLES,
   RbacService,
+  SetupCodeDialogComponent,
   UserStatus,
 } from '@lrfe/platform';
 import {PERMS, PERM_GROUPS} from '../../state/perm-catalogue';
@@ -20,7 +22,7 @@ import {ADMIN_SHARED_STYLES} from './admin-shared.styles';
 /** Administration, Users tab: the user list, the manage-user drawer and the invite dialog. */
 @Component({
   selector: 'app-admin-users',
-  imports: [IconComponent, RouterLink],
+  imports: [IconComponent, RouterLink, SetupCodeDialogComponent],
   template: `
     <section class="stats">
       @for (s of stats(); track s.label) {
@@ -50,7 +52,7 @@ import {ADMIN_SHARED_STYLES} from './admin-shared.styles';
       </div>
       <div style="overflow-x:auto">
         <table class="table">
-          <thead><tr><th>User</th><th>Roles</th><th>Office</th><th>Status</th><th>MFA</th><th>Last active</th><th></th></tr></thead>
+          <thead><tr><th>User</th><th>Roles</th><th>Office</th><th>Status</th><th>2FA</th><th>Last active</th><th></th></tr></thead>
           <tbody>
             @for (u of users(); track u.id) {
               <tr class="click" (click)="openUser(u.id)">
@@ -59,7 +61,11 @@ import {ADMIN_SHARED_STYLES} from './admin-shared.styles';
                   @if (u.conflicts) { <span class="tag tag-danger" title="Breaks a segregation-of-duties rule"><app-icon name="alert" [size]="12" />Conflict</span> }</div></td>
                 <td class="small">@if (u.office) { <span class="num muted">{{ u.officeCode }}</span> {{ u.office }} } @else { <span class="muted">{{ isNational(u.roles) ? 'National' : 'No office' }}</span> }</td>
                 <td><span class="tag" [class]="'tag ' + statusTag(u.status)">{{ u.status }}</span></td>
-                <td>@if (u.mfa) { <span class="ok"><app-icon name="check" [size]="16" /></span> } @else { <span class="small" style="color:var(--warn-fg)">Not enrolled</span> }</td>
+                <td><div class="twofa">
+                  @if (u.mfa) { <span class="pill">set up</span> } @else { <span class="pill warn">not set up</span> }
+                  @if (u.mfa) { <button class="btn btn-ghost btn-sm" (click)="$event.stopPropagation(); resetMfa(u)">Reset 2FA</button> }
+                  @else if (u.status === 'Active') { <button class="btn btn-ghost btn-sm" (click)="$event.stopPropagation(); giveSetupCode(u)">Give setup code</button> }
+                </div></td>
                 <td class="small muted num" style="white-space:nowrap">{{ u.lastActive }}</td>
                 <td style="text-align:right"><button class="btn btn-secondary" style="min-height:32px" (click)="$event.stopPropagation(); openUser(u.id)">Manage</button></td>
               </tr>
@@ -80,7 +86,7 @@ import {ADMIN_SHARED_STYLES} from './admin-shared.styles';
           <button class="btn btn-ghost btn-icon" style="margin-left:auto" (click)="editId.set(null)" aria-label="Close"><app-icon name="x" [size]="18" /></button>
         </header>
         <div class="db">
-          <div class="kv"><span>Status</span><span><span class="tag" [class]="'tag ' + statusTag(u.status)">{{ u.status }}</span></span><span>Office</span><span>{{ u.office || (isNational(u.roles) ? 'National (no office)' : 'No office') }}</span><span>MFA</span><span>{{ u.mfa ? 'Enrolled' : 'Not enrolled' }}</span><span>Last active</span><span>{{ u.lastActive }}</span></div>
+          <div class="kv"><span>Status</span><span><span class="tag" [class]="'tag ' + statusTag(u.status)">{{ u.status }}</span></span><span>Office</span><span>{{ u.office || (isNational(u.roles) ? 'National (no office)' : 'No office') }}</span><span>2FA</span><span>{{ u.mfa ? 'Set up' : 'Not set up' }}</span><span>Last active</span><span>{{ u.lastActive }}</span></div>
 
           <div class="stack" style="gap:8px">
             <h4 style="margin:0">Office</h4>
@@ -124,7 +130,8 @@ import {ADMIN_SHARED_STYLES} from './admin-shared.styles';
           @if (u.status === 'Invited') { <button class="btn btn-secondary" (click)="rbac.resendInvite(u.id)">Resend invite</button> }
           @else {
             <button class="btn btn-secondary" [class.danger]="u.status === 'Active'" (click)="toggleSuspend(u)">{{ u.status === 'Suspended' ? 'Reactivate' : 'Suspend' }}</button>
-            <button class="btn btn-ghost" [disabled]="!u.mfa" (click)="resetMfa(u)">Reset MFA</button>
+            @if (u.mfa) { <button class="btn btn-ghost" (click)="resetMfa(u)">Reset 2FA</button> }
+            @else if (u.status === 'Active') { <button class="btn btn-ghost" (click)="giveSetupCode(u)">Give setup code</button> }
           }
           <span class="spacer"></span>
           <button class="btn btn-secondary" (click)="editId.set(null)">Cancel</button>
@@ -132,6 +139,9 @@ import {ADMIN_SHARED_STYLES} from './admin-shared.styles';
         </footer>
       </aside>
     }
+
+    <!-- The one-time setup code, shown once (CB-102) -->
+    @if (given(); as g) { <app-setup-code-dialog [given]="g" (done)="given.set(null)" /> }
 
     <!-- Invite -->
     @if (inviteOpen()) {
@@ -166,7 +176,10 @@ import {ADMIN_SHARED_STYLES} from './admin-shared.styles';
     .who { display: flex; gap: 10px; align-items: center; }
     .av { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--color-accent-500); color: #fff; }
     .av.lg { width: 44px; height: 44px; font-size: 15px; }
-    .ok { color: var(--success); display: inline-flex; }
+    .twofa { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .pill { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--color-divider); white-space: nowrap; }
+    .pill.warn { border-color: var(--warn); color: var(--warn-fg); }
+    .btn-sm { min-height: 28px; padding: 2px 8px; font-size: 13px; }
     .drawer-bg { position: fixed; inset: 0; background: rgba(7,13,24,.45); z-index: 55; animation: fade .15s; }
     .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 100vw); z-index: 56; background: var(--color-surface); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; animation: slide-in .2s ease-out; }
     .dh { display: flex; gap: 12px; align-items: center; padding: 18px 20px; border-bottom: 1px solid var(--color-divider); }
@@ -371,17 +384,24 @@ export class AdminUsersComponent {
       this.rbac.setStatus(u.id, suspend ? 'Suspended' : 'Active');
     }
   }
+  /** The setup code being shown, once (CB-102). */
+  readonly given = signal<GivenSetupCode | null>(null);
+  /** "Reset 2FA", after confirmation: shows the one-time setup code. */
   async resetMfa(u: AppUser) {
     if (
       await this.confirm.ask({
-        title: 'Reset MFA for ' + u.name + '?',
-        body: 'Their current authenticator stops working. They must enrol a new one at next sign-in.',
-        confirmLabel: 'Reset MFA',
+        title: 'Reset 2FA for ' + u.name + '?',
+        body: 'Their authenticator stops working and they are signed out everywhere. You get a one-time setup code to give them.',
+        confirmLabel: 'Reset and show setup code',
         tone: 'danger',
       })
     ) {
-      this.rbac.resetMfa(u.id);
+      this.given.set(await this.rbac.resetMfa(u.id));
     }
+  }
+  /** "Give setup code" for a user without an authenticator: shows the one-time setup code. */
+  async giveSetupCode(u: AppUser) {
+    this.given.set(await this.rbac.giveSetupCode(u.id));
   }
   inviteOpen = signal(false);
   inv = signal({name: '', email: '', officeId: '', role: 'rev'});

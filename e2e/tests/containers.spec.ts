@@ -161,7 +161,7 @@ test(
       'Invitation: the activation page with the full name from the settings',
     );
 
-    // the authenticator app's entry, offered at the first sign-in
+    // the authenticator app's entry, offered while accepting the invitation (CB-102)
     const accepted = await admin.api.post('/api/invitations/accept', {
       data: {
         token: new URL(mail.link.replace('/#/', '/')).searchParams.get('token'),
@@ -169,13 +169,11 @@ test(
       },
     });
     expect(accepted.status(), await accepted.text()).toBe(200);
-    const login = await (
-      await admin.api.post('/api/auth/login', {
-        data: {email, password: 'e2e org invitee password 2026'},
-      })
-    ).json();
-    expect(login.next).toBe('mfa-enroll');
-    expect(new URL(login.otpauthUrl).searchParams.get('issuer')).toBe(fullName);
+    const enrolment = await accepted.json();
+    expect(enrolment.next).toBe('mfa-enroll');
+    expect(new URL(enrolment.otpauthUrl).searchParams.get('issuer')).toBe(
+      fullName,
+    );
     await admin.dispose();
 
     // signed in: the side bar and the dashboard's crumb

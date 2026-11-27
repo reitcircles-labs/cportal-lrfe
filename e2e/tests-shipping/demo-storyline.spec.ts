@@ -27,7 +27,12 @@ import {
 import {identity} from '../../backend/domains/shipping/src/identity.js';
 import {codeFor, readSecrets, saveSecrets} from '../support/auth';
 import {evidence} from '../support/evidence';
-import {dismissToasts, signIn, testChainFetch} from '../support/shipping';
+import {
+  dismissToasts,
+  secretFor,
+  signIn,
+  testChainFetch,
+} from '../support/shipping';
 import {
   DEMO_PASSWORD,
   GATEWAY_URL,
@@ -122,8 +127,8 @@ async function signInAs(
     expect(secret).toMatch(/^[A-Z2-7]{32}$/);
     saveSecrets({...readSecrets(), [user.email]: secret});
   } else {
-    secret = readSecrets()[user.email];
-    expect(secret, `the authenticator secret of ${user.email}`).toBeTruthy();
+    // the e2e stack's seeding set up the demo users' authenticators (CB-102)
+    secret = secretFor(user.email);
   }
   if (shot) {
     await evidence(page, TICKET, shot);

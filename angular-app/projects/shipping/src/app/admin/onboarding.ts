@@ -27,6 +27,8 @@ export interface StaffMember {
   roles: string[];
   status: 'Active' | 'Suspended' | 'Invited';
   organisationId: string | null;
+  /** Whether the user's authenticator is set up (CB-102). */
+  mfa: boolean;
 }
 
 /** An office as identity lists it (GET /offices), as far as an invitation reads it. */

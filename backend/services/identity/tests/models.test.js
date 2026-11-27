@@ -1,7 +1,7 @@
 import {expect} from 'chai';
 import {Sequelize} from 'sequelize';
 import {defineModels} from '../src/repo/models.js';
-import {makeService, PASSWORD} from './helpers.js';
+import {makeService, setupCodeStep} from './helpers.js';
 
 // Constructing Sequelize never connects; defining models needs no database.
 const models = defineModels(
@@ -20,10 +20,8 @@ describe('identity Postgres models', () => {
 
   it('every field the service writes exists in the model', async () => {
     const {service, repo, user, office} = await makeService({mfa: true});
-    const first = await service.login({
-      email: 'k.iipinge@deeds.gov.na',
-      password: PASSWORD,
-    });
+    // CB-102: the setup-code step leaves a pending secret and the setup code's hash
+    const first = await setupCodeStep(service, 'k.iipinge@deeds.gov.na');
     const admin = await user('p.hamutenya@deeds.gov.na');
     await service.invite(
       {name: 'N', email: 'n@x.na', officeId: office.id, roles: ['scan']},
@@ -59,6 +57,6 @@ describe('identity Postgres models', () => {
     for (const {id, ...e} of items) {
       expect(attrs(models.AccessEvent)).to.include.members(Object.keys(e));
     }
-    expect(first.next).to.equal('mfa-enroll');
+    expect(first.secret).to.be.a('string');
   });
 });

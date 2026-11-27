@@ -1,4 +1,4 @@
-import {DataTypes} from 'sequelize';
+import {DataTypes, Op} from 'sequelize';
 import {inTransaction} from '@lrfe/common';
 import {defineModels, SCHEMA} from './models.js';
 
@@ -37,6 +37,9 @@ const USER_FIELDS = [
   'mfaEnrolled',
   'mfaSecret',
   'pendingMfaSecret',
+  'setupCodeHash',
+  'setupCodeExpiresAt',
+  'mfaLastStep',
   'inviteHash',
   'inviteExpiresAt',
   'lastActiveAt',
@@ -88,6 +91,17 @@ export function createSequelizeRepo(sequelize) {
       if (!userColumns.organisationId) {
         await q.addColumn(user, 'organisationId', {type: DataTypes.UUID});
       }
+      // CB-102: the one-time setup code of a user without an authenticator
+      if (!userColumns.setupCodeHash) {
+        await q.addColumn(user, 'setupCodeHash', {type: DataTypes.STRING});
+      }
+      if (!userColumns.setupCodeExpiresAt) {
+        await q.addColumn(user, 'setupCodeExpiresAt', {type: DataTypes.DATE});
+      }
+      // CB-104: the time step of the last accepted authenticator code
+      if (!userColumns.mfaLastStep) {
+        await q.addColumn(user, 'mfaLastStep', {type: DataTypes.INTEGER});
+      }
       if (!(await q.describeTable(office)).organisationId) {
         await q.addColumn(office, 'organisationId', {type: DataTypes.UUID});
       }
@@ -97,6 +111,29 @@ export function createSequelizeRepo(sequelize) {
         await q.addColumn(organisation, 'carrierCode', {
           type: DataTypes.STRING(4),
         });
+      }
+      // CB-100: the sign-in time of each session. A session from before gets its creation time
+      // (the upgrade time if none is stored); the column is NOT NULL once filled. A start that
+      // stopped half-way (column added, still optional) finishes the step on the next start.
+      const session = {tableName: 'session', schema: SCHEMA};
+      const sessionColumns = await q.describeTable(session);
+      const startedAt = sessionColumns.startedAt;
+      if (!startedAt || startedAt.allowNull) {
+        if (!startedAt) {
+          await q.addColumn(session, 'startedAt', {type: DataTypes.DATE});
+        }
+        await sequelize.query(
+          `UPDATE "${SCHEMA}"."session" SET "startedAt" = COALESCE("createdAt", NOW()) WHERE "startedAt" IS NULL`,
+        );
+        await q.changeColumn(session, 'startedAt', {
+          type: DataTypes.DATE,
+          allowNull: false,
+        });
+      }
+      // CB-103: whether a session was opened with 2FA. A session from before keeps null and is
+      // never refused for missing 2FA.
+      if (!sessionColumns.twoFactor) {
+        await q.addColumn(session, 'twoFactor', {type: DataTypes.BOOLEAN});
       }
       for (const kind of ['office', 'organisation']) {
         await sequelize.query(
@@ -218,6 +255,51 @@ export function createSequelizeRepo(sequelize) {
         if (patch.roles) await setRoles(id, patch.roles, transaction);
         return toUser(row, patch.roles || (await rolesOf(id, transaction)));
       });
+    },
+
+    /**
+     * Sets up the user's authenticator with `secret` only while the user has none and still holds
+     * the setup code of `setupCodeHash`, which is used up (CB-102). In one statement, so two
+     * sign-ins with the same code set up one authenticator at most.
+     * The time step of the code that set it up is recorded as the last accepted one (CB-104).
+     * @param {string} id
+     * @param {{setupCodeHash: string, secret: string, step: number}} enrolment
+     * @return {!Promise<boolean>} whether this call set it up
+     */
+    async enrolWithSetupCode(id, {setupCodeHash, secret, step}) {
+      const [count] = await m.User.update(
+        {
+          mfaEnrolled: true,
+          mfaSecret: secret,
+          pendingMfaSecret: null,
+          setupCodeHash: null,
+          setupCodeExpiresAt: null,
+          mfaLastStep: step,
+        },
+        {where: {id, setupCodeHash, mfaEnrolled: false}},
+      );
+      return count === 1;
+    },
+
+    /**
+     * Records `step` as the user's last accepted authenticator time step, only when it is later
+     * than the one recorded (or none is), so a code is accepted once (CB-104). In one statement,
+     * so of two sign-ins with the same code one records it.
+     * @param {string} id
+     * @param {number} step
+     * @return {!Promise<boolean>} whether this call recorded it
+     */
+    async recordMfaStep(id, step) {
+      const [count] = await m.User.update(
+        {mfaLastStep: step},
+        {
+          where: {
+            id,
+            [Op.or]: [{mfaLastStep: null}, {mfaLastStep: {[Op.lt]: step}}],
+          },
+        },
+      );
+      return count === 1;
     },
 
     async listRoles() {

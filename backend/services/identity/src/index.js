@@ -1,3 +1,4 @@
+import {resolve} from 'node:path';
 import {
   createEventBus,
   createSequelizeOutbox,
@@ -8,17 +9,25 @@ import {
   envBool,
   envInt,
   envOneOf,
+  envPositiveInt,
   healthCheck,
   orgFromEnv,
   startService,
 } from '@lrfe/common';
 import {buildApp} from './app.js';
+import {DEFAULT_CODE_GUARD_LIMITS} from './code-guard.js';
 import {IdentityService} from './identity.service.js';
 import {createMailer} from './mailer.js';
 import {createMemoryRepo} from './repo/memory.js';
 import {createSequelizeRepo} from './repo/sequelize.js';
 import {SCHEMA} from './repo/models.js';
 import {seedIdentity} from './seed.js';
+import {
+  DEFAULT_SETUP_CODE_TTL_HOURS,
+  appendSetupCodeFile,
+  issueSetupCode,
+  setupCodeLine,
+} from './setup-code.js';
 import {CATALOGUE, DEFAULT_OFFICES, parseOffices} from './catalogue.js';
 
 const store = envOneOf('IDENTITY_STORE', ['postgres', 'memory'], 'postgres');
@@ -59,13 +68,55 @@ const offices =
   process.env.IDENTITY_OFFICES === undefined
     ? DEFAULT_OFFICES
     : parseOffices(process.env.IDENTITY_OFFICES, 'IDENTITY_OFFICES');
-checks.push(() =>
-  seedIdentity(repo, {
+// How long an administrator's one-time setup code works (CB-102).
+const setupCodeTtlHours = envPositiveInt(
+  'SETUP_CODE_TTL_HOURS',
+  DEFAULT_SETUP_CODE_TTL_HOURS,
+);
+// Where the setup codes given at start are written, readable only by identity's user (CB-102).
+const setupCodeFile = resolve(env('SETUP_CODE_FILE', './tmp/setup-codes.txt'));
+// End-to-end tests only: the demo users get their authenticators directly (CB-102).
+const demoMfaKey = process.env.SEED_DEMO_MFA_KEY || undefined;
+if (demoMfaKey && process.env.NODE_ENV !== 'test') {
+  throw new Error(
+    'SEED_DEMO_MFA_KEY is only for the end-to-end tests (NODE_ENV=test)',
+  );
+}
+checks.push(async () => {
+  const {created} = await seedIdentity(repo, {
     admin,
     demoPassword: process.env.SEED_DEMO_PASSWORD || undefined,
+    demoMfaKey,
     offices,
-  }),
-);
+  });
+  // The first administrator and the demo users set up their authenticator with a one-time setup
+  // code, written to the setup-code file only: never to the console or the service's log, which
+  // say only where the file is (CB-102, design decision 9).
+  if (created.length === 0) {
+    return;
+  }
+  const lines = [];
+  for (const user of created) {
+    const {setupCode} = await issueSetupCode(repo, user.id, {
+      now: new Date(),
+      ttlHours: setupCodeTtlHours,
+    });
+    lines.push(setupCodeLine(user.email, setupCode, setupCodeTtlHours));
+  }
+  try {
+    await appendSetupCodeFile(setupCodeFile, lines);
+    app.log.info(
+      `setup codes for ${lines.length} new user(s) written to ${setupCodeFile}`,
+    );
+  } catch (err) {
+    // The codes are stored already; starting again would not give them twice. The way back is
+    // the command-line reset (README), so identity starts and says what went wrong.
+    app.log.error(
+      `setup codes for ${lines.length} new user(s) could not be written to ${setupCodeFile} ` +
+        `(${err.code || err.message}); give new ones with scripts/reset-password.js --reset-mfa`,
+    );
+  }
+});
 
 // Outgoing email (invitations): MAIL_TRANSPORT=smtp | file | none. See the identity README.
 const mailer = createMailer({
@@ -94,12 +145,36 @@ const events = createEventBus({
   outbox,
 });
 const accessTtlSeconds = envInt('ACCESS_TOKEN_TTL_SECONDS', 900);
+// Limits on guessing authenticator codes (CB-101), counted in this process's memory: a restart
+// clears the counts. A value that is not a whole number above 0 stops identity here.
+const codeGuard = {
+  maxWrongCodesPerChallenge: envPositiveInt(
+    'MFA_MAX_WRONG_CODES_PER_CHALLENGE',
+    DEFAULT_CODE_GUARD_LIMITS.maxWrongCodesPerChallenge,
+  ),
+  lockoutWrongCodes: envPositiveInt(
+    'MFA_LOCKOUT_WRONG_CODES',
+    DEFAULT_CODE_GUARD_LIMITS.lockoutWrongCodes,
+  ),
+  lockoutWindowMinutes: envPositiveInt(
+    'MFA_LOCKOUT_WINDOW_MINUTES',
+    DEFAULT_CODE_GUARD_LIMITS.lockoutWindowMinutes,
+  ),
+  lockoutMinutes: envPositiveInt(
+    'MFA_LOCKOUT_MINUTES',
+    DEFAULT_CODE_GUARD_LIMITS.lockoutMinutes,
+  ),
+};
 const service = new IdentityService({
   repo,
   mailer,
   events,
   config: {
     accessTtlSeconds,
+    codeGuard,
+    setupCodeTtlHours,
+    // end-to-end tests only (NODE_ENV=test): the demo users it seeded may reuse a code (CB-104)
+    demoMfaKey,
     // in invitation emails and as the authenticator app's entry (API-712), the pack's when unset
     issuer: orgFromEnv(process.env, CATALOGUE.organisation).fullName,
     exposeInviteLinks: envBool('IDENTITY_EXPOSE_INVITE_LINKS', false),

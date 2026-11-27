@@ -452,7 +452,7 @@ function checkUsersAndData(env) {
         `${role}: ${user.mfa ? 'authenticator set up' : 'authenticator not set up yet'}`,
         user.mfa
           ? ''
-          : 'Sign in once before the demo and set up the authenticator app',
+          : 'Sign in once before the demo and set up the authenticator app, with the setup code the fresh install wrote (docker compose exec identity cat /data/identity/setup-codes.txt) or one from Users, Give setup code',
       );
     }
   }

@@ -39,6 +39,7 @@ import {join, resolve} from 'node:path';
 import {
   BACKEND_DIR,
   BAO_DIR,
+  DEMO_MFA_KEY,
   DEMO_PASSWORD,
   E2E_BAO,
   E2E_DOMAIN,
@@ -78,6 +79,8 @@ const COMMON = {
   INTAKE_STORAGE: 'memory',
   EXTRACTION_PROVIDER: 'mock',
   SEED_DEMO_PASSWORD: DEMO_PASSWORD,
+  // the demo users' authenticators, set up directly by the seeding (CB-102, with NODE_ENV=test)
+  SEED_DEMO_MFA_KEY: DEMO_MFA_KEY,
   MAIL_TRANSPORT: 'file',
   MAIL_FILE_DIR: MAIL_DIR,
   MAIL_FROM: 'Deeds Registry (e2e) <noreply@example.com>',
@@ -89,6 +92,9 @@ const COMMON = {
   // the public check's rate limit, high: the tests share one client address. The limit itself is
   // tested in the gateway's unit tests, the check page's message for it with a made-up answer
   PUBLIC_RATE_LIMIT_MAX: '1000',
+  // the sign-in limits (CB-101), high for the same reason; the limits are tested in the unit tests
+  SIGN_IN_RATE_LIMIT_MAX: '1000',
+  REFRESH_RATE_LIMIT_MAX: '10000',
   // plain http on localhost: a Secure cookie would not be sent back by every client
   COOKIE_SECURE: 'false',
   // the test blockchain, in memory (only with NODE_ENV=test): no anchoring job runs; tests make batches

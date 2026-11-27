@@ -9,7 +9,7 @@
  */
 import {expect, test, type Locator, type Page} from '@playwright/test';
 import {userByRole} from '../support/catalogue';
-import {apiSignIn, codeFor, signedInPage} from '../support/auth';
+import {apiSignIn, codeFor, freshCodeFor, signedInPage} from '../support/auth';
 import {
   NEW_USER_PASSWORD,
   adminApi,
@@ -170,9 +170,10 @@ test(
     await admin.getByLabel('Search users').fill(person.email);
     const row = admin.locator('tbody tr', {hasText: person.email});
     await expect(row).toContainText('Invited');
-    await expect(row).toContainText('Not enrolled');
+    await expect(row).toContainText('not set up');
 
-    // The invitee opens the link from the email, chooses a password, then signs in and sets up MFA.
+    // The invitee opens the link from the email, chooses a password and sets up the authenticator
+    // on the same page (CB-102), then signs in with both.
     const link = await inviteLink(person.email);
     const context = await browser.newContext({
       baseURL: test.info().project.use.baseURL,
@@ -189,13 +190,7 @@ test(
       'API-607',
       'Invite: the invitee chooses a password from the email link',
     );
-    await page.getByRole('button', {name: 'Activate account'}).click();
-    await expect(
-      page.getByText('Your account is active. Sign in with your new password.'),
-    ).toBeVisible();
-    await expect(page.getByLabel('Email')).toHaveValue(person.email);
-    await page.getByLabel('Password').fill(NEW_USER_PASSWORD);
-    await page.getByRole('button', {name: 'Sign in', exact: true}).click();
+    await page.getByRole('button', {name: 'Continue'}).click();
     await expect(
       page.getByRole('heading', {name: 'Set up your authenticator'}),
     ).toBeVisible();
@@ -205,6 +200,16 @@ test(
       '',
     );
     await page.getByLabel('6-digit code').fill(codeFor(key));
+    await page.getByRole('button', {name: 'Activate account'}).click();
+    await expect(
+      page.getByRole('heading', {name: 'Your account is ready'}),
+    ).toBeVisible();
+    await page.getByRole('button', {name: 'Go to sign-in'}).click();
+    await expect(page.getByLabel('Email')).toHaveValue(person.email);
+    await page.getByLabel('Password').fill(NEW_USER_PASSWORD);
+    await page.getByRole('button', {name: 'Sign in', exact: true}).click();
+    // the activation's code is used up (CB-104)
+    await page.getByLabel('6-digit code').fill(await freshCodeFor(key));
     await page.getByRole('button', {name: 'Verify and sign in'}).click();
     await expect(page).toHaveURL(/#\/link$/);
     await expect(page.locator('aside.sidebar')).toContainText(person.name);
@@ -219,7 +224,7 @@ test(
     await again.goto(appPath(link));
     await again.getByLabel('New password').fill(NEW_USER_PASSWORD);
     await again.getByLabel('Repeat password').fill(NEW_USER_PASSWORD);
-    await again.getByRole('button', {name: 'Activate account'}).click();
+    await again.getByRole('button', {name: 'Continue'}).click();
     await expect(again.getByRole('alert')).toContainText(
       'This invitation is invalid or has expired',
     );
@@ -227,7 +232,7 @@ test(
     await admin.reload();
     await admin.getByLabel('Search users').fill(person.email);
     await expect(row).toContainText('Active');
-    await expect(row.locator('.ok')).toBeVisible(); // MFA enrolled
+    await expect(row).not.toContainText('not set up'); // authenticator set up
     await evidence(
       admin,
       'API-607',
@@ -436,14 +441,21 @@ test(
       hasText: 'Scan operators cannot file what they capture',
     });
 
-    // A longer idle timeout and an extra duty rule: no other test depends on either.
+    // CB-100: the maximum session age shows its default, 12 hours.
+    await expect(
+      page.locator('.seg-opt', {hasText: '12 h'}).locator('input'),
+    ).toBeChecked();
+
+    // A longer idle timeout, a longer maximum session age and an extra duty rule: no other test
+    // depends on any of them.
     await page.locator('.seg-opt', {hasText: '60 min'}).click();
+    await page.locator('.seg-opt', {hasText: '24 h'}).click();
     await rule.locator('input').check();
     await expect(rule).toContainText('affected'); // users holding both permissions are counted
     await evidence(
       page,
       'API-607',
-      'Policies: 60 min timeout and an extra duty rule, unsaved',
+      'Policies: 60 min timeout, 24 h maximum session age and an extra duty rule, unsaved',
     );
     await page.getByRole('button', {name: 'Save policies'}).click();
     await confirmWith(page, 'Save policies');
@@ -451,6 +463,9 @@ test(
     await page.reload();
     await expect(
       page.locator('.seg-opt', {hasText: '60 min'}).locator('input'),
+    ).toBeChecked();
+    await expect(
+      page.locator('.seg-opt', {hasText: '24 h'}).locator('input'),
     ).toBeChecked();
     await expect(rule.locator('input')).toBeChecked();
 
@@ -484,6 +499,7 @@ test(
     await expect(toast(page, 'Permission matrix saved')).toBeVisible();
     await page.goto('/#/admin/policies');
     await page.locator('.seg-opt', {hasText: '30 min'}).click();
+    await page.locator('.seg-opt', {hasText: '12 h'}).click();
     await rule.locator('input').uncheck();
     await page.getByRole('button', {name: 'Save policies'}).click();
     await confirmWith(page, 'Save policies');
@@ -508,6 +524,16 @@ test(
     await expect(
       action(log, 'Policy updated').filter({
         hasText: 'Session timeout 60 → 30 min',
+      }),
+    ).toHaveCount(1);
+    await expect(
+      action(log, 'Policy updated').filter({
+        hasText: 'Maximum session age 12 → 24 h',
+      }),
+    ).toHaveCount(1);
+    await expect(
+      action(log, 'Policy updated').filter({
+        hasText: 'Maximum session age 24 → 12 h',
       }),
     ).toHaveCount(1);
     await evidence(

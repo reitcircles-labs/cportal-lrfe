@@ -41,6 +41,11 @@ export function defineModels(sequelize) {
       // TODO: encrypt MFA secrets at rest (KMS / envelope key) before production.
       mfaSecret: {type: DataTypes.STRING},
       pendingMfaSecret: {type: DataTypes.STRING},
+      // the one-time setup code an administrator gave (CB-102): only its hash, and until when it works
+      setupCodeHash: {type: DataTypes.STRING},
+      setupCodeExpiresAt: {type: DataTypes.DATE},
+      // the time step of the last accepted authenticator code: a code is accepted once (CB-104)
+      mfaLastStep: {type: DataTypes.INTEGER},
       inviteHash: {type: DataTypes.STRING, unique: true},
       inviteExpiresAt: {type: DataTypes.DATE},
       lastActiveAt: {type: DataTypes.DATE},
@@ -97,9 +102,13 @@ export function defineModels(sequelize) {
       id: {type: DataTypes.UUID, primaryKey: true},
       userId: {type: DataTypes.UUID, allowNull: false},
       refreshHash: {type: DataTypes.STRING, allowNull: false},
+      // the sign-in time, kept through refreshes; the maximum session age counts from it (CB-100)
+      startedAt: {type: DataTypes.DATE, allowNull: false},
       lastSeenAt: {type: DataTypes.DATE, allowNull: false},
       revokedAt: {type: DataTypes.DATE},
       ip: {type: DataTypes.STRING},
+      // opened with 2FA (CB-103); null for a session stored before, which is never refused for it
+      twoFactor: {type: DataTypes.BOOLEAN},
     },
     opts({indexes: [{fields: ['userId']}]}),
   );

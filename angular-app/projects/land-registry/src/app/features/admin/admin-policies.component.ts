@@ -28,6 +28,8 @@ import {ADMIN_SHARED_STYLES} from './admin-shared.styles';
           <label class="prow"><span><b>Restrict to government network</b><span>Block sign-in from outside the GRN network and VPN.</span></span><input type="checkbox" class="switch" [checked]="wp().ipAllow" (change)="setPol('ipAllow', $any($event.target).checked)"></label>
           <div class="prow"><span><b>Idle session timeout</b><span>Users are signed out after this long without activity.</span></span>
             <div class="seg">@for (m of [15, 30, 60]; track m) { <label class="seg-opt"><input type="radio" name="to" [checked]="wp().timeout === m" (change)="setPol('timeout', m)">{{ m }} min</label> }</div></div>
+          <div class="prow"><span><b>Maximum session age</b><span>Users must sign in again after this long, even when active.</span></span>
+            <div class="seg">@for (h of [4, 8, 12, 24]; track h) { <label class="seg-opt"><input type="radio" name="msa" [checked]="wp().maxSessionAge === h" (change)="setPol('maxSessionAge', h)">{{ h }} h</label> }</div></div>
         </div>
       </div>
       <div class="panel">
