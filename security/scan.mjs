@@ -495,7 +495,9 @@ function scans(tokens) {
               '-z',
               `-config scanner.maxScanDurationInMins=${settings.zap}`,
             ],
-            {minutes: settings.zap + 3, env: zapEnv, mounts: [zapMount]},
+            // the active scan (up to settings.zap), plus ZAP's start, the API import, the passive
+            // wait and the report: about 2 minutes on a computer, more on a busy CI runner (CB-123)
+            {minutes: settings.zap + 8, env: zapEnv, mounts: [zapMount]},
           ),
       },
       {
